@@ -87,9 +87,7 @@ export const NodeStyles = {
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-yellow-300 bg-yellow-300/60 dark:border-yellow-600/60 dark:bg-yellow-600/60 hover:border-yellow-500 dark:hover:border-yellow-400 cursor-move',
   number:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-red-300 bg-red-300/60 dark:border-red-600/60 dark:bg-red-600/60 hover:border-red-500 dark:hover:border-red-400 cursor-move',
-  // eslint-disable-next-line prettier/prettier
-  bool:
-    'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-pink-300 bg-pink-300/60 dark:border-pink-600/60 dark:bg-pink-600/60 hover:border-pink-500 dark:hover:border-pink-400 cursor-move',
+  bool: 'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-pink-300 bg-pink-300/60 dark:border-pink-600/60 dark:bg-pink-600/60 hover:border-pink-500 dark:hover:border-pink-400 cursor-move',
   string:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-green-300 bg-green-300/60 dark:border-green-600/60 dark:bg-green-600/60 hover:border-green-500 dark:hover:border-green-400 cursor-move',
   object:

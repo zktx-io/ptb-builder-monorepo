@@ -68,7 +68,7 @@ export const ContextMenu = ({
       createNode(`${item.type}-${Date.now()}`, position, item.name, item.type);
       onClick();
     },
-    [createNode, onClick],
+    [createNode, onClick, x, y, zoom],
   );
 
   const handleNodeClick = useCallback(

@@ -20,9 +20,9 @@ import {
 import { PTBEdges } from './edges';
 import { PTBNodes } from './nodes';
 import { Code, ContextMenu, ContextProp } from '../Components';
+import { MENU } from '../Components/Menu.data';
 import { useStateContext, useStateUpdateContext } from '../Provider';
 import { hasPath } from '../utils/hasPath';
-import { MENU } from '../Components/Menu.data';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
 
