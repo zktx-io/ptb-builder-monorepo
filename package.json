@@ -1,0 +1,30 @@
+{
+  "name": "@zktx.io/ptb-builder-monorepo",
+  "version": "0.0.1",
+  "scripts": {
+    "lint": "eslint 'packages/**/*.{js,jsx,ts,tsx}'",
+    "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
+    "build": "cd packages/ptb-builder && npm run build",
+    "start": "npm run build && cd packages/example && npm run start"
+  },
+  "author": "daoauth",
+  "license": "ISC",
+  "description": "Sui programmable transaction blocks builder",
+  "workspaces": [
+    "packages/ptb-builder",
+    "packages/example"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.11.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-react": "^7.37.1",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "globals": "^15.10.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "typescript-eslint": "^8.8.0"
+  }
+}
