@@ -6,6 +6,10 @@
 
 https://github.com/user-attachments/assets/829e754b-1dfe-44fd-bb78-23b0d6666543
 
+## Demo
+
+[https://ptb-builder.walrus.site/](https://ptb-builder.walrus.site/)
+
 ## Key Use Cases
 
 1. Transaction Construction and Pre-Testing:
@@ -47,7 +51,3 @@ https://github.com/user-attachments/assets/829e754b-1dfe-44fd-bb78-23b0d6666543
     + Adding Advanced Features:
         + Version Control: Enable tracking and restoring changes through version control of transaction graphs.
         + Integrated Testing Environment: Provide a testing environment similar to the actual network to verify transaction behavior more accurately.
-
-## Example
-
-[walrus](https://3uxr4bvtxm0r6g4ftzkmvd7fpk29lh6ja5hs2fowkzanwoxyjw.walrus.site/)
