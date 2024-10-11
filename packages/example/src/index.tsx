@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { SnackbarProvider } from 'notistack';
 import ReactDOM from 'react-dom/client';
 
 import './index.css';
@@ -11,7 +12,12 @@ const root = ReactDOM.createRoot(
 );
 root.render(
   <React.StrictMode>
-    <App />
+    <SnackbarProvider
+      anchorOrigin={{ horizontal: 'right', vertical: 'top' }}
+      hideIconVariant
+    >
+      <App />
+    </SnackbarProvider>
   </React.StrictMode>,
 );
 
