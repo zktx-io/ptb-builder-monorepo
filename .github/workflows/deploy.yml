@@ -34,6 +34,7 @@ jobs:
         with:
           config-path: '/tmp/example/builder.yaml'
           site-path: '/tmp/example/build'
+          object-id: '0x9ad8a847e29b6e914abea1efe72f00508bbbf81c53b94fed81c08b0e965fb52c'
           network: 'testnet'
         env:
           SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
