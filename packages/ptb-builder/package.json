@@ -12,8 +12,22 @@
     "lint": "npm run lint --prefix ../..",
     "format": "npm run format --prefix ../.."
   },
+  "keywords": [
+    "sui",
+    "transaction",
+    "ptb",
+    "programmable transaction blocks"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zktx-io/ptb-builder-monorepo.git"
+  },
   "author": "daoauth",
   "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zktx-io/ptb-builder-monorepo/issues"
+  },
+  "homepage": "https://github.com/zktx-io/ptb-builder-monorepo#readme",
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
