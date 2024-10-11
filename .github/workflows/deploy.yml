@@ -18,38 +18,23 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Copy holder package to temporary directory
+      - name: Copy example package to temporary directory
         run: |
-          mkdir -p /tmp/holder
-          cp -r ./packages/holder/* /tmp/holder/
-          mkdir -p /tmp/verifier
-          cp -r ./packages/verifier/* /tmp/verifier/      
+          mkdir -p /tmp/example
+          cp -r ./packages/example/* /tmp/example/
 
       - name: Install dependencies in temporary directory and Build React app
-        env:
-          REACT_APP_CLIENT_ID: ${{ secrets.REACT_APP_CLIENT_ID }}
-          REACT_APP_ISSUER: ${{ secrets.REACT_APP_ISSUER }}
         run: |
-          cd /tmp/holder
+          cd /tmp/example
           npm install
           npm run build
 
-      - name: Deploy site to Walrus Pass - Holder
+      - name: Deploy PTB Builder to Walrus
         uses: zktx-io/walrus-sites-ga@v0.1.1
         with:
-          config-path: '/tmp/holder/builder.yaml'
-          site-path: '/tmp/holder/build'
-          object-id: '0xc6fee78376d0041b30e4ebd6eb54a0cbf03662c1f4825d0a90bdf075a41e43fd'
+          config-path: '/tmp/example/builder.yaml'
+          site-path: '/tmp/example/build'
           network: 'testnet'
         env:
           SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
           SUI_KEYSTORE: ${{ secrets.SUI_KEYSTORE }}
-
-      - name: Install dependencies in temporary directory and Build React app
-        env:
-          REACT_APP_CLIENT_ID: ${{ secrets.REACT_APP_CLIENT_ID }}
-          REACT_APP_ISSUER: ${{ secrets.REACT_APP_ISSUER }}
-        run: |
-          cd /tmp/verifier
-          npm install
-          npm run build
