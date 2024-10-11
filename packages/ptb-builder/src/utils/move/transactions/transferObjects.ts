@@ -16,7 +16,10 @@ export const transferObjects = (
     if (objects.length === 1 && typeof objects[0] !== 'string') {
       if ('Result' in objects[0]) {
         const temp = objects[0].Result;
-        if ('SplitCoins' in ptb.transactions[temp]) {
+        if (
+          'SplitCoins' in ptb.transactions[temp] ||
+          'Publish' in ptb.transactions[temp]
+        ) {
           edges.push({
             id: `sub-${index}-0`,
             type: 'Data',

@@ -38,6 +38,9 @@ export const createTransactions = (
     edges.push(...res.edges);
     inputs.push(...res.inputs);
   }
+  if ('Publish' in suiTx) {
+    type = 'Publish';
+  }
   if ('MoveCall' in suiTx) {
     type = 'MoveCall';
     const res = moveCall(index, ptb, suiTx, id);
