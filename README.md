@@ -4,7 +4,7 @@
 
 ![ptb-builder-editor.png](https://docs.zktx.io/images/ptb-builder-editor.png)
 
-https://github.com/user-attachments/assets/0e7a3d47-451a-4cea-a36d-9df23d931cf2
+https://github.com/user-attachments/assets/829e754b-1dfe-44fd-bb78-23b0d6666543
 
 ## Key Use Cases
 
