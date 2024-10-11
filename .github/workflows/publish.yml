@@ -1,0 +1,30 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
+
+      - name: publish programmable transaction blocks builder package
+        uses: JS-DevTools/npm-publish@v3
+        id: ptb-builder
+        with:
+            access: public
+            provenance: true
+            token: ${{ secrets.NPM_TOKEN }}
+            package: "packages/ptb-builder/package.json"
+            strategy: upgrade
