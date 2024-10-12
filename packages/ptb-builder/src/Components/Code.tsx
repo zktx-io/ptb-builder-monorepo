@@ -84,7 +84,7 @@ export const Code = ({
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleExcuteTransaction}
           >
-            Excute Transaction
+            Excute
           </button>
         </div>
       )}

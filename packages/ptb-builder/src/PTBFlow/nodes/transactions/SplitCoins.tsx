@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
 import { Node } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
 import { useStateContext } from '../../../Provider';
@@ -36,6 +37,9 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
           coin = transaction.object(coinObject.source.data.value as string);
         } else {
           // TODO
+          enqueueSnackbar(`not support - ${coinObject.source.type}`, {
+            variant: 'warning',
+          });
         }
       }
       const inputs = params.find((item) => item.target === 'amounts:number[]');
@@ -44,6 +48,9 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
           amounts.push(...(inputs.source.data.value as number[]));
         } else {
           // TODO
+          enqueueSnackbar(`not support - ${inputs.source.type}`, {
+            variant: 'warning',
+          });
         }
       }
 

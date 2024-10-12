@@ -1,5 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 export const mergeCoins = (
   index: number,
@@ -33,6 +34,9 @@ export const mergeCoins = (
       });
     } else {
       // TODO
+      enqueueSnackbar(`not support - ${JSON.stringify(destination)}`, {
+        variant: 'warning',
+      });
     }
   }
 

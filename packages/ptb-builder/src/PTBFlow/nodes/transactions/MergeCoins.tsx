@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
 import { Node } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
@@ -37,6 +38,9 @@ export const MergeCoins = ({ id, data }: NodeProp) => {
           destination = destNode.source.data.value as string;
         } else {
           // TODO
+          enqueueSnackbar(`not support - ${destNode.source.type}`, {
+            variant: 'warning',
+          });
         }
       }
 
@@ -53,6 +57,9 @@ export const MergeCoins = ({ id, data }: NodeProp) => {
           temp && sources.push(temp.value);
         } else {
           // TODO
+          enqueueSnackbar(`not support - ${inputs.source.type}`, {
+            variant: 'warning',
+          });
         }
       }
 

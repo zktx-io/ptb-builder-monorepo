@@ -1,5 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 interface MoveCallHandle {
   id: string;
@@ -145,6 +146,9 @@ export const moveCall = (
                 id: `${PREFIX}${i}`,
                 type: undefined,
               });
+              enqueueSnackbar(`not support - ${JSON.stringify(item)}`, {
+                variant: 'warning',
+              });
             }
           }
         } else {
@@ -152,6 +156,9 @@ export const moveCall = (
           handles.push({
             id: `${PREFIX}${i}`,
             type: undefined,
+          });
+          enqueueSnackbar(`not support - ${JSON.stringify(item)}`, {
+            variant: 'warning',
           });
         }
       });

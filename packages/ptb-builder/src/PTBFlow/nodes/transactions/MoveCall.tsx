@@ -6,6 +6,7 @@ import {
 } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { Node, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
 import { useStateContext } from '../../../Provider';
@@ -197,6 +198,7 @@ export const MoveCall = ({ id, data }: NodeProp) => {
       results: { id: string; value: any }[],
     ): { transaction: Transaction; result: any } | undefined => {
       // const params = args.map((item) => (item ? item.name : undefined));
+      /*
       const result = transaction.moveCall({
         package: packageId,
         module: selectedModule,
@@ -204,8 +206,13 @@ export const MoveCall = ({ id, data }: NodeProp) => {
         // arguments: [...params],
       });
       return { transaction, result };
+      */
+      enqueueSnackbar(`not support - MoveCall`, {
+        variant: 'warning',
+      });
+      return undefined;
     },
-    [packageId, selectedFunction, selectedModule],
+    [],
   );
 
   useEffect(() => {
