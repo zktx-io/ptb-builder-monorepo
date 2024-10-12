@@ -1,12 +1,17 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
-import { Root } from './pages/root';
+import { Editor } from './pages/editor';
+import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Root />,
+    element: <Home />,
+  },
+  {
+    path: '/editor',
+    element: <Editor />,
   },
   {
     path: '/viewer',

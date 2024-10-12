@@ -10,10 +10,11 @@ import { enqueueSnackbar } from 'notistack';
 import queryString from 'query-string';
 import { useLocation } from 'react-router-dom';
 
+import { NETWORK } from '../network';
+
 export const Viewer = () => {
   const initialized = useRef<boolean>(false);
 
-  const network = 'testnet';
   const location = useLocation();
   const [txData, setTxData] = useState<TransactionBlockData | undefined>(
     undefined,
@@ -24,7 +25,7 @@ export const Viewer = () => {
       initialized.current = true;
       try {
         const client = new SuiClient({
-          url: getFullnodeUrl(network),
+          url: getFullnodeUrl(NETWORK),
         });
         const res = await client.getTransactionBlock({
           digest: txHash!,
@@ -56,7 +57,7 @@ export const Viewer = () => {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <PTBBuilder
-        network={network}
+        network={NETWORK}
         options={{
           themeSwitch: true,
           isEditor: false,
