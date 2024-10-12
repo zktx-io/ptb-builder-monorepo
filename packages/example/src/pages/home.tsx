@@ -1,15 +1,10 @@
-import {
-  ConnectButton,
-  useAutoConnectWallet,
-  useCurrentWallet,
-} from '@mysten/dapp-kit';
+import { ConnectButton, useCurrentWallet } from '@mysten/dapp-kit';
 import { useNavigate } from 'react-router-dom';
 
 import '@mysten/dapp-kit/dist/index.css';
 
 export const Home = () => {
   const { connectionStatus } = useCurrentWallet();
-  const autoConnectionStatus = useAutoConnectWallet();
   const navigate = useNavigate();
 
   return (
