@@ -5,14 +5,14 @@ import { useReactFlow } from '@xyflow/react';
 
 import { useStateContext } from '../Provider';
 import { getLayoutedElements } from '../utils/getLayoutedElements';
-import { parseTx } from '../utils/move/parseTx';
+import { parsePtb } from '../utils/move/parsePtb';
 
 export const Parse = () => {
   const { txData } = useStateContext();
   const { fitView, getNodes, getEdges, setNodes, setEdges } = useReactFlow();
   useEffect(() => {
     const autoLayout = async (data: TransactionBlockData) => {
-      const parsed = parseTx(data);
+      const parsed = parsePtb(data);
       const { nodes: layoutedNodes, edges: layoutedEdges } =
         await getLayoutedElements(
           [...getNodes(), ...parsed.nodes],

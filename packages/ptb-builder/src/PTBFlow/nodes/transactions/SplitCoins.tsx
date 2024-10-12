@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect } from 'react';
 
+import { Transaction } from '@mysten/sui/transactions';
+import { Node } from '@xyflow/react';
+
 import { type NodeProp } from '..';
+import { useStateContext } from '../../../Provider';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 import { CodeParam } from '../types';
 
 export const SplitCoins = ({ id, data }: NodeProp) => {
+  const { client } = useStateContext();
+
   const code = useCallback((params: CodeParam[]): string => {
     const args: (CodeParam | undefined)[] = [];
     args.push(params.find((item) => item.targetHandle === 'coin:object'));
@@ -13,11 +19,49 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
     return `tx.splitCoins(${args.map((item) => (item ? item.name : 'undefined')).join(',')})`;
   }, []);
 
+  const excute = useCallback(
+    (
+      transaction: Transaction,
+      params: { source: Node; target: string }[],
+      results: { id: string; value: any }[],
+    ): { transaction: Transaction; result: any } | undefined => {
+      let coin;
+      const amounts: number[] = [];
+
+      const coinObject = params.find((item) => item.target === 'coin:object');
+      if (coinObject) {
+        if (coinObject.source.type === 'SuiObjectGas') {
+          coin = transaction.gas;
+        } else if (coinObject.source.type === 'SuiObject') {
+          coin = transaction.object(coinObject.source.data.value as string);
+        } else {
+          // TODO
+        }
+      }
+      const inputs = params.find((item) => item.target === 'amounts:number[]');
+      if (inputs) {
+        if (inputs.source.type === 'SuiNumberArray') {
+          amounts.push(...(inputs.source.data.value as number[]));
+        } else {
+          // TODO
+        }
+      }
+
+      if (coin && amounts.length > 0) {
+        const [result] = transaction.splitCoins(coin, amounts);
+        return { transaction, result };
+      }
+      return undefined;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (data) {
       data.code = code;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>

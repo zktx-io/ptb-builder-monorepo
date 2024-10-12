@@ -7,7 +7,7 @@ import { Edge, Node } from '@xyflow/react';
 import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
 
-export const parseTx = (data: TransactionBlockData) => {
+export const parsePtb = (data: TransactionBlockData) => {
   const txs: Node[] = [];
   const inputs: Node[] = [];
   const edges: Edge[] = [];

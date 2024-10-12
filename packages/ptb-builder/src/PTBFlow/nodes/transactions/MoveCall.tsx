@@ -4,7 +4,8 @@ import {
   SuiMoveNormalizedFunction,
   SuiMoveNormalizedModule,
 } from '@mysten/sui/client';
-import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
+import { Transaction } from '@mysten/sui/transactions';
+import { Node, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { type NodeProp } from '..';
 import { useStateContext } from '../../../Provider';
@@ -70,29 +71,6 @@ export const MoveCall = ({ id, data }: NodeProp) => {
     (data as any).handles
       ? (data as any).handles.map((item: any) => ({ value: item.value || '' }))
       : [],
-  );
-
-  const code = useCallback(
-    (params: CodeParam[]): string => {
-      if (selectedFunction && selectedFunctionArgs) {
-        const args: (CodeParam | undefined)[] = Array(
-          selectedFunctionArgs.length,
-        ).fill(undefined);
-        params.forEach((item) => {
-          const index = parseInt(
-            item.targetHandle.split(':')[0].replace(PREFIX, ''),
-          );
-          args[index] = item;
-        });
-        const target = `'${packageId}::${selectedModule}:${selectedFunction}'`;
-        const argumentsList = args
-          .map((item) => (item?.name ? item.name : 'undefined'))
-          .join(',\n\t\t');
-        return `tx.moveCall({\n\ttarget:\n\t\t${target},\n\targuments: [\n\t\t${argumentsList},\n\t],\n})`;
-      }
-      return `tx.moveCall({\n\ttarget: undefined,\n\targuments: undefined\n});`;
-    },
-    [packageId, selectedFunction, selectedFunctionArgs, selectedModule],
   );
 
   const loadPackage = async () => {
@@ -189,15 +167,53 @@ export const MoveCall = ({ id, data }: NodeProp) => {
     }
   };
 
+  const code = useCallback(
+    (params: CodeParam[]): string => {
+      if (selectedFunction && selectedFunctionArgs) {
+        const args: (CodeParam | undefined)[] = Array(
+          selectedFunctionArgs.length,
+        ).fill(undefined);
+        params.forEach((item) => {
+          const index = parseInt(
+            item.targetHandle.split(':')[0].replace(PREFIX, ''),
+          );
+          args[index] = item;
+        });
+        const target = `'${packageId}::${selectedModule}:${selectedFunction}'`;
+        const argumentsList = args
+          .map((item) => (item?.name ? item.name : 'undefined'))
+          .join(',\n\t\t');
+        return `tx.moveCall({\n\ttarget:\n\t\t${target},\n\targuments: [\n\t\t${argumentsList},\n\t],\n})`;
+      }
+      return `tx.moveCall({\n\ttarget: undefined,\n\targuments: undefined\n});`;
+    },
+    [packageId, selectedFunction, selectedFunctionArgs, selectedModule],
+  );
+
+  const excute = useCallback(
+    (
+      transaction: Transaction,
+      params: { source: Node; target: string }[],
+      results: { id: string; value: any }[],
+    ): { transaction: Transaction; result: any } | undefined => {
+      // const params = args.map((item) => (item ? item.name : undefined));
+      const result = transaction.moveCall({
+        package: packageId,
+        module: selectedModule,
+        function: selectedFunction,
+        // arguments: [...params],
+      });
+      return { transaction, result };
+    },
+    [packageId, selectedFunction, selectedModule],
+  );
+
   useEffect(() => {
     if (data) {
       data.code = code;
+      data.excute = excute;
     }
-  }, [code, data]);
-
-  useEffect(() => {
-    //
-  }, []);
+  }, [code, data, excute]);
 
   useEffect(() => {
     setNodes((nds) =>

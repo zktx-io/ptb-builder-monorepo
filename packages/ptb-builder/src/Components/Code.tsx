@@ -9,7 +9,7 @@ import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
 import { generateCode } from '../utils/move/generateCode';
-import { generateTx } from '../utils/move/generateTx';
+import { generatePtb } from '../utils/move/generatePtb';
 
 export const Code = ({
   nodes,
@@ -27,7 +27,7 @@ export const Code = ({
 
   const handleExcuteTransaction = async () => {
     if (excuteTx) {
-      const transaction = await generateTx(nodes, edges);
+      const transaction = await generatePtb(nodes, edges);
       await excuteTx(transaction);
     }
   };
