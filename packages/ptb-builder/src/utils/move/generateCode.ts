@@ -138,10 +138,19 @@ export const generateCode = (nodes: Node[], edges: Edge[]): string => {
           typeof currentNode.data.code === 'function'
         ) {
           if (currentNode.type === 'SplitCoins') {
+            const temp = `${declaredVariables[outputId]}_1`;
             addCodeLine(
-              `[${declaredVariables[outputId]}] = ${currentNode.data.code(inputs)};`,
+              `const ${temp} = ${currentNode.data.code(inputs)};`,
               '',
             );
+            const arg = inputs.find(
+              (item) => item.targetHandle === 'amounts:number[]',
+            );
+            arg &&
+              addCodeLine(
+                `${declaredVariables[outputId]} = ${arg.name}.map((_, i) => ${temp}[i];`,
+                '',
+              );
           } else {
             addCodeLine(
               `${declaredVariables[outputId]} = ${currentNode.data.code(inputs)};`,

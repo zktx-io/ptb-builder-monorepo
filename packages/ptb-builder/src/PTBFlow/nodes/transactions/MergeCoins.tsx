@@ -54,7 +54,7 @@ export const MergeCoins = ({ id, data }: NodeProp) => {
           );
         } else if (inputs.source.type === 'SplitCoins') {
           const temp = results.find((item) => item.id === inputs.source.id);
-          temp && sources.push(temp.value);
+          temp && sources.push(...temp.value);
         } else {
           // TODO
           enqueueSnackbar(`not support - ${inputs.source.type}`, {

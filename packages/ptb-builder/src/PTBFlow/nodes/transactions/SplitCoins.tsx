@@ -55,8 +55,8 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
       }
 
       if (coin && amounts.length > 0) {
-        const [result] = transaction.splitCoins(coin, amounts);
-        return { transaction, result };
+        const temp = transaction.splitCoins(coin, amounts);
+        return { transaction, result: amounts.map((_, i) => temp[i]) };
       }
       return undefined;
     },
