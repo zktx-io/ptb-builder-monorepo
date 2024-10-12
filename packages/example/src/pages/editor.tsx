@@ -50,7 +50,7 @@ export const Editor = () => {
           options={{
             themeSwitch: true,
             isEditor: true,
-            excuteTx: excuteTx,
+            excuteTx,
           }}
         />
       ) : (

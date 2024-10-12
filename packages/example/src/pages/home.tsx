@@ -25,11 +25,27 @@ export const Home = () => {
         position: 'relative',
       }}
     >
+      <img
+        style={{
+          height: '128px',
+          width: '128px',
+        }}
+        src="/logo-sui.svg"
+      />
+      <h1
+        style={{
+          color: 'white',
+          fontSize: '34px',
+          marginTop: '12px',
+          marginBottom: '24px',
+        }}
+      >
+        PTB Builder
+      </h1>
       <ConnectButton />
       <div style={{ marginTop: '12px' }}>
-        {connectionStatus === 'connected' ? (
+        {connectionStatus === 'connected' && (
           <div style={{ color: 'white' }}>
-            Auto-connection status: {autoConnectionStatus}
             <div
               style={{
                 display: 'flex',
@@ -54,10 +70,6 @@ export const Home = () => {
                 {'viewer >>'}
               </button>
             </div>
-          </div>
-        ) : (
-          <div style={{ color: 'white' }}>
-            Connection status: {connectionStatus}
           </div>
         )}
       </div>
