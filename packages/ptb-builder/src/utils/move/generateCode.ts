@@ -25,6 +25,9 @@ const getNodeData = (id: string, nodes: Node[]): string | number => {
     if (node.type === 'SuiObject') {
       return `"${node.data.value}"`;
     }
+    if (node.type === 'SuiObjectGas') {
+      return `tx.gas`;
+    }
     return typeof node.data.value === 'string'
       ? `"${node.data.value}"`
       : JSON.stringify(node.data.value);
