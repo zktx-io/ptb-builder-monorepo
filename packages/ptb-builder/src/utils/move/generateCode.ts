@@ -137,10 +137,17 @@ export const generateCode = (nodes: Node[], edges: Edge[]): string => {
           currentNode.data.code &&
           typeof currentNode.data.code === 'function'
         ) {
-          addCodeLine(
-            `${declaredVariables[outputId]} = ${currentNode.data.code(inputs)};`,
-            '',
-          );
+          if (currentNode.type === 'SplitCoins') {
+            addCodeLine(
+              `[${declaredVariables[outputId]}] = ${currentNode.data.code(inputs)};`,
+              '',
+            );
+          } else {
+            addCodeLine(
+              `${declaredVariables[outputId]} = ${currentNode.data.code(inputs)};`,
+              '',
+            );
+          }
         } else {
           addCodeLine(
             `${declaredVariables[outputId]} = undefined;`,
