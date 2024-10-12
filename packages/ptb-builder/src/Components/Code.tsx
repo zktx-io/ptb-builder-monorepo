@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
+import { Transaction } from '@mysten/sui/transactions';
 import { Edge, Node } from '@xyflow/react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
@@ -7,13 +8,29 @@ import { Resizable } from 're-resizable';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import { codeGenerate } from '../utils/move/codeGenerate';
+import { generateCode } from '../utils/move/generateCode';
+import { generateTx } from '../utils/move/generateTx';
 
-export const Code = ({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
+export const Code = ({
+  nodes,
+  edges,
+  excuteTx,
+}: {
+  nodes: Node[];
+  edges: Edge[];
+  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+}) => {
   const language = 'javascript';
 
   const [code, setCode] = useState<string>('');
   const [isVisible, setIsVisible] = useState<boolean>(true);
+
+  const handleExcuteTransaction = async () => {
+    if (excuteTx) {
+      const transaction = await generateTx(nodes, edges);
+      await excuteTx(transaction);
+    }
+  };
 
   useEffect(() => {
     if (isVisible) {
@@ -22,7 +39,7 @@ export const Code = ({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
   }, [code, isVisible]);
 
   useEffect(() => {
-    setCode(() => codeGenerate(nodes, edges));
+    setCode(() => generateCode(nodes, edges));
   }, [edges, nodes]);
 
   return (
@@ -59,6 +76,17 @@ export const Code = ({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
             <code className={`language-${language}`}>{code}</code>
           </pre>
         </Resizable>
+      )}
+      {code && isVisible && !!excuteTx && (
+        <div className="flex items-center justify-end">
+          <button
+            className="bg-red-500 text-white font-semibold py-2 px-4 rounded transition duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleExcuteTransaction}
+          >
+            Excute Transaction
+          </button>
+        </div>
       )}
     </div>
   );

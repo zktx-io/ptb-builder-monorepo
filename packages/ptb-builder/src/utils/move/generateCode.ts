@@ -32,7 +32,7 @@ const getNodeData = (id: string, nodes: Node[]): string | number => {
   return 'undefined';
 };
 
-export const codeGenerate = (nodes: Node[], edges: Edge[]): string => {
+export const generateCode = (nodes: Node[], edges: Edge[]): string => {
   const startNode = nodes.find((node) => node.type === 'Start');
   const endNode = nodes.find((node) => node.type === 'End');
 

@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { TransactionBlockData } from '@mysten/sui/client';
+import { Transaction } from '@mysten/sui/transactions';
 import { closeSnackbar, SnackbarProvider } from 'notistack';
 
 import { CancelIcon } from './Components/CancelIcon';
@@ -20,6 +21,7 @@ export const PTBBuilder = ({
     isEditor: boolean;
     themeSwitch?: boolean;
     txData?: TransactionBlockData;
+    excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
   };
 }) => {
   return (
@@ -33,7 +35,11 @@ export const PTBBuilder = ({
           </IconButton>
         )}
       />
-      <PTBFlow network={network} themeSwitch={options.themeSwitch} />
+      <PTBFlow
+        network={network}
+        themeSwitch={options.themeSwitch}
+        excuteTx={options.excuteTx}
+      />
     </StateProvider>
   );
 };

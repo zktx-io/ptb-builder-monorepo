@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
+import { Transaction } from '@mysten/sui/transactions';
 import {
   addEdge,
   Background,
@@ -29,9 +30,11 @@ import { Parse } from '../Components/Parse';
 export const PTBFlow = ({
   network,
   themeSwitch,
+  excuteTx,
 }: {
   network: 'mainnet' | 'testnet' | 'devnet';
   themeSwitch?: boolean;
+  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
@@ -248,7 +251,7 @@ export const PTBFlow = ({
               </select>
             )}
           </div>
-          {isEditor && <Code nodes={nodes} edges={edges} />}
+          {isEditor && <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />}
           <Parse />
         </Panel>
         {menu && (
