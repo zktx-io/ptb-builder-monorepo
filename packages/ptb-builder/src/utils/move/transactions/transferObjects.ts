@@ -13,7 +13,11 @@ export const transferObjects = (
   if ('TransferObjects' in suiTx) {
     const [objects, address] = suiTx.TransferObjects;
 
-    if (objects.length === 1 && typeof objects[0] !== 'string') {
+    if (
+      objects.length === 1 &&
+      typeof objects[0] !== 'string' &&
+      !('Input' in objects[0])
+    ) {
       if ('Result' in objects[0]) {
         const temp = objects[0].Result;
         if (
@@ -40,6 +44,8 @@ export const transferObjects = (
             target: id,
             targetHandle: 'objects:object[]',
           });
+        } else {
+          // TODO
         }
       }
     } else {
