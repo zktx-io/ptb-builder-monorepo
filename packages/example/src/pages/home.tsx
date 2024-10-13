@@ -30,7 +30,9 @@ export const Home = () => {
           </>
         )}
       </div>
-      <div className="footer">Developed by zktx.io</div>
+      <div className="footer">
+        Developed by <strong>zktx.io</strong>
+      </div>
     </div>
   );
 };
