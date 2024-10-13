@@ -1,5 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
+import { enqueueSnackbar } from 'notistack';
 
 export const transferObjects = (
   index: number,
@@ -46,34 +47,70 @@ export const transferObjects = (
           });
         } else {
           // TODO
+          enqueueSnackbar(`not support (1) - ${JSON.stringify(objects[0])}`, {
+            variant: 'warning',
+          });
         }
+      } else {
+        // TODO
+        enqueueSnackbar(`not support (2) - ${JSON.stringify(objects[0])}`, {
+          variant: 'warning',
+        });
       }
     } else {
       const items: string[] = [];
+      const nestedItems: [number, number][] = [];
+
       objects.forEach((item) => {
-        if (typeof item !== 'string' && 'Input' in item) {
-          const temp = ptb.inputs[item.Input];
-          if (temp.type === 'object') {
-            items.push(temp.objectId);
+        if (typeof item !== 'string') {
+          if ('Input' in item) {
+            const temp = ptb.inputs[item.Input];
+            if (temp.type === 'object') {
+              items.push(temp.objectId);
+            } else {
+              enqueueSnackbar(`not support (3) - ${JSON.stringify(item)}`, {
+                variant: 'warning',
+              });
+            }
+          } else if ('NestedResult' in item) {
+            nestedItems.push(item.NestedResult as [number, number]);
+          } else {
+            enqueueSnackbar(`not support (4) - ${JSON.stringify(item)}`, {
+              variant: 'warning',
+            });
           }
         }
       });
-      inputs.push({
-        id: `input-${index}-0`,
-        position: { x: 0, y: 0 },
-        type: 'SuiObjectArray',
-        data: {
-          value: items,
-        },
-      });
-      edges.push({
-        id: `sub-${index}-0`,
-        type: 'Data',
-        source: `input-${index}-0`,
-        sourceHandle: 'inputs:object[]',
-        target: id,
-        targetHandle: 'objects:object[]',
-      });
+
+      if (nestedItems.length === 0 && items.length > 0) {
+        inputs.push({
+          id: `input-${index}-0`,
+          position: { x: 0, y: 0 },
+          type: 'SuiObjectArray',
+          data: {
+            value: items,
+          },
+        });
+        edges.push({
+          id: `sub-${index}-0`,
+          type: 'Data',
+          source: `input-${index}-0`,
+          sourceHandle: 'inputs:object[]',
+          target: id,
+          targetHandle: 'objects:object[]',
+        });
+      } else if (nestedItems.length > 0) {
+        // TODO
+        const temp = nestedItems[0][0];
+        edges.push({
+          id: `sub-${index}-0`,
+          type: 'Data',
+          source: `tx-${temp}`,
+          sourceHandle: 'result:object[]',
+          target: id,
+          targetHandle: 'objects:object[]',
+        });
+      }
     }
 
     if (typeof address !== 'string' && 'Input' in address) {

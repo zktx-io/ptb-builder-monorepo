@@ -8,8 +8,8 @@ import { Resizable } from 're-resizable';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import { generateCode } from '../utils/move/generateCode';
-import { generatePtb } from '../utils/move/generatePtb';
+import { generateCode } from '../utils/ptb/generateCode';
+import { generatePtb } from '../utils/ptb/generatePtb';
 
 export const Code = ({
   nodes,

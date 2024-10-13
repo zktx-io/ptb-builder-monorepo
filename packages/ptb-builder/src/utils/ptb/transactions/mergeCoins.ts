@@ -69,39 +69,71 @@ export const mergeCoins = (
           });
         } else {
           // TODO
+          enqueueSnackbar(`not support (1) - ${JSON.stringify(source[0])}`, {
+            variant: 'warning',
+          });
         }
       } else {
         // TODO
-        enqueueSnackbar(`not support - ${JSON.stringify(source[0])}`, {
+        enqueueSnackbar(`not support (2) - ${JSON.stringify(source[0])}`, {
           variant: 'warning',
         });
       }
     } else {
+      // TODO
       const items: string[] = [];
+      const nestedItems: [number, number][] = [];
+
       source.forEach((item) => {
-        if (typeof item !== 'string' && 'Input' in item) {
-          const temp = ptb.inputs[item.Input];
-          if (temp.type === 'object') {
-            items.push(temp.objectId);
+        if (typeof item !== 'string') {
+          if ('Input' in item) {
+            const temp = ptb.inputs[item.Input];
+            if (temp.type === 'object') {
+              items.push(temp.objectId);
+            } else {
+              enqueueSnackbar(`not support (3) - ${JSON.stringify(item)}`, {
+                variant: 'warning',
+              });
+            }
+          } else if ('NestedResult' in item) {
+            nestedItems.push(item.NestedResult as [number, number]);
+          } else {
+            enqueueSnackbar(`not support (4) - ${JSON.stringify(item)}`, {
+              variant: 'warning',
+            });
           }
         }
       });
-      inputs.push({
-        id: `input-${index}-1`,
-        position: { x: 0, y: 0 },
-        type: 'SuiObjectArray',
-        data: {
-          value: items,
-        },
-      });
-      edges.push({
-        id: `sub-${index}-1`,
-        type: 'Data',
-        source: `input-${index}-1`,
-        sourceHandle: 'inputs:object[]',
-        target: id,
-        targetHandle: 'source:object[]',
-      });
+
+      if (nestedItems.length === 0 && items.length > 0) {
+        inputs.push({
+          id: `input-${index}-1`,
+          position: { x: 0, y: 0 },
+          type: 'SuiObjectArray',
+          data: {
+            value: items,
+          },
+        });
+        edges.push({
+          id: `sub-${index}-1`,
+          type: 'Data',
+          source: `input-${index}-1`,
+          sourceHandle: 'inputs:object[]',
+          target: id,
+          targetHandle: 'source:object[]',
+        });
+      } else if (nestedItems.length > 0) {
+        // TODO
+        const temp = nestedItems[0][0];
+        edges.push({
+          id: `sub-${index}-1`,
+          type: 'Data',
+          source: `tx-${temp}`,
+          sourceHandle: 'result:object[]',
+          target: id,
+          targetHandle: 'source:object[]',
+        });
+      }
     }
   }
 
