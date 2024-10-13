@@ -1,6 +1,6 @@
 {
-  "short_name": "PTB Example",
-  "name": "Sui programmable transaction blocks builder",
+  "short_name": "PTB Builder",
+  "name": "Sui Programmable Transaction Blocks Builder",
   "icons": [
     {
       "src": "favicon.ico",
