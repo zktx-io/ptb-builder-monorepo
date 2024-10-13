@@ -34,8 +34,7 @@ export const Viewer = () => {
             showObjectChanges: true,
           },
         });
-        // console.log(res);
-        if (!res.errors && res.transaction) {
+        if (res.transaction) {
           setTxData(res.transaction.data);
         } else {
           enqueueSnackbar(`${res.errors?.toString()}`, {
