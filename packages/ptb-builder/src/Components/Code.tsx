@@ -51,12 +51,14 @@ export const Code = ({
         <input
           type="checkbox"
           checked={isVisible}
+          style={{ pointerEvents: 'all' }}
           onChange={() => setIsVisible((state) => !state)}
         />
       </div>
       {code && isVisible && (
         <Resizable
           className="Code"
+          style={{ pointerEvents: 'all' }}
           defaultSize={{
             width: '320px',
           }}
@@ -81,6 +83,7 @@ export const Code = ({
         <div className="flex items-center justify-end">
           <button
             className="bg-red-500 text-white font-semibold py-2 px-4 rounded transition duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400"
+            style={{ pointerEvents: 'all' }}
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleExcuteTransaction}
           >
