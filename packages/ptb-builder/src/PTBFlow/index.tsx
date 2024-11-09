@@ -11,7 +11,6 @@ import {
   Edge,
   MiniMap,
   Node,
-  Panel,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -22,6 +21,7 @@ import { PTBEdges } from './edges';
 import { PTBNodes } from './nodes';
 import { Code, ContextMenu, ContextProp } from '../Components';
 import { MENU } from '../Components/Menu.data';
+import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
 import { hasPath } from '../utils/hasPath';
 import { InputStyle } from './nodes/styles';
@@ -237,6 +237,7 @@ export const PTBFlow = ({
             {themeSwitch && (
               <select
                 className={InputStyle}
+                style={{ pointerEvents: 'all' }}
                 onChange={(e) => {
                   setColorMode(() => e.target.value as any);
                   if (e.target.value === 'dark') {
