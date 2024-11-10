@@ -30,7 +30,7 @@ jobs:
           npm run build
 
       - name: Deploy PTB Builder to Walrus
-        uses: zktx-io/walrus-sites-ga@v0.1.1
+        uses: zktx-io/walrus-sites-ga@v0.2.12
         with:
           config-path: '/tmp/example/builder.yaml'
           site-path: '/tmp/example/build'
