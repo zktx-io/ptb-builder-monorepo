@@ -2,7 +2,6 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import React from 'react';
 
 import type { PanelPosition } from '@xyflow/system';
-import cc from 'classcat';
 
 export type PanelProps = HTMLAttributes<HTMLDivElement> & {
   /** Set position of the panel
@@ -23,7 +22,7 @@ export const Panel = ({
 
   return (
     <div
-      className={cc(['react-flow__panel', className, ...positionClasses])}
+      className="react-flow__panel top right"
       style={{ ...style, pointerEvents: 'none' }}
       {...rest}
     >
