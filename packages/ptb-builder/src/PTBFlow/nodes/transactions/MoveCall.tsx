@@ -63,14 +63,15 @@ export const MoveCall = ({ id, data }: NodeProp) => {
         | 'vector<u128>'
         | 'vector<u256>'
         | undefined;
-      value?: string;
+      placeHolder: string;
+      value: string;
     }[]
-  >((data as any).handles || []);
-  const [inputValues, setInputValues] = useState<
-    { value: string; placeHolder: string }[]
   >(
     (data as any).handles
-      ? (data as any).handles.map((item: any) => ({ value: item.value || '' }))
+      ? (data as any).handles.map((item: any) => ({
+          ...item,
+          value: item.value || '',
+        }))
       : [],
   );
 
@@ -81,7 +82,9 @@ export const MoveCall = ({ id, data }: NodeProp) => {
         const select = Object.keys(temp)[0];
         setPackageData(temp);
         const list = Object.keys(temp[select].exposedFunctions).filter(
-          (item) => temp[select].exposedFunctions[item].isEntry,
+          (item) =>
+            temp[select].exposedFunctions[item].isEntry ||
+            temp[select].exposedFunctions[item].visibility === 'Public',
         );
         setSelectedModule(select);
         setFunctions(list);
@@ -114,26 +117,46 @@ export const MoveCall = ({ id, data }: NodeProp) => {
     setSelectedFunction(() => name);
     setSelectedFunctionArgs(() => []);
     const temp = data ? parameterFilter(data) : [];
-    setInputValues(() => {
-      return temp.length > 0
-        ? temp.map((item) => ({ value: '', placeHolder: getTypeName(item) }))
-        : [];
-    });
     setSelectedFunctionArgs(() =>
       temp.map((item, index) => {
         if (item === 'Address') {
-          return { id: `${PREFIX}${index}`, type: 'address' };
+          return {
+            id: `${PREFIX}${index}`,
+            type: 'address',
+            placeHolder: getTypeName(item),
+            value: '',
+          };
         }
         if (item === 'Bool') {
-          return { id: `${PREFIX}${index}`, type: 'bool' };
+          return {
+            id: `${PREFIX}${index}`,
+            type: 'bool',
+            placeHolder: getTypeName(item),
+            value: '',
+          };
         }
         if (typeof item === 'string' && numericTypes.has(item)) {
-          return { id: `${PREFIX}${index}`, type: 'number' };
+          return {
+            id: `${PREFIX}${index}`,
+            type: 'number',
+            placeHolder: getTypeName(item),
+            value: '',
+          };
         }
         if (objectTypes.has(Object.keys(item)[0])) {
-          return { id: `${PREFIX}${index}`, type: 'object' };
+          return {
+            id: `${PREFIX}${index}`,
+            type: 'object',
+            placeHolder: getTypeName(item),
+            value: '',
+          };
         }
-        return { id: `${PREFIX}${index}`, type: undefined };
+        return {
+          id: `${PREFIX}${index}`,
+          type: undefined,
+          placeHolder: getTypeName(item),
+          value: '',
+        };
       }),
     );
     updateNodeInternals(id);
@@ -319,71 +342,61 @@ export const MoveCall = ({ id, data }: NodeProp) => {
           </>
         )}
         <div>
-          {inputValues.length > 0 && (
+          {selectedFunctionArgs.length > 0 && (
             <>
               <div className="border-t border-gray-300 dark:border-stone-700 mt-2 mb-1" />
               <div>
-                {inputValues.map((item, key) => (
-                  <div key={key} className={FormStyle}>
-                    <label
-                      className={LabelStyle}
-                      style={{ fontSize: '0.6rem' }}
-                    >{`Arg ${key}`}</label>
-                    <input
-                      type="text"
-                      readOnly
-                      placeholder={item.placeHolder}
-                      autoComplete="off"
-                      className={InputStyle}
-                      value={item.value}
-                    />
-                  </div>
-                ))}
+                {selectedFunctionArgs.map((item, index) => {
+                  const top = `${200 + index * 42}px`;
+                  return (
+                    <div key={index} className={FormStyle}>
+                      <label
+                        className={LabelStyle}
+                        style={{ fontSize: '0.6rem' }}
+                      >{`Arg ${index}`}</label>
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder={item.placeHolder}
+                        autoComplete="off"
+                        className={InputStyle}
+                        value={item.value}
+                      />
+                      {item.type === 'address' ||
+                      item.type === 'bool' ||
+                      item.type === 'object' ||
+                      item.type === 'number' ? (
+                        <PtbHandle
+                          typeHandle="target"
+                          typeParams={item.type}
+                          node="transactions"
+                          name={`${PREFIX}${index}`}
+                          style={{ top }}
+                        />
+                      ) : item.type === 'vector<u8>' ||
+                        item.type === 'vector<u16>' ||
+                        item.type === 'vector<u32>' ||
+                        item.type === 'vector<u64>' ||
+                        item.type === 'vector<u128>' ||
+                        item.type === 'vector<u256>' ? (
+                        <PtbHandleVector
+                          typeHandle="target"
+                          typeParams={item.type}
+                          node="transactions"
+                          name={`${PREFIX}${index}`}
+                          style={{ top }}
+                        />
+                      ) : (
+                        <></>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
         </div>
       </div>
-
-      {selectedFunctionArgs.length > 0 &&
-        selectedFunctionArgs.map(({ type }, index) => {
-          const top = `${202 + index * 42}px`;
-          switch (type) {
-            case 'address':
-            case 'bool':
-            case 'object':
-            case 'number':
-              return (
-                <PtbHandle
-                  key={`handle-${selectedFunction}-${index}`}
-                  typeHandle="target"
-                  typeParams={type}
-                  node="transactions"
-                  name={`${PREFIX}${index}`}
-                  style={{ top }}
-                />
-              );
-            case 'vector<u8>':
-            case 'vector<u16>':
-            case 'vector<u32>':
-            case 'vector<u64>':
-            case 'vector<u128>':
-            case 'vector<u256>':
-              return (
-                <PtbHandleVector
-                  key={`handle-${selectedFunction}-${index}`}
-                  typeHandle="target"
-                  typeParams={type}
-                  node="transactions"
-                  name={`${PREFIX}${index}`}
-                  style={{ top }}
-                />
-              );
-            default:
-              break;
-          }
-          return <div key={index}></div>;
-        })}
 
       <PtbHandleProcess
         typeHandle="target"
