@@ -1,6 +1,7 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
 
+import { makeMoveVec } from './transactions/makeMoveVec';
 import { mergeCoins } from './transactions/mergeCoins';
 import { moveCall } from './transactions/moveCall';
 import { splitCoins } from './transactions/splitCoins';
@@ -29,6 +30,12 @@ export const createTransactions = (
   if ('TransferObjects' in suiTx) {
     type = 'TransferObjects';
     const res = transferObjects(index, ptb, suiTx, id);
+    edges.push(...res.edges);
+    inputs.push(...res.inputs);
+  }
+  if ('MakeMoveVec' in suiTx) {
+    type = 'MakeMoveVec';
+    const res = makeMoveVec(index, ptb, suiTx, id);
     edges.push(...res.edges);
     inputs.push(...res.inputs);
   }
