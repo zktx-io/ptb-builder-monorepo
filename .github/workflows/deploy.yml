@@ -34,7 +34,7 @@ jobs:
         with:
           site-path: '/tmp/example/build'
           network: 'testnet'
-          epochs: 365
+          epochs: 200
         env:
           SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
           SUI_KEYSTORE: ${{ secrets.SUI_KEYSTORE }}
