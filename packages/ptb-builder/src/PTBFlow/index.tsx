@@ -36,8 +36,8 @@ export const PTBFlow = ({
 }: {
   network: 'mainnet' | 'testnet' | 'devnet';
   themeSwitch?: boolean;
-  minZoom?: number;
-  maxZoom?: number;
+  minZoom: number;
+  maxZoom: number;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
@@ -202,8 +202,8 @@ export const PTBFlow = ({
         ref={ref}
         colorMode={colorMode}
         style={{ width: '100%', height: '100%' }}
-        minZoom={minZoom || 0.5}
-        maxZoom={maxZoom || 2.5}
+        minZoom={minZoom}
+        maxZoom={maxZoom}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
