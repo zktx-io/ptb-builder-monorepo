@@ -20,6 +20,8 @@ export const PTBBuilder = ({
   options: {
     isEditor: boolean;
     themeSwitch?: boolean;
+    minZoom?: number;
+    maxZoom?: number;
     txData?: TransactionBlockData;
     excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
   };
@@ -39,6 +41,8 @@ export const PTBBuilder = ({
         network={network}
         themeSwitch={options.themeSwitch}
         excuteTx={options.excuteTx}
+        minZoom={options.minZoom || 0.25}
+        maxZoom={options.maxZoom || 2}
       />
     </StateProvider>
   );
