@@ -33,6 +33,7 @@ jobs:
         uses: zktx-io/walrus-sites-ga@v0.2.14
         with:
           site-path: '/tmp/example/build'
+          object-id: '0x1a64a12447b5581ba4dd40cb0cd8f9bb485a7db3b42789158e467e5e5c531af8'
           network: 'testnet'
           epochs: 200
         env:
