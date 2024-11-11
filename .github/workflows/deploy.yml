@@ -36,6 +36,7 @@ jobs:
           site-path: '/tmp/example/build'
           object-id: '0x3775073e034e82a7f9f4e76e9f9c1eaa52d3497b24e7ae40aa120dfb7ff06f6b'
           network: 'testnet'
+          epochs: 365
         env:
           SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
           SUI_KEYSTORE: ${{ secrets.SUI_KEYSTORE }}
