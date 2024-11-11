@@ -1,6 +1,5 @@
 {
   "name": "@zktx.io/ptb-builder-monorepo",
-  "version": "0.0.6",
   "scripts": {
     "lint": "eslint 'packages/**/*.{js,jsx,ts,tsx}'",
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
