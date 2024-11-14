@@ -4,7 +4,8 @@
     "lint": "eslint 'packages/**/*.{js,jsx,ts,tsx}'",
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
     "build": "cd packages/ptb-builder && npm run build",
-    "start": "npm run build && cd packages/example && npm run start"
+    "start": "npm run build && cd packages/example && npm run start",
+    "prepare": "husky install"
   },
   "author": "daoauth",
   "license": "ISC",
