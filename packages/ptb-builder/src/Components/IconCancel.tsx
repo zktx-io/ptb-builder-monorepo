@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const CancelIcon = ({ size = 24, color = 'black' }) => {
+export const IconCancel = ({ size = 24, color = 'black' }) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

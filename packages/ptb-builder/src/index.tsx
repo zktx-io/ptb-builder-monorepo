@@ -4,8 +4,8 @@ import { TransactionBlockData } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { closeSnackbar, SnackbarProvider } from 'notistack';
 
-import { CancelIcon } from './Components/CancelIcon';
 import { IconButton } from './Components/IconButton';
+import { IconCancel } from './Components/IconCancel';
 import { StateProvider } from './Provider';
 import { PTBFlow } from './PTBFlow';
 
@@ -33,7 +33,7 @@ export const PTBBuilder = ({
         hideIconVariant
         action={(snackbarId) => (
           <IconButton onClick={() => closeSnackbar(snackbarId)}>
-            <CancelIcon size={20} color="white" />
+            <IconCancel size={20} color="white" />
           </IconButton>
         )}
       />
