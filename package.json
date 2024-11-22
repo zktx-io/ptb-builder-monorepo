@@ -5,6 +5,7 @@
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
     "build": "cd packages/ptb-builder && npm run build",
     "start": "npm run build && cd packages/example && npm run start",
+    "version:patch": "lerna version patch",
     "prepare": "husky install"
   },
   "author": "daoauth",
@@ -23,6 +24,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "globals": "^15.10.0",
     "husky": "^9.1.6",
+    "lerna": "^8.1.9",
     "lint-staged": "^15.2.10",
     "prettier": "^3.3.3",
     "typescript-eslint": "^8.8.0"
