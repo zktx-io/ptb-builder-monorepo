@@ -57,10 +57,9 @@ export const Viewer = () => {
     <div style={{ width: '100vw', height: '100vh' }}>
       <PTBBuilder
         network={NETWORK}
+        txData={txData}
         options={{
           themeSwitch: true,
-          isEditor: false,
-          txData,
         }}
       />
     </div>

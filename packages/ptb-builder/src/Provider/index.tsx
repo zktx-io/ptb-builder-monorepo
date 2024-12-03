@@ -28,6 +28,7 @@ export interface IState {
   network: NETWORK;
   client?: SuiClient;
   txData?: TransactionBlockData;
+  ptbJson?: string;
   address?: string;
 }
 
@@ -40,12 +41,14 @@ export const StateProvider = ({
   isEditor,
   network,
   txData,
+  ptbJson,
   children,
   address,
 }: {
   isEditor: boolean;
   network: NETWORK;
   txData?: TransactionBlockData;
+  ptbJson?: string;
   address?: string;
   children: ReactNode;
 }) => {
@@ -58,8 +61,8 @@ export const StateProvider = ({
   });
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, isEditor, txData }));
-  }, [isEditor, txData]);
+    setState((oldState) => ({ ...oldState, isEditor, txData, ptbJson }));
+  }, [isEditor, txData, ptbJson]);
 
   return (
     <StateContext.Provider value={state}>

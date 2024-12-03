@@ -22,7 +22,7 @@ import { PTBNodes } from './nodes';
 import { Code, ContextMenu, ContextProp } from '../Components';
 import { MENU } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
-import { useStateContext, useStateUpdateContext } from '../Provider';
+import { NETWORK, useStateContext, useStateUpdateContext } from '../Provider';
 import { hasPath } from '../utilities/hasPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
@@ -33,16 +33,18 @@ export const PTBFlow = ({
   minZoom,
   maxZoom,
   excuteTx,
-  onUpdate,
-  initialNodes,
+  onChange,
 }: {
   networkSwitch: boolean;
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
-  initialNodes?: string;
-  onUpdate?: (ptbJson: string) => void;
+  onChange: (flowData: {
+    network: NETWORK;
+    nodes: Node[];
+    edges: Edge[];
+  }) => void;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
@@ -173,8 +175,9 @@ export const PTBFlow = ({
   }, [network, setState]);
 
   useEffect(() => {
+    onChange && onChange({ network, nodes, edges });
     setState((oldData) => ({ ...oldData, hasPath: hasPath(nodes, edges) }));
-  }, [edges, nodes, setState]);
+  }, [edges, network, nodes, onChange, setState]);
 
   useEffect(() => {
     if (isEditor && !initialized.current) {

@@ -8,7 +8,7 @@ import { IconButton } from './Components/IconButton';
 import { IconCancel } from './Components/IconCancel';
 import { NETWORK, StateProvider } from './Provider';
 import { PTBFlow } from './PTBFlow';
-
+import { toJson } from './utilities/json/toJson';
 import '@xyflow/react/dist/base.css';
 import './index.css';
 
@@ -16,16 +16,17 @@ export const PTBBuilder = ({
   address,
   network,
   txData,
+  ptbJson,
+  onChange,
   excuteTx,
-  initialNodes,
   options,
 }: {
   address?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
   txData?: TransactionBlockData;
+  ptbJson?: string;
+  onChange?: (ptbJson: string) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
-  onUpdate?: (ptbJson: string) => void;
-  initialNodes?: string;
   options?: {
     themeSwitch?: boolean;
     minZoom?: number;
@@ -36,6 +37,7 @@ export const PTBBuilder = ({
     <StateProvider
       address={address}
       txData={txData}
+      ptbJson={ptbJson}
       isEditor={!txData}
       network={(network as NETWORK | undefined) || NETWORK.DevNet}
     >
@@ -51,8 +53,10 @@ export const PTBBuilder = ({
       <PTBFlow
         networkSwitch={!network}
         excuteTx={excuteTx}
-        initialNodes={initialNodes}
         themeSwitch={options?.themeSwitch}
+        onChange={(data) => {
+          onChange && onChange(toJson({ ...data }));
+        }}
         minZoom={options?.minZoom || 0.25}
         maxZoom={options?.maxZoom || 2}
       />

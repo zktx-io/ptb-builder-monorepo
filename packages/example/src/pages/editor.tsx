@@ -49,10 +49,12 @@ export const Editor = () => {
       {account ? (
         <PTBBuilder
           network={NETWORK}
+          excuteTx={excuteTx}
+          onChange={(value) => {
+            // console.log(value);
+          }}
           options={{
             themeSwitch: true,
-            isEditor: true,
-            excuteTx,
           }}
         />
       ) : (
