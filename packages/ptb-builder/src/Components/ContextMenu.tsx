@@ -11,7 +11,7 @@ import { enqueueSnackbar } from 'notistack';
 
 import { MENU, MENU_EDGE, MENU_NODE, MenuItem, MenuList } from './Menu.data';
 import { MenuStyle, MenuSubStyle } from '../PTBFlow/nodes/styles';
-import { getLayoutedElements } from '../utils/getLayoutedElements';
+import { getLayoutedElements } from '../utilities/getLayoutedElements';
 
 export interface ContextProp {
   selected?: Node | Edge;

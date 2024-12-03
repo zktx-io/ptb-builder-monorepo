@@ -4,8 +4,8 @@ import { TransactionBlockData } from '@mysten/sui/client';
 import { useReactFlow } from '@xyflow/react';
 
 import { useStateContext } from '../Provider';
-import { getLayoutedElements } from '../utils/getLayoutedElements';
-import { parsePtb } from '../utils/ptb/parsePtb';
+import { getLayoutedElements } from '../utilities/getLayoutedElements';
+import { parsePtb } from '../utilities/ptb/parsePtb';
 
 export const Parse = () => {
   const { txData } = useStateContext();

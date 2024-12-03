@@ -17,12 +17,15 @@ export const PTBBuilder = ({
   network,
   txData,
   excuteTx,
+  initialNodes,
   options,
 }: {
   address?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
   txData?: TransactionBlockData;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  onUpdate?: (ptbJson: string) => void;
+  initialNodes?: string;
   options?: {
     themeSwitch?: boolean;
     minZoom?: number;
@@ -48,6 +51,7 @@ export const PTBBuilder = ({
       <PTBFlow
         networkSwitch={!network}
         excuteTx={excuteTx}
+        initialNodes={initialNodes}
         themeSwitch={options?.themeSwitch}
         minZoom={options?.minZoom || 0.25}
         maxZoom={options?.maxZoom || 2}

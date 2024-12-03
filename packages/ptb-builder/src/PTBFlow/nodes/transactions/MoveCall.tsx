@@ -10,9 +10,9 @@ import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
 import { useStateContext } from '../../../Provider';
-import { getTypeName } from '../../../utils/getTypeName';
-import { loadPackageData } from '../../../utils/loadPackageData';
-import { parameterFilter } from '../../../utils/parameterFilter';
+import { getTypeName } from '../../../utilities/getTypeName';
+import { loadPackageData } from '../../../utilities/loadPackageData';
+import { parameterFilter } from '../../../utilities/parameterFilter';
 import { PtbHandle, PtbHandleProcess, PtbHandleVector } from '../handles';
 import {
   ButtonStyles,

@@ -23,7 +23,7 @@ import { Code, ContextMenu, ContextProp } from '../Components';
 import { MENU } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
-import { hasPath } from '../utils/hasPath';
+import { hasPath } from '../utilities/hasPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
 
@@ -33,12 +33,16 @@ export const PTBFlow = ({
   minZoom,
   maxZoom,
   excuteTx,
+  onUpdate,
+  initialNodes,
 }: {
   networkSwitch: boolean;
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  initialNodes?: string;
+  onUpdate?: (ptbJson: string) => void;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
