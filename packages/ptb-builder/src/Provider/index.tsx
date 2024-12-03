@@ -28,6 +28,7 @@ export interface IState {
   network: NETWORK;
   client?: SuiClient;
   txData?: TransactionBlockData;
+  address?: string;
 }
 
 const StateContext = createContext<IState | undefined>(undefined);
@@ -40,17 +41,20 @@ export const StateProvider = ({
   network,
   txData,
   children,
+  address,
 }: {
   isEditor: boolean;
   network: NETWORK;
   txData?: TransactionBlockData;
+  address?: string;
   children: ReactNode;
 }) => {
   const [state, setState] = useState<IState>({
+    network,
     colorMode: 'dark',
     hasPath: false,
     isEditor,
-    network,
+    address,
   });
 
   useEffect(() => {

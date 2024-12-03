@@ -13,23 +13,27 @@ import '@xyflow/react/dist/base.css';
 import './index.css';
 
 export const PTBBuilder = ({
+  address,
   network,
+  txData,
+  excuteTx,
   options,
 }: {
+  address?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
-  options: {
-    isEditor: boolean;
+  txData?: TransactionBlockData;
+  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  options?: {
     themeSwitch?: boolean;
     minZoom?: number;
     maxZoom?: number;
-    txData?: TransactionBlockData;
-    excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
   };
 }) => {
   return (
     <StateProvider
-      txData={options.txData}
-      isEditor={options.isEditor}
+      address={address}
+      txData={txData}
+      isEditor={!txData}
       network={(network as NETWORK | undefined) || NETWORK.DevNet}
     >
       <SnackbarProvider
@@ -43,10 +47,10 @@ export const PTBBuilder = ({
       />
       <PTBFlow
         networkSwitch={!network}
-        themeSwitch={options.themeSwitch}
-        excuteTx={options.excuteTx}
-        minZoom={options.minZoom || 0.25}
-        maxZoom={options.maxZoom || 2}
+        excuteTx={excuteTx}
+        themeSwitch={options?.themeSwitch}
+        minZoom={options?.minZoom || 0.25}
+        maxZoom={options?.maxZoom || 2}
       />
     </StateProvider>
   );
