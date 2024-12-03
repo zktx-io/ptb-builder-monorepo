@@ -50,7 +50,7 @@ export const Editor = () => {
         <PTBBuilder
           network={NETWORK}
           excuteTx={excuteTx}
-          onChange={(value) => {
+          onChange={(value: any) => {
             // console.log(value);
           }}
           options={{
