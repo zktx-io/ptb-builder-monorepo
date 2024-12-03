@@ -49,6 +49,8 @@ export const PTBFlow = ({
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
   const initialized = useRef<boolean>(false);
+  // eslint-disable-next-line no-restricted-syntax
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const setState = useStateUpdateContext();
   const { isEditor, network } = useStateContext();
@@ -175,9 +177,21 @@ export const PTBFlow = ({
   }, [network, setState]);
 
   useEffect(() => {
-    onChange && onChange({ network, nodes, edges });
+    if (nodes.length || edges.length) {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      debounceRef.current = setTimeout(() => {
+        onChange({ network, nodes, edges });
+        // eslint-disable-next-line no-restricted-syntax
+        debounceRef.current = null;
+      }, 300); // 300ms 지연
+    }
+  }, [nodes, edges, network, onChange]);
+
+  useEffect(() => {
     setState((oldData) => ({ ...oldData, hasPath: hasPath(nodes, edges) }));
-  }, [edges, network, nodes, onChange, setState]);
+  }, [edges, nodes, setState]);
 
   useEffect(() => {
     if (isEditor && !initialized.current) {
