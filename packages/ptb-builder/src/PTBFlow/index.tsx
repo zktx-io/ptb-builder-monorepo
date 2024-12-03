@@ -28,13 +28,13 @@ import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
 
 export const PTBFlow = ({
-  network,
+  networkSwitch,
   themeSwitch,
   minZoom,
   maxZoom,
   excuteTx,
 }: {
-  network: 'mainnet' | 'testnet' | 'devnet';
+  networkSwitch: boolean;
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
@@ -45,7 +45,7 @@ export const PTBFlow = ({
   const initialized = useRef<boolean>(false);
 
   const setState = useStateUpdateContext();
-  const { isEditor } = useStateContext();
+  const { isEditor, network } = useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -233,17 +233,40 @@ export const PTBFlow = ({
             gap: '10px',
           }}
         >
-          <div
-            style={{
-              textAlign: 'right',
-              display: 'inline-block',
-              fontSize: '12px',
-            }}
-          >
-            {themeSwitch && (
+          {networkSwitch && (
+            <div
+              style={{
+                textAlign: 'right',
+                display: 'inline-block',
+                fontSize: '12px',
+              }}
+            >
               <select
                 className={InputStyle}
-                style={{ pointerEvents: 'all' }}
+                style={{ pointerEvents: 'all', width: '85px' }}
+                onChange={(e) => {
+                  setState((oldData) => ({
+                    ...oldData,
+                    network: e.target.value as any,
+                  }));
+                }}
+              >
+                <option value="testnet">Testnet</option>
+                <option value="devnet">Devnet</option>
+              </select>
+            </div>
+          )}
+          {themeSwitch && (
+            <div
+              style={{
+                textAlign: 'right',
+                display: 'inline-block',
+                fontSize: '12px',
+              }}
+            >
+              <select
+                className={InputStyle}
+                style={{ pointerEvents: 'all', width: '85px' }}
                 onChange={(e) => {
                   setColorMode(() => e.target.value as any);
                   if (e.target.value === 'dark') {
@@ -256,8 +279,8 @@ export const PTBFlow = ({
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
               </select>
-            )}
-          </div>
+            </div>
+          )}
           {isEditor && <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />}
           <Parse />
         </Panel>

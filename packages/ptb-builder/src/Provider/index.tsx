@@ -21,29 +21,11 @@ export const NETWORKS: NETWORK[] = [
   // NETWORK.MainNet,
 ];
 
-export interface INonce {
-  expiration: number;
-  randomness: string;
-  network: NETWORK;
-  publicKey: string;
-  privateKey?: string; // TODO: fix webauthn
-}
-
-export interface IAccount {
-  nonce: INonce;
-  zkAddress?: {
-    address: string;
-    proof: string;
-    salt: string;
-    jwt: string;
-  };
-}
-
 export interface IState {
   colorMode: ColorModeClass;
   hasPath: boolean;
   isEditor: boolean;
-  account?: IAccount;
+  network: NETWORK;
   client?: SuiClient;
   txData?: TransactionBlockData;
 }
@@ -55,10 +37,12 @@ const StateUpdateContext = createContext<
 
 export const StateProvider = ({
   isEditor,
+  network,
   txData,
   children,
 }: {
   isEditor: boolean;
+  network: NETWORK;
   txData?: TransactionBlockData;
   children: ReactNode;
 }) => {
@@ -66,6 +50,7 @@ export const StateProvider = ({
     colorMode: 'dark',
     hasPath: false,
     isEditor,
+    network,
   });
 
   useEffect(() => {

@@ -6,7 +6,7 @@ import { closeSnackbar, SnackbarProvider } from 'notistack';
 
 import { IconButton } from './Components/IconButton';
 import { IconCancel } from './Components/IconCancel';
-import { StateProvider } from './Provider';
+import { NETWORK, StateProvider } from './Provider';
 import { PTBFlow } from './PTBFlow';
 
 import '@xyflow/react/dist/base.css';
@@ -16,7 +16,7 @@ export const PTBBuilder = ({
   network,
   options,
 }: {
-  network: 'mainnet' | 'testnet' | 'devnet';
+  network?: 'mainnet' | 'testnet' | 'devnet';
   options: {
     isEditor: boolean;
     themeSwitch?: boolean;
@@ -27,7 +27,11 @@ export const PTBBuilder = ({
   };
 }) => {
   return (
-    <StateProvider txData={options.txData} isEditor={options.isEditor}>
+    <StateProvider
+      txData={options.txData}
+      isEditor={options.isEditor}
+      network={(network as NETWORK | undefined) || NETWORK.DevNet}
+    >
       <SnackbarProvider
         anchorOrigin={{ horizontal: 'right', vertical: 'top' }}
         hideIconVariant
@@ -38,7 +42,7 @@ export const PTBBuilder = ({
         )}
       />
       <PTBFlow
-        network={network}
+        networkSwitch={!network}
         themeSwitch={options.themeSwitch}
         excuteTx={options.excuteTx}
         minZoom={options.minZoom || 0.25}
