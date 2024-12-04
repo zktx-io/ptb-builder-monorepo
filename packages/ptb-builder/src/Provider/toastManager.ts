@@ -1,4 +1,3 @@
-// toastManager.ts (패키지 내부 파일)
 export type ToastVariant = 'error' | 'info' | 'success' | 'warning';
 export type EnqueueToast = (
   message: string,
