@@ -8,37 +8,34 @@ import { IconButton } from './Components/IconButton';
 import { IconCancel } from './Components/IconCancel';
 import { NETWORK, StateProvider } from './Provider';
 import { PTBFlow } from './PTBFlow';
-import { toJson } from './utilities/json/toJson';
 import '@xyflow/react/dist/base.css';
 import './index.css';
 
 export const PTBBuilder = ({
   address,
   network,
-  txData,
-  ptbJson,
-  onChange,
+  txbOrPtb,
+  update,
   excuteTx,
   options,
 }: {
   address?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
-  txData?: TransactionBlockData;
-  ptbJson?: string;
-  onChange?: (ptbJson: string) => void;
+  txbOrPtb?: TransactionBlockData | string;
+  update?: (ptbJson: string) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
   options?: {
     themeSwitch?: boolean;
     minZoom?: number;
     maxZoom?: number;
+    isEditor?: boolean;
   };
 }) => {
   return (
     <StateProvider
       address={address}
-      txData={txData}
-      ptbJson={ptbJson}
-      isEditor={!txData}
+      txbOrPtb={txbOrPtb}
+      isEditor={options ? !!options.isEditor : false}
       network={(network as NETWORK | undefined) || NETWORK.DevNet}
     >
       <SnackbarProvider
@@ -54,8 +51,8 @@ export const PTBBuilder = ({
         networkSwitch={!network}
         excuteTx={excuteTx}
         themeSwitch={options?.themeSwitch}
-        onChange={(data) => {
-          onChange && onChange(toJson({ ...data }));
+        update={(data) => {
+          update && update(data);
         }}
         minZoom={options?.minZoom || 0.25}
         maxZoom={options?.maxZoom || 2}

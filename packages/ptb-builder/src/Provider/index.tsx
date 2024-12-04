@@ -27,9 +27,9 @@ export interface IState {
   isEditor: boolean;
   network: NETWORK;
   client?: SuiClient;
-  txData?: TransactionBlockData;
-  ptbJson?: string;
+  txbOrPtb?: TransactionBlockData | string;
   address?: string;
+  disableUpdate?: boolean;
 }
 
 const StateContext = createContext<IState | undefined>(undefined);
@@ -40,15 +40,13 @@ const StateUpdateContext = createContext<
 export const StateProvider = ({
   isEditor,
   network,
-  txData,
-  ptbJson,
+  txbOrPtb,
   children,
   address,
 }: {
   isEditor: boolean;
   network: NETWORK;
-  txData?: TransactionBlockData;
-  ptbJson?: string;
+  txbOrPtb?: TransactionBlockData | string;
   address?: string;
   children: ReactNode;
 }) => {
@@ -61,8 +59,8 @@ export const StateProvider = ({
   });
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, isEditor, txData, ptbJson }));
-  }, [isEditor, txData, ptbJson]);
+    setState((oldState) => ({ ...oldState, isEditor, txbOrPtb }));
+  }, [isEditor, txbOrPtb]);
 
   return (
     <StateContext.Provider value={state}>

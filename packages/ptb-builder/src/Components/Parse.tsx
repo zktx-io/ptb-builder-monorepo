@@ -11,7 +11,7 @@ import { parsePtb } from '../utilities/ptb/parsePtb';
 
 export const Parse = () => {
   const setState = useStateUpdateContext();
-  const { txData, ptbJson } = useStateContext();
+  const { txbOrPtb } = useStateContext();
   const { fitView, getNodes, getEdges, setNodes, setEdges } = useReactFlow();
   useEffect(() => {
     const autoLayout = async (data: TransactionBlockData | string) => {
@@ -37,18 +37,9 @@ export const Parse = () => {
         setEdges([...savedEdges]);
         setState((oldState) => ({ ...oldState, network: network as NETWORK }));
       }
+      setState((oldState) => ({ ...oldState, disableUpdate: true }));
     };
-    txData && setTimeout(() => autoLayout(txData), 50);
-    !txData && ptbJson && setTimeout(() => autoLayout(ptbJson), 50);
-  }, [
-    fitView,
-    getEdges,
-    getNodes,
-    ptbJson,
-    setEdges,
-    setNodes,
-    setState,
-    txData,
-  ]);
+    txbOrPtb && autoLayout(txbOrPtb);
+  }, [fitView, getEdges, getNodes, setEdges, setNodes, setState, txbOrPtb]);
   return <></>;
 };

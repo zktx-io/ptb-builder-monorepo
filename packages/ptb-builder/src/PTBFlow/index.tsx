@@ -22,29 +22,26 @@ import { PTBNodes } from './nodes';
 import { Code, ContextMenu, ContextProp } from '../Components';
 import { MENU } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
-import { NETWORK, useStateContext, useStateUpdateContext } from '../Provider';
+import { useStateContext, useStateUpdateContext } from '../Provider';
 import { hasPath } from '../utilities/hasPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
+import { toJson } from '../utilities/json/toJson';
 
 export const PTBFlow = ({
   networkSwitch,
   themeSwitch,
   minZoom,
   maxZoom,
+  update,
   excuteTx,
-  onChange,
 }: {
   networkSwitch: boolean;
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
+  update: (json: string) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
-  onChange: (flowData: {
-    network: NETWORK;
-    nodes: Node[];
-    edges: Edge[];
-  }) => void;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
@@ -53,10 +50,11 @@ export const PTBFlow = ({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const setState = useStateUpdateContext();
-  const { isEditor, network } = useStateContext();
+  const { isEditor, network, disableUpdate } = useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [ptbJson, setPtbJson] = useState<string>('');
 
   const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
   const [menu, setMenu] = useState<ContextProp | undefined>(undefined);
@@ -182,12 +180,18 @@ export const PTBFlow = ({
         clearTimeout(debounceRef.current);
       }
       debounceRef.current = setTimeout(() => {
-        onChange({ network, nodes, edges });
+        const json = toJson({ network, nodes, edges });
+        if (!disableUpdate && ptbJson !== json) {
+          update(json);
+        } else {
+          setPtbJson(json);
+          setState((oldState) => ({ ...oldState, disableUpdate: false }));
+        }
         // eslint-disable-next-line no-restricted-syntax
         debounceRef.current = null;
-      }, 300); // 300ms 지연
+      }, 30);
     }
-  }, [nodes, edges, network, onChange]);
+  }, [disableUpdate, edges, network, nodes, ptbJson, setState, update]);
 
   useEffect(() => {
     setState((oldData) => ({ ...oldData, hasPath: hasPath(nodes, edges) }));
