@@ -29,14 +29,14 @@ import { Parse } from '../Components/Parse';
 import { toJson } from '../utilities/json/toJson';
 
 export const PTBFlow = ({
-  networkSwitch,
+  disableNetwork,
   themeSwitch,
   minZoom,
   maxZoom,
   update,
   excuteTx,
 }: {
-  networkSwitch: boolean;
+  disableNetwork: boolean;
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
@@ -258,29 +258,29 @@ export const PTBFlow = ({
             gap: '10px',
           }}
         >
-          {networkSwitch && (
-            <div
-              style={{
-                textAlign: 'right',
-                display: 'inline-block',
-                fontSize: '12px',
+          <div
+            style={{
+              textAlign: 'right',
+              display: 'inline-block',
+              fontSize: '12px',
+            }}
+          >
+            <select
+              className={InputStyle}
+              style={{ pointerEvents: 'all', width: '85px' }}
+              disabled={disableNetwork}
+              value={network}
+              onChange={(e) => {
+                setState((oldData) => ({
+                  ...oldData,
+                  network: e.target.value as any,
+                }));
               }}
             >
-              <select
-                className={InputStyle}
-                style={{ pointerEvents: 'all', width: '85px' }}
-                onChange={(e) => {
-                  setState((oldData) => ({
-                    ...oldData,
-                    network: e.target.value as any,
-                  }));
-                }}
-              >
-                <option value="testnet">Testnet</option>
-                <option value="devnet">Devnet</option>
-              </select>
-            </div>
-          )}
+              <option value="testnet">Testnet</option>
+              <option value="devnet">Devnet</option>
+            </select>
+          </div>
           {themeSwitch && (
             <div
               style={{

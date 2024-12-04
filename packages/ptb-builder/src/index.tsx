@@ -48,8 +48,8 @@ export const PTBBuilder = ({
         )}
       />
       <PTBFlow
-        networkSwitch={!network}
         excuteTx={excuteTx}
+        disableNetwork={!!network}
         themeSwitch={options?.themeSwitch}
         update={(data) => {
           update && update(data);
