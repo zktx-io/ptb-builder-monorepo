@@ -56,6 +56,7 @@ export const Editor = () => {
             // console.log(value);
           }}
           options={{
+            isEditor: true,
             themeSwitch: true,
           }}
         />
