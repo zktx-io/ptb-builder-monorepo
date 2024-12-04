@@ -24,11 +24,14 @@ export const Code = ({
 
   const [code, setCode] = useState<string>('');
   const [isVisible, setIsVisible] = useState<boolean>(true);
+  const [isExcute, setIsExcute] = useState<boolean>(false);
 
   const handleExcuteTransaction = async () => {
-    if (excuteTx) {
+    if (excuteTx && !isExcute) {
+      setIsExcute(true);
       const transaction = await generatePtb(nodes, edges);
       await excuteTx(transaction);
+      setIsExcute(false);
     }
   };
 
@@ -82,7 +85,8 @@ export const Code = ({
       {code && isVisible && !!excuteTx && (
         <div className="flex items-center justify-end">
           <button
-            className="bg-red-500 text-white font-semibold py-2 px-4 rounded transition duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400"
+            disabled={isExcute}
+            className="bg-red-500 text-white font-semibold py-2 px-4 rounded transition duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-400 disabled:cursor-not-allowed"
             style={{ pointerEvents: 'all' }}
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleExcuteTransaction}
