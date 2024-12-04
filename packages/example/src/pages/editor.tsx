@@ -59,6 +59,7 @@ export const Editor = () => {
             isEditor: true,
             themeSwitch: true,
           }}
+          enqueueToast={(message, options) => enqueueSnackbar(message, options)}
         />
       ) : (
         <div
