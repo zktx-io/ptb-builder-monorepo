@@ -2,9 +2,9 @@ import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
 import { Node } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
+import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 import { CodeParam } from '../types';
@@ -34,7 +34,7 @@ export const TransferObjects = ({ id, data }: NodeProp) => {
           address = addressNode.source.data.value as string;
         } else {
           // TODO
-          enqueueSnackbar(`not support - ${addressNode.source.type}`, {
+          enqueueToast(`not support - ${addressNode.source.type}`, {
             variant: 'warning',
           });
         }
@@ -53,7 +53,7 @@ export const TransferObjects = ({ id, data }: NodeProp) => {
           temp && objects.push(...temp.value);
         } else {
           // TODO
-          enqueueSnackbar(`not support - ${inputs.source.type}`, {
+          enqueueToast(`not support - ${inputs.source.type}`, {
             variant: 'warning',
           });
         }

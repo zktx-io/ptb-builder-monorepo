@@ -1,5 +1,6 @@
 import { SuiClient, SuiMoveNormalizedModules } from '@mysten/sui/client';
-import { enqueueSnackbar } from 'notistack';
+
+import { enqueueToast } from '../Provider/toastManager';
 
 export const loadPackageData = async (
   client: SuiClient | undefined,
@@ -13,13 +14,13 @@ export const loadPackageData = async (
         });
       return modules;
     } catch (error) {
-      enqueueSnackbar(`${error}`, {
+      enqueueToast(`${error}`, {
         variant: 'error',
       });
       return undefined;
     }
   }
-  enqueueSnackbar('client error', {
+  enqueueToast('client error', {
     variant: 'error',
   });
   return undefined;

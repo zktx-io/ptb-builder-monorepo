@@ -7,9 +7,9 @@ import {
   useViewport,
   XYPosition,
 } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
 
 import { MENU, MENU_EDGE, MENU_NODE, MenuItem, MenuList } from './Menu.data';
+import { enqueueToast } from '../Provider/toastManager';
 import { MenuStyle, MenuSubStyle } from '../PTBFlow/nodes/styles';
 import { getLayoutedElements } from '../utilities/getLayoutedElements';
 
@@ -51,7 +51,7 @@ export const ContextMenu = ({
         fitView();
       }, 1);
     } catch (error) {
-      enqueueSnackbar(`${error}`, {
+      enqueueToast(`${error}`, {
         variant: 'error',
       });
     }

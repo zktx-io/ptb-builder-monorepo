@@ -2,11 +2,9 @@ import React from 'react';
 
 import { TransactionBlockData } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { closeSnackbar, SnackbarProvider } from 'notistack';
 
-import { IconButton } from './Components/IconButton';
-import { IconCancel } from './Components/IconCancel';
 import { NETWORK, StateProvider } from './Provider';
+import { EnqueueToast } from './Provider/toastManager';
 import { PTBFlow } from './PTBFlow';
 import '@xyflow/react/dist/base.css';
 import './index.css';
@@ -17,6 +15,7 @@ export const PTBBuilder = ({
   txbOrPtb,
   update,
   excuteTx,
+  enqueueToast,
   options,
 }: {
   address?: string;
@@ -24,6 +23,7 @@ export const PTBBuilder = ({
   txbOrPtb?: TransactionBlockData | string;
   update?: (ptbJson: string) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  enqueueToast?: EnqueueToast;
   options?: {
     themeSwitch?: boolean;
     minZoom?: number;
@@ -37,16 +37,8 @@ export const PTBBuilder = ({
       txbOrPtb={txbOrPtb}
       isEditor={options ? !!options.isEditor : false}
       network={(network as NETWORK | undefined) || NETWORK.DevNet}
+      enqueueToast={enqueueToast}
     >
-      <SnackbarProvider
-        anchorOrigin={{ horizontal: 'right', vertical: 'top' }}
-        hideIconVariant
-        action={(snackbarId) => (
-          <IconButton onClick={() => closeSnackbar(snackbarId)}>
-            <IconCancel size={20} color="white" />
-          </IconButton>
-        )}
-      />
       <PTBFlow
         excuteTx={excuteTx}
         disableNetwork={!!network}

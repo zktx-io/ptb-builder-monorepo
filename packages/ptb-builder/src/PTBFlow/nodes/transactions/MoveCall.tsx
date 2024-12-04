@@ -6,10 +6,10 @@ import {
 } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { Node, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
 
 import { type NodeProp } from '..';
 import { useStateContext } from '../../../Provider';
+import { enqueueToast } from '../../../Provider/toastManager';
 import { getTypeName } from '../../../utilities/getTypeName';
 import { loadPackageData } from '../../../utilities/loadPackageData';
 import { parameterFilter } from '../../../utilities/parameterFilter';
@@ -230,7 +230,7 @@ export const MoveCall = ({ id, data }: NodeProp) => {
       });
       return { transaction, result };
       */
-      enqueueSnackbar(`not support - MoveCall`, {
+      enqueueToast(`not support - MoveCall`, {
         variant: 'warning',
       });
       return undefined;

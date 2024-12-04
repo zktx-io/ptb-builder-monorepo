@@ -1,6 +1,7 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
+
+import { enqueueToast } from '../../../Provider/toastManager';
 
 export const mergeCoins = (
   index: number,
@@ -34,7 +35,7 @@ export const mergeCoins = (
       });
     } else {
       // TODO
-      enqueueSnackbar(`not support - ${JSON.stringify(destination)}`, {
+      enqueueToast(`not support - ${JSON.stringify(destination)}`, {
         variant: 'warning',
       });
     }
@@ -69,13 +70,13 @@ export const mergeCoins = (
           });
         } else {
           // TODO
-          enqueueSnackbar(`not support (1) - ${JSON.stringify(source[0])}`, {
+          enqueueToast(`not support (1) - ${JSON.stringify(source[0])}`, {
             variant: 'warning',
           });
         }
       } else {
         // TODO
-        enqueueSnackbar(`not support (2) - ${JSON.stringify(source[0])}`, {
+        enqueueToast(`not support (2) - ${JSON.stringify(source[0])}`, {
           variant: 'warning',
         });
       }
@@ -91,14 +92,14 @@ export const mergeCoins = (
             if (temp.type === 'object') {
               items.push(temp.objectId);
             } else {
-              enqueueSnackbar(`not support (3) - ${JSON.stringify(item)}`, {
+              enqueueToast(`not support (3) - ${JSON.stringify(item)}`, {
                 variant: 'warning',
               });
             }
           } else if ('NestedResult' in item) {
             nestedItems.push(item.NestedResult as [number, number]);
           } else {
-            enqueueSnackbar(`not support (4) - ${JSON.stringify(item)}`, {
+            enqueueToast(`not support (4) - ${JSON.stringify(item)}`, {
               variant: 'warning',
             });
           }

@@ -1,6 +1,7 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
+
+import { enqueueToast } from '../../../Provider/toastManager';
 
 export const splitCoins = (
   index: number,
@@ -34,7 +35,7 @@ export const splitCoins = (
       });
     } else {
       // TODO
-      enqueueSnackbar(`not support - ${JSON.stringify(coin)}`, {
+      enqueueToast(`not support - ${JSON.stringify(coin)}`, {
         variant: 'warning',
       });
     }

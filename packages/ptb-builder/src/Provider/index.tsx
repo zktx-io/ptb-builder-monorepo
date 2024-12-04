@@ -9,6 +9,8 @@ import React, {
 import { SuiClient, TransactionBlockData } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
+import { EnqueueToast, setToast } from './toastManager';
+
 export enum NETWORK {
   MainNet = 'mainnet',
   TestNet = 'testnet',
@@ -43,11 +45,13 @@ export const StateProvider = ({
   txbOrPtb,
   children,
   address,
+  enqueueToast,
 }: {
   isEditor: boolean;
   network: NETWORK;
   txbOrPtb?: TransactionBlockData | string;
   address?: string;
+  enqueueToast?: EnqueueToast;
   children: ReactNode;
 }) => {
   const [state, setState] = useState<IState>({
@@ -61,6 +65,12 @@ export const StateProvider = ({
   useEffect(() => {
     setState((oldState) => ({ ...oldState, isEditor, txbOrPtb }));
   }, [isEditor, txbOrPtb]);
+
+  useEffect(() => {
+    setToast((message, options) => {
+      enqueueToast && enqueueToast(message, { variant: options.variant });
+    });
+  }, [enqueueToast]);
 
   return (
     <StateContext.Provider value={state}>

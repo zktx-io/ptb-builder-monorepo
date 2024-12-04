@@ -1,6 +1,7 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge, Node } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
+
+import { enqueueToast } from '../../../Provider/toastManager';
 
 export const transferObjects = (
   index: number,
@@ -47,13 +48,13 @@ export const transferObjects = (
           });
         } else {
           // TODO
-          enqueueSnackbar(`not support (1) - ${JSON.stringify(objects[0])}`, {
+          enqueueToast(`not support (1) - ${JSON.stringify(objects[0])}`, {
             variant: 'warning',
           });
         }
       } else {
         // TODO
-        enqueueSnackbar(`not support (2) - ${JSON.stringify(objects[0])}`, {
+        enqueueToast(`not support (2) - ${JSON.stringify(objects[0])}`, {
           variant: 'warning',
         });
       }
@@ -68,14 +69,14 @@ export const transferObjects = (
             if (temp.type === 'object') {
               items.push(temp.objectId);
             } else {
-              enqueueSnackbar(`not support (3) - ${JSON.stringify(item)}`, {
+              enqueueToast(`not support (3) - ${JSON.stringify(item)}`, {
                 variant: 'warning',
               });
             }
           } else if ('NestedResult' in item) {
             nestedItems.push(item.NestedResult as [number, number]);
           } else {
-            enqueueSnackbar(`not support (4) - ${JSON.stringify(item)}`, {
+            enqueueToast(`not support (4) - ${JSON.stringify(item)}`, {
               variant: 'warning',
             });
           }

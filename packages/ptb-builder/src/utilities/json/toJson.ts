@@ -1,5 +1,3 @@
-import { Edge, Node } from '@xyflow/react';
-
 import { DEFAULT, VERSION } from './types';
 
 export const toJson = (data: DEFAULT): string => {

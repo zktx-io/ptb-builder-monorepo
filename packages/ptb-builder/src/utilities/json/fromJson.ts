@@ -1,7 +1,6 @@
-import { enqueueSnackbar } from 'notistack';
-
 import { DEFAULT, VERSION } from './types';
 import { NETWORK } from '../../Provider';
+import { enqueueToast } from '../../Provider/toastManager';
 
 export const fromJson = (json: string): DEFAULT => {
   try {
@@ -14,7 +13,7 @@ export const fromJson = (json: string): DEFAULT => {
     ) {
       return data;
     }
-    enqueueSnackbar(`data error: ${data.version}, ${data.network}`, {
+    enqueueToast(`data error: ${data.version}, ${data.network}`, {
       variant: 'error',
     });
     return {
@@ -24,7 +23,7 @@ export const fromJson = (json: string): DEFAULT => {
       edges: [],
     };
   } catch (error) {
-    enqueueSnackbar(`${error}`, {
+    enqueueToast(`${error}`, {
       variant: 'error',
     });
     return {
