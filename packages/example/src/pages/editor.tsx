@@ -4,6 +4,7 @@ import {
   ConnectButton,
   useCurrentAccount,
   useSignAndExecuteTransaction,
+  useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { PTBBuilder } from '@zktx.io/ptb-builder';
@@ -13,7 +14,11 @@ import { DragAndDrop } from '../components/DragAndDrop';
 import { NETWORK } from '../network';
 
 export const Editor = () => {
+  const ctx = useSuiClientContext();
   const account = useCurrentAccount();
+  const [network, setNetwork] = React.useState<
+    'mainnet' | 'testnet' | 'devnet'
+  >(NETWORK);
   const [ptb, setPtb] = React.useState<string | undefined>(undefined);
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
@@ -30,7 +35,7 @@ export const Editor = () => {
       signAndExecuteTransaction(
         {
           transaction,
-          chain: `sui:${NETWORK}`,
+          chain: `sui:${network}`,
         },
         {
           onSuccess: (result) => {
@@ -48,7 +53,9 @@ export const Editor = () => {
     }
   };
 
-  const handleDrop = (ptb: object) => {
+  const handleDrop = (ptb: any) => {
+    setNetwork((ptb as any).network);
+    ctx.selectNetwork((ptb as any).network);
     setPtb(JSON.stringify(ptb));
   };
 
@@ -58,7 +65,7 @@ export const Editor = () => {
         <>
           <DragAndDrop onDrop={handleDrop} />
           <PTBBuilder
-            network={NETWORK}
+            network={network}
             excuteTx={excuteTx}
             txbOrPtb={ptb}
             update={(value: string) => {

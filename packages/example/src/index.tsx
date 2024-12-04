@@ -1,14 +1,11 @@
 import React from 'react';
 
-import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit';
-import { getFullnodeUrl } from '@mysten/sui/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SnackbarProvider } from 'notistack';
 import ReactDOM from 'react-dom/client';
 
 import './index.css';
 import App from './App';
-import { NETWORK } from './network';
 import reportWebVitals from './reportWebVitals';
 
 const queryClient = new QueryClient();
@@ -24,14 +21,7 @@ root.render(
       hideIconVariant
     >
       <QueryClientProvider client={queryClient}>
-        <SuiClientProvider
-          networks={{ devnet: { url: getFullnodeUrl(NETWORK) } }}
-          defaultNetwork="devnet"
-        >
-          <WalletProvider autoConnect>
-            <App />
-          </WalletProvider>
-        </SuiClientProvider>
+        <App />
       </QueryClientProvider>
     </SnackbarProvider>
   </React.StrictMode>,
