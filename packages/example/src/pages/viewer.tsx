@@ -65,6 +65,7 @@ export const Viewer = () => {
         update={(value: string) => {
           // console.log(value);
         }}
+        enqueueToast={(message, options) => enqueueSnackbar(message, options)}
       />
     </div>
   );
