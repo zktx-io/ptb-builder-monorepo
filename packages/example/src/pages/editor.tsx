@@ -1,3 +1,5 @@
+import React, { useEffect } from 'react';
+
 import {
   ConnectButton,
   useCurrentAccount,
@@ -50,7 +52,7 @@ export const Editor = () => {
         <PTBBuilder
           network={NETWORK}
           excuteTx={excuteTx}
-          onChange={(value: any) => {
+          update={(value: string) => {
             // console.log(value);
           }}
           options={{
