@@ -9,10 +9,12 @@ import { Transaction } from '@mysten/sui/transactions';
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 
+import { DragAndDrop } from '../components/DragAndDrop';
 import { NETWORK } from '../network';
 
 export const Editor = () => {
   const account = useCurrentAccount();
+  const [ptb, setPtb] = React.useState<string | undefined>(undefined);
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
   const excuteTx = async (transaction: Transaction | undefined) => {
@@ -46,21 +48,31 @@ export const Editor = () => {
     }
   };
 
+  const handleDrop = (ptb: object) => {
+    setPtb(JSON.stringify(ptb));
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       {account ? (
-        <PTBBuilder
-          network={NETWORK}
-          excuteTx={excuteTx}
-          update={(value: string) => {
-            // console.log(value);
-          }}
-          options={{
-            isEditor: true,
-            themeSwitch: true,
-          }}
-          enqueueToast={(message, options) => enqueueSnackbar(message, options)}
-        />
+        <>
+          <DragAndDrop onDrop={handleDrop} />
+          <PTBBuilder
+            network={NETWORK}
+            excuteTx={excuteTx}
+            txbOrPtb={ptb}
+            update={(value: string) => {
+              // console.log(value);
+            }}
+            options={{
+              isEditor: true,
+              themeSwitch: true,
+            }}
+            enqueueToast={(message, options) =>
+              enqueueSnackbar(message, options)
+            }
+          />
+        </>
       ) : (
         <div
           style={{
