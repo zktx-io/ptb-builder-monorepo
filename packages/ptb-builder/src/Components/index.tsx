@@ -1,2 +1,2 @@
 export { Code } from './Code';
-export { ContextMenu, ContextProp } from './ContextMenu';
+export { ContextMenu, ContextProp, CreateNode } from './ContextMenu';

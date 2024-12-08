@@ -1,16 +1,14 @@
 import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
-import { Node } from '@xyflow/react';
 
-import { type NodeProp } from '..';
+import { CodeParam, PTBNode, PTBNodeProp } from '..';
 import { useStateContext } from '../../../Provider';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
-import { CodeParam } from '../types';
 
-export const SplitCoins = ({ id, data }: NodeProp) => {
+export const SplitCoins = ({ data }: PTBNodeProp) => {
   const { client } = useStateContext();
 
   const code = useCallback((params: CodeParam[]): string => {
@@ -23,7 +21,7 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
   const excute = useCallback(
     (
       transaction: Transaction,
-      params: { source: Node; target: string }[],
+      params: { source: PTBNode; target: string }[],
       results: { id: string; value: any }[],
     ): { transaction: Transaction; result: any } | undefined => {
       let coin;
@@ -73,7 +71,7 @@ export const SplitCoins = ({ id, data }: NodeProp) => {
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        SplitCoins
+        {data.label}
       </p>
       <PtbHandle
         typeHandle="target"

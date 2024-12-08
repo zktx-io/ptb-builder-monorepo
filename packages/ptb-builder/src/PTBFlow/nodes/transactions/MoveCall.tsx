@@ -7,7 +7,7 @@ import {
 import { Transaction } from '@mysten/sui/transactions';
 import { Node, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { type NodeProp } from '..';
+import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../Provider';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { getTypeName } from '../../../utilities/getTypeName';
@@ -27,7 +27,7 @@ const PREFIX = 'param-';
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);
 
-export const MoveCall = ({ id, data }: NodeProp) => {
+export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { client } = useStateContext();
   const { setNodes, setEdges } = useReactFlow();
   const { isEditor } = useStateContext();
@@ -267,7 +267,7 @@ export const MoveCall = ({ id, data }: NodeProp) => {
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        MoveCall
+        {data.label}
       </p>
 
       <div className={FormStyle}>

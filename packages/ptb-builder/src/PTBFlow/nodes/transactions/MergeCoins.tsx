@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
-import { Node } from '@xyflow/react';
 
-import { type NodeProp } from '..';
+import { CodeParam, PTBNode, PTBNodeProp } from '..';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
-import { CodeParam } from '../types';
 
-export const MergeCoins = ({ id, data }: NodeProp) => {
+export const MergeCoins = ({ data }: PTBNodeProp) => {
   const code = useCallback((params: CodeParam[]): string => {
     const args: (CodeParam | undefined)[] = [];
     args.push(
@@ -22,7 +20,7 @@ export const MergeCoins = ({ id, data }: NodeProp) => {
   const excute = useCallback(
     (
       transaction: Transaction,
-      params: { source: Node; target: string }[],
+      params: { source: PTBNode; target: string }[],
       results: { id: string; value: any }[],
     ): { transaction: Transaction; result: any } | undefined => {
       let destination;
@@ -82,7 +80,7 @@ export const MergeCoins = ({ id, data }: NodeProp) => {
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        MergeCoins
+        {data.label}
       </p>
       <PtbHandle
         typeHandle="target"

@@ -7,16 +7,23 @@ export interface CodeParam {
   targetHandle: string;
 }
 
-export interface NodeProp {
+export interface PTBNode extends Node {
+  data: PTBNodeData;
+}
+
+export interface PTBNodeData {
+  [key: string]: unknown;
+  label: string;
+  value: string | string[] | object;
+  code: (params: CodeParam[]) => string;
+  excute: (
+    transaction: Transaction,
+    params: { source: PTBNode; target: string }[],
+    results: { id: string; value: any }[],
+  ) => { transaction: Transaction; result: any } | undefined;
+}
+
+export interface PTBNodeProp {
   id: string;
-  data: {
-    label: string;
-    value: string | string[] | object;
-    code: (params: CodeParam[]) => string;
-    excute: (
-      transaction: Transaction,
-      params: { source: Node; target: string }[],
-      results: { id: string; value: any }[],
-    ) => { transaction: Transaction; result: any } | undefined;
-  };
+  data: PTBNodeData;
 }

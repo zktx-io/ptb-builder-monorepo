@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
-import { type NodeProp } from '..';
+import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../Provider';
 import { PtbHandleArray } from '../handles/PtbHandleArray';
 import {
@@ -14,7 +14,7 @@ import {
   NodeStyles,
 } from '../styles';
 
-export const SuiAddressArray = ({ id, data }: NodeProp) => {
+export const SuiAddressArray = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
   const { isEditor } = useStateContext();
   const [isShow, setIsShow] = useState<boolean>(
@@ -56,17 +56,17 @@ export const SuiAddressArray = ({ id, data }: NodeProp) => {
     <div className={NodeStyles.address}>
       <div className={FormStyle}>
         <div className={FormTitleStyle}>
-          <label className={LabelStyle}>address []</label>
+          <label className={LabelStyle}>{data.label}</label>
           <div className="flex items-center">
             <label
-              htmlFor="gas-checkbox"
+              htmlFor="checkbox"
               className="text-xs text-gray-900 dark:text-gray-100 mr-1"
             >
               Show
             </label>
             <input
               type="checkbox"
-              id="gas-checkbox"
+              id="checkbox"
               checked={isShow}
               className="self-end"
               onChange={(e) => {

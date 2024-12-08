@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect } from 'react';
 
-import { type NodeProp } from '..';
+import { PTBNodeProp } from '..';
 import { PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 import { CodeParam } from '../types';
 
-export const Publish = ({ id, data }: NodeProp) => {
+export const Publish = ({ data }: PTBNodeProp) => {
   const code = useCallback((_params: CodeParam[]): string => {
     return '';
   }, []);
@@ -19,7 +19,7 @@ export const Publish = ({ id, data }: NodeProp) => {
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        Publish
+        {data.label}
       </p>
       <PtbHandleArray
         typeHandle="source"

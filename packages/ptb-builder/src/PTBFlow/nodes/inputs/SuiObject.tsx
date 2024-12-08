@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
-import { type NodeProp } from '..';
+import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../Provider';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
-export const SuiObject = ({ id, data }: NodeProp) => {
+export const SuiObject = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
   const { isEditor } = useStateContext();
   const [inputValue, setInputValue] = useState<string>(
@@ -31,7 +31,7 @@ export const SuiObject = ({ id, data }: NodeProp) => {
   return (
     <div className={NodeStyles.object}>
       <div className={FormStyle}>
-        <label className={LabelStyle}>object</label>
+        <label className={LabelStyle}>{data.label}</label>
         <input
           type="text"
           placeholder="Enter object id"

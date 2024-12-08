@@ -19,7 +19,7 @@ import {
 
 import { PTBEdges } from './edges';
 import { PTBNodes } from './nodes';
-import { Code, ContextMenu, ContextProp } from '../Components';
+import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
 import { MENU } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
@@ -61,7 +61,7 @@ export const PTBFlow = ({
 
   const onPaneClick = useCallback(() => setMenu(() => undefined), [setMenu]);
 
-  const createNode = useCallback(
+  const createNode: CreateNode = useCallback(
     (id: string, position: XYPosition, label: string, type: MENU) => {
       setNodes((nds) => [
         ...nds,

@@ -89,7 +89,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU8Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },
@@ -103,7 +103,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU16Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },
@@ -117,7 +117,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU32Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },
@@ -131,7 +131,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU64Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },
@@ -145,7 +145,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU128Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },
@@ -159,7 +159,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiU256Vector',
+              type: 'SuiNumberVector',
               data: {
                 value: input.value,
               },

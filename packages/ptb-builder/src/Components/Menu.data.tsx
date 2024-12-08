@@ -15,12 +15,7 @@ export enum MENU {
 
   SuiNumber = 'SuiNumber',
   SuiNumberArray = 'SuiNumberArray',
-  SuiU8Vector = 'SuiU8Vector',
-  SuiU16Vector = 'SuiU16Vector',
-  SuiU32Vector = 'SuiU32Vector',
-  SuiU64Vector = 'SuiU64Vector',
-  SuiU128Vector = 'SuiU128Vector',
-  SuiU256Vector = 'SuiU256Vector',
+  SuiNumberVector = 'SuiNumberVector',
 
   SuiObjectGas = 'SuiObjectGas',
   SuiObject = 'SuiObject',
@@ -94,32 +89,32 @@ export const MenuList: {
         },
         {
           name: 'vector<u8>',
-          type: MENU.SuiU8Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
         {
           name: 'vector<u16>',
-          type: MENU.SuiU16Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
         {
           name: 'vector<u32>',
-          type: MENU.SuiU32Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
         {
           name: 'vector<u64>',
-          type: MENU.SuiU64Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
         {
           name: 'vector<u128>',
-          type: MENU.SuiU128Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
         {
           name: 'vector<u256>',
-          type: MENU.SuiU256Vector,
+          type: MENU.SuiNumberVector,
           icon: <IconTriangle color="text-red-500" />,
         },
       ],

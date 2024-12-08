@@ -21,6 +21,13 @@ export interface ContextProp {
   bottom?: number;
 }
 
+export type CreateNode = (
+  id: string,
+  position: XYPosition,
+  label: string,
+  type: MENU,
+) => void;
+
 export const ContextMenu = ({
   selected,
   top,
@@ -31,12 +38,7 @@ export const ContextMenu = ({
   createNode,
 }: ContextProp & {
   onClick: () => void;
-  createNode: (
-    id: string,
-    position: XYPosition,
-    label: string,
-    type: MENU,
-  ) => void;
+  createNode: CreateNode;
 }) => {
   const { fitView, getEdges, getNodes, setNodes, setEdges } = useReactFlow();
   const { x, y, zoom } = useViewport();
