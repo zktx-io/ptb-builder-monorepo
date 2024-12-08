@@ -8,7 +8,7 @@ export const Start = ({ id, data }: PTBNodeProp) => {
   return (
     <div className={NodeStyles.process}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        Start
+        start
       </p>
       <PtbHandleProcess typeHandle="source" />
     </div>
