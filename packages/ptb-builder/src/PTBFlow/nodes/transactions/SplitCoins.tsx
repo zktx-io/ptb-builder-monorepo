@@ -3,14 +3,11 @@ import React, { useCallback, useEffect } from 'react';
 import { Transaction } from '@mysten/sui/transactions';
 
 import { CodeParam, PTBNode, PTBNodeProp } from '..';
-import { useStateContext } from '../../../Provider';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
 export const SplitCoins = ({ data }: PTBNodeProp) => {
-  const { client } = useStateContext();
-
   const code = useCallback((params: CodeParam[]): string => {
     const args: (CodeParam | undefined)[] = [];
     args.push(params.find((item) => item.targetHandle === 'coin:object'));
