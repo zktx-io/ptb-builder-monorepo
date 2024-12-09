@@ -1,19 +1,20 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import {
   SuiMoveNormalizedFunction,
   SuiMoveNormalizedModule,
 } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { Node, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
+import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
+import { FuncArg, MoveCallArg } from '../../../Components/MoveCallArg';
 import { useStateContext } from '../../../Provider';
 import { enqueueToast } from '../../../Provider/toastManager';
-import { getTypeName } from '../../../utilities/getTypeName';
+import { getMoveCallFuncArg } from '../../../utilities/getMoveCallFuncArg';
 import { loadPackageData } from '../../../utilities/loadPackageData';
-import { parameterFilter } from '../../../utilities/parameterFilter';
-import { PtbHandle, PtbHandleProcess, PtbHandleVector } from '../handles';
+import { removeTxContext } from '../../../utilities/removeTxContext';
+import { PtbHandleProcess } from '../handles';
 import {
   ButtonStyles,
   FormStyle,
@@ -23,9 +24,13 @@ import {
 } from '../styles';
 import { CodeParam } from '../types';
 
-const PREFIX = 'param-';
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
-const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);
+const objectTypes = new Set([
+  'Reference',
+  'MutableReference',
+  'Struct',
+  'Vector',
+]);
 
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { client } = useStateContext();
@@ -39,230 +44,74 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const [packageData, setPackageData] = useState<
     Record<string, SuiMoveNormalizedModule> | undefined
   >(undefined);
-  const [functions, setFunctions] = useState<string[]>([]);
+  const [functions, setFunctions] = useState<
+    { name: string; func: SuiMoveNormalizedFunction }[]
+  >([]);
 
   const [selectedModule, setSelectedModule] = useState<string>(
-    (data as any).module || '',
+    (data.module as string) || '',
   );
   const [selectedFunction, setSelectedFunction] = useState<string>(
-    (data as any).function || '',
+    (data.function as string) || '',
   );
-
-  const [selectedFunctionArgs, setSelectedFunctionArgs] = useState<
-    {
-      id: string;
-      type:
-        | 'address'
-        | 'bool'
-        | 'object'
-        | 'number'
-        | 'vector<u8>'
-        | 'vector<u16>'
-        | 'vector<u32>'
-        | 'vector<u64>'
-        | 'vector<u128>'
-        | 'vector<u256>'
-        | undefined;
-      placeHolder: string;
-      value: string;
-    }[]
-  >(
-    (data as any).handles
-      ? (data as any).handles.map((item: any) => ({
-          ...item,
-          value: item.value || '',
-        }))
-      : [],
-  );
+  const [selectedFunctionInputs, setSelectedFunctionInputs] = useState<
+    FuncArg[]
+  >((data.inputs as FuncArg[]) || []);
+  const [selectedFunctionOutputs, setSelectedFunctionOutputs] = useState<
+    FuncArg[]
+  >((data.outputs as FuncArg[]) || []);
 
   const loadPackage = async () => {
     if (client && !!packageId) {
       const temp = await loadPackageData(client, packageId);
       if (temp && Object.keys(temp)[0]) {
-        const select = Object.keys(temp)[0];
         setPackageData(temp);
-        const list = Object.keys(temp[select].exposedFunctions).filter(
-          (item) =>
-            temp[select].exposedFunctions[item].isEntry ||
-            temp[select].exposedFunctions[item].visibility === 'Public',
-        );
+        const select = Object.keys(temp)[0];
         setSelectedModule(select);
+        const list = Object.keys(temp[select].exposedFunctions)
+          .filter(
+            (item) =>
+              temp[select].exposedFunctions[item].visibility === 'Public',
+          )
+          .map((item) => ({
+            name: item,
+            func: temp[select].exposedFunctions[item],
+          }));
         setFunctions(list);
-        if (list.length > 0) {
-          setArgumentHandles(list[0], temp[select].exposedFunctions[list[0]]);
-        } else {
-          setArgumentHandles('', undefined);
-        }
+        setSelectedFunction(!list[0] ? '' : list[0].name);
       } else {
+        setPackageData(undefined);
         setSelectedModule('');
         setFunctions([]);
-        setArgumentHandles('', undefined);
+        setSelectedFunction('');
       }
     }
   };
 
-  const resetEdge = () => {
+  useEffect(() => {
+    if (selectedFunction) {
+      const find = functions.find((item) => item.name === selectedFunction);
+      if (find) {
+        setSelectedFunctionInputs(() =>
+          removeTxContext(find.func).map(getMoveCallFuncArg),
+        );
+        setSelectedFunctionOutputs(find.func.return.map(getMoveCallFuncArg));
+      } else {
+        setSelectedFunctionInputs([]);
+        setSelectedFunctionOutputs([]);
+      }
+    } else {
+      setSelectedFunctionInputs([]);
+      setSelectedFunctionOutputs([]);
+    }
     setEdges((eds) =>
       eds.filter(
         (edge) =>
           !((edge.target === id || edge.source === id) && edge.type === 'Data'),
       ),
     );
-  };
-
-  const setArgumentHandles = (
-    name: string,
-    data: SuiMoveNormalizedFunction | undefined,
-  ) => {
-    setSelectedFunction(() => name);
-    setSelectedFunctionArgs(() => []);
-    const temp = data ? parameterFilter(data) : [];
-    setSelectedFunctionArgs(() =>
-      temp.map((item, index) => {
-        if (item === 'Address') {
-          return {
-            id: `${PREFIX}${index}`,
-            type: 'address',
-            placeHolder: getTypeName(item),
-            value: '',
-          };
-        }
-        if (item === 'Bool') {
-          return {
-            id: `${PREFIX}${index}`,
-            type: 'bool',
-            placeHolder: getTypeName(item),
-            value: '',
-          };
-        }
-        if (typeof item === 'string' && numericTypes.has(item)) {
-          return {
-            id: `${PREFIX}${index}`,
-            type: 'number',
-            placeHolder: getTypeName(item),
-            value: '',
-          };
-        }
-        if (objectTypes.has(Object.keys(item)[0])) {
-          return {
-            id: `${PREFIX}${index}`,
-            type: 'object',
-            placeHolder: getTypeName(item),
-            value: '',
-          };
-        }
-        return {
-          id: `${PREFIX}${index}`,
-          type: undefined,
-          placeHolder: getTypeName(item),
-          value: '',
-        };
-      }),
-    );
     updateNodeInternals(id);
-  };
-
-  const handleModuleSelect = (name: string) => {
-    if (packageData) {
-      setSelectedModule(() => name);
-      const list = Object.keys(packageData[name].exposedFunctions).filter(
-        (item) => packageData[name].exposedFunctions[item].isEntry,
-      );
-      resetEdge();
-      setFunctions(() => list);
-      if (list.length > 0) {
-        setArgumentHandles(
-          list[0],
-          packageData[name].exposedFunctions[list[0]],
-        );
-      } else {
-        setArgumentHandles('', undefined);
-      }
-    }
-  };
-
-  const handleFunctionSelect = (name: string) => {
-    if (packageData) {
-      resetEdge();
-      setArgumentHandles(
-        name,
-        packageData[selectedModule].exposedFunctions[name],
-      );
-    }
-  };
-
-  const code = useCallback(
-    (params: CodeParam[]): string => {
-      if (selectedFunction && selectedFunctionArgs) {
-        const args: (CodeParam | undefined)[] = Array(
-          selectedFunctionArgs.length,
-        ).fill(undefined);
-        params.forEach((item) => {
-          const index = parseInt(
-            item.targetHandle.split(':')[0].replace(PREFIX, ''),
-          );
-          args[index] = item;
-        });
-        const target = `'${packageId}::${selectedModule}:${selectedFunction}'`;
-        const argumentsList = args
-          .map((item) => (item?.name ? item.name : 'undefined'))
-          .join(',\n\t\t');
-        return `tx.moveCall({\n\ttarget:\n\t\t${target},\n\targuments: [\n\t\t${argumentsList},\n\t],\n})`;
-      }
-      return `tx.moveCall({\n\ttarget: undefined,\n\targuments: undefined\n});`;
-    },
-    [packageId, selectedFunction, selectedFunctionArgs, selectedModule],
-  );
-
-  const excute = useCallback(
-    (
-      transaction: Transaction,
-      params: { source: Node; target: string }[],
-      results: { id: string; value: any }[],
-    ): { transaction: Transaction; result: any } | undefined => {
-      // const params = args.map((item) => (item ? item.name : undefined));
-      /*
-      const result = transaction.moveCall({
-        package: packageId,
-        module: selectedModule,
-        function: selectedFunction,
-        // arguments: [...params],
-      });
-      return { transaction, result };
-      */
-      enqueueToast(`not support - MoveCall`, {
-        variant: 'warning',
-      });
-      return undefined;
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (data) {
-      data.code = code;
-      data.excute = excute;
-    }
-  }, [code, data, excute]);
-
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              value: {
-                target: `${packageId}::${selectedModule}:${selectedFunction}`,
-              },
-            },
-          };
-        }
-        return node;
-      }),
-    );
-  }, [id, selectedFunction, packageId, selectedModule, setNodes]);
+  }, [selectedFunction, functions, id, setEdges, updateNodeInternals]);
 
   return (
     <div className={NodeStyles.transaction}>
@@ -305,7 +154,22 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               value={selectedModule}
               disabled={!isEditor}
               onChange={(evt) => {
-                handleModuleSelect(evt.target.value);
+                if (packageData) {
+                  const select = evt.target.value;
+                  setSelectedModule(() => select);
+                  const list = Object.keys(packageData[select].exposedFunctions)
+                    .filter(
+                      (item) =>
+                        packageData[select].exposedFunctions[item]
+                          .visibility === 'Public',
+                    )
+                    .map((item) => ({
+                      name: item,
+                      func: packageData[select].exposedFunctions[item],
+                    }));
+                  setFunctions(list);
+                  setSelectedFunction(!list[0] ? '' : list[0].name);
+                }
               }}
             >
               {packageData ? (
@@ -326,73 +190,61 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               value={selectedFunction}
               disabled={!isEditor}
               onChange={(evt) => {
-                handleFunctionSelect(evt.target.value);
+                setSelectedFunction(evt.target.value);
               }}
             >
               {packageData ? (
                 functions.map((item, key) => (
-                  <option value={item} key={key}>
-                    {item}
+                  <option value={item.name} key={key}>
+                    {item.name}
                   </option>
                 ))
               ) : (
-                <option>{selectedFunction}</option>
+                <option>{selectedModule}</option>
               )}
             </select>
           </>
         )}
         <div>
-          {selectedFunctionArgs.length > 0 && (
+          {selectedFunctionInputs.length > 0 && (
             <>
-              <div className="border-t border-gray-300 dark:border-stone-700 mt-2 mb-1" />
-              <div>
-                {selectedFunctionArgs.map((item, index) => {
-                  const top = `${200 + index * 42}px`;
-                  return (
-                    <div key={index} className={FormStyle}>
-                      <label
-                        className={LabelStyle}
-                        style={{ fontSize: '0.6rem' }}
-                      >{`Arg ${index}`}</label>
-                      <input
-                        type="text"
-                        readOnly
-                        placeholder={item.placeHolder}
-                        autoComplete="off"
-                        className={InputStyle}
-                        value={item.value}
-                      />
-                      {item.type === 'address' ||
-                      item.type === 'bool' ||
-                      item.type === 'object' ||
-                      item.type === 'number' ? (
-                        <PtbHandle
-                          typeHandle="target"
-                          typeParams={item.type}
-                          node="transactions"
-                          name={`${PREFIX}${index}`}
-                          style={{ top }}
-                        />
-                      ) : item.type === 'vector<u8>' ||
-                        item.type === 'vector<u16>' ||
-                        item.type === 'vector<u32>' ||
-                        item.type === 'vector<u64>' ||
-                        item.type === 'vector<u128>' ||
-                        item.type === 'vector<u256>' ? (
-                        <PtbHandleVector
-                          typeHandle="target"
-                          typeParams={item.type}
-                          node="transactions"
-                          name={`${PREFIX}${index}`}
-                          style={{ top }}
-                        />
-                      ) : (
-                        <></>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
+                input
+              </p>
+              {selectedFunctionInputs.map((arg, index) => (
+                <MoveCallArg
+                  key={index}
+                  index={index}
+                  yPosition={221}
+                  arg={arg}
+                  typeHandle="target"
+                  node="transactions"
+                />
+              ))}
+            </>
+          )}
+        </div>
+
+        <div>
+          {selectedFunctionOutputs.length > 0 && (
+            <>
+              <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
+                output
+              </p>
+              {selectedFunctionOutputs.map((arg, index) => (
+                <MoveCallArg
+                  key={index}
+                  index={index}
+                  yPosition={
+                    selectedFunctionInputs.length > 0
+                      ? 260 + selectedFunctionInputs.length * 42
+                      : 221
+                  }
+                  arg={arg}
+                  typeHandle="source"
+                  node="inputs"
+                />
+              ))}
             </>
           )}
         </div>

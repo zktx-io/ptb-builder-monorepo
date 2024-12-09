@@ -3,7 +3,7 @@ import {
   SuiMoveNormalizedType,
 } from '@mysten/sui/client';
 
-export const parameterFilter = (
+export const removeTxContext = (
   func: SuiMoveNormalizedFunction,
 ): SuiMoveNormalizedType[] => {
   return func.parameters.filter((type) => {
