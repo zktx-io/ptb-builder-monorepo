@@ -34,7 +34,7 @@ const objectTypes = new Set([
 
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { client } = useStateContext();
-  const { setNodes, setEdges } = useReactFlow();
+  const { setEdges } = useReactFlow();
   const { isEditor } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -88,6 +88,15 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
     }
   };
 
+  const resetEdge = () => {
+    setEdges((eds) =>
+      eds.filter(
+        (edge) =>
+          !((edge.target === id || edge.source === id) && edge.type === 'Data'),
+      ),
+    );
+  };
+
   useEffect(() => {
     if (selectedFunction) {
       const find = functions.find((item) => item.name === selectedFunction);
@@ -97,21 +106,22 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         );
         setSelectedFunctionOutputs(find.func.return.map(getMoveCallFuncArg));
       } else {
-        setSelectedFunctionInputs([]);
-        setSelectedFunctionOutputs([]);
+        !!packageData && setSelectedFunctionInputs([]);
+        !!packageData && setSelectedFunctionOutputs([]);
       }
     } else {
       setSelectedFunctionInputs([]);
       setSelectedFunctionOutputs([]);
     }
-    setEdges((eds) =>
-      eds.filter(
-        (edge) =>
-          !((edge.target === id || edge.source === id) && edge.type === 'Data'),
-      ),
-    );
     updateNodeInternals(id);
-  }, [selectedFunction, functions, id, setEdges, updateNodeInternals]);
+  }, [
+    functions,
+    id,
+    packageData,
+    selectedFunction,
+    setEdges,
+    updateNodeInternals,
+  ]);
 
   return (
     <div className={NodeStyles.transaction}>
@@ -169,6 +179,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                     }));
                   setFunctions(list);
                   setSelectedFunction(!list[0] ? '' : list[0].name);
+                  resetEdge();
                 }
               }}
             >
@@ -191,6 +202,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               disabled={!isEditor}
               onChange={(evt) => {
                 setSelectedFunction(evt.target.value);
+                resetEdge();
               }}
             >
               {packageData ? (
@@ -200,7 +212,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                   </option>
                 ))
               ) : (
-                <option>{selectedModule}</option>
+                <option>{selectedFunction}</option>
               )}
             </select>
           </>

@@ -6,6 +6,7 @@ import { Edge } from '@xyflow/react';
 
 import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
+import { PTB } from '../../Components/Menu.data';
 import { enqueueToast } from '../../Provider/toastManager';
 import { PTBNode } from '../../PTBFlow/nodes';
 
@@ -20,27 +21,27 @@ export const parsePtb = (data: TransactionBlockData) => {
     txs.push({
       id: '@start',
       position: { x: 0, y: 0 },
-      type: 'Start',
+      type: PTB.Start.Type,
       data: {
-        label: 'Start',
+        label: PTB.Start.Name,
       },
     });
 
     txs.push({
       id: '@end',
       position: { x: 0, y: 0 },
-      type: 'End',
+      type: PTB.End.Type,
       data: {
-        label: 'End',
+        label: PTB.End.Name,
       },
     });
 
     inputs.push({
       id: '@gasCoin',
       position: { x: 0, y: 0 },
-      type: 'SuiObjectGas',
+      type: PTB.ObjectGas.Type,
       data: {
-        label: 'SuiObjectGas',
+        label: PTB.ObjectGas.Name,
       },
     });
 
@@ -53,11 +54,11 @@ export const parsePtb = (data: TransactionBlockData) => {
     ptb.transactions.forEach((_, index) => {
       const {
         tx,
-        inputs: datas,
+        inputs: nds,
         edges: subEdges,
       } = createTransactions(index, ptb);
       txs.push(tx);
-      inputs.push(...datas);
+      inputs.push(...nds);
       edges.push({
         id: `path-${index}`,
         type: 'Path',

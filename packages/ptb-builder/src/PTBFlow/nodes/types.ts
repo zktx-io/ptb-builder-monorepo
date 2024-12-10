@@ -7,6 +7,37 @@ export interface CodeParam {
   targetHandle: string;
 }
 
+export enum PTBNodeType {
+  Address = 'SuiAddress',
+  AddressArray = 'SuiAddressArray',
+  AddressVector = 'SuiAddressVector',
+
+  Bool = 'SuiBool',
+  BoolArray = 'SuiBoolArray',
+  BoolVector = 'SuiBoolVector',
+
+  Number = 'SuiNumber',
+  NumberArray = 'SuiNumberArray',
+  NumberVector = 'SuiNumberVector',
+
+  ObjectGas = 'SuiObjectGas',
+  Object = 'SuiObject',
+  ObjectArray = 'SuiObjectArray',
+  ObjectVector = 'SuiObjectVector',
+
+  String = 'SuiString',
+
+  MergeCoins = 'MergeCoins',
+  SplitCoins = 'SplitCoins',
+  TransferObjects = 'TransferObjects',
+  MakeMoveVec = 'MakeMoveVec',
+  MoveCall = 'MoveCall',
+  Publish = 'Publish',
+
+  Start = 'Start',
+  End = 'End',
+}
+
 export interface PTBNode extends Node {
   data: PTBNodeData;
 }

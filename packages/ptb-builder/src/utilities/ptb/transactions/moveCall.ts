@@ -1,14 +1,9 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge } from '@xyflow/react';
 
+import { FuncArg } from '../../../Components/MoveCallArg';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PTBNode } from '../../../PTBFlow/nodes';
-
-interface MoveCallHandle {
-  id: string;
-  type: 'object' | 'number' | 'string' | 'address' | 'bool' | undefined;
-  value?: string;
-}
 
 const PREFIX = 'param-';
 const numericTypes = new Set(['u8', 'u16', 'u32', 'u64', 'u128', 'u256']);
@@ -32,11 +27,11 @@ export const moveCall = (
   package: string;
   module: string;
   function: string;
-  handles: MoveCallHandle[];
+  handles: FuncArg[];
 } => {
   const edges: Edge[] = [];
   const inputs: PTBNode[] = [];
-  const handles: MoveCallHandle[] = [];
+  const handles: FuncArg[] = [];
   let _package: string = '';
   let _module: string = '';
   let _function: string = '';
@@ -56,6 +51,7 @@ export const moveCall = (
             handles.push({
               id: `${PREFIX}${i}`,
               type: 'object',
+              placeHolder: (ptb.inputs[item.Input] as any).objectId,
               value: (ptb.inputs[item.Input] as any).objectId,
             });
             edges.push({
@@ -71,6 +67,7 @@ export const moveCall = (
               handles.push({
                 id: `${PREFIX}${i}`,
                 type: 'number',
+                placeHolder: (ptb.inputs[item.Input] as any).value,
                 value: (ptb.inputs[item.Input] as any).value,
               });
               edges.push({
@@ -94,6 +91,7 @@ export const moveCall = (
                   handles.push({
                     id: `${PREFIX}${i}`,
                     type: (ptb.inputs[item.Input] as any).valueType,
+                    placeHolder: (ptb.inputs[item.Input] as any).valueType,
                     value: (ptb.inputs[item.Input] as any).valueType,
                   });
                   edges.push({
@@ -109,6 +107,8 @@ export const moveCall = (
                   handles.push({
                     id: `${PREFIX}${i}`,
                     type: undefined,
+                    placeHolder: 'undefined',
+                    value: '',
                   });
                   break;
               }
@@ -118,6 +118,7 @@ export const moveCall = (
               handles.push({
                 id: `${PREFIX}${i}`,
                 type: 'address',
+                placeHolder: (ptb.inputs[item.Input] as any).value,
                 value: (ptb.inputs[item.Input] as any).value,
               });
               edges.push({
@@ -132,6 +133,7 @@ export const moveCall = (
               handles.push({
                 id: `${PREFIX}${i}`,
                 type: 'bool',
+                placeHolder: `${(ptb.inputs[item.Input] as any).value}`,
                 value: `${(ptb.inputs[item.Input] as any).value}`,
               });
               edges.push({
@@ -147,6 +149,8 @@ export const moveCall = (
               handles.push({
                 id: `${PREFIX}${i}`,
                 type: undefined,
+                placeHolder: 'undefined',
+                value: '',
               });
               enqueueToast(`not support - ${JSON.stringify(item)}`, {
                 variant: 'warning',
@@ -158,6 +162,8 @@ export const moveCall = (
           handles.push({
             id: `${PREFIX}${i}`,
             type: undefined,
+            placeHolder: 'undefined',
+            value: '',
           });
           enqueueToast(`not support - ${JSON.stringify(item)}`, {
             variant: 'warning',

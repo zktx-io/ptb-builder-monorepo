@@ -1,7 +1,9 @@
 import { SuiCallArg } from '@mysten/sui/client';
 import { Edge } from '@xyflow/react';
 
-import { PTBNode } from '../../PTBFlow/nodes';
+import { PTB } from '../../Components/Menu.data';
+import { enqueueToast } from '../../Provider/toastManager';
+import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 
 export const createInputs = (
   index: number,
@@ -16,9 +18,9 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiAddress',
+              type: PTB.Address.Type,
               data: {
-                label: 'address',
+                label: PTB.Address.Name,
                 value: input.value as string,
               },
             },
@@ -31,9 +33,9 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiBool',
+              type: PTB.Bool.Type,
               data: {
-                label: 'bool',
+                label: PTB.Bool.Name,
                 value: `${input.value}`,
               },
             },
@@ -51,25 +53,10 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiNumber',
+              type: PTB.Number.Type,
               data: {
-                label: 'number',
+                label: PTB.Number.Name,
                 value: input.value as string,
-              },
-            },
-          ],
-          edges: [],
-        };
-      case 'bool':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiBool',
-              data: {
-                label: 'bool',
-                value: `${input.value}`,
               },
             },
           ],
@@ -81,9 +68,9 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiString',
+              type: PTB.String.Type,
               data: {
-                label: 'string',
+                label: PTB.String.Name,
                 value: input.value as string,
               },
             },
@@ -101,7 +88,7 @@ export const createInputs = (
             {
               id,
               position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
+              type: PTBNodeType.NumberVector,
               data: {
                 label: input.valueType,
                 value: input.value as string[],
@@ -111,6 +98,9 @@ export const createInputs = (
           edges: [],
         };
       default:
+        enqueueToast(`not support valueType: ${input.valueType}`, {
+          variant: 'warning',
+        });
         break;
     }
   } else {
@@ -119,9 +109,9 @@ export const createInputs = (
         {
           id,
           position: { x: 0, y: 0 },
-          type: 'SuiObject',
+          type: PTB.Object.Type,
           data: {
-            label: 'SuiObject',
+            label: PTB.Object.Name,
             value: input.objectId,
           },
         },

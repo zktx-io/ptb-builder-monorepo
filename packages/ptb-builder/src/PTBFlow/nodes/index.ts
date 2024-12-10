@@ -7,7 +7,13 @@ import { MoveCall } from './transactions/MoveCall';
 import { Publish } from './transactions/Publish';
 import { SplitCoins } from './transactions/SplitCoins';
 import { TransferObjects } from './transactions/TransferObjects';
-export type { CodeParam, PTBNodeProp, PTBNode, PTBNodeData } from './types';
+export {
+  CodeParam,
+  PTBNodeProp,
+  PTBNode,
+  PTBNodeData,
+  PTBNodeType,
+} from './types';
 
 export const PTBNodes = {
   End,

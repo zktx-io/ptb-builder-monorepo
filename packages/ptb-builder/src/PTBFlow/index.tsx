@@ -17,9 +17,9 @@ import {
 } from '@xyflow/react';
 
 import { PTBEdges } from './edges';
-import { PTBNode, PTBNodes } from './nodes';
+import { PTBNode, PTBNodes, PTBNodeType } from './nodes';
 import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
-import { PTBNodeType } from '../Components/Menu.data';
+import { PTB } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
 import { testPath } from '../utilities/testPath';
@@ -207,14 +207,14 @@ export const PTBFlow = ({
       createNode(
         '@start',
         { x: startX - 90, y: centerY },
-        'Start',
-        'Start' as PTBNodeType,
+        PTB.Start.Name,
+        PTB.Start.Type,
       );
       createNode(
         '@end',
         { x: endX - 90, y: centerY },
-        'End',
-        'End' as PTBNodeType,
+        PTB.End.Name,
+        PTB.End.Type,
       );
     }
   }, [createNode, isEditor]);

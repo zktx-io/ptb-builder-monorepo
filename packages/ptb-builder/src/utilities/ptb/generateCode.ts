@@ -1,6 +1,6 @@
 import type { Edge } from '@xyflow/react';
 
-import { PTBNode } from '../../PTBFlow/nodes';
+import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 import { testPath } from '../testPath';
 
 type Variable = {
@@ -20,13 +20,13 @@ const generateUniqueId = (id: number): string => {
 const getNodeData = (id: string, nodes: PTBNode[]): string | number => {
   const node = nodes.find((item) => item.id === id);
   if (node && node.data.value) {
-    if (node.type === 'SuiNumber') {
+    if (node.type === PTBNodeType.Number) {
       return parseInt(node.data.value as string);
     }
-    if (node.type === 'SuiObject') {
+    if (node.type === PTBNodeType.Object) {
       return `"${node.data.value}"`;
     }
-    if (node.type === 'SuiObjectGas') {
+    if (node.type === PTBNodeType.ObjectGas) {
       return `tx.gas`;
     }
     return typeof node.data.value === 'string'
@@ -37,8 +37,8 @@ const getNodeData = (id: string, nodes: PTBNode[]): string | number => {
 };
 
 export const generateCode = (nodes: PTBNode[], edges: Edge[]): string => {
-  const startNode = nodes.find((node) => node.type === 'Start');
-  const endNode = nodes.find((node) => node.type === 'End');
+  const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
+  const endNode = nodes.find((node) => node.type === PTBNodeType.End);
 
   if (!startNode || !endNode) {
     return 'Start or End node missing.';

@@ -3,109 +3,88 @@ import React from 'react';
 import { IconCircle } from './IconCircle';
 import { IconSquare } from './IconSquare';
 import { IconTriangle } from './IconTriangle';
-
-export enum PTBNodeType {
-  SuiAddress = 'SuiAddress',
-  SuiAddressArray = 'SuiAddressArray',
-  SuiAddressVector = 'SuiAddressVector',
-
-  SuiBool = 'SuiBool',
-  SuiBoolArray = 'SuiBoolArray',
-  SuiBoolVector = 'SuiBoolVector',
-
-  SuiNumber = 'SuiNumber',
-  SuiNumberArray = 'SuiNumberArray',
-  SuiNumberVector = 'SuiNumberVector',
-
-  SuiObjectGas = 'SuiObjectGas',
-  SuiObject = 'SuiObject',
-  SuiObjectArray = 'SuiObjectArray',
-  SuiObjectVector = 'SuiObjectVector',
-
-  SuiString = 'SuiString',
-
-  MergeCoins = 'MergeCoins',
-  SplitCoins = 'SplitCoins',
-  TransferObjects = 'TransferObjects',
-  MoveCall = 'MoveCall',
-}
+import { PTBNodeType } from '../PTBFlow/nodes/types';
 
 export const PTB = {
   Address: {
-    Type: PTBNodeType.SuiAddress,
+    Type: PTBNodeType.Address,
     Name: 'address',
   },
   AddressArray: {
-    Type: PTBNodeType.SuiAddressArray,
+    Type: PTBNodeType.AddressArray,
     Name: 'address[]',
   },
   AddressVector: {
-    Type: PTBNodeType.SuiAddressVector,
+    Type: PTBNodeType.AddressVector,
     Name: 'vector<address>',
   },
   Bool: {
-    Type: PTBNodeType.SuiBool,
+    Type: PTBNodeType.Bool,
     Name: 'bool',
   },
   BoolArray: {
-    Type: PTBNodeType.SuiBoolArray,
+    Type: PTBNodeType.BoolArray,
     Name: 'bool[]',
   },
   BoolVector: {
-    Type: PTBNodeType.SuiBoolVector,
+    Type: PTBNodeType.BoolVector,
     Name: 'vector<bool>',
   },
   Number: {
-    Type: PTBNodeType.SuiNumber,
+    Type: PTBNodeType.Number,
     Name: 'number',
   },
   NumberArray: {
-    Type: PTBNodeType.SuiNumberArray,
+    Type: PTBNodeType.NumberArray,
     Name: 'number[]',
   },
   NumberVectorU8: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u8>',
   },
   NumberVectorU16: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u16>',
   },
   NumberVectorU32: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u32>',
   },
   NumberVectorU64: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u64>',
   },
   NumberVectorU128: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u128>',
   },
   NumberVectorU256: {
-    Type: PTBNodeType.SuiNumberVector,
+    Type: PTBNodeType.NumberVector,
     Name: 'vector<u256>',
   },
   ObjectGas: {
-    Type: PTBNodeType.SuiObjectGas,
+    Type: PTBNodeType.ObjectGas,
     Name: 'gas',
   },
   Object: {
-    Type: PTBNodeType.SuiObject,
+    Type: PTBNodeType.Object,
     Name: 'object',
   },
   ObjectArray: {
-    Type: PTBNodeType.SuiObjectArray,
+    Type: PTBNodeType.ObjectArray,
     Name: 'object[]',
   },
   ObjectVector: {
-    Type: PTBNodeType.SuiObjectVector,
+    Type: PTBNodeType.ObjectVector,
     Name: 'vector<object>',
   },
   String: {
-    Type: PTBNodeType.SuiString,
+    Type: PTBNodeType.String,
     Name: 'string',
+  },
+  MakeMoveVec: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'make move vector',
   },
   MergeCoins: {
     Type: PTBNodeType.MergeCoins,
@@ -122,6 +101,18 @@ export const PTB = {
   MoveCall: {
     Type: PTBNodeType.MoveCall,
     Name: 'move call',
+  },
+  Publish: {
+    Type: PTBNodeType.Publish,
+    Name: 'publish',
+  },
+  Start: {
+    Type: PTBNodeType.Start,
+    Name: 'Start',
+  },
+  End: {
+    Type: PTBNodeType.End,
+    Name: 'End',
   },
 };
 

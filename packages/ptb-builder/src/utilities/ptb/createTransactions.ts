@@ -6,7 +6,29 @@ import { mergeCoins } from './transactions/mergeCoins';
 import { moveCall } from './transactions/moveCall';
 import { splitCoins } from './transactions/splitCoins';
 import { transferObjects } from './transactions/transferObjects';
-import { PTBNode } from '../../PTBFlow/nodes';
+import { PTB } from '../../Components/Menu.data';
+import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+
+const create = (
+  id: string,
+  type: PTBNodeType,
+  label: string,
+  edges: Edge[],
+  inputs: PTBNode[],
+) => {
+  return {
+    tx: {
+      id,
+      position: { x: 0, y: 0 },
+      type,
+      data: {
+        label,
+      },
+    },
+    inputs,
+    edges,
+  };
+};
 
 export const createTransactions = (
   index: number,
@@ -18,57 +40,67 @@ export const createTransactions = (
 } => {
   const id = `tx-${index}`;
   const suiTx: SuiTransaction = ptb.transactions[index];
-  const edges: Edge[] = [];
-  const inputs: PTBNode[] = [];
-  let type = '';
 
   if ('SplitCoins' in suiTx) {
-    type = 'SplitCoins';
     const res = splitCoins(index, ptb, suiTx, id);
-    edges.push(...res.edges);
-    inputs.push(...res.inputs);
+    return create(
+      id,
+      PTB.SplitCoins.Type,
+      PTB.SplitCoins.Name,
+      res.edges,
+      res.inputs,
+    );
   }
   if ('TransferObjects' in suiTx) {
-    type = 'TransferObjects';
     const res = transferObjects(index, ptb, suiTx, id);
-    edges.push(...res.edges);
-    inputs.push(...res.inputs);
+    return create(
+      id,
+      PTB.TransferObjects.Type,
+      PTB.TransferObjects.Name,
+      res.edges,
+      res.inputs,
+    );
   }
   if ('MakeMoveVec' in suiTx) {
-    type = 'MakeMoveVec';
     const res = makeMoveVec(index, ptb, suiTx, id);
-    edges.push(...res.edges);
-    inputs.push(...res.inputs);
+    return create(
+      id,
+      PTB.MakeMoveVec.Type,
+      PTB.MakeMoveVec.Name,
+      res.edges,
+      res.inputs,
+    );
   }
   if ('MergeCoins' in suiTx) {
-    type = 'MergeCoins';
     const res = mergeCoins(index, ptb, suiTx, id);
-    edges.push(...res.edges);
-    inputs.push(...res.inputs);
+    return create(
+      id,
+      PTB.MergeCoins.Type,
+      PTB.MergeCoins.Name,
+      res.edges,
+      res.inputs,
+    );
   }
   if ('Publish' in suiTx) {
-    type = 'Publish';
+    return create(id, PTB.Publish.Type, PTB.Publish.Name, [], []);
   }
   if ('MoveCall' in suiTx) {
-    type = 'MoveCall';
     const res = moveCall(index, ptb, suiTx, id);
-    edges.push(...res.edges);
-    inputs.push(...res.inputs);
     return {
       tx: {
         id,
         position: { x: 0, y: 0 },
-        type,
+        type: PTB.MoveCall.Type,
         data: {
-          label: type,
+          label: PTB.MoveCall.Name,
           package: res.package,
           module: res.module,
           function: res.function,
-          handles: res.handles,
+          inputs: res.handles,
         },
       },
-      inputs,
-      edges,
+      inputs: res.inputs,
+      edges: res.edges,
     };
   }
 
@@ -76,12 +108,12 @@ export const createTransactions = (
     tx: {
       id,
       position: { x: 0, y: 0 },
-      type,
+      type: undefined,
       data: {
-        label: type,
+        label: 'undefined',
       },
     },
-    inputs,
-    edges,
+    inputs: [],
+    edges: [],
   };
 };

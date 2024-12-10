@@ -1,10 +1,10 @@
 import type { Edge } from '@xyflow/react';
 
-import { PTBNode } from '../PTBFlow/nodes';
+import { PTBNode, PTBNodeType } from '../PTBFlow/nodes';
 
 export const testPath = (nodes: PTBNode[], edges: Edge[]): boolean => {
-  const startNode = nodes.find((node) => node.type === 'Start');
-  const endNode = nodes.find((node) => node.type === 'End');
+  const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
+  const endNode = nodes.find((node) => node.type === PTBNodeType.End);
 
   if (!startNode || !endNode) {
     return false;
