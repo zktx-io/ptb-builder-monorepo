@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 
 import { Edge, useReactFlow, useViewport, XYPosition } from '@xyflow/react';
 
-import { MENU, MENU_EDGE, MENU_NODE, MenuItem, MenuList } from './Menu.data';
+import { Menu, MenuItem, PTBNodeType } from './Menu.data';
 import { enqueueToast } from '../Provider/toastManager';
 import { PTBNode } from '../PTBFlow/nodes';
 import { MenuStyle, MenuSubStyle } from '../PTBFlow/nodes/styles';
@@ -20,7 +20,7 @@ export type CreateNode = (
   id: string,
   position: XYPosition,
   label: string,
-  type: MENU,
+  type: PTBNodeType,
 ) => void;
 
 export const ContextMenu = ({
@@ -56,21 +56,26 @@ export const ContextMenu = ({
   }, [fitView, getEdges, getNodes, onClick, setEdges, setNodes]);
 
   const handleCreateClick = useCallback(
-    (event: any, item: { name: string; type: MENU }) => {
+    (event: any, item: MenuItem) => {
       const { clientX, clientY } = event;
       const position = {
         x: (clientX - x) / zoom,
         y: (clientY - y) / zoom,
       };
-      createNode(`${item.type}-${Date.now()}`, position, item.name, item.type);
+      createNode(
+        `${item.type}-${Date.now()}`,
+        position,
+        item.name,
+        item.type as PTBNodeType,
+      );
       onClick();
     },
     [createNode, onClick, x, y, zoom],
   );
 
   const handleNodeClick = useCallback(
-    (event: any, item: { name: string; type: MENU_NODE }) => {
-      if (item.type === MENU_NODE.Delete) {
+    (event: any, item: MenuItem) => {
+      if (item.type === 'DeleteNode') {
         selected &&
           setNodes((nds) =>
             nds.filter(
@@ -87,8 +92,8 @@ export const ContextMenu = ({
   );
 
   const handleEdgeClick = useCallback(
-    (event: any, item: { name: string; type: MENU_EDGE }) => {
-      if (item.type === MENU_EDGE.Delete) {
+    (event: any, item: MenuItem) => {
+      if (item.type === 'DeleteEdge') {
         selected &&
           setEdges((edgs) => edgs.filter((edge) => edge.id !== selected.id));
       }
@@ -105,7 +110,7 @@ export const ContextMenu = ({
             <li
               key={key}
               className={MenuStyle}
-              onClick={(e) => handleCreateClick(e, item as any)}
+              onClick={(e) => handleCreateClick(e, item)}
             >
               {item.icon && <span className="mr-1">{item.icon}</span>}
               {item.name}
@@ -116,7 +121,7 @@ export const ContextMenu = ({
             <li
               key={key}
               className={MenuStyle}
-              onClick={(e) => handleNodeClick(e, item as any)}
+              onClick={(e) => handleNodeClick(e, item)}
             >
               {item.name}
             </li>
@@ -126,7 +131,7 @@ export const ContextMenu = ({
             <li
               key={key}
               className={MenuStyle}
-              onClick={(e) => handleEdgeClick(e, item as any)}
+              onClick={(e) => handleEdgeClick(e, item)}
             >
               {item.name}
             </li>
@@ -151,7 +156,7 @@ export const ContextMenu = ({
               Auto Layout
             </li>
             <div className="border-t border-gray-300 dark:border-stone-700 my-1" />
-            {MenuList.inputs.map((item, key) => (
+            {Menu.inputs.map((item, key) => (
               <li key={`0-${key}`} className="relative group">
                 <div
                   className={`${MenuStyle} flex justify-between items-center`}
@@ -177,16 +182,16 @@ export const ContextMenu = ({
               </li>
             ))}
             <div className="border-t border-gray-300 dark:border-stone-700 my-1" />
-            {renderMenuItems(MenuList.transactions)}
+            {renderMenuItems(Menu.transactions)}
           </>
         )}
         {selected && (
           <>
             {selected && 'position' in selected && (
-              <>{renderMenuItems(MenuList.node)}</>
+              <>{renderMenuItems(Menu.node)}</>
             )}
             {selected && !('position' in selected) && (
-              <>{renderMenuItems(MenuList.edge)}</>
+              <>{renderMenuItems(Menu.edge)}</>
             )}
           </>
         )}
