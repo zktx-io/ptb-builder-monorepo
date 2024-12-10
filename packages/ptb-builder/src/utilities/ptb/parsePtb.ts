@@ -6,6 +6,7 @@ import { Edge, Node } from '@xyflow/react';
 
 import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
+import { enqueueToast } from '../../Provider/toastManager';
 
 export const parsePtb = (data: TransactionBlockData) => {
   const txs: Node[] = [];
@@ -74,6 +75,10 @@ export const parsePtb = (data: TransactionBlockData) => {
       sourceHandle: 'src:process',
       target: '@end',
       targetHandle: 'tgt:process',
+    });
+  } else {
+    enqueueToast(`not support transaction: ${data.transaction.kind}`, {
+      variant: 'warning',
     });
   }
 
