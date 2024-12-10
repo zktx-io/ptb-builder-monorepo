@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
+import { PTBNode } from '../PTBFlow/nodes';
 import { generateCode } from '../utilities/ptb/generateCode';
 import { generatePtb } from '../utilities/ptb/generatePtb';
 
@@ -16,7 +17,7 @@ export const Code = ({
   edges,
   excuteTx,
 }: {
-  nodes: Node[];
+  nodes: PTBNode[];
   edges: Edge[];
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {

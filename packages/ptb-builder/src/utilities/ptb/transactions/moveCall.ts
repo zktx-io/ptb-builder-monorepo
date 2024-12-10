@@ -1,7 +1,8 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
+import { PTBNode } from '../../../PTBFlow/nodes';
 
 interface MoveCallHandle {
   id: string;
@@ -27,14 +28,14 @@ export const moveCall = (
   id: string,
 ): {
   edges: Edge[];
-  inputs: Node[];
+  inputs: PTBNode[];
   package: string;
   module: string;
   function: string;
   handles: MoveCallHandle[];
 } => {
   const edges: Edge[] = [];
-  const inputs: Node[] = [];
+  const inputs: PTBNode[] = [];
   const handles: MoveCallHandle[] = [];
   let _package: string = '';
   let _module: string = '';

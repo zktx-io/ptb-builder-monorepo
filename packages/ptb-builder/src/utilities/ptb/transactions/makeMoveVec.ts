@@ -1,14 +1,16 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
+
+import { PTBNode } from '../../../PTBFlow/nodes';
 
 export const makeMoveVec = (
   index: number,
   ptb: ProgrammableTransaction,
   suiTx: SuiTransaction,
   id: string,
-): { edges: Edge[]; inputs: Node[] } => {
+): { edges: Edge[]; inputs: PTBNode[] } => {
   const edges: Edge[] = [];
-  const inputs: Node[] = [];
+  const inputs: PTBNode[] = [];
 
   if ('MakeMoveVec' in suiTx) {
     //

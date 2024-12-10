@@ -1,9 +1,11 @@
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
+
+import { PTBNode } from '../../PTBFlow/nodes';
 
 export const VERSION = '1';
 export interface DEFAULT {
   version?: string;
   network: string;
-  nodes: Node[];
+  nodes: PTBNode[];
   edges: Edge[];
 }

@@ -1,6 +1,7 @@
-import type { Edge, Node } from '@xyflow/react';
+import type { Edge } from '@xyflow/react';
 
-import { hasPath } from '../hasPath';
+import { PTBNode } from '../../PTBFlow/nodes';
+import { testPath } from '../testPath';
 
 type Variable = {
   id: string;
@@ -16,7 +17,7 @@ const generateUniqueId = (id: number): string => {
   return `temp_${id}`;
 };
 
-const getNodeData = (id: string, nodes: Node[]): string | number => {
+const getNodeData = (id: string, nodes: PTBNode[]): string | number => {
   const node = nodes.find((item) => item.id === id);
   if (node && node.data.value) {
     if (node.type === 'SuiNumber') {
@@ -35,7 +36,7 @@ const getNodeData = (id: string, nodes: Node[]): string | number => {
   return 'undefined';
 };
 
-export const generateCode = (nodes: Node[], edges: Edge[]): string => {
+export const generateCode = (nodes: PTBNode[], edges: Edge[]): string => {
   const startNode = nodes.find((node) => node.type === 'Start');
   const endNode = nodes.find((node) => node.type === 'End');
 
@@ -43,7 +44,7 @@ export const generateCode = (nodes: Node[], edges: Edge[]): string => {
     return 'Start or End node missing.';
   }
 
-  if (!hasPath(nodes, edges)) {
+  if (!testPath(nodes, edges)) {
     return '';
   }
 
@@ -92,7 +93,7 @@ export const generateCode = (nodes: Node[], edges: Edge[]): string => {
       }
     });
 
-  const processNode = (currentNode: Node) => {
+  const processNode = (currentNode: PTBNode) => {
     const inputs = variableMap
       .filter((variable) =>
         variable.targets.some((item) => item.target === currentNode.id),
@@ -186,7 +187,7 @@ export const generateCode = (nodes: Node[], edges: Edge[]): string => {
     }
   };
 
-  let currentCommand: Node | undefined = startNode;
+  let currentCommand: PTBNode | undefined = startNode;
   while (currentCommand && currentCommand.id !== endNode.id) {
     const currentCommandId: string = currentCommand.id;
     const nextEdge = edges.find(

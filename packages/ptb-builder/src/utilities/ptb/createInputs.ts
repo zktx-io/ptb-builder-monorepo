@@ -1,10 +1,12 @@
 import { SuiCallArg } from '@mysten/sui/client';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
+
+import { PTBNode } from '../../PTBFlow/nodes';
 
 export const createInputs = (
   index: number,
   input: SuiCallArg,
-): { nodes: Node[]; edges: Edge[] } => {
+): { nodes: PTBNode[]; edges: Edge[] } => {
   const id = `input-${index}`;
   if (input.type === 'pure') {
     switch (input.valueType) {
@@ -16,7 +18,8 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiAddress',
               data: {
-                value: input.value,
+                label: 'address',
+                value: input.value as string,
               },
             },
           ],
@@ -30,6 +33,7 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiBool',
               data: {
+                label: 'bool',
                 value: `${input.value}`,
               },
             },
@@ -49,7 +53,8 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiNumber',
               data: {
-                value: input.value,
+                label: 'number',
+                value: input.value as string,
               },
             },
           ],
@@ -63,7 +68,8 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiBool',
               data: {
-                value: input.value,
+                label: 'bool',
+                value: `${input.value}`,
               },
             },
           ],
@@ -77,82 +83,18 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiString',
               data: {
-                value: input.value,
+                label: 'string',
+                value: input.value as string,
               },
             },
           ],
           edges: [],
         };
       case 'vector<u8>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
-              data: {
-                value: input.value,
-              },
-            },
-          ],
-          edges: [],
-        };
       case 'vector<u16>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
-              data: {
-                value: input.value,
-              },
-            },
-          ],
-          edges: [],
-        };
       case 'vector<u32>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
-              data: {
-                value: input.value,
-              },
-            },
-          ],
-          edges: [],
-        };
       case 'vector<u64>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
-              data: {
-                value: input.value,
-              },
-            },
-          ],
-          edges: [],
-        };
       case 'vector<u128>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: 'SuiNumberVector',
-              data: {
-                value: input.value,
-              },
-            },
-          ],
-          edges: [],
-        };
       case 'vector<u256>':
         return {
           nodes: [
@@ -161,7 +103,8 @@ export const createInputs = (
               position: { x: 0, y: 0 },
               type: 'SuiNumberVector',
               data: {
-                value: input.value,
+                label: input.valueType,
+                value: input.value as string[],
               },
             },
           ],

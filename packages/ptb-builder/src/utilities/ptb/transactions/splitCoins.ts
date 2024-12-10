@@ -1,16 +1,17 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
+import { PTBNode } from '../../../PTBFlow/nodes';
 
 export const splitCoins = (
   index: number,
   ptb: ProgrammableTransaction,
   suiTx: SuiTransaction,
   id: string,
-): { edges: Edge[]; inputs: Node[] } => {
+): { edges: Edge[]; inputs: PTBNode[] } => {
   const edges: Edge[] = [];
-  const inputs: Node[] = [];
+  const inputs: PTBNode[] = [];
 
   if ('SplitCoins' in suiTx) {
     const [coin, amounts] = suiTx.SplitCoins;
@@ -52,6 +53,7 @@ export const splitCoins = (
       position: { x: 0, y: 0 },
       type: 'SuiNumberArray',
       data: {
+        label: 'number[]',
         value: arg1,
       },
     });

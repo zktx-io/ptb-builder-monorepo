@@ -1,16 +1,17 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
+import { PTBNode } from '../../../PTBFlow/nodes';
 
 export const transferObjects = (
   index: number,
   ptb: ProgrammableTransaction,
   suiTx: SuiTransaction,
   id: string,
-): { edges: Edge[]; inputs: Node[] } => {
+): { edges: Edge[]; inputs: PTBNode[] } => {
   const edges: Edge[] = [];
-  const inputs: Node[] = [];
+  const inputs: PTBNode[] = [];
 
   if ('TransferObjects' in suiTx) {
     const [objects, address] = suiTx.TransferObjects;
@@ -89,6 +90,7 @@ export const transferObjects = (
           position: { x: 0, y: 0 },
           type: 'SuiObjectArray',
           data: {
+            label: 'object[]',
             value: items,
           },
         });

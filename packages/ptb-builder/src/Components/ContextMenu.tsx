@@ -1,20 +1,15 @@
 import React, { useCallback } from 'react';
 
-import {
-  Edge,
-  Node,
-  useReactFlow,
-  useViewport,
-  XYPosition,
-} from '@xyflow/react';
+import { Edge, useReactFlow, useViewport, XYPosition } from '@xyflow/react';
 
 import { MENU, MENU_EDGE, MENU_NODE, MenuItem, MenuList } from './Menu.data';
 import { enqueueToast } from '../Provider/toastManager';
+import { PTBNode } from '../PTBFlow/nodes';
 import { MenuStyle, MenuSubStyle } from '../PTBFlow/nodes/styles';
 import { getLayoutedElements } from '../utilities/getLayoutedElements';
 
 export interface ContextProp {
-  selected?: Node | Edge;
+  selected?: PTBNode | Edge;
   top?: number;
   left?: number;
   right?: number;

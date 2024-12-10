@@ -10,7 +10,6 @@ import {
   Controls,
   Edge,
   MiniMap,
-  Node,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -18,12 +17,12 @@ import {
 } from '@xyflow/react';
 
 import { PTBEdges } from './edges';
-import { PTBNodes } from './nodes';
+import { PTBNode, PTBNodes } from './nodes';
 import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
 import { MENU } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
-import { hasPath } from '../utilities/hasPath';
+import { testPath } from '../utilities/testPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
 import { toJson } from '../utilities/json/toJson';
@@ -52,7 +51,7 @@ export const PTBFlow = ({
   const setState = useStateUpdateContext();
   const { isEditor, network, disableUpdate } = useStateContext();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<PTBNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [ptbJson, setPtbJson] = useState<string>('');
 
@@ -79,7 +78,7 @@ export const PTBFlow = ({
   );
 
   const handleContextMenu = useCallback(
-    (event: any, item?: Node | Edge) => {
+    (event: any, item?: PTBNode | Edge) => {
       event.preventDefault();
       if (ref.current && isEditor) {
         const pane = (ref.current as any).getBoundingClientRect();
@@ -194,7 +193,7 @@ export const PTBFlow = ({
   }, [disableUpdate, edges, network, nodes, ptbJson, setState, update]);
 
   useEffect(() => {
-    setState((oldData) => ({ ...oldData, hasPath: hasPath(nodes, edges) }));
+    setState((oldData) => ({ ...oldData, hasPath: testPath(nodes, edges) }));
   }, [edges, nodes, setState]);
 
   useEffect(() => {

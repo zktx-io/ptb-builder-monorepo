@@ -1,6 +1,8 @@
-import type { Edge, Node } from '@xyflow/react';
+import type { Edge } from '@xyflow/react';
 
-export const hasPath = (nodes: Node[], edges: Edge[]): boolean => {
+import { PTBNode } from '../PTBFlow/nodes';
+
+export const testPath = (nodes: PTBNode[], edges: Edge[]): boolean => {
   const startNode = nodes.find((node) => node.type === 'Start');
   const endNode = nodes.find((node) => node.type === 'End');
 
@@ -8,7 +10,7 @@ export const hasPath = (nodes: Node[], edges: Edge[]): boolean => {
     return false;
   }
 
-  const pathExists = (currentNode: Node, visited: Set<string>): boolean => {
+  const pathExists = (currentNode: PTBNode, visited: Set<string>): boolean => {
     if (currentNode.id === endNode.id) {
       return true;
     }

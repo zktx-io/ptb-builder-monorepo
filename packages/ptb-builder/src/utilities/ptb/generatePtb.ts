@@ -1,8 +1,10 @@
 import { Transaction } from '@mysten/sui/transactions';
-import { Edge, Node } from '@xyflow/react';
+import { Edge } from '@xyflow/react';
+
+import { PTBNode } from '../../PTBFlow/nodes';
 
 export const generatePtb = async (
-  nodes: Node[],
+  nodes: PTBNode[],
   edges: Edge[],
 ): Promise<Transaction | undefined> => {
   let tx = new Transaction();
@@ -11,7 +13,7 @@ export const generatePtb = async (
   const excutable = nodes.filter((item) => !!item.data.excute);
 
   for (const item of excutable) {
-    const params: { source: Node; target: string }[] = edges
+    const params: { source: PTBNode; target: string }[] = edges
       .filter(
         (edge) =>
           edge.target === item.id &&

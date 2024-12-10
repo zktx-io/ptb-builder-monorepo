@@ -14,9 +14,9 @@ export interface PTBNode extends Node {
 export interface PTBNodeData {
   [key: string]: unknown;
   label: string;
-  value: string | string[] | object;
-  code: (params: CodeParam[]) => string;
-  excute: (
+  value?: string | string[] | object;
+  code?: (params: CodeParam[]) => string;
+  excute?: (
     transaction: Transaction,
     params: { source: PTBNode; target: string }[],
     results: { id: string; value: any }[],
