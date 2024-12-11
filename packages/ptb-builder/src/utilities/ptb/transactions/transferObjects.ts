@@ -2,7 +2,7 @@ import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PTBNode } from '../../../PTBFlow/nodes';
+import { PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
 
 export const transferObjects = (
   index: number,
@@ -88,7 +88,7 @@ export const transferObjects = (
         inputs.push({
           id: `input-${index}-0`,
           position: { x: 0, y: 0 },
-          type: 'SuiObjectArray',
+          type: PTBNodeType.ObjectArray,
           data: {
             label: 'object[]',
             value: items,

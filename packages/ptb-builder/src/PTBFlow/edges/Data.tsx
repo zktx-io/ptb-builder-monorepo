@@ -5,21 +5,6 @@ import { BaseEdge, EdgeProps, getBezierPath } from '@xyflow/react';
 import { useStateContext } from '../../Provider';
 import { HandleStyles } from '../nodes/styles';
 
-const numericTypes = new Set([
-  'u8',
-  'u16',
-  'u32',
-  'u64',
-  'u128',
-  'u256',
-  'vector<u8>',
-  'vector<u16>',
-  'vector<u32>',
-  'vector<u64>',
-  'vector<u128>',
-  'vector<u256>',
-]);
-
 export const Data = ({
   id,
   sourceX,
@@ -41,10 +26,11 @@ export const Data = ({
   });
   const { colorMode } = useStateContext();
   const getColor = (type: string): string => {
-    if (numericTypes.has(type)) {
-      return HandleStyles.number.border;
+    const match = type.match(/^vector<([^>]+)>$|^([^[]+)\[\]$|^([^[]+)$/);
+    if (match) {
+      return (HandleStyles as any)[match[1] || match[2] || match[3]].border;
     }
-    return (HandleStyles as any)[type].border;
+    return '';
   };
 
   const glowColor =
@@ -62,9 +48,7 @@ export const Data = ({
       <BaseEdge
         id={id}
         path={edgePath}
-        className={getColor(
-          sourceHandleId!.split(':')[1].replace('[]', '').toLowerCase(),
-        )}
+        className={getColor(sourceHandleId!.split(':')[1].toLowerCase())}
         style={{
           strokeWidth: 3,
           strokeDasharray: selected ? '5,5' : 'none',

@@ -1,23 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 
-import { PtbHandle, PtbHandleVector } from '../PTBFlow/nodes/handles';
+import {
+  PtbHandle,
+  PtbHandleArray,
+  PtbHandleVector,
+} from '../PTBFlow/nodes/handles';
+import { TYPE_ARRAY, TYPE_PARAMS, TYPE_VECTOR } from '../PTBFlow/nodes/isType';
 import { FormStyle, InputStyle, LabelStyle } from '../PTBFlow/nodes/styles';
 import { PREFIX } from '../utilities/getMoveCallFuncArg';
 
 export interface FuncArg {
   id: string;
-  type:
-    | 'address'
-    | 'bool'
-    | 'object'
-    | 'number'
-    | 'vector<u8>'
-    | 'vector<u16>'
-    | 'vector<u32>'
-    | 'vector<u64>'
-    | 'vector<u128>'
-    | 'vector<u256>'
-    | undefined;
+  type: TYPE_PARAMS | TYPE_ARRAY | TYPE_VECTOR | undefined;
   placeHolder: string;
   value: string;
 }
@@ -60,7 +54,19 @@ export const MoveCallArg = ({
           name={`${PREFIX}${index}`}
           style={{ top: `${yPosition + index * 42}px` }}
         />
-      ) : arg.type === 'vector<u8>' ||
+      ) : arg.type === 'address[]' ||
+        arg.type === 'bool[]' ||
+        arg.type === 'object[]' ||
+        arg.type === 'number[]' ? (
+        <PtbHandleArray
+          typeHandle={typeHandle}
+          typeParams={arg.type}
+          node={node}
+          name={`${PREFIX}${index}`}
+          style={{ top: `${yPosition + index * 42}px` }}
+        />
+      ) : arg.type === 'vector<object>' ||
+        arg.type === 'vector<u8>' ||
         arg.type === 'vector<u16>' ||
         arg.type === 'vector<u32>' ||
         arg.type === 'vector<u64>' ||

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
 
-import { CodeParam, PTBNode, PTBNodeProp } from '..';
+import { CodeParam, PTBNode, PTBNodeProp, PTBNodeType } from '..';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
@@ -26,9 +26,9 @@ export const SplitCoins = ({ data }: PTBNodeProp) => {
 
       const coinObject = params.find((item) => item.target === 'coin:object');
       if (coinObject) {
-        if (coinObject.source.type === 'SuiObjectGas') {
+        if (coinObject.source.type === PTBNodeType.ObjectGas) {
           coin = transaction.gas;
-        } else if (coinObject.source.type === 'SuiObject') {
+        } else if (coinObject.source.type === PTBNodeType.Object) {
           coin = transaction.object(coinObject.source.data.value as string);
         } else {
           // TODO
@@ -39,7 +39,7 @@ export const SplitCoins = ({ data }: PTBNodeProp) => {
       }
       const inputs = params.find((item) => item.target === 'amounts:number[]');
       if (inputs) {
-        if (inputs.source.type === 'SuiNumberArray') {
+        if (inputs.source.type === PTBNodeType.NumberArray) {
           amounts.push(...(inputs.source.data.value as number[]));
         } else {
           // TODO

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
 
-import { CodeParam, PTBNode, PTBNodeProp } from '..';
+import { CodeParam, PTBNode, PTBNodeProp, PTBNodeType } from '..';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
@@ -30,9 +30,9 @@ export const MergeCoins = ({ data }: PTBNodeProp) => {
         (item) => item.target === 'destination:object',
       );
       if (destNode) {
-        if (destNode.source.type === 'SuiObjectGas') {
+        if (destNode.source.type === PTBNodeType.ObjectGas) {
           destination = transaction.gas;
-        } else if (destNode.source.type === 'SuiObject') {
+        } else if (destNode.source.type === PTBNodeType.Object) {
           destination = destNode.source.data.value as string;
         } else {
           // TODO
@@ -44,13 +44,13 @@ export const MergeCoins = ({ data }: PTBNodeProp) => {
 
       const inputs = params.find((item) => item.target === 'source:object[]');
       if (inputs) {
-        if (inputs.source.type === 'SuiObjectArray') {
+        if (inputs.source.type === PTBNodeType.ObjectArray) {
           sources.push(
             ...(inputs.source.data.value as string[]).map((item) =>
               transaction.object(item),
             ),
           );
-        } else if (inputs.source.type === 'SplitCoins') {
+        } else if (inputs.source.type === PTBNodeType.SplitCoins) {
           const temp = results.find((item) => item.id === inputs.source.id);
           temp && sources.push(...temp.value);
         } else {

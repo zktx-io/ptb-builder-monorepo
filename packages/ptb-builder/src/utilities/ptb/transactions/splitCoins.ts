@@ -2,7 +2,7 @@ import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PTBNode } from '../../../PTBFlow/nodes';
+import { PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
 
 export const splitCoins = (
   index: number,
@@ -51,7 +51,7 @@ export const splitCoins = (
     inputs.push({
       id: `input-${index}-1`,
       position: { x: 0, y: 0 },
-      type: 'SuiNumberArray',
+      type: PTBNodeType.NumberArray,
       data: {
         label: 'number[]',
         value: arg1,

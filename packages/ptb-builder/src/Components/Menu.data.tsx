@@ -82,9 +82,45 @@ export const PTB = {
     Type: PTBNodeType.String,
     Name: 'string',
   },
-  MakeMoveVec: {
+  MakeMoveVecAddress: {
     Type: PTBNodeType.MakeMoveVec,
-    Name: 'make move vector',
+    Name: 'vector<address>',
+  },
+  MakeMoveVecBool: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<bool>',
+  },
+  MakeMoveVecObject: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<object>',
+  },
+  MakeMoveVecString: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<string>',
+  },
+  MakeMoveVecU8: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u8>',
+  },
+  MakeMoveVecU16: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u16>',
+  },
+  MakeMoveVecU32: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u32>',
+  },
+  MakeMoveVecU64: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u64>',
+  },
+  MakeMoveVecU128: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u128>',
+  },
+  MakeMoveVecU256: {
+    Type: PTBNodeType.MakeMoveVec,
+    Name: 'vector<u256>',
   },
   MergeCoins: {
     Type: PTBNodeType.MergeCoins,
@@ -127,6 +163,10 @@ export const Menu: {
     name: string;
     submenu: MenuItem[];
   }[];
+  utilities: {
+    name: string;
+    submenu: MenuItem[];
+  }[];
   transactions: MenuItem[];
   node: MenuItem[];
   edge: MenuItem[];
@@ -149,6 +189,61 @@ export const Menu: {
           name: PTB.AddressVector.Name,
           type: PTB.AddressVector.Type,
           icon: <IconTriangle color="text-yellow-500" />,
+        },
+      ],
+    },
+    {
+      name: 'Object',
+      submenu: [
+        {
+          name: PTB.ObjectGas.Name,
+          type: PTB.ObjectGas.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.Object.Name,
+          type: PTB.Object.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectArray.Name,
+          type: PTB.ObjectArray.Type,
+          icon: <IconSquare color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectVector.Name,
+          type: PTB.ObjectVector.Type,
+          icon: <IconTriangle color="text-blue-500" />,
+        },
+      ],
+    },
+    {
+      name: 'Boolean',
+      submenu: [
+        {
+          name: PTB.Bool.Name,
+          type: PTB.Bool.Type,
+          icon: <IconCircle color="bg-pink-500" />,
+        },
+        {
+          name: PTB.BoolArray.Name,
+          type: PTB.BoolArray.Type,
+          icon: <IconSquare color="bg-pink-500" />,
+        },
+        {
+          name: PTB.BoolVector.Name,
+          type: PTB.BoolVector.Type,
+          icon: <IconTriangle color="text-pink-500" />,
+        },
+      ],
+    },
+    {
+      name: 'String',
+      submenu: [
+        {
+          name: PTB.String.Name,
+          type: PTB.String.Type,
+          icon: <IconCircle color="bg-green-500" />,
         },
       ],
     },
@@ -197,58 +292,60 @@ export const Menu: {
         },
       ],
     },
+  ],
+  utilities: [
     {
-      name: 'String',
+      name: 'make move vec',
       submenu: [
         {
-          name: PTB.String.Name,
-          type: PTB.String.Type,
-          icon: <IconCircle color="bg-green-500" />,
-        },
-      ],
-    },
-    {
-      name: 'Object',
-      submenu: [
-        {
-          name: PTB.ObjectGas.Name,
-          type: PTB.ObjectGas.Type,
-          icon: <IconCircle color="bg-blue-500" />,
+          name: PTB.MakeMoveVecAddress.Name,
+          type: PTB.MakeMoveVecAddress.Type,
+          icon: <IconTriangle color="text-yellow-500" />,
         },
         {
-          name: PTB.Object.Name,
-          type: PTB.Object.Type,
-          icon: <IconCircle color="bg-blue-500" />,
+          name: PTB.MakeMoveVecBool.Name,
+          type: PTB.MakeMoveVecBool.Type,
+          icon: <IconTriangle color="text-pink-500" />,
         },
         {
-          name: PTB.ObjectArray.Name,
-          type: PTB.ObjectArray.Type,
-          icon: <IconSquare color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectVector.Name,
-          type: PTB.ObjectVector.Type,
+          name: PTB.MakeMoveVecObject.Name,
+          type: PTB.MakeMoveVecObject.Type,
           icon: <IconTriangle color="text-blue-500" />,
         },
-      ],
-    },
-    {
-      name: 'Boolean',
-      submenu: [
         {
-          name: PTB.Bool.Name,
-          type: PTB.Bool.Type,
-          icon: <IconCircle color="bg-pink-500" />,
+          name: PTB.MakeMoveVecString.Name,
+          type: PTB.MakeMoveVecString.Type,
+          icon: <IconTriangle color="text-green-500" />,
         },
         {
-          name: PTB.BoolArray.Name,
-          type: PTB.BoolArray.Type,
-          icon: <IconSquare color="bg-pink-500" />,
+          name: PTB.MakeMoveVecU8.Name,
+          type: PTB.MakeMoveVecU8.Type,
+          icon: <IconTriangle color="text-red-500" />,
         },
         {
-          name: PTB.BoolVector.Name,
-          type: PTB.BoolVector.Type,
-          icon: <IconTriangle color="text-pink-500" />,
+          name: PTB.MakeMoveVecU16.Name,
+          type: PTB.MakeMoveVecU16.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.MakeMoveVecU32.Name,
+          type: PTB.MakeMoveVecU32.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.MakeMoveVecU64.Name,
+          type: PTB.MakeMoveVecU64.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.MakeMoveVecU128.Name,
+          type: PTB.MakeMoveVecU128.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.MakeMoveVecU256.Name,
+          type: PTB.MakeMoveVecU256.Type,
+          icon: <IconTriangle color="text-red-500" />,
         },
       ],
     },

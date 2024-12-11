@@ -16,6 +16,32 @@ const numericVectorTypes = new Set([
   'vector<u256>',
 ]);
 
+const getConnectType = (
+  ptb: ProgrammableTransaction,
+  id: number,
+): { sourceHandle: string; type: string } | undefined => {
+  const tx = ptb.transactions[id];
+  if (
+    'MakeMoveVec' in tx &&
+    typeof tx.MakeMoveVec[1][0] === 'object' &&
+    'NestedResult' in tx.MakeMoveVec[1][0]
+  ) {
+    const tx2 = ptb.transactions[tx.MakeMoveVec[1][0].NestedResult[0]];
+    if (typeof tx2 === 'object' && 'SplitCoins' in tx2) {
+      return {
+        sourceHandle: 'result:vector<object>',
+        type: 'vector<object>',
+      };
+    }
+  } else if ('SplitCoins' in tx) {
+    return {
+      sourceHandle: 'result:object[]',
+      type: 'object[]',
+    };
+  }
+  return undefined;
+};
+
 export const moveCall = (
   index: number,
   ptb: ProgrammableTransaction,
@@ -152,11 +178,47 @@ export const moveCall = (
                 placeHolder: 'undefined',
                 value: '',
               });
-              enqueueToast(`not support - ${JSON.stringify(item)}`, {
+              enqueueToast(`not support (1) - ${JSON.stringify(item)}`, {
                 variant: 'warning',
               });
             }
           }
+        } else if (typeof item !== 'string' && 'Result' in item) {
+          const connectType = getConnectType(ptb, item.Result);
+          handles.push({
+            id: `${PREFIX}${i}`,
+            type: connectType ? (connectType.type as any) : undefined,
+            placeHolder: `Result: ${item.Result}`,
+            value: connectType ? connectType.type : '',
+          });
+          connectType &&
+            edges.push({
+              id: `sub-${index}-${i}`,
+              type: 'Data',
+              source: `tx-${item.Result}`,
+              sourceHandle: connectType.sourceHandle,
+              target: id,
+              targetHandle: `${PREFIX}${i}:${connectType.type}`,
+            });
+          !connectType &&
+            enqueueToast(`not support (2) - ${JSON.stringify(item)}`, {
+              variant: 'warning',
+            });
+        } else if (item === 'GasCoin') {
+          handles.push({
+            id: `${PREFIX}${i}`,
+            type: 'object',
+            placeHolder: item,
+            value: item,
+          });
+          edges.push({
+            id: `sub-${index}-${i}`,
+            type: 'Data',
+            source: '@gasCoin',
+            sourceHandle: 'inputs:object',
+            target: id,
+            targetHandle: `${PREFIX}${i}:object`,
+          });
         } else {
           // TODO
           handles.push({
@@ -165,7 +227,7 @@ export const moveCall = (
             placeHolder: 'undefined',
             value: '',
           });
-          enqueueToast(`not support - ${JSON.stringify(item)}`, {
+          enqueueToast(`not support (3) - ${JSON.stringify(item)}`, {
             variant: 'warning',
           });
         }

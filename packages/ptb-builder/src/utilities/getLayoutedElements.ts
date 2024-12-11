@@ -1,6 +1,8 @@
 import { Edge, Node } from '@xyflow/react';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
+import { PTBNodeType } from '../PTBFlow/nodes';
+
 const elk = new ELK();
 
 const layoutOptions = {
@@ -36,7 +38,7 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
       return {
         id: n.id,
         width: 200,
-        height: n.type === 'MoveCall' || n.id === '@start' ? 400 : 50,
+        height: n.type === PTBNodeType.MoveCall || n.id === '@start' ? 400 : 50,
         properties: {
           'org.eclipse.elk.portConstraints': 'FIXED_ORDER',
         },

@@ -1,24 +1,7 @@
 import { SuiMoveNormalizedType } from '@mysten/sui/client';
 
 import { getTypeName } from './getTypeName';
-
-interface FuncArg {
-  id: string;
-  type:
-    | 'address'
-    | 'bool'
-    | 'object'
-    | 'number'
-    | 'vector<u8>'
-    | 'vector<u16>'
-    | 'vector<u32>'
-    | 'vector<u64>'
-    | 'vector<u128>'
-    | 'vector<u256>'
-    | undefined;
-  placeHolder: string;
-  value: string;
-}
+import { FuncArg } from '../Components/MoveCallArg';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);
@@ -56,7 +39,10 @@ export const getMoveCallFuncArg = (
   if (typeof item === 'object' && 'Vector' in item) {
     return {
       id: `${PREFIX}${index}`,
-      type: `vector<${item.Vector}>`.toLowerCase() as any,
+      type:
+        typeof item.Vector === 'object' && 'Struct' in item.Vector
+          ? (`vector<object>`.toLowerCase() as any) // TODO: fix this
+          : (`vector<${item.Vector}>`.toLowerCase() as any),
       placeHolder: getTypeName(item),
       value: '',
     };

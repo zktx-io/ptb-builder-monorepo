@@ -182,6 +182,31 @@ export const ContextMenu = ({
               </li>
             ))}
             <div className="border-t border-gray-300 dark:border-stone-700 my-1" />
+            {Menu.utilities.map((item, key) => (
+              <li key={`0-${key}`} className="relative group">
+                <div
+                  className={`${MenuStyle} flex justify-between items-center`}
+                >
+                  {item.name}
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </div>
+                <ul className={MenuSubStyle}>
+                  {renderMenuItems(item.submenu)}
+                </ul>
+              </li>
+            ))}
             {renderMenuItems(Menu.transactions)}
           </>
         )}

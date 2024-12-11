@@ -65,8 +65,8 @@ export const createTransactions = (
     const res = makeMoveVec(index, ptb, suiTx, id);
     return create(
       id,
-      PTB.MakeMoveVec.Type,
-      PTB.MakeMoveVec.Name,
+      PTBNodeType.MakeMoveVec,
+      'vector<object>', // TODO
       res.edges,
       res.inputs,
     );
