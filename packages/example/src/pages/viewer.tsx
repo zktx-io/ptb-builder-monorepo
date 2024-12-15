@@ -35,6 +35,7 @@ export const Viewer = () => {
           },
         });
         if (res.transaction) {
+          console.log(res.transaction.data);
           setTxData(res.transaction.data);
         } else {
           enqueueSnackbar(`${res.errors?.toString()}`, {

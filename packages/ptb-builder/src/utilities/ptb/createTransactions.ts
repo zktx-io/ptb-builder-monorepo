@@ -1,5 +1,4 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge } from '@xyflow/react';
 
 import { makeMoveVec } from './transactions/makeMoveVec';
 import { mergeCoins } from './transactions/mergeCoins';
@@ -7,13 +6,13 @@ import { moveCall } from './transactions/moveCall';
 import { splitCoins } from './transactions/splitCoins';
 import { transferObjects } from './transactions/transferObjects';
 import { PTB } from '../../Components/Menu.data';
-import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 
 const create = (
   id: string,
   type: PTBNodeType,
   label: string,
-  edges: Edge[],
+  edges: PTBEdge[],
   inputs: PTBNode[],
 ) => {
   return {
@@ -36,7 +35,7 @@ export const createTransactions = (
 ): {
   tx: PTBNode;
   inputs: PTBNode[];
-  edges: Edge[];
+  edges: PTBEdge[];
 } => {
   const id = `tx-${index}`;
   const suiTx: SuiTransaction = ptb.transactions[index];

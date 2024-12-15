@@ -8,7 +8,6 @@ import {
   BackgroundVariant,
   Connection,
   Controls,
-  Edge,
   MiniMap,
   ReactFlow,
   useEdgesState,
@@ -17,12 +16,12 @@ import {
 } from '@xyflow/react';
 
 import { PTBEdges } from './edges';
-import { PTBNode, PTBNodes, PTBNodeType } from './nodes';
+import { PTBEdge, PTBNode, PTBNodes, PTBNodeType } from './nodes';
 import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
 import { PTB } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
 import { useStateContext, useStateUpdateContext } from '../Provider';
-import { testPath } from '../utilities/testPath';
+import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';
 import { toJson } from '../utilities/json/toJson';
@@ -52,7 +51,7 @@ export const PTBFlow = ({
   const { isEditor, network, disableUpdate } = useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<PTBNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<PTBEdge>([]);
   const [ptbJson, setPtbJson] = useState<string>('');
 
   const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
@@ -78,7 +77,7 @@ export const PTBFlow = ({
   );
 
   const handleContextMenu = useCallback(
-    (event: any, item?: PTBNode | Edge) => {
+    (event: any, item?: PTBNode | PTBEdge) => {
       event.preventDefault();
       if (ref.current && isEditor) {
         const pane = (ref.current as any).getBoundingClientRect();
@@ -193,7 +192,10 @@ export const PTBFlow = ({
   }, [disableUpdate, edges, network, nodes, ptbJson, setState, update]);
 
   useEffect(() => {
-    setState((oldData) => ({ ...oldData, hasPath: testPath(nodes, edges) }));
+    setState((oldData) => ({
+      ...oldData,
+      hasPath: getPath(nodes, edges).length > 0,
+    }));
   }, [edges, nodes, setState]);
 
   useEffect(() => {

@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect } from 'react';
 
-import { PTBNodeProp } from '..';
+import { PTBEdge, PTBNodeProp } from '..';
 import { PtbHandleArray, PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
-import { CodeParam } from '../types';
 
 export const Publish = ({ data }: PTBNodeProp) => {
-  const code = useCallback((_params: CodeParam[]): string => {
-    return '';
-  }, []);
+  const code = useCallback(
+    (dictionary: Record<string, string>, edges: PTBEdge[]): string => {
+      return '';
+    },
+    [],
+  );
 
   useEffect(() => {
     if (data) {
@@ -19,14 +21,9 @@ export const Publish = ({ data }: PTBNodeProp) => {
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        {data.label}
+        Publish
       </p>
-      <PtbHandleArray
-        typeHandle="source"
-        typeParams="object[]"
-        name="result"
-        node="transactions"
-      />
+      <PtbHandleArray typeHandle="source" typeParams="object[]" name="result" />
       <PtbHandleProcess typeHandle="target" />
       <PtbHandleProcess typeHandle="source" />
     </div>

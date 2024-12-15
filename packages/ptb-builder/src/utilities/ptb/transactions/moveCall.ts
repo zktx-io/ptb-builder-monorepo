@@ -1,9 +1,8 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge } from '@xyflow/react';
 
-import { FuncArg } from '../../../Components/MoveCallArg';
+import { FuncArg } from '../../../Components/MoveCallArgs';
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PTBNode } from '../../../PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../../PTBFlow/nodes';
 
 const PREFIX = 'param-';
 const numericTypes = new Set(['u8', 'u16', 'u32', 'u64', 'u128', 'u256']);
@@ -48,14 +47,14 @@ export const moveCall = (
   suiTx: SuiTransaction,
   id: string,
 ): {
-  edges: Edge[];
+  edges: PTBEdge[];
   inputs: PTBNode[];
   package: string;
   module: string;
   function: string;
   handles: FuncArg[];
 } => {
-  const edges: Edge[] = [];
+  const edges: PTBEdge[] = [];
   const inputs: PTBNode[] = [];
   const handles: FuncArg[] = [];
   let _package: string = '';
@@ -107,37 +106,20 @@ export const moveCall = (
             } else if (
               numericVectorTypes.has((ptb.inputs[item.Input] as any).valueType)
             ) {
-              switch ((ptb.inputs[item.Input] as any).valueType) {
-                case 'vector<u8>':
-                case 'vector<u16>':
-                case 'vector<u32>':
-                case 'vector<u64>':
-                case 'vector<u128>':
-                case 'vector<u256>':
-                  handles.push({
-                    id: `${PREFIX}${i}`,
-                    type: (ptb.inputs[item.Input] as any).valueType,
-                    placeHolder: (ptb.inputs[item.Input] as any).valueType,
-                    value: (ptb.inputs[item.Input] as any).valueType,
-                  });
-                  edges.push({
-                    id: `sub-${index}-${i}`,
-                    type: 'Data',
-                    source: `input-${item.Input}`,
-                    sourceHandle: `inputs:${(ptb.inputs[item.Input] as any).valueType}`,
-                    target: id,
-                    targetHandle: `${PREFIX}${i}:${(ptb.inputs[item.Input] as any).valueType}`,
-                  });
-                  break;
-                default:
-                  handles.push({
-                    id: `${PREFIX}${i}`,
-                    type: undefined,
-                    placeHolder: 'undefined',
-                    value: '',
-                  });
-                  break;
-              }
+              handles.push({
+                id: `${PREFIX}${i}`,
+                type: (ptb.inputs[item.Input] as any).valueType,
+                placeHolder: (ptb.inputs[item.Input] as any).valueType,
+                value: (ptb.inputs[item.Input] as any).valueType,
+              });
+              edges.push({
+                id: `sub-${index}-${i}`,
+                type: 'Data',
+                source: `input-${item.Input}`,
+                sourceHandle: `inputs:${(ptb.inputs[item.Input] as any).valueType}`,
+                target: id,
+                targetHandle: `${PREFIX}${i}:${(ptb.inputs[item.Input] as any).valueType}`,
+              });
             } else if (
               (ptb.inputs[item.Input] as any).valueType === 'address'
             ) {
@@ -204,6 +186,14 @@ export const moveCall = (
             enqueueToast(`not support (2) - ${JSON.stringify(item)}`, {
               variant: 'warning',
             });
+        } else if (typeof item !== 'string' && 'NestedResult' in item) {
+          handles.push({
+            id: `${PREFIX}${i}`,
+            type: undefined,
+            placeHolder: 'NestedResult',
+            value: '',
+          });
+          // TODO
         } else if (item === 'GasCoin') {
           handles.push({
             id: `${PREFIX}${i}`,

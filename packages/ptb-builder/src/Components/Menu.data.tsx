@@ -18,6 +18,10 @@ export const PTB = {
     Type: PTBNodeType.AddressVector,
     Name: 'vector<address>',
   },
+  AddressWallet: {
+    Type: PTBNodeType.AddressWallet,
+    Name: 'wallet',
+  },
   Bool: {
     Type: PTBNodeType.Bool,
     Name: 'bool',
@@ -175,6 +179,11 @@ export const Menu: {
     {
       name: 'Address',
       submenu: [
+        {
+          name: PTB.AddressWallet.Name,
+          type: PTB.AddressWallet.Type,
+          icon: <IconCircle color="bg-yellow-500" />,
+        },
         {
           name: PTB.Address.Name,
           type: PTB.Address.Type,

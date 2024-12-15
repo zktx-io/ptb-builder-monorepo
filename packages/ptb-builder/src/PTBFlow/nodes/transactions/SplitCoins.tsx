@@ -1,20 +1,35 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
+import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { CodeParam, PTBNode, PTBNodeProp, PTBNodeType } from '..';
+import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
+import { TxsArgs, TxsArgsHandles } from '../../../Components/TxsArgs';
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
+import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
-export const SplitCoins = ({ data }: PTBNodeProp) => {
-  const code = useCallback((params: CodeParam[]): string => {
-    const args: (CodeParam | undefined)[] = [];
-    args.push(params.find((item) => item.targetHandle === 'coin:object'));
-    args.push(params.find((item) => item.targetHandle === 'amounts:number[]'));
-    return `tx.splitCoins(${args.map((item) => (item ? item.name : 'undefined')).join(',')})`;
-  }, []);
+export const SplitCoins = ({ id, data }: PTBNodeProp) => {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const { setEdges } = useReactFlow();
+  // eslint-disable-next-line no-restricted-syntax
+  const txsArgsRef = useRef<TxsArgsHandles>(null);
 
+  const code = useCallback(
+    (dictionary: Record<string, string>, edges: PTBEdge[]): string => {
+      if (txsArgsRef.current) {
+        const args = txsArgsRef.current.getArgs(dictionary, edges);
+        const coin = args.arg1;
+        const amounts = Array.isArray(args.arg2)
+          ? `[${args.arg2.join(',')}]`
+          : args.arg2;
+        return `tx.splitCoins(${coin}, ${amounts})`;
+      }
+      return 'tx.splitCoins(undefined, undefined)';
+    },
+    [],
+  );
+  /*
   const excute = useCallback(
     (
       transaction: Transaction,
@@ -57,39 +72,56 @@ export const SplitCoins = ({ data }: PTBNodeProp) => {
     },
     [],
   );
+  */
+  const resetEdge = (handle: 'source' | 'target') => {
+    setEdges((eds) =>
+      eds.filter(
+        (edge) =>
+          !(
+            ((edge.target === id && handle === 'target') ||
+              (edge.source === id && handle === 'source')) &&
+            edge.type === 'Data' &&
+            edge.targetHandle !== 'coin:object'
+          ),
+      ),
+    );
+  };
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals]);
 
   useEffect(() => {
     if (data) {
       data.code = code;
-      data.excute = excute;
+      // data.excute = excute;
     }
-  }, [code, data, excute]);
+  }, [code, data]);
 
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        {data.label}
+        SplitCoins
       </p>
-      <PtbHandle
+      <PtbHandleProcess
         typeHandle="target"
-        typeParams="object"
-        name="coin"
-        style={{ left: '35%' }}
+        style={{
+          top: '24px',
+        }}
       />
-      <PtbHandleArray
-        typeHandle="target"
-        typeParams="number[]"
-        name="amounts"
-        style={{ left: '65%' }}
-      />
-      <PtbHandleArray
+      <PtbHandleProcess
         typeHandle="source"
-        typeParams="object[]"
-        name="result"
-        node="transactions"
+        style={{
+          top: '24px',
+        }}
       />
-      <PtbHandleProcess typeHandle="target" />
-      <PtbHandleProcess typeHandle="source" />
+      <TxsArgs
+        ref={txsArgsRef}
+        input1={{ label: 'coin', type: 'object' }}
+        input2={{ label: 'amounts', type: 'number[]' }}
+        output={{ label: 'result', type: 'object[]' }}
+        resetEdge={resetEdge}
+      />
     </div>
   );
 };

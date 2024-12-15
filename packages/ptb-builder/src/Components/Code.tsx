@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
-import { Edge } from '@xyflow/react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import { PTBNode } from '../PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../PTBFlow/nodes';
 import { generateCode } from '../utilities/ptb/generateCode';
 import { generatePtb } from '../utilities/ptb/generatePtb';
 
@@ -18,7 +17,7 @@ export const Code = ({
   excuteTx,
 }: {
   nodes: PTBNode[];
-  edges: Edge[];
+  edges: PTBEdge[];
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   const language = 'javascript';
@@ -62,20 +61,18 @@ export const Code = ({
       {code && isVisible && (
         <Resizable
           className="Code"
-          style={{ pointerEvents: 'all' }}
+          style={{
+            pointerEvents: 'all',
+          }}
+          handleClasses={{
+            left: 'bg-gray-200 dark:bg-gray-600 w-0 h-full cursor-ew-resize',
+          }}
           defaultSize={{
             width: '320px',
           }}
           minWidth="240px"
           enable={{
             left: true,
-            top: false,
-            bottom: false,
-            right: false,
-            topLeft: false,
-            topRight: false,
-            bottomLeft: false,
-            bottomRight: false,
           }}
         >
           <pre className="line-numbers">

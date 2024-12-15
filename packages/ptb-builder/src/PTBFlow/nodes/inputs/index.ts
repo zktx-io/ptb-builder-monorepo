@@ -1,6 +1,7 @@
 import { SuiAddress } from './SuiAddress';
 import { SuiAddressArray } from './SuiAddressArray';
 import { SuiAddressVector } from './SuiAddressVector';
+import { SuiAddressWallet } from './SuiAddressWallet';
 import { SuiBool } from './SuiBool';
 import { SuiBoolArray } from './SuiBoolArray';
 import { SuiBoolVector } from './SuiBoolVector';
@@ -17,6 +18,7 @@ export default {
   SuiAddress,
   SuiAddressArray,
   SuiAddressVector,
+  SuiAddressWallet,
   SuiString,
   SuiBool,
   SuiBoolArray,

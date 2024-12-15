@@ -1,16 +1,15 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
-import { Edge } from '@xyflow/react';
 
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
 
 export const mergeCoins = (
   index: number,
   ptb: ProgrammableTransaction,
   suiTx: SuiTransaction,
   id: string,
-): { edges: Edge[]; inputs: PTBNode[] } => {
-  const edges: Edge[] = [];
+): { edges: PTBEdge[]; inputs: PTBNode[] } => {
+  const edges: PTBEdge[] = [];
   const inputs: PTBNode[] = [];
 
   if ('MergeCoins' in suiTx) {

@@ -2,18 +2,17 @@ import {
   ProgrammableTransaction,
   TransactionBlockData,
 } from '@mysten/sui/client';
-import { Edge } from '@xyflow/react';
 
 import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
 import { PTB } from '../../Components/Menu.data';
 import { enqueueToast } from '../../Provider/toastManager';
-import { PTBNode } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../PTBFlow/nodes';
 
 export const parsePtb = (data: TransactionBlockData) => {
   const txs: PTBNode[] = [];
   const inputs: PTBNode[] = [];
-  const edges: Edge[] = [];
+  const edges: PTBEdge[] = [];
 
   if (data.transaction.kind === 'ProgrammableTransaction') {
     if (data.transaction.transactions.length > 0) {

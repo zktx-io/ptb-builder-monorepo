@@ -1,10 +1,41 @@
 import { SuiMoveNormalizedType } from '@mysten/sui/client';
 
-import { getTypeName } from './getTypeName';
-import { FuncArg } from '../Components/MoveCallArg';
+import { FuncArg } from '../Components/MoveCallArgs';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);
+
+const getTypeName = (paramType: SuiMoveNormalizedType): string => {
+  if (typeof paramType === 'string') {
+    return paramType;
+  }
+
+  if (typeof paramType === 'object' && 'Struct' in paramType) {
+    const struct = paramType.Struct;
+    const typeArgs = struct.typeArguments
+      .map((arg) => getTypeName(arg))
+      .join(', ');
+    return `${struct.address}::${struct.module}::${struct.name}${typeArgs && `<${typeArgs}>`}`;
+  }
+
+  if (typeof paramType === 'object' && 'Vector' in paramType) {
+    return `Vector<${getTypeName(paramType.Vector)}>`;
+  }
+
+  if (typeof paramType === 'object' && 'TypeParameter' in paramType) {
+    return `TypeParameter ${paramType.TypeParameter}`;
+  }
+
+  if (typeof paramType === 'object' && 'Reference' in paramType) {
+    return `${getTypeName(paramType.Reference)}`;
+  }
+
+  if (typeof paramType === 'object' && 'MutableReference' in paramType) {
+    return `${getTypeName(paramType.MutableReference)}`;
+  }
+
+  return 'Unknown Type';
+};
 
 export const PREFIX = 'param-';
 

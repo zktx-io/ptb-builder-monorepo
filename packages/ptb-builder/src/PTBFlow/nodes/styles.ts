@@ -80,6 +80,11 @@ export const ButtonStyles = {
     hoverBackground:
       'transition-colors duration-300 ease-in-out hover:bg-stone-500/20 dark:hover:bg-stone-500/20',
   },
+  transaction: {
+    text: 'text-gray-700 dark:text-gray-300',
+    hoverBackground:
+      'transition-colors duration-300 ease-in-out hover:bg-gray-400/20 dark:hover:bg-gray-500/20',
+  },
 };
 
 export const NodeStyles = {

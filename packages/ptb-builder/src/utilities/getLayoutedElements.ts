@@ -1,8 +1,6 @@
 import { Edge, Node } from '@xyflow/react';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
-import { PTBNodeType } from '../PTBFlow/nodes';
-
 const elk = new ELK();
 
 const layoutOptions = {
@@ -10,7 +8,7 @@ const layoutOptions = {
   'elk.direction': 'RIGHT',
   'elk.layered.spacing.edgeNodeBetweenLayers': '40',
   'elk.spacing.nodeNode': '40',
-  'elk.layered.crossingMinimization.strategy': 'INTERACTIVE',
+  // 'elk.layered.crossingMinimization.strategy': 'INTERACTIVE',
   'elk.layered.nodePlacement.strategy': 'SIMPLE',
 };
 
@@ -37,8 +35,8 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
       }));
       return {
         id: n.id,
-        width: 200,
-        height: n.type === PTBNodeType.MoveCall || n.id === '@start' ? 400 : 50,
+        width: n.measured ? n.measured.width : 200,
+        height: n.measured ? n.measured.height : 100,
         properties: {
           'org.eclipse.elk.portConstraints': 'FIXED_ORDER',
         },

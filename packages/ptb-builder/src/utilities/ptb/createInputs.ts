@@ -1,14 +1,13 @@
 import { SuiCallArg } from '@mysten/sui/client';
-import { Edge } from '@xyflow/react';
 
 import { PTB } from '../../Components/Menu.data';
 import { enqueueToast } from '../../Provider/toastManager';
-import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 
 export const createInputs = (
   index: number,
   input: SuiCallArg,
-): { nodes: PTBNode[]; edges: Edge[] } => {
+): { nodes: PTBNode[]; edges: PTBEdge[] } => {
   const id = `input-${index}`;
   if (input.type === 'pure') {
     switch (input.valueType) {

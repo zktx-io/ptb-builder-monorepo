@@ -1,22 +1,35 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 import { Transaction } from '@mysten/sui/transactions';
+import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { CodeParam, PTBNode, PTBNodeProp, PTBNodeType } from '..';
+import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
+import { TxsArgs, TxsArgsHandles } from '../../../Components/TxsArgs';
 import { enqueueToast } from '../../../Provider/toastManager';
-import { PtbHandle, PtbHandleArray, PtbHandleProcess } from '../handles';
+import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
-export const MergeCoins = ({ data }: PTBNodeProp) => {
-  const code = useCallback((params: CodeParam[]): string => {
-    const args: (CodeParam | undefined)[] = [];
-    args.push(
-      params.find((item) => item.targetHandle === 'destination:object'),
-    );
-    args.push(params.find((item) => item.targetHandle === 'source:object[]'));
-    return `tx.mergeCoins(${args.map((item) => (item ? item.name : 'undefined')).join(',')})`;
-  }, []);
+export const MergeCoins = ({ id, data }: PTBNodeProp) => {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const { setEdges } = useReactFlow();
+  // eslint-disable-next-line no-restricted-syntax
+  const txsArgsRef = useRef<TxsArgsHandles>(null);
 
+  const code = useCallback(
+    (dictionary: Record<string, string>, edges: PTBEdge[]): string => {
+      if (txsArgsRef.current) {
+        const args = txsArgsRef.current.getArgs(dictionary, edges);
+        const destinationCoin = args.arg1;
+        const sourceCoins = Array.isArray(args.arg2)
+          ? `[${args.arg2.join(',')}]`
+          : args.arg2;
+        return `tx.mergeCoins(${destinationCoin}, ${sourceCoins})`;
+      }
+      return 'tx.mergeCoins(undefined, undefined)';
+    },
+    [],
+  );
+  /*
   const excute = useCallback(
     (
       transaction: Transaction,
@@ -69,33 +82,55 @@ export const MergeCoins = ({ data }: PTBNodeProp) => {
     },
     [],
   );
+  */
+
+  const resetEdge = () => {
+    setEdges((eds) =>
+      eds.filter(
+        (edge) =>
+          !(
+            (edge.target === id || edge.source === id) &&
+            edge.type === 'Data' &&
+            edge.targetHandle !== 'destination:object'
+          ),
+      ),
+    );
+  };
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals]);
 
   useEffect(() => {
     if (data) {
       data.code = code;
-      data.excute = excute;
+      // data.excute = excute;
     }
-  }, [code, data, excute]);
+  }, [code, data]);
 
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        {data.label}
+        MergeCoins
       </p>
-      <PtbHandle
+      <PtbHandleProcess
         typeHandle="target"
-        typeParams="object"
-        name="destination"
-        style={{ left: '35%' }}
+        style={{
+          top: '24px',
+        }}
       />
-      <PtbHandleArray
-        typeHandle="target"
-        typeParams="object[]"
-        name="source"
-        style={{ left: '65%' }}
+      <PtbHandleProcess
+        typeHandle="source"
+        style={{
+          top: '24px',
+        }}
       />
-      <PtbHandleProcess typeHandle="target" />
-      <PtbHandleProcess typeHandle="source" />
+      <TxsArgs
+        ref={txsArgsRef}
+        input1={{ label: 'destination', type: 'object' }}
+        input2={{ label: 'source', type: 'object[]' }}
+        resetEdge={resetEdge}
+      />
     </div>
   );
 };

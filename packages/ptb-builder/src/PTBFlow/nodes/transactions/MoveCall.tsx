@@ -1,20 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import {
   SuiMoveNormalizedFunction,
   SuiMoveNormalizedModule,
 } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
+import { Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { PTBNodeProp } from '..';
-import { FuncArg, MoveCallArg } from '../../../Components/MoveCallArg';
+import { PTBEdge, PTBNodeProp } from '..';
+import { FuncArg, MoveCallArgs } from '../../../Components/MoveCallArgs';
 import { useStateContext } from '../../../Provider';
 import { enqueueToast } from '../../../Provider/toastManager';
 import { getMoveCallFuncArg } from '../../../utilities/getMoveCallFuncArg';
 import { loadPackageData } from '../../../utilities/loadPackageData';
 import { removeTxContext } from '../../../utilities/removeTxContext';
 import { PtbHandleProcess } from '../handles';
+import { extractName } from '../isType';
 import {
   ButtonStyles,
   FormStyle,
@@ -22,7 +23,6 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
-import { CodeParam } from '../types';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set([
@@ -97,6 +97,30 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
     );
   };
 
+  const code = useCallback(
+    (dictionary: Record<string, string>, edges: PTBEdge[]): string => {
+      if (selectedFunction) {
+        const target = `'${packageId}::${selectedModule}:${selectedFunction}'`;
+        const args: string[] = Array(selectedFunctionInputs.length).fill(
+          'undefined',
+        );
+        selectedFunctionInputs.forEach((item, index) => {
+          const temp = edges.find(
+            (edge) => edge.targetHandle === `${item.id}:${item.type}`,
+          );
+          const arg: string =
+            temp && temp.sourceHandle
+              ? extractName(dictionary[temp.source], temp.sourceHandle)
+              : 'undefined';
+          args[index] = arg;
+        });
+        return `tx.moveCall({\n\ttarget: ${target},\n\targuments: [${args.join(', ')}],\n})`;
+      }
+      return `tx.moveCall({\n\ttarget: undefined,\n\targuments: undefined\n});`;
+    },
+    [packageId, selectedFunction, selectedFunctionInputs, selectedModule],
+  );
+
   useEffect(() => {
     if (selectedFunction) {
       const find = functions.find((item) => item.name === selectedFunction);
@@ -123,10 +147,17 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
     updateNodeInternals,
   ]);
 
+  useEffect(() => {
+    if (data) {
+      data.code = code;
+      // data.excute = excute;
+    }
+  }, [code, data]);
+
   return (
     <div className={NodeStyles.transaction}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
-        {data.label}
+        MoveCall
       </p>
 
       <div className={FormStyle}>
@@ -223,16 +254,13 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
                 input
               </p>
-              {selectedFunctionInputs.map((arg, index) => (
-                <MoveCallArg
-                  key={index}
-                  index={index}
-                  yPosition={221}
-                  arg={arg}
-                  typeHandle="target"
-                  node="transactions"
-                />
-              ))}
+              <MoveCallArgs
+                prefix="input"
+                typeHandle="target"
+                args={selectedFunctionInputs}
+                yPosition={221}
+                position={Position.Left}
+              />
             </>
           )}
         </div>
@@ -243,20 +271,17 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
                 output
               </p>
-              {selectedFunctionOutputs.map((arg, index) => (
-                <MoveCallArg
-                  key={index}
-                  index={index}
-                  yPosition={
-                    selectedFunctionInputs.length > 0
-                      ? 260 + selectedFunctionInputs.length * 42
-                      : 221
-                  }
-                  arg={arg}
-                  typeHandle="source"
-                  node="inputs"
-                />
-              ))}
+              <MoveCallArgs
+                prefix="output"
+                typeHandle="source"
+                args={selectedFunctionOutputs}
+                yPosition={
+                  selectedFunctionInputs.length > 0
+                    ? 260 + selectedFunctionInputs.length * 42
+                    : 221
+                }
+                position={Position.Right}
+              />
             </>
           )}
         </div>

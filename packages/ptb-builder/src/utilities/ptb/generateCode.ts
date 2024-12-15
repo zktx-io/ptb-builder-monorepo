@@ -1,42 +1,7 @@
-import type { Edge } from '@xyflow/react';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { getPath } from '../getPath';
 
-import { PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
-import { testPath } from '../testPath';
-
-type Variable = {
-  id: string;
-  source: string;
-  sourceHandle: string;
-  targets: {
-    target: string;
-    targetHandle: string;
-  }[];
-};
-
-const generateUniqueId = (id: number): string => {
-  return `temp_${id}`;
-};
-
-const getNodeData = (id: string, nodes: PTBNode[]): string | number => {
-  const node = nodes.find((item) => item.id === id);
-  if (node && node.data.value) {
-    if (node.type === PTBNodeType.Number) {
-      return parseInt(node.data.value as string);
-    }
-    if (node.type === PTBNodeType.Object) {
-      return `"${node.data.value}"`;
-    }
-    if (node.type === PTBNodeType.ObjectGas) {
-      return `tx.gas`;
-    }
-    return typeof node.data.value === 'string'
-      ? `"${node.data.value}"`
-      : JSON.stringify(node.data.value);
-  }
-  return 'undefined';
-};
-
-export const generateCode = (nodes: PTBNode[], edges: Edge[]): string => {
+export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
   const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
   const endNode = nodes.find((node) => node.type === PTBNodeType.End);
 
@@ -44,166 +9,125 @@ export const generateCode = (nodes: PTBNode[], edges: Edge[]): string => {
     return 'Start or End node missing.';
   }
 
-  if (!testPath(nodes, edges)) {
+  const path = getPath(nodes, edges);
+
+  if (path.length === 0) {
     return '';
   }
 
-  const declaredVariables: Record<string, string> = {};
-  const variableMap: Variable[] = [];
   const codeLines: { line: string; comment: string }[] = [
     {
       line: "// import { Transaction } from '@mysten/sui/transactions';",
       comment: '',
     },
+    {
+      line: "// import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';",
+      comment: '',
+    },
+    { line: '', comment: '' },
+    {
+      line: 'const keypair = new Ed25519Keypair();',
+      comment: '',
+    },
+    {
+      line: 'const myAddress = keypair.getPublicKey().toSuiAddress();',
+      comment: '',
+    },
     { line: 'const tx = new Transaction();', comment: '' },
+    { line: '', comment: '' },
   ];
-  let index = 1;
-  let variableCounter = 1;
 
   const addCodeLine = (line: string, comment: string) => {
     codeLines.push({ line, comment });
   };
 
-  edges
-    .filter((edge) => edge.type === 'Data')
-    .forEach((edge) => {
-      const isHas = variableMap.findIndex(
-        (item) =>
-          item.source === edge.source &&
-          item.sourceHandle === edge.sourceHandle,
-      );
-      if (isHas < 0) {
-        const id = generateUniqueId(index++);
-        variableMap.push({
-          id,
-          source: edge.source,
-          sourceHandle: edge.sourceHandle || '',
-          targets: [
-            {
-              target: edge.target,
-              targetHandle: edge.targetHandle || '',
-            },
-          ],
-        });
-      } else {
-        variableMap[isHas].targets.push({
-          target: edge.target,
-          targetHandle: edge.targetHandle || '',
-        });
-      }
-    });
+  let result = 1;
+  let variable = 1;
+  const variables: Record<string, { name: string; node: PTBNode }> = {};
+  const dictionary: Record<string, string> = {};
 
-  const processNode = (currentNode: PTBNode) => {
-    const inputs = variableMap
-      .filter((variable) =>
-        variable.targets.some((item) => item.target === currentNode.id),
-      )
-      .map((variable) => {
-        let name = declaredVariables[variable.id];
-        if (!name) {
-          name = `val_${variableCounter++}`;
-          declaredVariables[variable.id] = name;
-          addCodeLine(
-            `const ${name} = ${getNodeData(variable.source, nodes)};`,
-            variable.sourceHandle,
-          );
-        }
-        return {
-          id: variable.id,
-          name,
-          sourceHandle: variable.sourceHandle,
-          targetHandle:
-            variable.targets.find((item) => item.target === currentNode.id)
-              ?.targetHandle || '',
-        };
-      });
-
-    const output = variableMap.find(
-      (variable) => variable.source === currentNode.id,
+  const getInputEdges = (id: string): PTBEdge[] => {
+    const temp = edges.filter(
+      (edge) => edge.target === id && edge.type === 'Data',
     );
-
-    if (output) {
-      const outputId = output.id;
-      const inputVariableNames = inputs
-        .map((input) => declaredVariables[input.id])
-        .join(', ');
-
-      if (!declaredVariables[outputId]) {
-        declaredVariables[outputId] = `val_${variableCounter++}`;
-        addCodeLine(
-          `let ${declaredVariables[outputId]} = undefined;`,
-          output.sourceHandle,
-        );
+    temp.forEach((edge) => {
+      nodes.forEach((node) => {
         if (
-          currentNode.data.code &&
-          typeof currentNode.data.code === 'function'
+          node.id === edge.source &&
+          node.type !== PTBNodeType.MakeMoveVec &&
+          node.type !== PTBNodeType.SplitCoins &&
+          node.type !== PTBNodeType.MoveCall &&
+          node.type !== PTBNodeType.MergeCoins &&
+          node.type !== PTBNodeType.TransferObjects &&
+          node.type !== PTBNodeType.Publish
         ) {
-          if (currentNode.type === 'SplitCoins') {
-            const temp = `${declaredVariables[outputId]}_1`;
-            addCodeLine(
-              `const ${temp} = ${currentNode.data.code(inputs)};`,
-              '',
-            );
-            const arg = inputs.find(
-              (item) => item.targetHandle === 'amounts:number[]',
-            );
-            arg &&
-              addCodeLine(
-                `${declaredVariables[outputId]} = ${arg.name}.map((_, i) => ${temp}[i];`,
-                '',
-              );
-          } else {
-            addCodeLine(
-              `${declaredVariables[outputId]} = ${currentNode.data.code(inputs)};`,
-              '',
-            );
+          if (!variables[node.id]) {
+            const name = `var_${variable++}`;
+            variables[node.id] = { name, node };
+            dictionary[node.id] = name;
           }
-        } else {
-          addCodeLine(
-            `${declaredVariables[outputId]} = undefined;`,
-            `${currentNode.type}(${inputVariableNames})`,
-          );
         }
-      } else {
-        addCodeLine(
-          `${declaredVariables[outputId]} = ${currentNode.type}(${inputVariableNames});`,
-          '',
-        );
-      }
-    } else {
-      if (
-        currentNode.data.code &&
-        typeof currentNode.data.code === 'function'
-      ) {
-        addCodeLine(`${currentNode.data.code(inputs)};`, '');
-      } else {
-        addCodeLine(
-          '',
-          `${currentNode.type}(${inputs
-            .map((input) => declaredVariables[input.id])
-            .join(', ')})`,
-        );
-      }
-    }
+      });
+    });
+    return temp;
   };
 
-  let currentCommand: PTBNode | undefined = startNode;
-  while (currentCommand && currentCommand.id !== endNode.id) {
-    const currentCommandId: string = currentCommand.id;
-    const nextEdge = edges.find(
-      (edge) => edge.source === currentCommandId && edge.type === 'Path',
-    );
+  const process: { name: string; node: PTBNode; inputs: PTBEdge[] }[] =
+    path.map((node) => {
+      if (
+        node.type === PTBNodeType.MakeMoveVec ||
+        node.type === PTBNodeType.SplitCoins ||
+        node.type === PTBNodeType.MoveCall
+      ) {
+        const name = `result_${result++}`;
+        dictionary[node.id] = name;
+        return {
+          name,
+          node,
+          inputs: getInputEdges(node.id),
+        };
+      }
+      return { name: '', node, inputs: getInputEdges(node.id) };
+    });
 
-    if (!nextEdge) break;
+  Object.keys(variables).forEach((key) => {
+    const temp = variables[key].node;
+    const value = temp.data.value
+      ? Array.isArray(temp.data.value)
+        ? `[${temp.data.value.map((v) => (typeof v === 'string' && v !== 'tx.gas' && v !== 'myAddress' ? `'${v}'` : v)).join(',')}]`
+        : typeof temp.data.value === 'string' &&
+            temp.data.value !== 'tx.gas' &&
+            temp.data.value !== 'myAddress'
+          ? `'${temp.data.value}'`
+          : temp.data.value
+      : 'undefined';
+    addCodeLine(`const ${variables[key].name} = ${value};`, '');
+  });
 
-    const nextCommand = nodes.find((node) => node.id === nextEdge.target);
-
-    if (nextCommand && nextCommand.type !== 'End') {
-      processNode(nextCommand);
+  process.forEach(({ name, node, inputs }) => {
+    if (typeof node.data.code === 'function') {
+      if (name) {
+        if (
+          node.type === PTBNodeType.SplitCoins ||
+          node.type === PTBNodeType.MoveCall
+        ) {
+          addCodeLine(
+            `const [...${name}] = ${node.data.code(dictionary, inputs)};`,
+            '',
+          );
+        } else {
+          addCodeLine(
+            `const ${name} = ${node.data.code(dictionary, inputs)};`,
+            '',
+          );
+        }
+      } else {
+        addCodeLine(`${node.data.code(dictionary, inputs)};`, '');
+      }
+    } else {
+      addCodeLine(`// ${node.type};`, '');
     }
-
-    currentCommand = nextCommand;
-  }
+  });
 
   const paddingSize = 40;
   const formattedCode =

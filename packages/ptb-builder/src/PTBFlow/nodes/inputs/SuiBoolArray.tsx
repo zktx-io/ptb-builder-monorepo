@@ -3,20 +3,18 @@ import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
-import { useStateContext } from '../../../Provider';
+import { InputArgs } from '../../../Components/InputArgs';
 import { PtbHandleArray } from '../handles';
 import {
   ButtonStyles,
   FormStyle,
   FormTitleStyle,
-  InputStyle,
   LabelStyle,
   NodeStyles,
 } from '../styles';
 
 export const SuiBoolArray = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
-  const { isEditor } = useStateContext();
   const [isShow, setIsShow] = useState<boolean>(
     data && data.value ? (data.value as string[]).length < 4 : true,
   );
@@ -68,73 +66,25 @@ export const SuiBoolArray = ({ id, data }: PTBNodeProp) => {
               type="checkbox"
               id="checkbox"
               checked={isShow}
-              className="self-end"
               onChange={(e) => {
                 setIsShow(e.target.checked);
               }}
             />
           </div>
         </div>
-        {isShow && (
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: '13px',
-            }}
-          >
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={index}>
-                  <td
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <select
-                      className={InputStyle}
-                      disabled={!isEditor}
-                      value={item}
-                      onChange={(e) => updateItem(index, e.target.value)}
-                    >
-                      <option value="false">false</option>
-                      <option value="true">true</option>
-                    </select>
-                    {isEditor && (
-                      <button
-                        className={`text-center text-xs rounded-md ${ButtonStyles.bool.text} ${ButtonStyles.bool.hoverBackground}`}
-                        style={{
-                          minWidth: '20px',
-                        }}
-                        onClick={() => removeItem(index)}
-                      >
-                        x
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {isEditor && (
-                <tr>
-                  <td
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                    }}
-                  >
-                    <button
-                      className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.bool.text} ${ButtonStyles.bool.hoverBackground}`}
-                      onClick={addItem}
-                    >
-                      Add
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
+        <InputArgs
+          isBoolean
+          isShow={isShow}
+          items={items}
+          placeholder="Enter boolean"
+          addItem={addItem}
+          removeItem={removeItem}
+          updateItem={updateItem}
+          style={{
+            deleteButton: `text-center text-xs rounded-md ${ButtonStyles.bool.text} ${ButtonStyles.bool.hoverBackground}`,
+            addButton: `w-full py-1 text-center text-xs rounded-md ${ButtonStyles.bool.text} ${ButtonStyles.bool.hoverBackground}`,
+          }}
+        />
       </div>
       <PtbHandleArray typeHandle="source" typeParams="bool[]" name="inputs" />
     </div>

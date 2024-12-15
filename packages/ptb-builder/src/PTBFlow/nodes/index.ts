@@ -8,7 +8,7 @@ import { Publish } from './transactions/Publish';
 import { SplitCoins } from './transactions/SplitCoins';
 import { TransferObjects } from './transactions/TransferObjects';
 export {
-  CodeParam,
+  PTBEdge,
   PTBNodeProp,
   PTBNode,
   PTBNodeData,
