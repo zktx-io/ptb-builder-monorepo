@@ -2,7 +2,7 @@ import { SuiCallArg } from '@mysten/sui/client';
 
 import { PTB } from '../../components';
 import { enqueueToast } from '../../provider';
-import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../_PTBFlow/nodes';
 
 export const createInputs = (
   index: number,

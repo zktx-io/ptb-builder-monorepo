@@ -1,4 +1,4 @@
-import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../_PTBFlow/nodes';
 import { getPath } from '../getPath';
 
 export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {

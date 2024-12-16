@@ -6,7 +6,7 @@ import { moveCall } from './transactions/moveCall';
 import { splitCoins } from './transactions/splitCoins';
 import { transferObjects } from './transactions/transferObjects';
 import { PTB } from '../../components';
-import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../../_PTBFlow/nodes';
 
 const create = (
   id: string,

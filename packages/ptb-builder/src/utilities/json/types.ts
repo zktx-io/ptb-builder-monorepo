@@ -1,4 +1,4 @@
-import { PTBEdge, PTBNode } from '../../PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../_PTBFlow/nodes';
 
 export const VERSION = '1';
 export interface DEFAULT {

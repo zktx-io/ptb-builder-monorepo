@@ -5,20 +5,20 @@ import {
   PtbHandle,
   PtbHandleArray,
   PtbHandleVector,
-} from '../PTBFlow/nodes/handles';
-import { extractName } from '../PTBFlow/nodes/isType';
+} from '../_PTBFlow/nodes/handles';
+import { extractName } from '../_PTBFlow/nodes/isType';
 import {
   ButtonStyles,
   FormTitleStyle,
   InputStyle,
   LabelStyle,
-} from '../PTBFlow/nodes/styles';
+} from '../_PTBFlow/nodes/styles';
 import {
   PTBEdge,
   TYPE_ARRAY,
   TYPE_PARAMS,
   TYPE_VECTOR,
-} from '../PTBFlow/nodes/types';
+} from '../_PTBFlow/nodes/types';
 
 const isTypeArray = (type: string) => type.includes('[]');
 

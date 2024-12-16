@@ -3,7 +3,7 @@ import React from 'react';
 import { IconCircle } from './IconCircle';
 import { IconSquare } from './IconSquare';
 import { IconTriangle } from './IconTriangle';
-import { PTBNodeType } from '../PTBFlow/nodes/types';
+import { PTBNodeType } from '../_PTBFlow/nodes/types';
 
 export const PTB = {
   Address: {
