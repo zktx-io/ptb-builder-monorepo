@@ -3,7 +3,7 @@ import React from 'react';
 import { TransactionBlockData } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 
-import { EnqueueToast, NETWORK, StateProvider } from './_provider';
+import { EnqueueToast, NETWORK, StateProvider } from './provider';
 import { PTBFlow } from './PTBFlow';
 import '@xyflow/react/dist/base.css';
 import './index.css';

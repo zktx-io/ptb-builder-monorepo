@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { useStateContext } from '../_provider';
+import { useStateContext } from '../provider';
 import { InputStyle } from '../PTBFlow/nodes/styles';
 
 export const InputArgs = ({

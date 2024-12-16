@@ -1,5 +1,5 @@
 import { DEFAULT, VERSION } from './types';
-import { enqueueToast, NETWORK } from '../../_provider';
+import { enqueueToast, NETWORK } from '../../provider';
 
 export const fromJson = (json: string): DEFAULT => {
   try {

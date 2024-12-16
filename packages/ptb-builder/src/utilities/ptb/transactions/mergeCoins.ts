@@ -1,6 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
-import { enqueueToast } from '../../../_provider';
+import { enqueueToast } from '../../../provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
 
 export const mergeCoins = (
