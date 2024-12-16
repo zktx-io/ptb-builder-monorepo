@@ -8,8 +8,7 @@ import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
 import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
-import { generateCode } from '../utilities/ptb/generateCode';
-import { generatePtb } from '../utilities/ptb/generatePtb';
+import { generateCode, generateTxb } from '../utilities/ptb';
 
 export const Code = ({
   nodes,
@@ -29,7 +28,7 @@ export const Code = ({
   const handleExcuteTransaction = async () => {
     if (excuteTx && !isExcute) {
       setIsExcute(true);
-      const transaction = await generatePtb(nodes, edges);
+      const transaction = await generateTxb(nodes, edges);
       await excuteTx(transaction);
       setIsExcute(false);
     }

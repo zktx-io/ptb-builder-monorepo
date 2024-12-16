@@ -4,10 +4,10 @@ import { TransactionBlockData } from '@mysten/sui/client';
 import { useReactFlow } from '@xyflow/react';
 
 import { NETWORK, useStateContext, useStateUpdateContext } from '../provider';
-import { getLayoutedElements } from '../utilities/getLayoutedElements';
+import { autoLayoutFlow } from './autoLayoutFlow';
 import { fromJson } from '../utilities/json/fromJson';
 import { DEFAULT } from '../utilities/json/types';
-import { parsePtb } from '../utilities/ptb/parsePtb';
+import { parseTxb } from '../utilities/ptb/parseTxb';
 
 export const Parse = () => {
   const setState = useStateUpdateContext();
@@ -16,9 +16,9 @@ export const Parse = () => {
   useEffect(() => {
     const autoLayout = async (data: TransactionBlockData | string) => {
       if (typeof data !== 'string') {
-        const parsed = parsePtb(data);
+        const parsed = parseTxb(data);
         const { nodes: layoutedNodes, edges: layoutedEdges } =
-          await getLayoutedElements(
+          await autoLayoutFlow(
             [...getNodes(), ...parsed.nodes],
             [...getEdges(), ...parsed.edges],
           );

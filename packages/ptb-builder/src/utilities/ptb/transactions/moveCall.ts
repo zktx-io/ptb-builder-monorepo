@@ -2,9 +2,9 @@ import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
 import { enqueueToast } from '../../../provider';
 import { FuncArg } from '../../../ptbFlow/components';
+import { PREFIX } from '../../../ptbFlow/components/getMoveCallFuncArg';
 import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 
-const PREFIX = 'param-';
 const numericTypes = new Set(['u8', 'u16', 'u32', 'u64', 'u128', 'u256']);
 const numericVectorTypes = new Set([
   'vector<u8>',

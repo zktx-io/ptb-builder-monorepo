@@ -9,10 +9,13 @@ import { Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNodeProp } from '..';
 import { enqueueToast, useStateContext } from '../../../provider';
-import { getMoveCallFuncArg } from '../../../utilities/getMoveCallFuncArg';
-import { loadPackageData } from '../../../utilities/loadPackageData';
-import { removeTxContext } from '../../../utilities/removeTxContext';
-import { FuncArg, MoveCallArgs } from '../../components';
+import {
+  FuncArg,
+  getMoveCallFuncArg,
+  getPackageData,
+  MoveCallArgs,
+} from '../../components';
+import { deleteTxContext } from '../../components/deleteTxContext';
 import { PtbHandleProcess } from '../handles';
 import { extractName } from '../isType';
 import {
@@ -62,7 +65,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
 
   const loadPackage = async () => {
     if (client && !!packageId) {
-      const temp = await loadPackageData(client, packageId);
+      const temp = await getPackageData(client, packageId);
       if (temp && Object.keys(temp)[0]) {
         setPackageData(temp);
         const select = Object.keys(temp)[0];
@@ -125,7 +128,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
       const find = functions.find((item) => item.name === selectedFunction);
       if (find) {
         setSelectedFunctionInputs(() =>
-          removeTxContext(find.func).map(getMoveCallFuncArg),
+          deleteTxContext(find.func).map(getMoveCallFuncArg),
         );
         setSelectedFunctionOutputs(find.func.return.map(getMoveCallFuncArg));
       } else {

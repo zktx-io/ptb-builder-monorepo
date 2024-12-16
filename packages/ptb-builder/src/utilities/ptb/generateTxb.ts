@@ -2,7 +2,7 @@ import { Transaction } from '@mysten/sui/transactions';
 
 import { PTBEdge, PTBNode } from '../../ptbFlow/nodes';
 
-export const generatePtb = async (
+export const generateTxb = async (
   nodes: PTBNode[],
   edges: PTBEdge[],
 ): Promise<Transaction | undefined> => {

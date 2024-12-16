@@ -4,12 +4,12 @@ import {
 } from '@mysten/sui/client';
 
 import { createInputs } from './createInputs';
-import { createTransactions } from './createTransactions';
+import { createNode } from './createNode';
 import { PTB } from '../../components';
 import { enqueueToast } from '../../provider';
 import { PTBEdge, PTBNode } from '../../ptbFlow/nodes';
 
-export const parsePtb = (data: TransactionBlockData) => {
+export const parseTxb = (data: TransactionBlockData) => {
   const txs: PTBNode[] = [];
   const inputs: PTBNode[] = [];
   const edges: PTBEdge[] = [];
@@ -52,11 +52,7 @@ export const parsePtb = (data: TransactionBlockData) => {
       });
 
       ptb.transactions.forEach((_, index) => {
-        const {
-          tx,
-          inputs: nds,
-          edges: subEdges,
-        } = createTransactions(index, ptb);
+        const { tx, inputs: nds, edges: subEdges } = createNode(index, ptb);
         txs.push(tx);
         inputs.push(...nds);
         edges.push({

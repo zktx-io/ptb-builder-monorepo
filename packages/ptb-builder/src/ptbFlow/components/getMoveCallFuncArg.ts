@@ -1,6 +1,6 @@
 import { SuiMoveNormalizedType } from '@mysten/sui/client';
 
-import { FuncArg } from '../ptbFlow/components';
+import { FuncArg } from '.';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);

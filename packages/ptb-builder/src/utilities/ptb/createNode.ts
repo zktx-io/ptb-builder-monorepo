@@ -1,10 +1,12 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
-import { makeMoveVec } from './transactions/makeMoveVec';
-import { mergeCoins } from './transactions/mergeCoins';
-import { moveCall } from './transactions/moveCall';
-import { splitCoins } from './transactions/splitCoins';
-import { transferObjects } from './transactions/transferObjects';
+import {
+  makeMoveVec,
+  mergeCoins,
+  moveCall,
+  splitCoins,
+  transferObjects,
+} from './transactions';
 import { PTB } from '../../components';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 
@@ -29,7 +31,7 @@ const create = (
   };
 };
 
-export const createTransactions = (
+export const createNode = (
   index: number,
   ptb: ProgrammableTransaction,
 ): {

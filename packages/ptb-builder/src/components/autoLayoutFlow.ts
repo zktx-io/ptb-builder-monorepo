@@ -12,7 +12,7 @@ const layoutOptions = {
   'elk.layered.nodePlacement.strategy': 'SIMPLE',
 };
 
-export const getLayoutedElements = async (nodes: Node[], edges: Edge[]) => {
+export const autoLayoutFlow = async (nodes: Node[], edges: Edge[]) => {
   const getTargetHandles = (n: Node) =>
     edges.filter((e) => e.target === n.id).map((e) => ({ id: e.target }));
   const getSourceHandles = (n: Node) =>

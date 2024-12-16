@@ -4,9 +4,9 @@ import { useReactFlow, useViewport, XYPosition } from '@xyflow/react';
 
 import { Menu, MenuItem } from './Menu.data';
 import { enqueueToast } from '../provider';
+import { autoLayoutFlow } from './autoLayoutFlow';
 import { PTBEdge, PTBNode, PTBNodeType } from '../ptbFlow/nodes';
 import { MenuStyle, MenuSubStyle } from '../ptbFlow/nodes/styles';
-import { getLayoutedElements } from '../utilities/getLayoutedElements';
 
 export interface ContextProp {
   selected?: PTBNode | PTBEdge;
@@ -41,7 +41,7 @@ export const ContextMenu = ({
   const handleAutoLayout = useCallback(async () => {
     try {
       const { nodes: layoutedNodes, edges: layoutedEdges } =
-        await getLayoutedElements(getNodes(), getEdges());
+        await autoLayoutFlow(getNodes(), getEdges());
       setNodes([...layoutedNodes]);
       setEdges([...layoutedEdges]);
       setTimeout(() => {

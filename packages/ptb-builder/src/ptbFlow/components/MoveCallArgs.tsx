@@ -2,6 +2,7 @@ import React from 'react';
 
 import { Position } from '@xyflow/react';
 
+import { PREFIX } from './getMoveCallFuncArg';
 import {
   PtbHandle,
   PtbHandleArray,
@@ -13,7 +14,6 @@ import {
   TYPE_PARAMS,
   TYPE_VECTOR,
 } from '../../ptbFlow/nodes/types';
-import { PREFIX } from '../../utilities/getMoveCallFuncArg';
 
 export interface FuncArg {
   id: string;
