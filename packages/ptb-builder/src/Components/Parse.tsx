@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { TransactionBlockData } from '@mysten/sui/client';
 import { useReactFlow } from '@xyflow/react';
 
-import { NETWORK, useStateContext, useStateUpdateContext } from '../Provider';
+import { NETWORK, useStateContext, useStateUpdateContext } from '../_provider';
 import { getLayoutedElements } from '../utilities/getLayoutedElements';
 import { fromJson } from '../utilities/json/fromJson';
 import { DEFAULT } from '../utilities/json/types';

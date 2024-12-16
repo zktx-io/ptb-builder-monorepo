@@ -1,6 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useState } from 'react';
 
-import { useStateContext } from '../Provider';
+import { useStateContext } from '../_provider';
 import {
   PtbHandle,
   PtbHandleArray,

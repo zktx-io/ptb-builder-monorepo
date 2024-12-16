@@ -17,10 +17,10 @@ import {
 
 import { PTBEdges } from './edges';
 import { PTBEdge, PTBNode, PTBNodes, PTBNodeType } from './nodes';
+import { useStateContext, useStateUpdateContext } from '../_provider';
 import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
 import { PTB } from '../Components/Menu.data';
 import { Panel } from '../Components/Panel';
-import { useStateContext, useStateUpdateContext } from '../Provider';
 import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
 import { Parse } from '../Components/Parse';

@@ -10,6 +10,7 @@ import { SuiClient, TransactionBlockData } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
 import { EnqueueToast, setToast } from './toastManager';
+export { EnqueueToast, setToast, enqueueToast } from './toastManager';
 
 export enum NETWORK {
   MainNet = 'mainnet',

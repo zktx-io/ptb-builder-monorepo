@@ -3,7 +3,7 @@ import React, { useCallback } from 'react';
 import { useReactFlow, useViewport, XYPosition } from '@xyflow/react';
 
 import { Menu, MenuItem } from './Menu.data';
-import { enqueueToast } from '../Provider/toastManager';
+import { enqueueToast } from '../_provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../PTBFlow/nodes';
 import { MenuStyle, MenuSubStyle } from '../PTBFlow/nodes/styles';
 import { getLayoutedElements } from '../utilities/getLayoutedElements';

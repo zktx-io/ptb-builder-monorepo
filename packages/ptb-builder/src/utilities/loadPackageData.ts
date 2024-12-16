@@ -1,6 +1,6 @@
 import { SuiClient, SuiMoveNormalizedModules } from '@mysten/sui/client';
 
-import { enqueueToast } from '../Provider/toastManager';
+import { enqueueToast } from '../_provider';
 
 export const loadPackageData = async (
   client: SuiClient | undefined,

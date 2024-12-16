@@ -1,6 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
-import { enqueueToast } from '../../../Provider/toastManager';
+import { enqueueToast } from '../../../_provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../../PTBFlow/nodes';
 
 export const transferObjects = (

@@ -1,7 +1,7 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
+import { enqueueToast } from '../../../_provider';
 import { FuncArg } from '../../../Components/MoveCallArgs';
-import { enqueueToast } from '../../../Provider/toastManager';
 import { PTBEdge, PTBNode } from '../../../PTBFlow/nodes';
 
 const PREFIX = 'param-';

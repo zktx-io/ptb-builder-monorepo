@@ -2,7 +2,7 @@ import React from 'react';
 
 import { BaseEdge, EdgeProps, getBezierPath } from '@xyflow/react';
 
-import { useStateContext } from '../../Provider';
+import { useStateContext } from '../../_provider';
 import { HandleStyles } from '../nodes/styles';
 
 export const Path = ({
