@@ -8,11 +8,11 @@ import { Transaction } from '@mysten/sui/transactions';
 import { Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNodeProp } from '..';
-import { FuncArg, MoveCallArgs } from '../../../components';
 import { enqueueToast, useStateContext } from '../../../provider';
 import { getMoveCallFuncArg } from '../../../utilities/getMoveCallFuncArg';
 import { loadPackageData } from '../../../utilities/loadPackageData';
 import { removeTxContext } from '../../../utilities/removeTxContext';
+import { FuncArg, MoveCallArgs } from '../../components';
 import { PtbHandleProcess } from '../handles';
 import { extractName } from '../isType';
 import {

@@ -1,24 +1,15 @@
 import React, { forwardRef, useImperativeHandle, useState } from 'react';
 
-import { useStateContext } from '../provider';
-import {
-  PtbHandle,
-  PtbHandleArray,
-  PtbHandleVector,
-} from '../ptbFlow/nodes/handles';
-import { extractName } from '../ptbFlow/nodes/isType';
+import { useStateContext } from '../../provider';
+import { PtbHandle, PtbHandleArray, PtbHandleVector } from '../nodes/handles';
+import { extractName } from '../nodes/isType';
 import {
   ButtonStyles,
   FormTitleStyle,
   InputStyle,
   LabelStyle,
-} from '../ptbFlow/nodes/styles';
-import {
-  PTBEdge,
-  TYPE_ARRAY,
-  TYPE_PARAMS,
-  TYPE_VECTOR,
-} from '../ptbFlow/nodes/types';
+} from '../nodes/styles';
+import { PTBEdge, TYPE_ARRAY, TYPE_PARAMS, TYPE_VECTOR } from '../nodes/types';
 
 const isTypeArray = (type: string) => type.includes('[]');
 

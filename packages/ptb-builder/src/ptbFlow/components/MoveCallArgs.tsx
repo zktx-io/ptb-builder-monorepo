@@ -6,10 +6,14 @@ import {
   PtbHandle,
   PtbHandleArray,
   PtbHandleVector,
-} from '../ptbFlow/nodes/handles';
-import { FormStyle, InputStyle, LabelStyle } from '../ptbFlow/nodes/styles';
-import { TYPE_ARRAY, TYPE_PARAMS, TYPE_VECTOR } from '../ptbFlow/nodes/types';
-import { PREFIX } from '../utilities/getMoveCallFuncArg';
+} from '../../ptbFlow/nodes/handles';
+import { FormStyle, InputStyle, LabelStyle } from '../../ptbFlow/nodes/styles';
+import {
+  TYPE_ARRAY,
+  TYPE_PARAMS,
+  TYPE_VECTOR,
+} from '../../ptbFlow/nodes/types';
+import { PREFIX } from '../../utilities/getMoveCallFuncArg';
 
 export interface FuncArg {
   id: string;
