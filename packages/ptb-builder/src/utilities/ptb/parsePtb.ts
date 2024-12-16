@@ -5,7 +5,7 @@ import {
 
 import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
-import { PTB } from '../../Components/Menu.data';
+import { PTB } from '../../_Components/Menu.data';
 import { enqueueToast } from '../../provider';
 import { PTBEdge, PTBNode } from '../../PTBFlow/nodes';
 

@@ -17,12 +17,12 @@ import {
 
 import { PTBEdges } from './edges';
 import { PTBEdge, PTBNode, PTBNodes, PTBNodeType } from './nodes';
-import { Code, ContextMenu, ContextProp, CreateNode } from '../Components';
-import { PTB } from '../Components/Menu.data';
-import { Panel } from '../Components/Panel';
+import { Code, ContextMenu, ContextProp, CreateNode } from '../_Components';
+import { PTB } from '../_Components/Menu.data';
+import { Panel } from '../_Components/Panel';
 import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
-import { Parse } from '../Components/Parse';
+import { Parse } from '../_Components/Parse';
 import { useStateContext, useStateUpdateContext } from '../provider';
 import { toJson } from '../utilities/json/toJson';
 

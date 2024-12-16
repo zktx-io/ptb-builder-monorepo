@@ -2,7 +2,7 @@ import React from 'react';
 
 import { Handle, Position } from '@xyflow/react';
 
-import { IconTriangle } from '../../../Components/IconTriangle';
+import { IconTriangle } from '../../../_Components/IconTriangle';
 import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
 import { NumericTypes, TYPE_VECTOR } from '../types';
