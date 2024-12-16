@@ -1,6 +1,6 @@
 import { Transaction } from '@mysten/sui/transactions';
 
-import { PTBEdge, PTBNode } from '../../_PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../ptbFlow/nodes';
 
 export const generatePtb = async (
   nodes: PTBNode[],

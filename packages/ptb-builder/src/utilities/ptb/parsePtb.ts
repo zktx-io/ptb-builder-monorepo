@@ -7,7 +7,7 @@ import { createInputs } from './createInputs';
 import { createTransactions } from './createTransactions';
 import { PTB } from '../../components';
 import { enqueueToast } from '../../provider';
-import { PTBEdge, PTBNode } from '../../_PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../ptbFlow/nodes';
 
 export const parsePtb = (data: TransactionBlockData) => {
   const txs: PTBNode[] = [];

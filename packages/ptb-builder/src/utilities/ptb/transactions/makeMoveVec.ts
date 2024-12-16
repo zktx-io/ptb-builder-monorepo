@@ -1,6 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
-import { PTBEdge, PTBNode } from '../../../_PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 
 export const makeMoveVec = (
   index: number,

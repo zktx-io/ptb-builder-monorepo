@@ -4,7 +4,8 @@ import { TransactionBlockData } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 
 import { EnqueueToast, NETWORK, StateProvider } from './provider';
-import { PTBFlow } from './_PTBFlow';
+import { PTBFlow } from './ptbFlow';
+
 import '@xyflow/react/dist/base.css';
 import './index.css';
 

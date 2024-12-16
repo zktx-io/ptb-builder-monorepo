@@ -6,9 +6,9 @@ import {
   PtbHandle,
   PtbHandleArray,
   PtbHandleVector,
-} from '../_PTBFlow/nodes/handles';
-import { FormStyle, InputStyle, LabelStyle } from '../_PTBFlow/nodes/styles';
-import { TYPE_ARRAY, TYPE_PARAMS, TYPE_VECTOR } from '../_PTBFlow/nodes/types';
+} from '../ptbFlow/nodes/handles';
+import { FormStyle, InputStyle, LabelStyle } from '../ptbFlow/nodes/styles';
+import { TYPE_ARRAY, TYPE_PARAMS, TYPE_VECTOR } from '../ptbFlow/nodes/types';
 import { PREFIX } from '../utilities/getMoveCallFuncArg';
 
 export interface FuncArg {

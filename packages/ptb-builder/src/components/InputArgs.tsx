@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { useStateContext } from '../provider';
-import { InputStyle } from '../_PTBFlow/nodes/styles';
+import { InputStyle } from '../ptbFlow/nodes/styles';
 
 export const InputArgs = ({
   isShow,

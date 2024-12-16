@@ -4,8 +4,8 @@ import { useReactFlow, useViewport, XYPosition } from '@xyflow/react';
 
 import { Menu, MenuItem } from './Menu.data';
 import { enqueueToast } from '../provider';
-import { PTBEdge, PTBNode, PTBNodeType } from '../_PTBFlow/nodes';
-import { MenuStyle, MenuSubStyle } from '../_PTBFlow/nodes/styles';
+import { PTBEdge, PTBNode, PTBNodeType } from '../ptbFlow/nodes';
+import { MenuStyle, MenuSubStyle } from '../ptbFlow/nodes/styles';
 import { getLayoutedElements } from '../utilities/getLayoutedElements';
 
 export interface ContextProp {

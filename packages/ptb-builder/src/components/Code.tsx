@@ -7,7 +7,7 @@ import { Resizable } from 're-resizable';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import { PTBEdge, PTBNode } from '../_PTBFlow/nodes';
+import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 import { generateCode } from '../utilities/ptb/generateCode';
 import { generatePtb } from '../utilities/ptb/generatePtb';
 

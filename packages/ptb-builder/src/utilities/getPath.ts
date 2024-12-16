@@ -1,4 +1,4 @@
-import { PTBEdge, PTBNode, PTBNodeType } from '../_PTBFlow/nodes';
+import { PTBEdge, PTBNode, PTBNodeType } from '../ptbFlow/nodes';
 
 export const getPath = (nodes: PTBNode[], edges: PTBEdge[]): PTBNode[] => {
   const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
