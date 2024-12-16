@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
-import { InputArgs } from '../../../_Components/InputArgs';
-import { PtbHandleArray } from '../handles/PtbHandleArray';
+import { InputArgs } from '../../../components';
+import { PtbHandleArray } from '../handles';
 import {
   ButtonStyles,
   FormStyle,

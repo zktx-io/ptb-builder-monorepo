@@ -1,6 +1,6 @@
 import { SuiMoveNormalizedType } from '@mysten/sui/client';
 
-import { FuncArg } from '../_Components/MoveCallArgs';
+import { FuncArg } from '../components';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set(['Reference', 'MutableReference', 'Struct']);

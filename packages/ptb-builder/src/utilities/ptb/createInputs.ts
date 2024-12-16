@@ -1,6 +1,6 @@
 import { SuiCallArg } from '@mysten/sui/client';
 
-import { PTB } from '../../_Components/Menu.data';
+import { PTB } from '../../components';
 import { enqueueToast } from '../../provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 

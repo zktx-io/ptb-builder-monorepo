@@ -2,7 +2,7 @@ import React from 'react';
 
 import { Handle, Position } from '@xyflow/react';
 
-import { IconSquare } from '../../../_Components/IconSquare';
+import { IconSquare } from '../../../components';
 import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
 import { NumericTypes, TYPE_ARRAY } from '../types';

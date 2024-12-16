@@ -4,7 +4,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
-import { TxsArgs, TxsArgsHandles } from '../../../_Components/TxsArgs';
+import { TxsArgs, TxsArgsHandles } from '../../../components';
 import { enqueueToast } from '../../../provider';
 import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';

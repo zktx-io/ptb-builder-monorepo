@@ -1,6 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
-import { FuncArg } from '../../../_Components/MoveCallArgs';
+import { FuncArg } from '../../../components';
 import { enqueueToast } from '../../../provider';
 import { PTBEdge, PTBNode } from '../../../PTBFlow/nodes';
 

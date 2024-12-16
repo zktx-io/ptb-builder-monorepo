@@ -5,7 +5,7 @@ import { mergeCoins } from './transactions/mergeCoins';
 import { moveCall } from './transactions/moveCall';
 import { splitCoins } from './transactions/splitCoins';
 import { transferObjects } from './transactions/transferObjects';
-import { PTB } from '../../_Components/Menu.data';
+import { PTB } from '../../components';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../PTBFlow/nodes';
 
 const create = (

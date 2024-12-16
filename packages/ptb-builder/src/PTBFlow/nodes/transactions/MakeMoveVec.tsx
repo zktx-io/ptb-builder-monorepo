@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNodeProp } from '..';
-import { TxsArgs, TxsArgsHandles } from '../../../_Components/TxsArgs';
+import { TxsArgs, TxsArgsHandles } from '../../../components';
 import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
