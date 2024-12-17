@@ -31,7 +31,7 @@ export interface IState {
   network: NETWORK;
   client?: SuiClient;
   txbOrPtb?: TransactionBlockData | string;
-  address?: string;
+  wallet?: string;
   disableUpdate?: boolean;
 }
 
@@ -45,13 +45,13 @@ export const StateProvider = ({
   network,
   txbOrPtb,
   children,
-  address,
+  wallet,
   enqueueToast,
 }: {
   isEditor: boolean;
   network: NETWORK;
   txbOrPtb?: TransactionBlockData | string;
-  address?: string;
+  wallet?: string;
   enqueueToast?: EnqueueToast;
   children: ReactNode;
 }) => {
@@ -60,7 +60,7 @@ export const StateProvider = ({
     colorMode: 'dark',
     hasPath: false,
     isEditor,
-    address,
+    wallet,
   });
 
   useEffect(() => {
