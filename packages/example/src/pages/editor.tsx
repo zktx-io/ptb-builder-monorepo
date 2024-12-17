@@ -65,6 +65,7 @@ export const Editor = () => {
         <>
           <DragAndDrop onDrop={handleDrop} />
           <PTBBuilder
+            wallet={account.address}
             network={network}
             excuteTx={excuteTx}
             txbOrPtb={ptb}
