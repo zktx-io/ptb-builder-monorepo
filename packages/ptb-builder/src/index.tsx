@@ -10,7 +10,7 @@ import '@xyflow/react/dist/base.css';
 import './index.css';
 
 export const PTBBuilder = ({
-  address,
+  wallet,
   network,
   txbOrPtb,
   update,
@@ -18,7 +18,7 @@ export const PTBBuilder = ({
   enqueueToast,
   options,
 }: {
-  address?: string;
+  wallet?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
   txbOrPtb?: TransactionBlockData | string;
   update?: (ptbJson: string) => void;
@@ -33,7 +33,7 @@ export const PTBBuilder = ({
 }) => {
   return (
     <StateProvider
-      address={address}
+      wallet={wallet}
       txbOrPtb={txbOrPtb}
       isEditor={options ? !!options.isEditor : false}
       network={(network as NETWORK | undefined) || NETWORK.DevNet}
