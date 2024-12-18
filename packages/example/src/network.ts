@@ -1,1 +1,1 @@
-export const NETWORK = 'testnet';
+export const NETWORK = 'devnet';
