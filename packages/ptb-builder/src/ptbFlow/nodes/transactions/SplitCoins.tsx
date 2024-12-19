@@ -7,7 +7,9 @@ import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
 import { enqueueToast } from '../../../provider';
 import { TxsArgs, TxsArgsHandles } from '../../components';
 import { PtbHandleProcess } from '../handles';
+import { extractIndex } from '../isType';
 import { NodeStyles } from '../styles';
+import { PTBNestedResult } from '../types';
 
 export const SplitCoins = ({ id, data }: PTBNodeProp) => {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -29,50 +31,126 @@ export const SplitCoins = ({ id, data }: PTBNodeProp) => {
     },
     [],
   );
-  /*
+
   const excute = useCallback(
     (
       transaction: Transaction,
-      params: { source: PTBNode; target: string }[],
-      results: { id: string; value: any }[],
-    ): { transaction: Transaction; result: any } | undefined => {
+      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+      results: { [key: string]: PTBNestedResult[] },
+    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
       let coin;
-      const amounts: number[] = [];
+      let amounts: (number | undefined)[];
 
-      const coinObject = params.find((item) => item.target === 'coin:object');
-      if (coinObject) {
-        if (coinObject.source.type === PTBNodeType.ObjectGas) {
-          coin = transaction.gas;
-        } else if (coinObject.source.type === PTBNodeType.Object) {
-          coin = transaction.object(coinObject.source.data.value as string);
-        } else {
-          // TODO
-          enqueueToast(`not support - ${coinObject.source.type}`, {
-            variant: 'warning',
-          });
+      if (params['coin:object']) {
+        const source = params['coin:object'];
+        const index = extractIndex(source.edge.sourceHandle!);
+        switch (source.node.type) {
+          case PTBNodeType.ObjectGas:
+            coin = transaction.gas;
+            break;
+          case PTBNodeType.Object:
+            coin = transaction.object(source.node.data.value as string);
+            break;
+          case PTBNodeType.ObjectArray:
+            if (Array.isArray(source.node.data.value) && index !== undefined) {
+              coin = transaction.object(
+                source.node.data.value[index] as string,
+              );
+            }
+            break;
+          case PTBNodeType.SplitCoins:
+          case PTBNodeType.MoveCall:
+            if (index !== undefined) {
+              coin = results[source.node.id][index];
+            }
+            break;
+          default:
+            enqueueToast(`not support (0) - ${source.node.type}`, {
+              variant: 'warning',
+            });
         }
       }
-      const inputs = params.find((item) => item.target === 'amounts:number[]');
-      if (inputs) {
-        if (inputs.source.type === PTBNodeType.NumberArray) {
-          amounts.push(...(inputs.source.data.value as number[]));
-        } else {
-          // TODO
-          enqueueToast(`not support - ${inputs.source.type}`, {
-            variant: 'warning',
-          });
+
+      if (params['amounts:number[]']) {
+        const source = params['amounts:number[]'];
+        amounts = [];
+        switch (source.node.type) {
+          case PTBNodeType.NumberArray:
+            amounts.push(
+              ...(source.node.data.value as number[]).map((item) => item),
+            );
+            break;
+          default:
+            enqueueToast(`not support (1) - ${source.node.type}`, {
+              variant: 'warning',
+            });
+            break;
         }
+      } else {
+        const temp = Object.keys(params)
+          .filter((key) => params[key].edge.targetHandle!.endsWith(':number'))
+          .sort()
+          .map((key) => params[key]);
+        amounts = new Array(temp.length).fill(undefined);
+        temp.forEach((source) => {
+          const target = extractIndex(source.edge.targetHandle!);
+          const origin = extractIndex(source.edge.sourceHandle!);
+          switch (source.node.type) {
+            case PTBNodeType.Number:
+              if (
+                target !== undefined &&
+                !Array.isArray(source.node.data.value)
+              ) {
+                amounts[target] = source.node.data.value as number;
+              }
+              break;
+            case PTBNodeType.NumberArray:
+            case PTBNodeType.SplitCoins:
+              if (
+                target !== undefined &&
+                origin !== undefined &&
+                Array.isArray(source.node.data.value)
+              ) {
+                amounts[target] = source.node.data.value[origin] as number;
+              }
+              break;
+            case PTBNodeType.MoveCall:
+              const result = results[source.node.id];
+              if (
+                result !== undefined &&
+                target !== undefined &&
+                origin !== undefined
+              ) {
+                amounts[target] = result[origin] as unknown as number;
+              }
+              break;
+            case PTBNodeType.ObjectGas:
+              break;
+            default:
+              enqueueToast(`not support (3) - ${source.node.type}`, {
+                variant: 'warning',
+              });
+              break;
+          }
+        });
       }
 
-      if (coin && amounts.length > 0) {
-        const temp = transaction.splitCoins(coin, amounts);
-        return { transaction, result: amounts.map((_, i) => temp[i]) };
+      if (
+        coin &&
+        amounts.length > 0 &&
+        !amounts.some((element) => element === undefined)
+      ) {
+        const result = transaction.splitCoins(coin, amounts as number[]);
+        return {
+          transaction,
+          results: amounts.map((_, index) => result[index]),
+        };
       }
-      return undefined;
+      throw new Error('Method not implemented.');
     },
     [],
   );
-  */
+
   const resetEdge = (handle: 'source' | 'target') => {
     setEdges((eds) =>
       eds.filter(
@@ -94,9 +172,9 @@ export const SplitCoins = ({ id, data }: PTBNodeProp) => {
   useEffect(() => {
     if (data) {
       data.code = code;
-      // data.excute = excute;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>

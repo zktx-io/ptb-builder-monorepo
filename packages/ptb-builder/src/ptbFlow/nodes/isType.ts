@@ -30,3 +30,8 @@ export const extractName = (name: string, sourceHandle: string): string => {
   const match = sourceHandle.match(/^[a-zA-Z]+-(\d+):[^:]+$/);
   return match ? `${name}[${parseInt(match[1], 10)}]` : name;
 };
+
+export const extractIndex = (sourceHandle: string): number | undefined => {
+  const match = sourceHandle.match(/^[a-zA-Z]+-(\d+):[^:]+$/);
+  return match ? parseInt(match[1], 10) : undefined;
+};

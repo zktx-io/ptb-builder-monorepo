@@ -27,13 +27,11 @@ export const MoveCallArgs = ({
   typeHandle,
   args,
   yPosition,
-  position,
 }: {
   prefix: string;
   typeHandle: 'source' | 'target';
   args: FuncArg[];
   yPosition: number;
-  position: Position;
 }) => {
   return (
     <>

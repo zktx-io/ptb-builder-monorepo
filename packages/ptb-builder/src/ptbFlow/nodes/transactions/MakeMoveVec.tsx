@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 
+import {
+  Transaction,
+  TransactionObjectArgument,
+} from '@mysten/sui/transactions';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { PTBEdge, PTBNodeProp } from '..';
+import { PTBEdge, PTBNode, PTBNodeProp } from '..';
 import { TxsArgs, TxsArgsHandles } from '../../components';
 import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
+import { PTBNestedResult } from '../types';
 
 export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -28,6 +33,30 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
     [],
   );
 
+  const excute = useCallback(
+    (
+      transaction: Transaction,
+      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+      results: { [key: string]: PTBNestedResult[] },
+    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
+      /*
+      let type;
+      let elements: (TransactionObjectArgument | string | undefined)[][];
+
+      // TODO
+
+      if (type && elements.length > 0) {
+        const result = transaction.makeMoveVec({
+          elements: elements.filter((item) => !item),
+        });
+        return { transaction, result: undefined };
+      }
+      */
+      throw new Error('Method not implemented.');
+    },
+    [],
+  );
+
   const resetEdge = () => {
     setEdges((eds) =>
       eds.filter(
@@ -44,9 +73,9 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
   useEffect(() => {
     if (data) {
       data.code = code;
-      // data.excute = excute;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>

@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 
-import { Transaction } from '@mysten/sui/transactions';
+import {
+  Transaction,
+  TransactionObjectArgument,
+} from '@mysten/sui/transactions';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
 import { enqueueToast } from '../../../provider';
 import { TxsArgs, TxsArgsHandles } from '../../components';
 import { PtbHandleProcess } from '../handles';
+import { extractIndex } from '../isType';
 import { NodeStyles } from '../styles';
+import { PTBNestedResult } from '../types';
 
 export const MergeCoins = ({ id, data }: PTBNodeProp) => {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -29,60 +34,131 @@ export const MergeCoins = ({ id, data }: PTBNodeProp) => {
     },
     [],
   );
-  /*
+
   const excute = useCallback(
     (
       transaction: Transaction,
-      params: { source: PTBNode; target: string }[],
-      results: { id: string; value: any }[],
-    ): { transaction: Transaction; result: any } | undefined => {
+      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+      results: { [key: string]: PTBNestedResult[] },
+    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
       let destination;
-      const sources = [];
+      let sources: (TransactionObjectArgument | string | undefined)[] = [];
 
-      const destNode = params.find(
-        (item) => item.target === 'destination:object',
-      );
-      if (destNode) {
-        if (destNode.source.type === PTBNodeType.ObjectGas) {
-          destination = transaction.gas;
-        } else if (destNode.source.type === PTBNodeType.Object) {
-          destination = destNode.source.data.value as string;
-        } else {
-          // TODO
-          enqueueToast(`not support - ${destNode.source.type}`, {
-            variant: 'warning',
-          });
+      if (params['destination:object']) {
+        const source = params['destination:object'];
+        const index = extractIndex(source.edge.sourceHandle!);
+        switch (source.node.type) {
+          case PTBNodeType.ObjectGas:
+            destination = transaction.gas;
+            break;
+          case PTBNodeType.Object:
+            destination = source.node.data.value as string;
+            break;
+          case PTBNodeType.ObjectArray:
+            if (Array.isArray(source.node.data.value) && index !== undefined) {
+              destination = source.node.data.value[index] as string;
+            }
+            break;
+          case PTBNodeType.SplitCoins:
+          case PTBNodeType.MoveCall:
+            if (index !== undefined) {
+              destination = results[source.node.id][index];
+            }
+            break;
+          default:
+            enqueueToast(`not support (0) - ${source.node.type}`, {
+              variant: 'warning',
+            });
         }
       }
 
-      const inputs = params.find((item) => item.target === 'source:object[]');
-      if (inputs) {
-        if (inputs.source.type === PTBNodeType.ObjectArray) {
-          sources.push(
-            ...(inputs.source.data.value as string[]).map((item) =>
-              transaction.object(item),
-            ),
-          );
-        } else if (inputs.source.type === PTBNodeType.SplitCoins) {
-          const temp = results.find((item) => item.id === inputs.source.id);
-          temp && sources.push(...temp.value);
-        } else {
-          // TODO
-          enqueueToast(`not support - ${inputs.source.type}`, {
-            variant: 'warning',
-          });
+      if (params['objects:object[]']) {
+        const source = params['objects:object[]'];
+        sources = [];
+        switch (source.node.type) {
+          case PTBNodeType.ObjectArray:
+            sources.push(
+              ...(source.node.data.value as string[]).map((item) =>
+                transaction.object(item),
+              ),
+            );
+            break;
+          case PTBNodeType.SplitCoins:
+            const result = results[source.node.id];
+            if (result) {
+              sources.push(...result);
+            }
+            break;
+          default:
+            enqueueToast(`not support (1) - ${source.node.type}`, {
+              variant: 'warning',
+            });
         }
+      } else {
+        const temp = Object.keys(params)
+          .filter((key) => params[key].edge.targetHandle?.endsWith(':object'))
+          .sort()
+          .map((key) => params[key]);
+        sources = new Array(sources.length).fill(undefined);
+        temp.forEach((source) => {
+          const target = extractIndex(source.edge.targetHandle!);
+          const origin = extractIndex(source.edge.sourceHandle!);
+          switch (source.node.type) {
+            case PTBNodeType.Object:
+              if (
+                target !== undefined &&
+                !Array.isArray(source.node.data.value)
+              ) {
+                sources[target] = transaction.object(
+                  source.node.data.value as string,
+                );
+              }
+              break;
+            case PTBNodeType.ObjectArray:
+              if (
+                target !== undefined &&
+                origin !== undefined &&
+                Array.isArray(source.node.data.value)
+              ) {
+                sources[target] = transaction.object(
+                  source.node.data.value[origin] as string,
+                );
+              }
+              break;
+            case PTBNodeType.SplitCoins:
+            case PTBNodeType.MoveCall:
+              const result = results[source.node.id];
+              if (
+                result !== undefined &&
+                target !== undefined &&
+                origin !== undefined
+              ) {
+                sources[target] = result[origin];
+              }
+              break;
+            case PTBNodeType.ObjectGas:
+              break;
+            default:
+              enqueueToast(`not support (3) - ${source.node.type}`, {
+                variant: 'warning',
+              });
+              break;
+          }
+        });
       }
 
-      if (destination && sources.length > 0) {
-        const result = transaction.mergeCoins(destination, sources);
-        return { transaction, result: undefined };
+      if (
+        destination &&
+        sources.length > 0 &&
+        !sources.some((element) => element === undefined)
+      ) {
+        transaction.mergeCoins(destination, sources as any[]);
+        return { transaction, results: undefined };
       }
-      return undefined;
+      throw new Error('Method not implemented.');
     },
     [],
   );
-  */
 
   const resetEdge = () => {
     setEdges((eds) =>
@@ -104,9 +180,9 @@ export const MergeCoins = ({ id, data }: PTBNodeProp) => {
   useEffect(() => {
     if (data) {
       data.code = code;
-      // data.excute = excute;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>

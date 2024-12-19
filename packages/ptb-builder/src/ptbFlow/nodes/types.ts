@@ -93,6 +93,11 @@ export interface PTBEdge extends Edge {
   type: 'Data' | 'Path';
 }
 
+export interface PTBNestedResult {
+  $kind: 'NestedResult';
+  NestedResult: [number, number];
+}
+
 export interface PTBNodeData {
   [key: string]: unknown;
   label: string;
@@ -100,9 +105,9 @@ export interface PTBNodeData {
   code?: (dictionary: Record<string, string>, edges: PTBEdge[]) => string;
   excute?: (
     transaction: Transaction,
-    params: { source: PTBNode; target: string }[],
-    results: { id: string; value: any }[],
-  ) => { transaction: Transaction; result: any } | undefined;
+    params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+    results: { [key: string]: PTBNestedResult[] },
+  ) => { transaction: Transaction; results?: PTBNestedResult[] };
 }
 
 export interface PTBNodeProp {

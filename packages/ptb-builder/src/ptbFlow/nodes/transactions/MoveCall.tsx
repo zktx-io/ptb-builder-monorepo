@@ -7,7 +7,7 @@ import {
 import { Transaction } from '@mysten/sui/transactions';
 import { Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { PTBEdge, PTBNodeProp } from '..';
+import { PTBEdge, PTBNode, PTBNodeProp } from '..';
 import { enqueueToast, useStateContext } from '../../../provider';
 import {
   FuncArg,
@@ -16,8 +16,9 @@ import {
   MoveCallArgs,
 } from '../../components';
 import { deleteTxContext } from '../../components/deleteTxContext';
+import { PREFIX } from '../../components/getMoveCallFuncArg';
 import { PtbHandleProcess } from '../handles';
-import { extractName } from '../isType';
+import { extractIndex, extractName } from '../isType';
 import {
   ButtonStyles,
   FormStyle,
@@ -25,6 +26,7 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
+import { PTBNestedResult, PTBNodeType } from '../types';
 
 const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
 const objectTypes = new Set([
@@ -123,6 +125,68 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
     [packageId, selectedFunction, selectedFunctionInputs, selectedModule],
   );
 
+  const excute = useCallback(
+    (
+      transaction: Transaction,
+      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+      results: { [key: string]: PTBNestedResult[] },
+    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
+      let args: any[] = new Array(selectedFunctionInputs.length).fill(
+        undefined,
+      );
+
+      Object.keys(params)
+        .filter((key) => params[key].edge.targetHandle?.startsWith(PREFIX))
+        .forEach((key) => {
+          const index = extractIndex(key);
+          const source = params[key];
+          if (index) {
+            switch (source.node.type) {
+              case PTBNodeType.Number:
+                args[index] = source.node.data.value as number;
+                break;
+              case PTBNodeType.Address:
+                args[index] = source.node.data.value as string;
+                break;
+              case PTBNodeType.Object:
+                args[index] = transaction.object(
+                  source.node.data.value as string,
+                );
+                break;
+              default:
+                break;
+            }
+          }
+        });
+      if (
+        packageId &&
+        selectedModule &&
+        selectedFunction &&
+        !args.some((element) => element === undefined)
+      ) {
+        const result = transaction.moveCall({
+          package: packageId,
+          module: selectedModule,
+          function: selectedFunction,
+          arguments: args,
+          // typeArguments?: string[];
+        });
+        return {
+          transaction,
+          results: selectedFunctionOutputs.map((_, index) => result[index]),
+        };
+      }
+      throw new Error('Method not implemented.');
+    },
+    [
+      packageId,
+      selectedFunction,
+      selectedFunctionInputs,
+      selectedFunctionOutputs,
+      selectedModule,
+    ],
+  );
+
   useEffect(() => {
     if (selectedFunction) {
       const find = functions.find((item) => item.name === selectedFunction);
@@ -152,9 +216,9 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   useEffect(() => {
     if (data) {
       data.code = code;
-      // data.excute = excute;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>
@@ -261,7 +325,6 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 typeHandle="target"
                 args={selectedFunctionInputs}
                 yPosition={221}
-                position={Position.Left}
               />
             </>
           )}
@@ -282,7 +345,6 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                     ? 260 + selectedFunctionInputs.length * 42
                     : 221
                 }
-                position={Position.Right}
               />
             </>
           )}

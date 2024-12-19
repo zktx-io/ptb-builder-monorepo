@@ -1,17 +1,23 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 
-import { Transaction } from '@mysten/sui/transactions';
+import {
+  Transaction,
+  TransactionObjectArgument,
+} from '@mysten/sui/transactions';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBEdge, PTBNode, PTBNodeProp, PTBNodeType } from '..';
-import { enqueueToast } from '../../../provider';
+import { enqueueToast, useStateContext } from '../../../provider';
 import { TxsArgs, TxsArgsHandles } from '../../components';
 import { PtbHandleProcess } from '../handles';
+import { extractIndex } from '../isType';
 import { NodeStyles } from '../styles';
+import { PTBNestedResult } from '../types';
 
 export const TransferObjects = ({ id, data }: PTBNodeProp) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const { setEdges } = useReactFlow();
+  const { wallet } = useStateContext();
   // eslint-disable-next-line no-restricted-syntax
   const txsArgsRef = useRef<TxsArgsHandles>(null);
 
@@ -30,58 +36,129 @@ export const TransferObjects = ({ id, data }: PTBNodeProp) => {
     [],
   );
 
-  /*
   const excute = useCallback(
     (
       transaction: Transaction,
-      params: { source: PTBNode; target: string }[],
-      results: { id: string; value: any }[],
-    ): { transaction: Transaction; result: any } | undefined => {
+      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
+      results: { [key: string]: PTBNestedResult[] },
+    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
       let address;
-      const objects = [];
+      let objects: (TransactionObjectArgument | string | undefined)[];
 
-      const addressNode = params.find(
-        (item) => item.target === 'address:address',
-      );
-      if (addressNode) {
-        if (addressNode.source.type === PTBNodeType.Address) {
-          address = addressNode.source.data.value as string;
-        } else {
-          // TODO
-          enqueueToast(`not support - ${addressNode.source.type}`, {
-            variant: 'warning',
-          });
+      if (params['address:address']) {
+        const source = params['address:address'];
+        const index = extractIndex(source.edge.sourceHandle!);
+        switch (source.node.type) {
+          case PTBNodeType.Address:
+            address = source.node.data.value as string;
+            break;
+          case PTBNodeType.AddressWallet:
+            address = wallet;
+            break;
+          case PTBNodeType.AddressArray:
+            if (Array.isArray(source.node.data.value) && index !== undefined) {
+              address = source.node.data.value[index] as string;
+            }
+            break;
+          case PTBNodeType.MoveCall:
+            if (index !== undefined) {
+              address = results[source.node.id][index];
+            }
+            break;
+          default:
+            enqueueToast(`not support (0) - ${source.node.type}`, {
+              variant: 'warning',
+            });
         }
       }
 
-      const inputs = params.find((item) => item.target === 'objects:object[]');
-      if (inputs) {
-        if (inputs.source.type === PTBNodeType.ObjectArray) {
-          objects.push(
-            ...(inputs.source.data.value as string[]).map((item) =>
-              transaction.object(item),
-            ),
-          );
-        } else if (inputs.source.type === PTBNodeType.SplitCoins) {
-          const temp = results.find((item) => item.id === inputs.source.id);
-          temp && objects.push(...temp.value);
-        } else {
-          // TODO
-          enqueueToast(`not support - ${inputs.source.type}`, {
-            variant: 'warning',
-          });
+      if (params['objects:object[]']) {
+        const source = params['objects:object[]'];
+        objects = [];
+        switch (source.node.type) {
+          case PTBNodeType.ObjectArray:
+            objects.push(
+              ...(source.node.data.value as string[]).map((item) =>
+                transaction.object(item),
+              ),
+            );
+            break;
+          case PTBNodeType.SplitCoins:
+            const result = results[source.node.id];
+            if (result) {
+              objects.push(...result);
+            }
+            break;
+          default:
+            enqueueToast(`not support (1) - ${source.node.type}`, {
+              variant: 'warning',
+            });
         }
+      } else {
+        const temp = Object.keys(params)
+          .filter((key) => params[key].edge.targetHandle?.endsWith(':object'))
+          .sort()
+          .map((key) => params[key]);
+        objects = new Array(temp.length).fill(undefined);
+        temp.forEach((source) => {
+          const target = extractIndex(source.edge.targetHandle!);
+          const origin = extractIndex(source.edge.sourceHandle!);
+          switch (source.node.type) {
+            case PTBNodeType.Object:
+              if (
+                target !== undefined &&
+                !Array.isArray(source.node.data.value)
+              ) {
+                objects[target] = transaction.object(
+                  source.node.data.value as string,
+                );
+              }
+              break;
+            case PTBNodeType.ObjectArray:
+              if (
+                target !== undefined &&
+                origin !== undefined &&
+                Array.isArray(source.node.data.value)
+              ) {
+                objects[target] = transaction.object(
+                  source.node.data.value[origin] as string,
+                );
+              }
+              break;
+            case PTBNodeType.SplitCoins:
+            case PTBNodeType.MoveCall:
+              const result = results[source.node.id];
+              if (
+                result !== undefined &&
+                target !== undefined &&
+                origin !== undefined
+              ) {
+                objects[target] = result[origin];
+              }
+              break;
+            case PTBNodeType.ObjectGas:
+              break;
+            default:
+              enqueueToast(`not support (3) - ${source.node.type}`, {
+                variant: 'warning',
+              });
+              break;
+          }
+        });
       }
 
-      if (address && objects.length > 0) {
-        const result = transaction.transferObjects(objects, address);
-        return { transaction, result };
+      if (
+        address &&
+        objects.length > 0 &&
+        !objects.some((element) => element === undefined)
+      ) {
+        transaction.transferObjects(objects as any[], address);
+        return { transaction, results: undefined };
       }
-      return undefined;
+      throw new Error('Method not implemented.');
     },
-    [],
+    [wallet],
   );
-  */
 
   const resetEdge = () => {
     setEdges((eds) =>
@@ -103,9 +180,9 @@ export const TransferObjects = ({ id, data }: PTBNodeProp) => {
   useEffect(() => {
     if (data) {
       data.code = code;
-      // data.excute = excute;
+      data.excute = excute;
     }
-  }, [code, data]);
+  }, [code, data, excute]);
 
   return (
     <div className={NodeStyles.transaction}>

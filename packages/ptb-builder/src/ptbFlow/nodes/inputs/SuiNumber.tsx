@@ -10,8 +10,8 @@ import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 export const SuiNumber = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
   const { isEditor } = useStateContext();
-  const [inputValue, setInputValue] = useState<string>(
-    (data.value as string) || '',
+  const [inputValue, setInputValue] = useState<number>(
+    (data.value as number) || 0,
   );
 
   useEffect(() => {
@@ -39,8 +39,16 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
           className={InputStyle}
           readOnly={!isEditor}
           value={inputValue}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-            setInputValue(event.target.value);
+          min={0}
+          onChange={(event) => {
+            const value = event.target.value;
+            const numericValue = Number(value);
+            if (
+              value === '' ||
+              (!Number.isNaN(numericValue) && numericValue >= 0)
+            ) {
+              setInputValue(numericValue);
+            }
           }}
         />
       </div>

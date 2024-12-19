@@ -58,20 +58,35 @@ export const InputArgs = ({
                       <option value="false">false</option>
                       <option value="true">true</option>
                     </select>
-                  ) : (
+                  ) : isNumber ? (
                     <input
-                      type={isNumber ? 'number' : 'text'}
+                      type="number"
                       placeholder={placeholder}
                       autoComplete="off"
                       className={InputStyle}
                       readOnly={!isEditor}
                       value={item}
-                      onChange={(e) =>
-                        updateItem(
-                          index,
-                          isNumber ? parseInt(e.target.value) : e.target.value,
-                        )
-                      }
+                      min={0}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const numericValue = Number(value);
+                        if (
+                          value === '' ||
+                          (!Number.isNaN(numericValue) && numericValue >= 0)
+                        ) {
+                          updateItem(index, numericValue);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={placeholder}
+                      autoComplete="off"
+                      className={InputStyle}
+                      readOnly={!isEditor}
+                      value={item}
+                      onChange={(e) => updateItem(index, e.target.value)}
                     />
                   )}
                   {isEditor && (
