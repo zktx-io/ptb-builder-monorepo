@@ -59,9 +59,9 @@ export const parseTxb = (data: TransactionBlockData) => {
           id: `path-${index}`,
           type: 'Path',
           source: index === 0 ? '@start' : txs[txs.length - 2].id,
-          sourceHandle: 'src:process',
+          sourceHandle: 'src:command',
           target: tx.id,
-          targetHandle: 'tgt:process',
+          targetHandle: 'tgt:command',
         });
         edges.push(...subEdges);
       });
@@ -70,9 +70,9 @@ export const parseTxb = (data: TransactionBlockData) => {
         id: `path-${edges.length + 1}`,
         type: 'Path',
         source: txs[txs.length - 1].id,
-        sourceHandle: 'src:process',
+        sourceHandle: 'src:command',
         target: '@end',
-        targetHandle: 'tgt:process',
+        targetHandle: 'tgt:command',
       });
     } else {
       enqueueToast(`empty transaction array`, {

@@ -16,8 +16,8 @@ export const PtbHandleProcess = ({
     <Handle
       type={typeHandle}
       position={typeHandle === 'source' ? Position.Right : Position.Left}
-      id={typeHandle === 'source' ? 'src:process' : 'tgt:process'}
-      className={HandleStyles.process.background}
+      id={typeHandle === 'source' ? 'src:command' : 'tgt:command'}
+      className={HandleStyles.command.background}
       style={{
         width: '18px',
         height: '10px',
@@ -29,8 +29,8 @@ export const PtbHandleProcess = ({
       }}
       isValidConnection={(connection: any) =>
         typeHandle === 'source'
-          ? isTargetType(connection, 'process')
-          : isSourceType(connection, 'process')
+          ? isTargetType(connection, 'command')
+          : isSourceType(connection, 'command')
       }
     >
       <span

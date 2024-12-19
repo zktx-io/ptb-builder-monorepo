@@ -171,7 +171,7 @@ export const Menu: {
     name: string;
     submenu: MenuItem[];
   }[];
-  transactions: MenuItem[];
+  commands: MenuItem[];
   node: MenuItem[];
   edge: MenuItem[];
 } = {
@@ -359,7 +359,7 @@ export const Menu: {
       ],
     },
   ],
-  transactions: [
+  commands: [
     {
       name: PTB.MergeCoins.Name,
       type: PTB.MergeCoins.Type,

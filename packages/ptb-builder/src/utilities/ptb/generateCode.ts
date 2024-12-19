@@ -85,7 +85,7 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
     });
   };
 
-  const process: { name: string; node: PTBNode; inputs: PTBEdge[] }[] =
+  const command: { name: string; node: PTBNode; inputs: PTBEdge[] }[] =
     path.map((node) => {
       switch (node.type) {
         case PTBNodeType.SplitCoins: {
@@ -146,7 +146,7 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
     addCodeLine(`const ${variables[key].name} = ${value};`, '');
   });
 
-  process.forEach(({ name, node, inputs }) => {
+  command.forEach(({ name, node, inputs }) => {
     if (typeof node.data.code === 'function') {
       if (name) {
         if (

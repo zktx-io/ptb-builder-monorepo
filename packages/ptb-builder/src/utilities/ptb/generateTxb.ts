@@ -25,13 +25,15 @@ export const generateTxb = async (
             };
           }
         });
-      const result = item.data.excute!(tx, params, results);
-      if (result && result.transaction) {
-        if (result.results) {
-          results[item.id] = result.results;
-        }
-        tx = result.transaction;
+      const { transaction, results: result } = item.data.excute!(
+        tx,
+        params,
+        results,
+      );
+      if (result) {
+        results[item.id] = result;
       }
+      tx = transaction;
     } catch (error) {
       enqueueToast(`${error}`, { variant: 'error' });
     }

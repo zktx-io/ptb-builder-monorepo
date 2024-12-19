@@ -39,7 +39,7 @@ export const HandleStyles = {
     border:
       'transition-colors duration-300 ease-in-out text-blue-200 dark:text-blue-600 hover:text-blue-500 dark:hover:text-blue-400',
   },
-  process: {
+  command: {
     background:
       'transition-colors duration-300 ease-in-out bg-stone-200 dark:bg-stone-700 hover:bg-stone-500 dark:hover:bg-stone-500',
     borderB:
@@ -75,7 +75,7 @@ export const ButtonStyles = {
     hoverBackground:
       'transition-colors duration-300 ease-in-out hover:bg-blue-500/20 dark:hover:bg-blue-400/20',
   },
-  process: {
+  command: {
     text: 'text-stone-700 dark:text-stone-300',
     hoverBackground:
       'transition-colors duration-300 ease-in-out hover:bg-stone-500/20 dark:hover:bg-stone-500/20',
@@ -97,7 +97,7 @@ export const NodeStyles = {
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-green-300 bg-green-300/60 dark:border-green-600/60 dark:bg-green-600/60 hover:border-green-500 dark:hover:border-green-400 cursor-move',
   object:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-blue-300 bg-blue-300/60 dark:border-blue-600/60 dark:bg-blue-600/60 hover:border-blue-500 dark:hover:border-blue-400 cursor-move',
-  process:
+  command:
     'transition-colors duration-300 ease-in-out rounded-full w-[140px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
   transaction:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',

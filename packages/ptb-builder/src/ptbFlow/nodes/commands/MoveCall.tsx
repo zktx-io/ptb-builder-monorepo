@@ -244,7 +244,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         />
         {!packageData && isEditor && (
           <button
-            className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.process.text} ${ButtonStyles.process.hoverBackground}`}
+            className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
             disabled={!isEditor}
             onClick={loadPackage}
           >

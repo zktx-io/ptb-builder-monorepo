@@ -51,7 +51,7 @@ export type TYPE =
   | TYPE_ARRAY
   | TYPE_VECTOR
   | 'moveCall'
-  | 'process';
+  | 'command';
 
 export enum PTBNodeType {
   Address = 'SuiAddress',

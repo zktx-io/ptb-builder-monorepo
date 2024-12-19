@@ -126,7 +126,7 @@ export const PTBFlow = ({
   const onConnect = useCallback(
     (params: Connection) => {
       if (isEditor) {
-        if (params.sourceHandle!.split(':')[1] === 'process') {
+        if (params.sourceHandle!.split(':')[1] === 'command') {
           setEdges((eds) => {
             const flowEdges = eds.filter(
               (edge) =>

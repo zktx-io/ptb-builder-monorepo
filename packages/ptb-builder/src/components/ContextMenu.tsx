@@ -207,7 +207,7 @@ export const ContextMenu = ({
                 </ul>
               </li>
             ))}
-            {renderMenuItems(Menu.transactions)}
+            {renderMenuItems(Menu.commands)}
           </>
         )}
         {selected && (

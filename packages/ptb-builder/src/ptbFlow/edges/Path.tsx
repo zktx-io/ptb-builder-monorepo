@@ -25,7 +25,7 @@ export const Path = ({
   });
   const { colorMode, hasPath } = useStateContext();
   const getColor = (): string => {
-    return HandleStyles.process.border;
+    return HandleStyles.command.border;
   };
 
   const glowColor =
