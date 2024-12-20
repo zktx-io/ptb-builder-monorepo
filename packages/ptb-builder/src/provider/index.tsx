@@ -21,7 +21,7 @@ export enum NETWORK {
 export const NETWORKS: NETWORK[] = [
   NETWORK.DevNet,
   NETWORK.TestNet,
-  // NETWORK.MainNet,
+  NETWORK.MainNet,
 ];
 
 export interface IState {

@@ -288,6 +288,7 @@ export const PTBFlow = ({
                 }));
               }}
             >
+              <option value="mainnet">Mainnet</option>
               <option value="testnet">Testnet</option>
               <option value="devnet">Devnet</option>
             </select>
