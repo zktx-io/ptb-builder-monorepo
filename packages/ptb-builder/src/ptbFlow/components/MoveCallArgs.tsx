@@ -1,7 +1,5 @@
 import React from 'react';
 
-import { Position } from '@xyflow/react';
-
 import { PREFIX } from './getMoveCallFuncArg';
 import {
   PtbHandle,
