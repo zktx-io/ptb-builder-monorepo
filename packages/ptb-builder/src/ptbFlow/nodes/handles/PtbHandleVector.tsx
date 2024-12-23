@@ -3,9 +3,8 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 import { IconTriangle } from '../../../components';
-import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
-import { NumericTypes, TYPE_VECTOR } from '../types';
+import { isValidHandleType, NumericTypes, TYPE_VECTOR } from '../types';
 
 export const PtbHandleVector = ({
   typeHandle,
@@ -26,9 +25,11 @@ export const PtbHandleVector = ({
       className={`flex items-center justify-center w-0 h-0 ${NumericTypes.has(typeParams.match(/(?<=vector<)([^>]+)(?=>)/)![0]) ? HandleStyles.number.background : (HandleStyles as any)[typeParams.match(/(?<=vector<)([^>]+)(?=>)/)![0]].background}`}
       style={{ backgroundColor: 'transparent', ...style, padding: 0 }}
       isValidConnection={(connection: any) =>
-        typeHandle === 'source'
-          ? isTargetType(connection, typeParams)
-          : isSourceType(connection, typeParams)
+        isValidHandleType(
+          connection,
+          typeParams,
+          typeHandle === 'source' ? 'targetHandle' : 'sourceHandle',
+        )
       }
     >
       <IconTriangle

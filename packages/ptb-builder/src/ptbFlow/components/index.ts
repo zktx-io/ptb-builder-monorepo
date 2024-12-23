@@ -1,5 +1,6 @@
-export { InputArgs } from './InputArgs';
-export { FuncArg, MoveCallArgs } from './MoveCallArgs';
-export { TxsArgs, TxsArgsHandles } from './TxsArgs';
-export { getMoveCallFuncArg } from './getMoveCallFuncArg';
+export { ArrayInputs } from './ArrayInputs';
+export { CmdParams } from './CmdParams';
+export { CmdParamsMoveCall } from './CmdParamsMoveCall';
+export { CmdParamsSplitCoins } from './CmdParamsSplitCoins';
+export { CmdParamsVector } from './CmdParamsVector';
 export { getPackageData } from './getPackageData';

@@ -6,7 +6,7 @@ import { NodeStyles } from '../styles';
 
 export const Start = ({ id, data }: PTBNodeProp) => {
   return (
-    <div className={NodeStyles.command}>
+    <div className={NodeStyles.startEnd}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
         Start
       </p>

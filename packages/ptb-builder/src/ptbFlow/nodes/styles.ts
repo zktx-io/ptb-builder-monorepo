@@ -97,10 +97,12 @@ export const NodeStyles = {
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-green-300 bg-green-300/60 dark:border-green-600/60 dark:bg-green-600/60 hover:border-green-500 dark:hover:border-green-400 cursor-move',
   object:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-blue-300 bg-blue-300/60 dark:border-blue-600/60 dark:bg-blue-600/60 hover:border-blue-500 dark:hover:border-blue-400 cursor-move',
-  command:
+  startEnd:
     'transition-colors duration-300 ease-in-out rounded-full w-[140px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
-  transaction:
+  command:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
+  moveCall:
+    'transition-colors duration-300 ease-in-out rounded-lg w-[220px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
 };
 
 export const FormStyle = 'flex flex-col space-y-0';

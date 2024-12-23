@@ -3,9 +3,8 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 import { IconCircle } from '../../../components';
-import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
-import { NumericTypes, TYPE_PARAMS } from '../types';
+import { isValidHandleType, NumericTypes, TYPE_PARAMS } from '../types';
 
 export const PtbHandle = ({
   typeHandle,
@@ -14,7 +13,7 @@ export const PtbHandle = ({
   style,
 }: {
   typeHandle: 'source' | 'target';
-  typeParams: TYPE_PARAMS;
+  typeParams: TYPE_PARAMS | 'number';
   name: string;
   style?: { [key: string]: string };
 }) => {
@@ -26,9 +25,11 @@ export const PtbHandle = ({
       className={`flex items-center justify-center w-3 h-3 ${NumericTypes.has(typeParams) ? HandleStyles.number.background : (HandleStyles as any)[typeParams].background}`}
       style={{ backgroundColor: 'transparent', ...style, padding: 0 }}
       isValidConnection={(connection: any) =>
-        typeHandle === 'source'
-          ? isTargetType(connection, typeParams)
-          : isSourceType(connection, typeParams)
+        isValidHandleType(
+          connection,
+          typeParams,
+          typeHandle === 'source' ? 'targetHandle' : 'sourceHandle',
+        )
       }
     >
       <IconCircle

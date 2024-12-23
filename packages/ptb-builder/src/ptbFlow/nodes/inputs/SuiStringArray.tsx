@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
-import { InputArgs } from '../../components';
-import { PtbHandleVector } from '../handles';
+import { ArrayInputs } from '../../components';
+import { PtbHandleArray } from '../handles';
 import {
   ButtonStyles,
   FormStyle,
@@ -13,12 +13,14 @@ import {
   NodeStyles,
 } from '../styles';
 
-export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
+export const SuiStringArray = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
   const [isShow, setIsShow] = useState<boolean>(
     data && data.value ? (data.value as string[]).length < 4 : true,
   );
-  const [items, setItems] = useState<string[]>((data.value as string[]) || []);
+  const [items, setItems] = useState<string[]>(
+    (data.value as string[]) || [''],
+  );
 
   const addItem = () => {
     data.value = [...items, ''];
@@ -26,8 +28,10 @@ export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
   };
 
   const removeItem = (index: number) => {
-    data.value = items.filter((_, i) => i !== index);
-    setItems(() => [...(data.value as string[])]);
+    if (items.length > 1) {
+      data.value = items.filter((_, i) => i !== index);
+      setItems(() => [...(data.value as string[])]);
+    }
   };
 
   const updateItem = (index: number, value: string) => {
@@ -51,7 +55,7 @@ export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
   }, [id, items, setNodes]);
 
   return (
-    <div className={NodeStyles.address}>
+    <div className={NodeStyles.string}>
       <div className={FormStyle}>
         <div className={FormTitleStyle}>
           <label className={LabelStyle}>{data.label}</label>
@@ -72,24 +76,20 @@ export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
             />
           </div>
         </div>
-        <InputArgs
+        <ArrayInputs
           isShow={isShow}
           items={items}
-          placeholder="Enter address"
+          placeholder="Enter string"
           addItem={addItem}
           removeItem={removeItem}
           updateItem={updateItem}
           style={{
-            deleteButton: `text-center text-xs rounded-md ${ButtonStyles.address.text} ${ButtonStyles.address.hoverBackground}`,
-            addButton: `w-full py-1 text-center text-xs rounded-md ${ButtonStyles.address.text} ${ButtonStyles.address.hoverBackground}`,
+            deleteButton: `text-center text-xs rounded-md ${ButtonStyles.string.text} ${ButtonStyles.string.hoverBackground}`,
+            addButton: `w-full py-1 text-center text-xs rounded-md ${ButtonStyles.string.text} ${ButtonStyles.string.hoverBackground}`,
           }}
         />
       </div>
-      <PtbHandleVector
-        typeHandle="source"
-        typeParams="vector<address>"
-        name="inputs"
-      />
+      <PtbHandleArray typeHandle="source" typeParams="string[]" name="inputs" />
     </div>
   );
 };

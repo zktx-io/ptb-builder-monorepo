@@ -1,24 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import {
+  SuiMoveAbilitySet,
   SuiMoveNormalizedFunction,
   SuiMoveNormalizedModule,
+  SuiMoveNormalizedType,
 } from '@mysten/sui/client';
-import { Transaction } from '@mysten/sui/transactions';
-import { Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
+import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
-import { PTBEdge, PTBNode, PTBNodeProp } from '..';
-import { enqueueToast, useStateContext } from '../../../provider';
-import {
-  FuncArg,
-  getMoveCallFuncArg,
-  getPackageData,
-  MoveCallArgs,
-} from '../../components';
-import { deleteTxContext } from '../../components/deleteTxContext';
-import { PREFIX } from '../../components/getMoveCallFuncArg';
+import { PTBNodeProp } from '..';
+import { useStateContext } from '../../../provider';
+import { CmdParamsMoveCall, getPackageData } from '../../components';
 import { PtbHandleProcess } from '../handles';
-import { extractIndex, extractName } from '../isType';
 import {
   ButtonStyles,
   FormStyle,
@@ -26,15 +19,26 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
-import { PTBNestedResult, PTBNodeType } from '../types';
 
-const numericTypes = new Set(['U8', 'U16', 'U32', 'U64', 'U128', 'U256']);
-const objectTypes = new Set([
-  'Reference',
-  'MutableReference',
-  'Struct',
-  'Vector',
-]);
+const deleteTxContext = (
+  types: SuiMoveNormalizedType[],
+): SuiMoveNormalizedType[] => {
+  return types.filter((type) => {
+    if (typeof type === 'object') {
+      const struct =
+        (type as any).MutableReference?.Struct ||
+        (type as any).Reference?.Struct ||
+        (type as any).Struct;
+      return !(
+        struct &&
+        struct.address === '0x2' &&
+        struct.module === 'tx_context' &&
+        struct.name === 'TxContext'
+      );
+    }
+    return true;
+  });
+};
 
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { client } = useStateContext();
@@ -43,46 +47,59 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const updateNodeInternals = useUpdateNodeInternals();
 
   const [packageId, setPackageId] = useState<string>(
-    (data as any).package || '',
+    data.moveCall?.package || '',
   );
+  const [selectedModule, setSelectedModule] = useState<string>(
+    data.moveCall?.module || '',
+  );
+  const [selectedFunction, setSelectedFunction] = useState<string>(
+    data.moveCall?.function || '',
+  );
+
   const [packageData, setPackageData] = useState<
     Record<string, SuiMoveNormalizedModule> | undefined
   >(undefined);
-  const [functions, setFunctions] = useState<
-    { name: string; func: SuiMoveNormalizedFunction }[]
-  >([]);
+  const [functions, setFunctions] = useState<string[]>([]);
+  const [dictionary, setDictionary] = useState<
+    Record<string, SuiMoveNormalizedFunction>
+  >({});
 
-  const [selectedModule, setSelectedModule] = useState<string>(
-    (data.module as string) || '',
+  const [selectedAbility, setSelectedAbility] = useState<SuiMoveAbilitySet[]>(
+    [],
   );
-  const [selectedFunction, setSelectedFunction] = useState<string>(
-    (data.function as string) || '',
+  const [selectedInputs, setSelectedInputs] = useState<SuiMoveNormalizedType[]>(
+    [],
   );
-  const [selectedFunctionInputs, setSelectedFunctionInputs] = useState<
-    FuncArg[]
-  >((data.inputs as FuncArg[]) || []);
-  const [selectedFunctionOutputs, setSelectedFunctionOutputs] = useState<
-    FuncArg[]
-  >((data.outputs as FuncArg[]) || []);
+  const [selectedOutputs, setSelectedOutputs] = useState<
+    SuiMoveNormalizedType[]
+  >([]);
 
   const loadPackage = async () => {
     if (client && !!packageId) {
-      const temp = await getPackageData(client, packageId);
-      if (temp && Object.keys(temp)[0]) {
-        setPackageData(temp);
-        const select = Object.keys(temp)[0];
-        setSelectedModule(select);
-        const list = Object.keys(temp[select].exposedFunctions)
+      const initPackageData = await getPackageData(client, packageId);
+
+      if (initPackageData && Object.keys(initPackageData).length > 0) {
+        setPackageData(initPackageData);
+        const initModule = Object.keys(initPackageData)[0];
+        setSelectedModule(initModule);
+
+        const initFunctions: string[] = [];
+        const initDictionary: Record<string, SuiMoveNormalizedFunction> = {};
+        Object.keys(initPackageData[initModule].exposedFunctions)
           .filter(
             (item) =>
-              temp[select].exposedFunctions[item].visibility === 'Public',
+              initPackageData[initModule].exposedFunctions[item].visibility ===
+                'Public' ||
+              initPackageData[initModule].exposedFunctions[item].isEntry,
           )
-          .map((item) => ({
-            name: item,
-            func: temp[select].exposedFunctions[item],
-          }));
-        setFunctions(list);
-        setSelectedFunction(!list[0] ? '' : list[0].name);
+          .forEach((item) => {
+            initFunctions.push(item);
+            initDictionary[item] =
+              initPackageData[initModule].exposedFunctions[item];
+          });
+        setFunctions(initFunctions);
+        setDictionary(initDictionary);
+        setSelectedFunction(initFunctions.length > 0 ? initFunctions[0] : '');
       } else {
         setPackageData(undefined);
         setSelectedModule('');
@@ -101,127 +118,52 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
     );
   };
 
-  const code = useCallback(
-    (dictionary: Record<string, string>, edges: PTBEdge[]): string => {
-      if (selectedFunction) {
-        const target = `'${packageId}::${selectedModule}:${selectedFunction}'`;
-        const args: string[] = Array(selectedFunctionInputs.length).fill(
-          'undefined',
-        );
-        selectedFunctionInputs.forEach((item, index) => {
-          const temp = edges.find(
-            (edge) => edge.targetHandle === `${item.id}:${item.type}`,
-          );
-          const arg: string =
-            temp && temp.sourceHandle
-              ? extractName(dictionary[temp.source], temp.sourceHandle)
-              : 'undefined';
-          args[index] = arg;
-        });
-        return `tx.moveCall({\n\ttarget: ${target},\n\targuments: [${args.join(', ')}],\n})`;
-      }
-      return `tx.moveCall({\n\ttarget: undefined,\n\targuments: undefined\n});`;
-    },
-    [packageId, selectedFunction, selectedFunctionInputs, selectedModule],
-  );
-
-  const excute = useCallback(
-    (
-      transaction: Transaction,
-      params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
-      results: { [key: string]: PTBNestedResult[] },
-    ): { transaction: Transaction; results?: PTBNestedResult[] } => {
-      let args: any[] = new Array(selectedFunctionInputs.length).fill(
-        undefined,
-      );
-
-      Object.keys(params)
-        .filter((key) => params[key].edge.targetHandle?.startsWith(PREFIX))
-        .forEach((key) => {
-          const index = extractIndex(key);
-          const source = params[key];
-          if (index) {
-            switch (source.node.type) {
-              case PTBNodeType.Number:
-                args[index] = source.node.data.value as number;
-                break;
-              case PTBNodeType.Address:
-                args[index] = source.node.data.value as string;
-                break;
-              case PTBNodeType.Object:
-                args[index] = transaction.object(
-                  source.node.data.value as string,
-                );
-                break;
-              default:
-                break;
-            }
-          }
-        });
-      if (
-        packageId &&
-        selectedModule &&
-        selectedFunction &&
-        !args.some((element) => element === undefined)
-      ) {
-        const result = transaction.moveCall({
+  useEffect(() => {
+    if (selectedFunction) {
+      const selected = dictionary[selectedFunction];
+      if (selected) {
+        const inputs = deleteTxContext(selected.parameters);
+        setSelectedOutputs(() => selected.return);
+        setSelectedAbility(() => selected.typeParameters);
+        setSelectedInputs(() => inputs);
+        data.moveCall = {
           package: packageId,
           module: selectedModule,
           function: selectedFunction,
-          arguments: args,
-          // typeArguments?: string[];
-        });
-        return {
-          transaction,
-          results: selectedFunctionOutputs.map((_, index) => result[index]),
         };
-      }
-      throw new Error('Method not implemented.');
-    },
-    [
-      packageId,
-      selectedFunction,
-      selectedFunctionInputs,
-      selectedFunctionOutputs,
-      selectedModule,
-    ],
-  );
-
-  useEffect(() => {
-    if (selectedFunction) {
-      const find = functions.find((item) => item.name === selectedFunction);
-      if (find) {
-        setSelectedFunctionInputs(() =>
-          deleteTxContext(find.func).map(getMoveCallFuncArg),
-        );
-        setSelectedFunctionOutputs(find.func.return.map(getMoveCallFuncArg));
+        data.getIoLength = () => [
+          selected.typeParameters.length,
+          inputs.length,
+          selected.return.length,
+        ];
       } else {
-        !!packageData && setSelectedFunctionInputs([]);
-        !!packageData && setSelectedFunctionOutputs([]);
+        !!packageData && setSelectedOutputs([]);
+        !!packageData && setSelectedAbility([]);
+        !!packageData && setSelectedInputs([]);
+        data.moveCall = undefined;
+        data.getIoLength = () => [0, 0, 0];
       }
     } else {
-      setSelectedFunctionInputs([]);
-      setSelectedFunctionOutputs([]);
+      setSelectedOutputs([]);
+      setSelectedAbility([]);
+      setSelectedInputs([]);
+      data.moveCall = undefined;
+      data.getIoLength = () => [0, 0, 0];
     }
     updateNodeInternals(id);
   }, [
-    functions,
+    data,
+    dictionary,
     id,
     packageData,
+    packageId,
     selectedFunction,
-    setEdges,
+    selectedModule,
     updateNodeInternals,
   ]);
 
-  useEffect(() => {
-    if (data) {
-      data.code = code;
-      data.excute = excute;
-    }
-  }, [code, data, excute]);
-
   return (
-    <div className={NodeStyles.transaction}>
+    <div className={NodeStyles.moveCall}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
         MoveCall
       </p>
@@ -262,20 +204,29 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               disabled={!isEditor}
               onChange={(evt) => {
                 if (packageData) {
-                  const select = evt.target.value;
-                  setSelectedModule(() => select);
-                  const list = Object.keys(packageData[select].exposedFunctions)
+                  const selected = evt.target.value;
+                  setSelectedModule(() => selected);
+                  const initFunctions: string[] = [];
+                  const initDictionary: Record<
+                    string,
+                    SuiMoveNormalizedFunction
+                  > = {};
+                  Object.keys(packageData[selected].exposedFunctions)
                     .filter(
                       (item) =>
-                        packageData[select].exposedFunctions[item]
+                        packageData[selected].exposedFunctions[item]
                           .visibility === 'Public',
                     )
-                    .map((item) => ({
-                      name: item,
-                      func: packageData[select].exposedFunctions[item],
-                    }));
-                  setFunctions(list);
-                  setSelectedFunction(!list[0] ? '' : list[0].name);
+                    .forEach((item) => {
+                      initFunctions.push(item);
+                      initDictionary[item] =
+                        packageData[selected].exposedFunctions[item];
+                    });
+                  setFunctions(initFunctions);
+                  setDictionary(initDictionary);
+                  setSelectedFunction(
+                    initFunctions.length > 0 ? initFunctions[0] : '',
+                  );
                   resetEdge();
                 }
               }}
@@ -304,8 +255,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
             >
               {packageData ? (
                 functions.map((item, key) => (
-                  <option value={item.name} key={key}>
-                    {item.name}
+                  <option value={item} key={key}>
+                    {item}
                   </option>
                 ))
               ) : (
@@ -315,15 +266,16 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           </>
         )}
         <div>
-          {selectedFunctionInputs.length > 0 && (
+          {(selectedInputs.length > 0 || selectedAbility.length > 0) && (
             <>
               <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
                 input
               </p>
-              <MoveCallArgs
-                prefix="input"
+              <CmdParamsMoveCall
+                prefix="Input"
                 typeHandle="target"
-                args={selectedFunctionInputs}
+                types={selectedAbility}
+                params={selectedInputs}
                 yPosition={221}
               />
             </>
@@ -331,18 +283,20 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         </div>
 
         <div>
-          {selectedFunctionOutputs.length > 0 && (
+          {selectedOutputs.length > 0 && (
             <>
               <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
                 output
               </p>
-              <MoveCallArgs
-                prefix="output"
+              <CmdParamsMoveCall
+                prefix="Output"
                 typeHandle="source"
-                args={selectedFunctionOutputs}
+                types={[]}
+                params={selectedOutputs}
                 yPosition={
-                  selectedFunctionInputs.length > 0
-                    ? 260 + selectedFunctionInputs.length * 42
+                  selectedInputs.length + selectedAbility.length > 0
+                    ? 260 +
+                      (selectedInputs.length + selectedAbility.length) * 42
                     : 221
                 }
               />

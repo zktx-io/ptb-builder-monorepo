@@ -7,6 +7,7 @@ import { Resizable } from 're-resizable';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
+import { enqueueToast } from '../provider';
 import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 import { generateCode, generateTxb } from '../utilities/ptb';
 
@@ -27,10 +28,15 @@ export const Code = ({
 
   const handleExcuteTransaction = async () => {
     if (excuteTx && !isExcute) {
-      setIsExcute(true);
-      const transaction = await generateTxb(nodes, edges);
-      await excuteTx(transaction);
-      setIsExcute(false);
+      try {
+        setIsExcute(true);
+        // const transaction = await generateTxb(nodes, edges);
+        // await excuteTx(transaction);
+      } catch (error) {
+        enqueueToast(`${error}`, { variant: 'error' });
+      } finally {
+        setIsExcute(false);
+      }
     }
   };
 

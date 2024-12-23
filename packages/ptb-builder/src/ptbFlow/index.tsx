@@ -125,7 +125,7 @@ export const PTBFlow = ({
 
   const onConnect = useCallback(
     (params: Connection) => {
-      if (isEditor) {
+      if (isEditor && params.source !== params.target) {
         if (params.sourceHandle!.split(':')[1] === 'command') {
           setEdges((eds) => {
             const flowEdges = eds.filter(
@@ -133,13 +133,13 @@ export const PTBFlow = ({
                 !(
                   (edge.source === params.source ||
                     edge.target === params.target) &&
-                  edge.type === 'Path'
+                  edge.type === 'Command'
                 ),
             );
             return addEdge(
               {
                 ...params,
-                type: 'Path',
+                type: 'Command',
               },
               flowEdges,
             );

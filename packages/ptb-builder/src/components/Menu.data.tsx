@@ -2,7 +2,6 @@ import React from 'react';
 
 import { IconCircle } from './IconCircle';
 import { IconSquare } from './IconSquare';
-import { IconTriangle } from './IconTriangle';
 import { PTBNodeType } from '../ptbFlow/nodes/types';
 
 export const PTB = {
@@ -13,10 +12,6 @@ export const PTB = {
   AddressArray: {
     Type: PTBNodeType.AddressArray,
     Name: 'address[]',
-  },
-  AddressVector: {
-    Type: PTBNodeType.AddressVector,
-    Name: 'vector<address>',
   },
   AddressWallet: {
     Type: PTBNodeType.AddressWallet,
@@ -30,10 +25,6 @@ export const PTB = {
     Type: PTBNodeType.BoolArray,
     Name: 'bool[]',
   },
-  BoolVector: {
-    Type: PTBNodeType.BoolVector,
-    Name: 'vector<bool>',
-  },
   Number: {
     Type: PTBNodeType.Number,
     Name: 'number',
@@ -42,33 +33,29 @@ export const PTB = {
     Type: PTBNodeType.NumberArray,
     Name: 'number[]',
   },
-  NumberVectorU8: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u8>',
-  },
-  NumberVectorU16: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u16>',
-  },
-  NumberVectorU32: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u32>',
-  },
-  NumberVectorU64: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u64>',
-  },
-  NumberVectorU128: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u128>',
-  },
-  NumberVectorU256: {
-    Type: PTBNodeType.NumberVector,
-    Name: 'vector<u256>',
-  },
   ObjectGas: {
     Type: PTBNodeType.ObjectGas,
     Name: 'gas',
+  },
+  ObjectClock: {
+    Type: PTBNodeType.ObjectClock,
+    Name: 'clock',
+  },
+  ObjectDenyList: {
+    Type: PTBNodeType.ObjectDenyList,
+    Name: 'denyList',
+  },
+  ObjectRandom: {
+    Type: PTBNodeType.ObjectRandom,
+    Name: 'random',
+  },
+  ObjectSystem: {
+    Type: PTBNodeType.ObjectSystem,
+    Name: 'system',
+  },
+  ObjectOption: {
+    Type: PTBNodeType.ObjectOption,
+    Name: 'option',
   },
   Object: {
     Type: PTBNodeType.Object,
@@ -78,69 +65,34 @@ export const PTB = {
     Type: PTBNodeType.ObjectArray,
     Name: 'object[]',
   },
-  ObjectVector: {
-    Type: PTBNodeType.ObjectVector,
-    Name: 'vector<object>',
-  },
   String: {
     Type: PTBNodeType.String,
     Name: 'string',
   },
-  MakeMoveVecAddress: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<address>',
+  StringArray: {
+    Type: PTBNodeType.StringArray,
+    Name: 'string[]',
   },
-  MakeMoveVecBool: {
+
+  MakeMoveVec: {
     Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<bool>',
-  },
-  MakeMoveVecObject: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<object>',
-  },
-  MakeMoveVecString: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<string>',
-  },
-  MakeMoveVecU8: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u8>',
-  },
-  MakeMoveVecU16: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u16>',
-  },
-  MakeMoveVecU32: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u32>',
-  },
-  MakeMoveVecU64: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u64>',
-  },
-  MakeMoveVecU128: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u128>',
-  },
-  MakeMoveVecU256: {
-    Type: PTBNodeType.MakeMoveVec,
-    Name: 'vector<u256>',
+    Name: 'makeMoveVec',
   },
   MergeCoins: {
     Type: PTBNodeType.MergeCoins,
-    Name: 'merge coins',
+    Name: 'mergeCoins',
   },
   SplitCoins: {
     Type: PTBNodeType.SplitCoins,
-    Name: 'split coins',
+    Name: 'splitCoins',
   },
   TransferObjects: {
     Type: PTBNodeType.TransferObjects,
-    Name: 'transfer objects',
+    Name: 'transferObjects',
   },
   MoveCall: {
     Type: PTBNodeType.MoveCall,
-    Name: 'move call',
+    Name: 'moveCall',
   },
   Publish: {
     Type: PTBNodeType.Publish,
@@ -167,10 +119,6 @@ export const Menu: {
     name: string;
     submenu: MenuItem[];
   }[];
-  utilities: {
-    name: string;
-    submenu: MenuItem[];
-  }[];
   commands: MenuItem[];
   node: MenuItem[];
   edge: MenuItem[];
@@ -194,11 +142,6 @@ export const Menu: {
           type: PTB.AddressArray.Type,
           icon: <IconSquare color="bg-yellow-500" />,
         },
-        {
-          name: PTB.AddressVector.Name,
-          type: PTB.AddressVector.Type,
-          icon: <IconTriangle color="text-yellow-500" />,
-        },
       ],
     },
     {
@@ -210,6 +153,31 @@ export const Menu: {
           icon: <IconCircle color="bg-blue-500" />,
         },
         {
+          name: PTB.ObjectClock.Name,
+          type: PTB.ObjectClock.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectDenyList.Name,
+          type: PTB.ObjectDenyList.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectRandom.Name,
+          type: PTB.ObjectRandom.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectSystem.Name,
+          type: PTB.ObjectSystem.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectOption.Name,
+          type: PTB.ObjectOption.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
           name: PTB.Object.Name,
           type: PTB.Object.Type,
           icon: <IconCircle color="bg-blue-500" />,
@@ -218,11 +186,6 @@ export const Menu: {
           name: PTB.ObjectArray.Name,
           type: PTB.ObjectArray.Type,
           icon: <IconSquare color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectVector.Name,
-          type: PTB.ObjectVector.Type,
-          icon: <IconTriangle color="text-blue-500" />,
         },
       ],
     },
@@ -239,11 +202,6 @@ export const Menu: {
           type: PTB.BoolArray.Type,
           icon: <IconSquare color="bg-pink-500" />,
         },
-        {
-          name: PTB.BoolVector.Name,
-          type: PTB.BoolVector.Type,
-          icon: <IconTriangle color="text-pink-500" />,
-        },
       ],
     },
     {
@@ -253,6 +211,11 @@ export const Menu: {
           name: PTB.String.Name,
           type: PTB.String.Type,
           icon: <IconCircle color="bg-green-500" />,
+        },
+        {
+          name: PTB.StringArray.Name,
+          type: PTB.StringArray.Type,
+          icon: <IconSquare color="bg-green-500" />,
         },
       ],
     },
@@ -269,108 +232,25 @@ export const Menu: {
           type: PTB.NumberArray.Type,
           icon: <IconSquare color="bg-red-500" />,
         },
-        {
-          name: PTB.NumberVectorU8.Name,
-          type: PTB.NumberVectorU8.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.NumberVectorU16.Name,
-          type: PTB.NumberVectorU16.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.NumberVectorU32.Name,
-          type: PTB.NumberVectorU32.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.NumberVectorU64.Name,
-          type: PTB.NumberVectorU64.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.NumberVectorU128.Name,
-          type: PTB.NumberVectorU128.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.NumberVectorU256.Name,
-          type: PTB.NumberVectorU256.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-      ],
-    },
-  ],
-  utilities: [
-    {
-      name: 'make move vec',
-      submenu: [
-        {
-          name: PTB.MakeMoveVecAddress.Name,
-          type: PTB.MakeMoveVecAddress.Type,
-          icon: <IconTriangle color="text-yellow-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecBool.Name,
-          type: PTB.MakeMoveVecBool.Type,
-          icon: <IconTriangle color="text-pink-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecObject.Name,
-          type: PTB.MakeMoveVecObject.Type,
-          icon: <IconTriangle color="text-blue-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecString.Name,
-          type: PTB.MakeMoveVecString.Type,
-          icon: <IconTriangle color="text-green-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU8.Name,
-          type: PTB.MakeMoveVecU8.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU16.Name,
-          type: PTB.MakeMoveVecU16.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU32.Name,
-          type: PTB.MakeMoveVecU32.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU64.Name,
-          type: PTB.MakeMoveVecU64.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU128.Name,
-          type: PTB.MakeMoveVecU128.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
-        {
-          name: PTB.MakeMoveVecU256.Name,
-          type: PTB.MakeMoveVecU256.Type,
-          icon: <IconTriangle color="text-red-500" />,
-        },
       ],
     },
   ],
   commands: [
     {
-      name: PTB.MergeCoins.Name,
-      type: PTB.MergeCoins.Type,
-    },
-    {
       name: PTB.SplitCoins.Name,
       type: PTB.SplitCoins.Type,
     },
     {
+      name: PTB.MergeCoins.Name,
+      type: PTB.MergeCoins.Type,
+    },
+    {
       name: PTB.TransferObjects.Name,
       type: PTB.TransferObjects.Type,
+    },
+    {
+      name: PTB.MakeMoveVec.Name,
+      type: PTB.MakeMoveVec.Type,
     },
     {
       name: PTB.MoveCall.Name,

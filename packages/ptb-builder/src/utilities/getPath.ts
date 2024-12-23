@@ -21,7 +21,7 @@ export const getPath = (nodes: PTBNode[], edges: PTBEdge[]): PTBNode[] => {
     }
 
     const outgoingEdge = edges.find(
-      (edge) => edge.source === currentNode.id && edge.type === 'Path',
+      (edge) => edge.source === currentNode.id && edge.type === 'Command',
     );
     if (!outgoingEdge) {
       return undefined;

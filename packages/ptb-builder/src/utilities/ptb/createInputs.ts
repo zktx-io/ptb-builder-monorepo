@@ -76,26 +76,6 @@ export const createInputs = (
           ],
           edges: [],
         };
-      case 'vector<u8>':
-      case 'vector<u16>':
-      case 'vector<u32>':
-      case 'vector<u64>':
-      case 'vector<u128>':
-      case 'vector<u256>':
-        return {
-          nodes: [
-            {
-              id,
-              position: { x: 0, y: 0 },
-              type: PTBNodeType.NumberVector,
-              data: {
-                label: input.valueType,
-                value: input.value as string[],
-              },
-            },
-          ],
-          edges: [],
-        };
       default:
         enqueueToast(`not support valueType: ${input.valueType}`, {
           variant: 'warning',

@@ -1,7 +1,7 @@
+import { Command } from './Command';
 import { Data } from './Data';
-import { Path } from './Path';
 
 export const PTBEdges = {
   Data,
-  Path,
+  Command,
 };

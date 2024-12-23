@@ -18,8 +18,6 @@ export const Panel = ({
   style,
   ...rest
 }: PanelProps) => {
-  const positionClasses = `${position}`.split('-');
-
   return (
     <div
       className="react-flow__panel top right"

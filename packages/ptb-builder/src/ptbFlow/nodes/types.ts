@@ -1,5 +1,4 @@
-import { Transaction } from '@mysten/sui/transactions';
-import { Edge, Node } from '@xyflow/react';
+import { Connection, Edge, Node } from '@xyflow/react';
 
 export const NumericTypes = new Set([
   'u8',
@@ -13,7 +12,6 @@ export const NumericTypes = new Set([
 export type TYPE_PARAMS =
   | 'address'
   | 'string'
-  | 'number'
   | 'u8'
   | 'u16'
   | 'u32'
@@ -25,7 +23,7 @@ export type TYPE_PARAMS =
 
 export type TYPE_ARRAY =
   | 'address[]'
-  | 'number[]'
+  | 'string[]'
   | 'u8[]'
   | 'u16[]'
   | 'u32[]'
@@ -50,29 +48,32 @@ export type TYPE =
   | TYPE_PARAMS
   | TYPE_ARRAY
   | TYPE_VECTOR
+  | 'number'
+  | 'number[]'
   | 'moveCall'
   | 'command';
 
 export enum PTBNodeType {
   Address = 'SuiAddress',
   AddressArray = 'SuiAddressArray',
-  AddressVector = 'SuiAddressVector',
   AddressWallet = 'SuiAddressWallet',
 
   Bool = 'SuiBool',
   BoolArray = 'SuiBoolArray',
-  BoolVector = 'SuiBoolVector',
 
   Number = 'SuiNumber',
   NumberArray = 'SuiNumberArray',
-  NumberVector = 'SuiNumberVector',
 
   ObjectGas = 'SuiObjectGas',
+  ObjectClock = 'SuiObjectClock',
+  ObjectDenyList = 'SuiObjectDenyList',
+  ObjectOption = 'SuiObjectOption',
+  ObjectRandom = 'SuiObjectRandom',
+  ObjectSystem = 'SuiObjectSystem',
   Object = 'SuiObject',
   ObjectArray = 'SuiObjectArray',
-  ObjectVector = 'SuiObjectVector',
-
   String = 'SuiString',
+  StringArray = 'SuiStringArray',
 
   MergeCoins = 'MergeCoins',
   SplitCoins = 'SplitCoins',
@@ -85,32 +86,46 @@ export enum PTBNodeType {
   End = 'End',
 }
 
-export interface PTBNode extends Node {
-  data: PTBNodeData;
-}
-
-export interface PTBEdge extends Edge {
-  type: 'Data' | 'Path';
-}
-
-export interface PTBNestedResult {
-  $kind: 'NestedResult';
-  NestedResult: [number, number];
-}
-
-export interface PTBNodeData {
+interface PTBNodeData {
   [key: string]: unknown;
   label: string;
   value?: string | string[] | number | number[];
-  code?: (dictionary: Record<string, string>, edges: PTBEdge[]) => string;
-  excute?: (
-    transaction: Transaction,
-    params: { [key: string]: { node: PTBNode; edge: PTBEdge } },
-    results: { [key: string]: PTBNestedResult[] },
-  ) => { transaction: Transaction; results?: PTBNestedResult[] };
+  getIoLength?: () => (number | undefined)[];
+  makeMoveVector?: TYPE_PARAMS;
+  moveCall?: {
+    package?: string;
+    module?: string;
+    function?: string;
+    arguments?: string[];
+    typeArguments?: string[];
+  };
 }
 
 export interface PTBNodeProp {
   id: string;
   data: PTBNodeData;
 }
+
+export interface PTBNode extends Node {
+  data: PTBNodeData;
+}
+
+export interface PTBEdge extends Edge {
+  type: 'Data' | 'Command';
+}
+
+export const isValidHandleType = (
+  connection: Connection,
+  type: TYPE,
+  oppositeHandle: 'targetHandle' | 'sourceHandle',
+): boolean => {
+  if (
+    connection &&
+    connection[oppositeHandle] &&
+    typeof connection[oppositeHandle] === 'string'
+  ) {
+    const parsed = (connection[oppositeHandle] as string).split(':');
+    return !!parsed[1] && parsed[1] === type;
+  }
+  return false;
+};

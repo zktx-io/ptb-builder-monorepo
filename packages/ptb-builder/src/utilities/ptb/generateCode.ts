@@ -1,187 +1,169 @@
+import { generateFlow } from './generateFlow';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
-import { getPath } from '../getPath';
+
+const connvert = (
+  id: string | undefined,
+  dictionary: Record<string, string>,
+): string => {
+  if (id === undefined) {
+    return 'undefined';
+  }
+  const match = id.match(/\[(\d+)\]$/);
+  if (match) {
+    const index = match[1];
+    return `${dictionary[id.replace(`[${index}]`, '')]}[${index}]`;
+  }
+  return dictionary[id];
+};
+
+const convert2 = (type: PTBNodeType, value: string | string[]): string => {
+  switch (type) {
+    case PTBNodeType.AddressWallet:
+    case PTBNodeType.ObjectClock:
+    case PTBNodeType.ObjectGas:
+    case PTBNodeType.ObjectRandom:
+    case PTBNodeType.ObjectSystem:
+      return value as string;
+    case PTBNodeType.ObjectOption:
+      return `tx.object.option({ type: '${value[0]}', value: '${value[1]}' })`;
+    default:
+      break;
+  }
+  return `'${value}'`;
+};
+
+const genereateCommand = (
+  node: PTBNode,
+  inputs: (string | undefined)[][],
+  dictionary: Record<string, string>,
+): string => {
+  switch (node.type) {
+    case PTBNodeType.SplitCoins:
+      return `tx.splitCoins(${connvert(inputs[0][0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+    case PTBNodeType.MergeCoins:
+      return `tx.mergeCoins(${connvert(inputs[0][0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+    case PTBNodeType.TransferObjects:
+      return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0][0], dictionary)})`;
+    case PTBNodeType.MakeMoveVec:
+      return `tx.makeMoveVec({\n\ttype: '${inputs[0]}',\n\telements: [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}],\n})`;
+    case PTBNodeType.MoveCall: {
+      const target =
+        inputs[0][0] !== undefined ? `'${inputs[0].join('::')}'` : 'undefined';
+      const params = inputs[1]?.map((v) => connvert(v, dictionary)).join(', ');
+      const typeparams = inputs[2]
+        ?.map((v) => connvert(v, dictionary))
+        .join(', ');
+
+      const moveCallArgs = {
+        target,
+        ...(params && { arguments: `[${params}]` }),
+        ...(typeparams && { typeArguments: `[${typeparams}]` }),
+      };
+
+      const formattedArgs = Object.entries(moveCallArgs)
+        .map(([key, value]) => `\t${key}: ${value}`)
+        .join(',\n');
+
+      return `tx.moveCall({\n${formattedArgs},\n})`;
+    }
+    case PTBNodeType.Publish:
+    default:
+      return '';
+  }
+};
 
 export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
-  const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
-  const endNode = nodes.find((node) => node.type === PTBNodeType.End);
+  try {
+    const { inputs, commands } = generateFlow(nodes, edges);
 
-  if (!startNode || !endNode) {
-    return 'Start or End node missing.';
-  }
-
-  const path = getPath(nodes, edges);
-
-  if (path.length === 0) {
-    return '';
-  }
-
-  const codeLines: { line: string; comment: string }[] = [
-    {
-      line: "// import { Transaction } from '@mysten/sui/transactions';",
-      comment: '',
-    },
-    {
-      line: "// import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';",
-      comment: '',
-    },
-    { line: '', comment: '' },
-    {
-      line: 'const keypair = new Ed25519Keypair();',
-      comment: '',
-    },
-    {
-      line: 'const myAddress = keypair.getPublicKey().toSuiAddress();',
-      comment: '',
-    },
-    { line: 'const tx = new Transaction();', comment: '' },
-    { line: '', comment: '' },
-  ];
-
-  const addCodeLine = (line: string, comment: string) => {
-    codeLines.push({ line, comment });
-  };
-
-  let result = 1;
-  let variable = 1;
-  const variables: Record<string, { name: string; node: PTBNode }> = {};
-  const dictionary: Record<string, string> = {};
-  const nodeDictory: Record<string, PTBNode> = Object.fromEntries(
-    nodes.map((node) => [node.id, node]),
-  );
-
-  const getInputEdges = (id: string): PTBEdge[] => {
-    return edges.filter((edge) => {
-      if (edge.target === id && edge.type === 'Data') {
-        const node = nodeDictory[edge.source];
-        if (
-          node &&
-          node.type &&
-          !variables[node.id] &&
-          [
-            PTBNodeType.Address,
-            PTBNodeType.AddressArray,
-            PTBNodeType.AddressVector,
-            PTBNodeType.AddressWallet,
-            PTBNodeType.Bool,
-            PTBNodeType.BoolArray,
-            PTBNodeType.BoolVector,
-            PTBNodeType.Number,
-            PTBNodeType.NumberArray,
-            PTBNodeType.NumberVector,
-            PTBNodeType.Object,
-            PTBNodeType.ObjectArray,
-            PTBNodeType.ObjectVector,
-            PTBNodeType.ObjectGas,
-            PTBNodeType.String,
-          ].includes(node.type as PTBNodeType)
-        ) {
-          const name = `var_${variable++}`;
-          variables[node.id] = { name, node };
-          dictionary[node.id] = name;
-        }
-        return true;
-      }
-      return false;
-    });
-  };
-
-  const command: { name: string; node: PTBNode; inputs: PTBEdge[] }[] =
-    path.map((node) => {
-      switch (node.type) {
-        case PTBNodeType.SplitCoins: {
-          const name = `result_${result++}`;
-          const inputs = getInputEdges(node.id);
-          const amounts = inputs.find((input) =>
-            input.targetHandle?.endsWith('number[]'),
-          );
-          if (amounts && nodeDictory[amounts.source]) {
-            const temp = nodeDictory[amounts.source].data.value as number[];
-            const name2 =
-              temp.length > 0
-                ? `[${temp.map((_, index) => `${name}_${index}`).join(', ')}]`
-                : name;
-            dictionary[node.id] = name2;
-            return {
-              name: name2,
-              node,
-              inputs,
-            };
-          } else {
-            dictionary[node.id] = name;
-            return {
-              name,
-              node,
-              inputs,
-            };
-          }
-        }
-        case PTBNodeType.MakeMoveVec:
-        case PTBNodeType.MoveCall: {
-          const name = `result_${result++}`;
-          dictionary[node.id] = name;
-          return {
-            name,
-            node,
-            inputs: getInputEdges(node.id),
-          };
-        }
-        default:
-          break;
-      }
-      return { name: '', node, inputs: getInputEdges(node.id) };
-    });
-
-  Object.keys(variables).forEach((key) => {
-    const temp = variables[key].node;
-    const value =
-      temp.data.value !== undefined
-        ? Array.isArray(temp.data.value)
-          ? `[${temp.data.value.map((v) => (typeof v === 'string' && v !== 'tx.gas' && v !== 'myAddress' ? `'${v}'` : v)).join(',')}]`
-          : typeof temp.data.value === 'string' &&
-              temp.data.value !== 'tx.gas' &&
-              temp.data.value !== 'myAddress'
-            ? `'${temp.data.value}'`
-            : temp.data.value
-        : 'undefined';
-    addCodeLine(`const ${variables[key].name} = ${value};`, '');
-  });
-
-  command.forEach(({ name, node, inputs }) => {
-    if (typeof node.data.code === 'function') {
-      if (name) {
-        if (
-          node.type === PTBNodeType.SplitCoins ||
-          node.type === PTBNodeType.MoveCall
-        ) {
-          addCodeLine(
-            `const ${name} = ${node.data.code(dictionary, inputs)};`,
-            '',
-          );
-        } else {
-          addCodeLine(
-            `const ${name} = ${node.data.code(dictionary, inputs)};`,
-            '',
-          );
-        }
-      } else {
-        addCodeLine(`${node.data.code(dictionary, inputs)};`, '');
-      }
-    } else {
-      addCodeLine(`// ${node.type};`, '');
+    if (
+      Object.keys(commands).length === 0 &&
+      Object.keys(inputs).length === 0
+    ) {
+      return '';
     }
-  });
 
-  const paddingSize = 40;
-  const formattedCode =
-    codeLines.length > 2
-      ? codeLines
-          .map((lineObj) =>
-            lineObj.comment
-              ? `${lineObj.line.padEnd(paddingSize)} // ${lineObj.comment}`.trim()
-              : `${lineObj.line.padEnd(paddingSize)}`,
-          )
-          .join('\n')
-      : '';
+    const lines: { line: string; comment: string }[] = [
+      {
+        line: "// import { Transaction } from '@mysten/sui/transactions';",
+        comment: '',
+      },
+      {
+        line: "// import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';",
+        comment: '',
+      },
+      { line: '', comment: '' },
+      {
+        line: 'const wallet = new Ed25519Keypair();',
+        comment: '',
+      },
+      {
+        line: 'const myAddress = wallet.getPublicKey().toSuiAddress();',
+        comment: '',
+      },
+      { line: 'const tx = new Transaction();', comment: '' },
+      { line: '', comment: '' },
+    ];
 
-  return formattedCode;
+    const addCodeLine = (line: string, comment: string) => {
+      lines.push({ line, comment });
+    };
+
+    let varIndex = 1;
+    let cmdIndex = 1;
+    const dictionary: Record<string, string> = {};
+    Object.keys(inputs).forEach((key) => {
+      const { value } = inputs[key].data;
+      const name = `val_${varIndex++}`;
+      dictionary[key] = name;
+      addCodeLine(
+        `const ${name} = ${
+          value !== undefined
+            ? Array.isArray(value) &&
+              inputs[key].type !== PTBNodeType.ObjectOption
+              ? `[${value.map((v) => (typeof v === 'string' ? convert2(inputs[key].type as PTBNodeType, v) : v)).join(', ')}]`
+              : typeof value === 'string' ||
+                  inputs[key].type === PTBNodeType.ObjectOption
+                ? convert2(
+                    inputs[key].type as PTBNodeType,
+                    value as string | string[],
+                  )
+                : value
+            : 'undefined'
+        };`,
+        '',
+      );
+    });
+
+    commands.forEach(({ node, inputs, results }) => {
+      if (results) {
+        const name = `cmd_${cmdIndex++}`;
+        dictionary[node.id] = name;
+        addCodeLine(
+          `const ${name} = ${genereateCommand(node, inputs, dictionary)}`,
+          '',
+        );
+      } else {
+        addCodeLine(`${genereateCommand(node, inputs, dictionary)}`, '');
+      }
+    });
+
+    addCodeLine('', '');
+    addCodeLine('wallet.signTransaction({ transaction: tx });', '');
+
+    const paddingSize = 40;
+    const formattedCode =
+      lines.length > 2
+        ? lines
+            .map(
+              ({ line, comment }) =>
+                `${line.padEnd(paddingSize)}${comment ? ` // ${comment}` : ''}`,
+            )
+            .join('\n')
+        : '';
+
+    return formattedCode;
+  } catch (error) {
+    return `${error}`;
+  }
 };

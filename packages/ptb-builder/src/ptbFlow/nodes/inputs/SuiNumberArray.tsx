@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
-import { InputArgs } from '../../components';
+import { ArrayInputs } from '../../components';
 import { PtbHandleArray } from '../handles';
 import {
   ButtonStyles,
@@ -18,7 +18,7 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
   const [isShow, setIsShow] = useState<boolean>(
     data && data.value ? (data.value as string[]).length < 4 : true,
   );
-  const [items, setItems] = useState<number[]>((data.value as number[]) || []);
+  const [items, setItems] = useState<number[]>((data.value as number[]) || [0]);
 
   const addItem = () => {
     data.value = [...items, 0];
@@ -26,8 +26,10 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
   };
 
   const removeItem = (index: number) => {
-    data.value = items.filter((_, i) => i !== index);
-    setItems(() => [...(data.value as number[])]);
+    if (items.length > 1) {
+      data.value = items.filter((_, i) => i !== index);
+      setItems(() => [...(data.value as number[])]);
+    }
   };
 
   const updateItem = (index: number, value: number) => {
@@ -72,7 +74,7 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
             />
           </div>
         </div>
-        <InputArgs
+        <ArrayInputs
           isNumber
           isShow={isShow}
           items={items}

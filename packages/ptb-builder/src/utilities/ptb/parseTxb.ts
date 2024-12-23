@@ -57,7 +57,7 @@ export const parseTxb = (data: TransactionBlockData) => {
         inputs.push(...nds);
         edges.push({
           id: `path-${index}`,
-          type: 'Path',
+          type: 'Command',
           source: index === 0 ? '@start' : txs[txs.length - 2].id,
           sourceHandle: 'src:command',
           target: tx.id,
@@ -68,7 +68,7 @@ export const parseTxb = (data: TransactionBlockData) => {
 
       edges.push({
         id: `path-${edges.length + 1}`,
-        type: 'Path',
+        type: 'Command',
         source: txs[txs.length - 1].id,
         sourceHandle: 'src:command',
         target: '@end',

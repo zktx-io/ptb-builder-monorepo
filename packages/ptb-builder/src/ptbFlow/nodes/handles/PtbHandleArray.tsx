@@ -3,9 +3,8 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 import { IconSquare } from '../../../components';
-import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
-import { NumericTypes, TYPE_ARRAY } from '../types';
+import { isValidHandleType, NumericTypes, TYPE_ARRAY } from '../types';
 
 export const PtbHandleArray = ({
   typeHandle,
@@ -14,7 +13,7 @@ export const PtbHandleArray = ({
   style,
 }: {
   typeHandle: 'source' | 'target';
-  typeParams: TYPE_ARRAY;
+  typeParams: TYPE_ARRAY | 'number[]';
   name: string;
   style?: { [key: string]: string };
 }) => {
@@ -26,9 +25,11 @@ export const PtbHandleArray = ({
       className={`flex items-center justify-center w-3 h-3 ${NumericTypes.has(typeParams.replace('[]', '')) ? HandleStyles.number.background : (HandleStyles as any)[typeParams.replace('[]', '')].background}`}
       style={{ backgroundColor: 'transparent', ...style, padding: 0 }}
       isValidConnection={(connection: any) =>
-        typeHandle === 'source'
-          ? isTargetType(connection, typeParams)
-          : isSourceType(connection, typeParams)
+        isValidHandleType(
+          connection,
+          typeParams,
+          typeHandle === 'source' ? 'targetHandle' : 'sourceHandle',
+        )
       }
     >
       <IconSquare

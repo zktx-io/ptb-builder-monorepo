@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
-import { InputArgs } from '../../components';
+import { ArrayInputs } from '../../components';
 import { PtbHandleArray } from '../handles';
 import {
   ButtonStyles,
@@ -18,7 +18,9 @@ export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
   const [isShow, setIsShow] = useState<boolean>(
     data && data.value ? (data.value as string[]).length < 4 : true,
   );
-  const [items, setItems] = useState<string[]>((data.value as string[]) || []);
+  const [items, setItems] = useState<string[]>(
+    (data.value as string[]) || [''],
+  );
 
   const addItem = () => {
     data.value = [...items, ''];
@@ -26,8 +28,10 @@ export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
   };
 
   const removeItem = (index: number) => {
-    data.value = items.filter((_, i) => i !== index);
-    setItems(() => [...(data.value as string[])]);
+    if (items.length > 1) {
+      data.value = items.filter((_, i) => i !== index);
+      setItems(() => [...(data.value as string[])]);
+    }
   };
 
   const updateItem = (index: number, value: string) => {
@@ -72,7 +76,7 @@ export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
             />
           </div>
         </div>
-        <InputArgs
+        <ArrayInputs
           isShow={isShow}
           items={items}
           placeholder="Enter object id"

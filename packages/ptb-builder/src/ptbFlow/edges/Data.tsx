@@ -4,6 +4,7 @@ import { BaseEdge, EdgeProps, getBezierPath } from '@xyflow/react';
 
 import { useStateContext } from '../../provider';
 import { HandleStyles } from '../nodes/styles';
+import { NumericTypes } from '../nodes/types';
 
 export const Data = ({
   id,
@@ -28,7 +29,9 @@ export const Data = ({
   const getColor = (type: string): string => {
     const match = type.match(/^vector<([^>]+)>$|^([^[]+)\[\]$|^([^[]+)$/);
     if (match) {
-      return (HandleStyles as any)[match[1] || match[2] || match[3]].border;
+      const kind = match[1] || match[2] || match[3];
+      return (HandleStyles as any)[NumericTypes.has(kind) ? 'number' : kind]
+        .border;
     }
     return '';
   };

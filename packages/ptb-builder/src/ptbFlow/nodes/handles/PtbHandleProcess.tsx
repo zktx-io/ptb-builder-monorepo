@@ -2,8 +2,8 @@ import React from 'react';
 
 import { Handle, Position } from '@xyflow/react';
 
-import { isSourceType, isTargetType } from '../isType';
 import { HandleStyles } from '../styles';
+import { isValidHandleType } from '../types';
 
 export const PtbHandleProcess = ({
   typeHandle,
@@ -28,9 +28,11 @@ export const PtbHandleProcess = ({
         ...style,
       }}
       isValidConnection={(connection: any) =>
-        typeHandle === 'source'
-          ? isTargetType(connection, 'command')
-          : isSourceType(connection, 'command')
+        isValidHandleType(
+          connection,
+          'command',
+          typeHandle === 'source' ? 'targetHandle' : 'sourceHandle',
+        )
       }
     >
       <span

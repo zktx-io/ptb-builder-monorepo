@@ -1,8 +1,6 @@
 import { ProgrammableTransaction, SuiTransaction } from '@mysten/sui/client';
 
 import { enqueueToast } from '../../../provider';
-import { FuncArg } from '../../../ptbFlow/components';
-import { PREFIX } from '../../../ptbFlow/components/getMoveCallFuncArg';
 import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 
 const numericTypes = new Set(['u8', 'u16', 'u32', 'u64', 'u128', 'u256']);
@@ -14,6 +12,8 @@ const numericVectorTypes = new Set([
   'vector<u128>',
   'vector<u256>',
 ]);
+
+const PREFIX = '-';
 
 const getConnectType = (
   ptb: ProgrammableTransaction,
@@ -52,11 +52,11 @@ export const moveCall = (
   package: string;
   module: string;
   function: string;
-  handles: FuncArg[];
+  handles: any[];
 } => {
   const edges: PTBEdge[] = [];
   const inputs: PTBNode[] = [];
-  const handles: FuncArg[] = [];
+  const handles: any[] = [];
   let _package: string = '';
   let _module: string = '';
   let _function: string = '';
