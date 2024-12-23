@@ -23,9 +23,12 @@ export default {
   plugins: [
     peerDepsExternal(),
     resolve(),
-    commonjs(),
+    commonjs({
+      include: /node_modules/,
+    }),
     typescript({
       tsconfig: './tsconfig.json',
+      typescript: await import('typescript').then((ts) => ts.default),
     }),
     postcss({
       extensions: ['.css'],
@@ -33,4 +36,14 @@ export default {
     terser(),
   ],
   external: ['react', 'react-dom'],
+  context: 'this',
+  onwarn: (warning, warn) => {
+    if (
+      warning.code === 'CIRCULAR_DEPENDENCY' ||
+      warning.message.includes('"use client"')
+    ) {
+      return;
+    }
+    warn(warning);
+  },
 };
