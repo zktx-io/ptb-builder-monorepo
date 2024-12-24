@@ -7,7 +7,7 @@ import { Resizable } from 're-resizable';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import { enqueueToast } from '../provider';
+import { enqueueToast, useStateContext } from '../provider';
 import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 import { generateCode, generateTxb } from '../utilities/ptb';
 
@@ -22,6 +22,7 @@ export const Code = ({
 }) => {
   const language = 'javascript';
 
+  const { wallet } = useStateContext();
   const [code, setCode] = useState<string>('');
   const [isVisible, setIsVisible] = useState<boolean>(true);
   const [isExcute, setIsExcute] = useState<boolean>(false);
@@ -30,8 +31,8 @@ export const Code = ({
     if (excuteTx && !isExcute) {
       try {
         setIsExcute(true);
-        // const transaction = await generateTxb(nodes, edges);
-        // await excuteTx(transaction);
+        const transaction = await generateTxb(nodes, edges, wallet);
+        await excuteTx(transaction);
       } catch (error) {
         enqueueToast(`${error}`, { variant: 'error' });
       } finally {

@@ -192,7 +192,7 @@ export const PTBFlow = ({
         }
         // eslint-disable-next-line no-restricted-syntax
         debounceRef.current = null;
-      }, 30);
+      }, 100);
     }
   }, [disableUpdate, edges, network, nodes, ptbJson, setState, update]);
 

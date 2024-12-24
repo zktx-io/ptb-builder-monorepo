@@ -53,6 +53,7 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
           paramLength: (number | undefined)[],
         ) => {
           setType(type);
+          data.makeMoveVector = type;
           data.getIoLength = () => paramLength;
         }}
       />

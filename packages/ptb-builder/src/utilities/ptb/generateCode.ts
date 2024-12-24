@@ -53,17 +53,14 @@ const genereateCommand = (
       const typeparams = inputs[2]
         ?.map((v) => connvert(v, dictionary))
         .join(', ');
-
       const moveCallArgs = {
         target,
         ...(params && { arguments: `[${params}]` }),
         ...(typeparams && { typeArguments: `[${typeparams}]` }),
       };
-
       const formattedArgs = Object.entries(moveCallArgs)
         .map(([key, value]) => `\t${key}: ${value}`)
         .join(',\n');
-
       return `tx.moveCall({\n${formattedArgs},\n})`;
     }
     case PTBNodeType.Publish:
@@ -134,7 +131,6 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
         '',
       );
     });
-
     commands.forEach(({ node, inputs, results }) => {
       if (results) {
         const name = `cmd_${cmdIndex++}`;

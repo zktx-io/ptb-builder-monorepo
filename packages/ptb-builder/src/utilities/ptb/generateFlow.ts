@@ -124,7 +124,6 @@ const preprocess = (
         outputs: new Array(ioLength[1] || amounts.length).fill(undefined),
       };
     }
-
     case PTBNodeType.TransferObjects: {
       const address = getSourceHandleID('address', 'address');
       const objects =
@@ -165,7 +164,6 @@ const preprocess = (
             node.data.moveCall.function,
           ]
         : [undefined];
-
       const typeParams = forMoveCall('type', ioLength[0] || 0);
       const params = forMoveCall('input', ioLength[1] || 0);
       return {
@@ -174,12 +172,10 @@ const preprocess = (
       };
     }
     case PTBNodeType.Publish:
-      break;
-
+      return { inputs: [], outputs: [undefined] };
     default:
-      break;
+      return { inputs: [] };
   }
-  return { inputs: [], outputs: [] };
 };
 
 export const generateFlow = (
