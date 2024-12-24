@@ -68,11 +68,11 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MergeCoins: {
-        const destination = inputs[0][0];
+        const destination = connvert(inputs[0][0], dictionary);
         const sources = inputs[1].map((v) => connvert(v, dictionary));
-        if (destination && dictionary[destination]) {
+        if (destination) {
           tx.mergeCoins(
-            dictionary[destination] as TransactionObjectArgument,
+            destination as TransactionObjectArgument,
             sources as TransactionObjectArgument[],
           );
           return { tx };
@@ -81,11 +81,11 @@ const genereateCommand = (
       }
       case PTBNodeType.TransferObjects: {
         const objects = inputs[1].map((v) => connvert(v, dictionary));
-        const address = inputs[0][0];
-        if (address && dictionary[address]) {
+        const address = connvert(inputs[0][0], dictionary);
+        if (address) {
           tx.transferObjects(
             objects as TransactionObjectArgument[],
-            dictionary[address] as TransactionObjectArgument,
+            address as TransactionObjectArgument,
           );
           return { tx };
         }
