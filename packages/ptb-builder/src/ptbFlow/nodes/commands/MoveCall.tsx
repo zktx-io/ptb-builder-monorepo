@@ -131,6 +131,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           module: selectedModule,
           function: selectedFunction,
         };
+        data.getMoveCallInputs = () => inputs;
         data.getIoLength = () => [
           selected.typeParameters.length,
           inputs.length,
@@ -140,6 +141,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         !!packageData && setSelectedOutputs([]);
         !!packageData && setSelectedAbility([]);
         !!packageData && setSelectedInputs([]);
+        data.getMoveCallInputs = undefined;
         data.moveCall = undefined;
         data.getIoLength = () => [0, 0, 0];
       }
@@ -147,6 +149,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
       setSelectedOutputs([]);
       setSelectedAbility([]);
       setSelectedInputs([]);
+      data.getMoveCallInputs = undefined;
       data.moveCall = undefined;
       data.getIoLength = () => [0, 0, 0];
     }

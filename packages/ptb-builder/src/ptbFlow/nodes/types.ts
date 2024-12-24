@@ -1,3 +1,4 @@
+import { SuiMoveNormalizedType } from '@mysten/sui/client';
 import { Connection, Edge, Node } from '@xyflow/react';
 
 export const NumericTypes = new Set([
@@ -91,13 +92,12 @@ interface PTBNodeData {
   label: string;
   value?: string | string[] | number | number[];
   getIoLength?: () => (number | undefined)[];
+  getMoveCallInputs?: () => SuiMoveNormalizedType[];
   makeMoveVector?: TYPE_PARAMS;
   moveCall?: {
     package?: string;
     module?: string;
     function?: string;
-    arguments?: string[];
-    typeArguments?: string[];
   };
 }
 

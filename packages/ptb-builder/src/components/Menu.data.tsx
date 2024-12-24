@@ -148,6 +148,16 @@ export const Menu: {
       name: 'Object',
       submenu: [
         {
+          name: PTB.Object.Name,
+          type: PTB.Object.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectArray.Name,
+          type: PTB.ObjectArray.Type,
+          icon: <IconSquare color="bg-blue-500" />,
+        },
+        {
           name: PTB.ObjectGas.Name,
           type: PTB.ObjectGas.Type,
           icon: <IconCircle color="bg-blue-500" />,
@@ -176,16 +186,6 @@ export const Menu: {
           name: PTB.ObjectOption.Name,
           type: PTB.ObjectOption.Type,
           icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.Object.Name,
-          type: PTB.Object.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectArray.Name,
-          type: PTB.ObjectArray.Type,
-          icon: <IconSquare color="bg-blue-500" />,
         },
       ],
     },

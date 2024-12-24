@@ -129,13 +129,32 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MoveCall: {
+        const types =
+          node.data.getMoveCallInputs && node.data.getMoveCallInputs();
         const target =
           inputs[0][0] !== undefined ? `${inputs[0].join('::')}` : undefined;
         const argument =
           inputs[1] && inputs[1].length > 0
-            ? inputs[1].map(
-                (v) => connvert(v, dictionary) as TransactionArgument,
-              )
+            ? inputs[1].map((v, i) => {
+                const temp = connvert(v, dictionary);
+                if (temp && typeof temp === 'number' && types && types[i]) {
+                  switch (types[i]) {
+                    case 'U8':
+                      return tx.pure.u8(temp);
+                    case 'U16':
+                      return tx.pure.u16(temp);
+                    case 'U32':
+                      return tx.pure.u32(temp);
+                    case 'U64':
+                      return tx.pure.u64(temp);
+                    case 'U128':
+                      return tx.pure.u128(temp);
+                    case 'U256':
+                      return tx.pure.u256(temp);
+                  }
+                }
+                return temp as TransactionArgument;
+              })
             : undefined;
         const typeArguments =
           inputs[2] && inputs[2].length > 0
