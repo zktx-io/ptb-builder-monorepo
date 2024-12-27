@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 
-export const DragAndDrop = ({ onDrop }: { onDrop: (data: object) => void }) => {
+export const DragAndDrop = ({
+  onDrop,
+  onChancel,
+}: {
+  onDrop: (data: object) => void;
+  onChancel: () => void;
+}) => {
   const [isVisible, setIsVisible] = useState(true);
   const [message, setMessage] = useState('Drop File (*.ptb)');
 
@@ -33,6 +39,7 @@ export const DragAndDrop = ({ onDrop }: { onDrop: (data: object) => void }) => {
 
   const handleCancel = () => {
     setIsVisible(false);
+    onChancel();
   };
 
   return (

@@ -41,7 +41,7 @@ export const ContextMenu = ({
   const handleAutoLayout = useCallback(async () => {
     try {
       const { nodes: layoutedNodes, edges: layoutedEdges } =
-        await autoLayoutFlow(getNodes(), getEdges());
+        await autoLayoutFlow(getNodes() as PTBNode[], getEdges() as PTBEdge[]);
       setNodes([...layoutedNodes]);
       setEdges([...layoutedEdges]);
       setTimeout(() => {

@@ -10,7 +10,7 @@ import {
   InputStyle,
   LabelStyle,
 } from '../nodes/styles';
-import { TYPE_ARRAY, TYPE_PARAMS } from '../nodes/types';
+import { PTBNodeData, TYPE_ARRAY, TYPE_PARAMS } from '../nodes/types';
 
 interface CmdParamsProps {
   id: string;
@@ -22,6 +22,7 @@ interface CmdParamsProps {
     label: string;
     type: TYPE_ARRAY;
   };
+  data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
   updateState: (paramLength: (number | undefined)[]) => void;
 }
@@ -30,14 +31,19 @@ export const CmdParams = ({
   id,
   input1,
   input2,
+  data,
   resetEdge,
   updateState,
 }: CmdParamsProps) => {
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [isNestedInputs, setIsNestedInputs] = useState<boolean>(false);
-  const [inputs, setInputs] = useState<string[]>([]);
+  const [isSplitInputs, setIsSplitInputs] = useState<boolean>(
+    !!data.splitInputs || false,
+  );
+  const [inputs, setInputs] = useState<string[]>(
+    data.splitInputs ? new Array(data.splitInputs).fill('') : [],
+  );
 
   const addInputItem = () => {
     setInputs((oldData) => [...oldData, '']);
@@ -51,8 +57,8 @@ export const CmdParams = ({
   };
 
   useEffect(() => {
-    updateState([isNestedInputs ? inputs.length : undefined, undefined]);
-  }, [inputs, isNestedInputs, updateState]);
+    updateState([isSplitInputs ? inputs.length : undefined, undefined]);
+  }, [inputs, isSplitInputs, updateState]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -62,7 +68,7 @@ export const CmdParams = ({
     <>
       <div className={FormTitleStyle}>
         <label className={LabelStyle}>inputs</label>
-        {isEditor && (
+        {canEdit && (
           <div className="flex items-center">
             <label
               htmlFor="checkbox"
@@ -73,10 +79,10 @@ export const CmdParams = ({
             <input
               type="checkbox"
               id="checkbox"
-              checked={isNestedInputs}
+              checked={isSplitInputs}
               onChange={(e) => {
                 resetEdge('target');
-                setIsNestedInputs(e.target.checked);
+                setIsSplitInputs(e.target.checked);
                 if (e.target.checked) {
                   addInputItem();
                 } else {
@@ -117,7 +123,7 @@ export const CmdParams = ({
               />
             </td>
           </tr>
-          {!isNestedInputs ? (
+          {!isSplitInputs ? (
             <tr>
               <td
                 style={{
@@ -163,7 +169,7 @@ export const CmdParams = ({
                       name={`${input2.label}[${index}]`}
                       style={{ top: `${90 + 28 * index}px` }}
                     />
-                    {isEditor && (
+                    {canEdit && (
                       <button
                         className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
                         style={{
@@ -177,7 +183,7 @@ export const CmdParams = ({
                   </td>
                 </tr>
               ))}
-              {isEditor && (
+              {canEdit && (
                 <tr>
                   <td
                     style={{

@@ -9,7 +9,7 @@ import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
 export const SuiObject = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const [inputValue, setInputValue] = useState<string>(
     (data.value as string) || '',
   );
@@ -37,7 +37,7 @@ export const SuiObject = ({ id, data }: PTBNodeProp) => {
           placeholder="Enter object id"
           autoComplete="off"
           className={InputStyle}
-          readOnly={!isEditor}
+          readOnly={!canEdit}
           value={inputValue}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setInputValue(event.target.value);

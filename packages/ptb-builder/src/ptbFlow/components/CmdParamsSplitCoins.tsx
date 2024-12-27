@@ -10,7 +10,7 @@ import {
   InputStyle,
   LabelStyle,
 } from '../nodes/styles';
-import { TYPE_ARRAY, TYPE_PARAMS } from '../nodes/types';
+import { PTBNodeData, TYPE_ARRAY, TYPE_PARAMS } from '../nodes/types';
 
 interface CmdParamsSplitProps {
   id: string;
@@ -26,6 +26,7 @@ interface CmdParamsSplitProps {
     label: string;
     type: TYPE_ARRAY | 'number[]';
   };
+  data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
   updateState: (paramLength: (number | undefined)[]) => void;
 }
@@ -35,17 +36,25 @@ export const CmdParamsSplitCoins = ({
   input1,
   input2,
   output,
+  data,
   resetEdge,
   updateState,
 }: CmdParamsSplitProps) => {
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [isNestedInputs, setIsNestedInputs] = useState<boolean>(false);
-  const [inputs, setInputs] = useState<string[]>([]);
-
-  const [isNestedOutputs, setIsNestedOutputs] = useState<boolean>(false);
-  const [outputs, setOutputs] = useState<string[]>([]);
+  const [isSplitInputs, setIsSplitInputs] = useState<boolean>(
+    !!data.splitInputs || false,
+  );
+  const [inputs, setInputs] = useState<string[]>(
+    data.splitInputs ? new Array(data.splitInputs).fill('') : [],
+  );
+  const [isNestedOutputs, setIsNestedOutputs] = useState<boolean>(
+    !!data.splitOutputs || false,
+  );
+  const [outputs, setOutputs] = useState<string[]>(
+    data.splitOutputs ? new Array(data.splitInputs).fill('') : [],
+  );
 
   const addInputItem = () => {
     setInputs((oldData) => [...oldData, '']);
@@ -71,10 +80,10 @@ export const CmdParamsSplitCoins = ({
 
   useEffect(() => {
     updateState([
-      isNestedInputs ? inputs.length : undefined,
+      isSplitInputs ? inputs.length : undefined,
       isNestedOutputs ? inputs.length : undefined,
     ]);
-  }, [inputs.length, isNestedInputs, isNestedOutputs, updateState]);
+  }, [inputs.length, isSplitInputs, isNestedOutputs, updateState]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -84,7 +93,7 @@ export const CmdParamsSplitCoins = ({
     <>
       <div className={FormTitleStyle}>
         <label className={LabelStyle}>inputs</label>
-        {isEditor && (
+        {canEdit && (
           <div className="flex items-center">
             <label
               htmlFor="checkbox"
@@ -95,10 +104,10 @@ export const CmdParamsSplitCoins = ({
             <input
               type="checkbox"
               id="checkbox"
-              checked={isNestedInputs}
+              checked={isSplitInputs}
               onChange={(e) => {
                 resetEdge('target');
-                setIsNestedInputs(e.target.checked);
+                setIsSplitInputs(e.target.checked);
                 if (e.target.checked) {
                   addInputItem();
                 } else {
@@ -139,7 +148,7 @@ export const CmdParamsSplitCoins = ({
               />
             </td>
           </tr>
-          {!isNestedInputs ? (
+          {!isSplitInputs ? (
             <tr>
               <td
                 style={{
@@ -185,7 +194,7 @@ export const CmdParamsSplitCoins = ({
                       name={`${input2.label}[${index}]`}
                       style={{ top: `${90 + 28 * index}px` }}
                     />
-                    {isEditor && (
+                    {canEdit && (
                       <button
                         className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
                         style={{
@@ -199,7 +208,7 @@ export const CmdParamsSplitCoins = ({
                   </td>
                 </tr>
               ))}
-              {isEditor && (
+              {canEdit && (
                 <tr>
                   <td
                     style={{
@@ -221,10 +230,10 @@ export const CmdParamsSplitCoins = ({
         </tbody>
       </table>
 
-      <div className={isNestedInputs ? '' : 'mt-2'}>
+      <div className={isSplitInputs ? '' : 'mt-2'}>
         <div className={FormTitleStyle}>
           <label className={LabelStyle}>ouputs</label>
-          {isEditor && (
+          {canEdit && (
             <div className="flex items-center">
               <label
                 htmlFor="checkbox"
@@ -277,7 +286,7 @@ export const CmdParamsSplitCoins = ({
                     typeParams={output.type as TYPE_ARRAY}
                     name={output.label}
                     style={{
-                      top: `${inputs.length > 0 ? 134 + 28 * inputs.length : 134 + (isNestedInputs ? 0 : 8)}px`,
+                      top: `${inputs.length > 0 ? 106 + (canEdit ? 28 : 0) + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
                     }}
                   />
                 </td>
@@ -304,10 +313,10 @@ export const CmdParamsSplitCoins = ({
                         typeParams={output.type.replace('[]', '') as any}
                         name={`${output.label}[${index}]`}
                         style={{
-                          top: `${134 + (isNestedInputs ? 0 : 8) + 28 * inputs.length + 28 * index}px`,
+                          top: `${106 + (canEdit ? 28 : 0) + (isSplitInputs ? 0 : 8) + 28 * inputs.length + 28 * index}px`,
                         }}
                       />
-                      {isEditor && (
+                      {canEdit && (
                         <button
                           className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
                           style={{
@@ -321,7 +330,7 @@ export const CmdParamsSplitCoins = ({
                     </td>
                   </tr>
                 ))}
-                {isEditor && (
+                {canEdit && (
                   <tr>
                     <td
                       style={{

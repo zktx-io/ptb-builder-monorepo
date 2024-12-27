@@ -40,7 +40,7 @@ const connvert = (
 
 const genereateCommand = (
   node: PTBNode,
-  inputs: (string | undefined)[][],
+  inputs: [string | undefined, ...Array<(string | undefined)[]>],
   dictionary: Record<string, undefined | DictionaryItem | DictionaryItem[]>,
   tx: Transaction,
   results?: (string | undefined)[],
@@ -51,7 +51,7 @@ const genereateCommand = (
   try {
     switch (node.type) {
       case PTBNodeType.SplitCoins: {
-        const coin = inputs[0][0];
+        const coin = inputs[0];
         const amounts = inputs[1].map((v) => connvert(v, dictionary));
         if (coin && dictionary[coin]) {
           const result = tx.splitCoins(
@@ -68,7 +68,7 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MergeCoins: {
-        const destination = connvert(inputs[0][0], dictionary);
+        const destination = connvert(inputs[0], dictionary);
         const sources = inputs[1].map((v) => connvert(v, dictionary));
         if (destination) {
           tx.mergeCoins(
@@ -81,7 +81,7 @@ const genereateCommand = (
       }
       case PTBNodeType.TransferObjects: {
         const objects = inputs[1].map((v) => connvert(v, dictionary));
-        const address = connvert(inputs[0][0], dictionary);
+        const address = connvert(inputs[0], dictionary);
         if (address) {
           tx.transferObjects(
             objects as TransactionObjectArgument[],
@@ -92,7 +92,7 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MakeMoveVec: {
-        const type = inputs[0][0];
+        const type = inputs[0];
         const elements = inputs[1].map((v) => connvert(v, dictionary));
         if (type) {
           const result = tx.makeMoveVec({
@@ -131,8 +131,7 @@ const genereateCommand = (
       case PTBNodeType.MoveCall: {
         const types =
           node.data.getMoveCallInputs && node.data.getMoveCallInputs();
-        const target =
-          inputs[0][0] !== undefined ? `${inputs[0].join('::')}` : undefined;
+        const target = inputs[0] !== undefined ? inputs[0] : undefined;
         const argument =
           inputs[1] && inputs[1].length > 0
             ? inputs[1].map((v, i) => {
@@ -176,6 +175,7 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.Publish:
+      case PTBNodeType.Upgrade:
       default:
         throw new Error(`Invalid command type: ${node.type}`);
     }

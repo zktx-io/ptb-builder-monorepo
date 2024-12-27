@@ -68,6 +68,7 @@ const getTypeName = (
 };
 
 interface CmdParamsMoveCallProps {
+  label: string;
   prefix: string;
   typeHandle: 'source' | 'target';
   types: SuiMoveAbilitySet[];
@@ -76,6 +77,7 @@ interface CmdParamsMoveCallProps {
 }
 
 export const CmdParamsMoveCall = ({
+  label,
   prefix,
   typeHandle,
   types,
@@ -87,7 +89,7 @@ export const CmdParamsMoveCall = ({
   useEffect(() => {
     setHandles(
       params.map((item, i) => {
-        const id = `${prefix.toLowerCase()}[${i}]`;
+        const id = `${prefix}[${i}]`;
         return { id, ...getTypeName(item) };
       }),
     );
@@ -172,7 +174,7 @@ export const CmdParamsMoveCall = ({
             <label
               className={LabelStyle}
               style={{ fontSize: '0.6rem' }}
-            >{`${prefix}${index}`}</label>
+            >{`${label}${index}`}</label>
             <input
               readOnly
               type="text"

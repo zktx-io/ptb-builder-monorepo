@@ -46,6 +46,7 @@ export const SplitCoins = ({ id, data }: PTBNodeProp) => {
         input1={{ label: 'coin', type: 'object' }}
         input2={{ label: 'amounts', type: 'number[]' }}
         output={{ label: 'result', type: 'object[]' }}
+        data={data}
         resetEdge={resetEdge}
         updateState={(paramLength: (number | undefined)[]) => {
           data.getIoLength = () => paramLength;

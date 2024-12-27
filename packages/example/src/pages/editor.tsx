@@ -7,7 +7,7 @@ import {
   useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { PTBBuilder } from '@zktx.io/ptb-builder';
+import { PTB_SCHEME, PTBBuilder } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 
 import { DragAndDrop } from '../components/DragAndDrop';
@@ -63,17 +63,17 @@ export const Editor = () => {
     <div style={{ width: '100vw', height: '100vh' }}>
       {account ? (
         <>
-          <DragAndDrop onDrop={handleDrop} />
+          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb('{}')} />
           <PTBBuilder
             wallet={account.address}
             network={network}
             excuteTx={excuteTx}
-            txbOrPtb={ptb}
-            update={(value: string) => {
+            restore={ptb && JSON.parse(ptb)}
+            update={(value: PTB_SCHEME) => {
               // console.log(value);
             }}
             options={{
-              isEditor: true,
+              canEdit: true,
               themeSwitch: true,
             }}
             enqueueToast={(message, options) =>

@@ -9,7 +9,7 @@ import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
 export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const [inputValue, setInputValue] = useState<string[]>(
     (data.value as string[]) || ['', ''],
   );
@@ -37,7 +37,7 @@ export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
           placeholder="type"
           autoComplete="off"
           className={InputStyle}
-          readOnly={!isEditor}
+          readOnly={!canEdit}
           value={inputValue[0]}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setInputValue((old) => [event.target.value, old[1]]);
@@ -48,7 +48,7 @@ export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
           placeholder="value"
           autoComplete="off"
           className={InputStyle}
-          readOnly={!isEditor}
+          readOnly={!canEdit}
           value={inputValue[1]}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setInputValue((old) => [old[0], event.target.value]);

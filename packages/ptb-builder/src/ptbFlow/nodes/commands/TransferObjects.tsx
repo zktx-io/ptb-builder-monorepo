@@ -44,6 +44,7 @@ export const TransferObjects = ({ id, data }: PTBNodeProp) => {
         id={id}
         input1={{ label: 'address', type: 'address' }}
         input2={{ label: 'objects', type: 'object[]' }}
+        data={data}
         resetEdge={resetEdge}
         updateState={(paramLength: (number | undefined)[]) => {
           data.getIoLength = () => paramLength;

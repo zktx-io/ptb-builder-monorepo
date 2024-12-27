@@ -98,6 +98,11 @@ export const PTB = {
     Type: PTBNodeType.Publish,
     Name: 'publish',
   },
+  Upgrade: {
+    Type: PTBNodeType.Upgrade,
+    Name: 'upgrade',
+  },
+
   Start: {
     Type: PTBNodeType.Start,
     Name: 'Start',

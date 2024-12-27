@@ -6,6 +6,7 @@ import { Publish } from './Publish';
 import { SplitCoins } from './SplitCoins';
 import { Start } from './Start';
 import { TransferObjects } from './TransferObjects';
+import { Upgrade } from './Upgrade';
 
 export default {
   End,
@@ -13,7 +14,8 @@ export default {
   MakeMoveVec,
   MergeCoins,
   MoveCall,
-  Publish,
   SplitCoins,
   TransferObjects,
+  Publish,
+  Upgrade,
 };

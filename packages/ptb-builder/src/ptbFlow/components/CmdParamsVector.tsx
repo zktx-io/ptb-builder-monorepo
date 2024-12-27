@@ -44,10 +44,10 @@ export const CmdParamsVector = ({
   resetEdge,
   updateState,
 }: CmdParamsVectorProps) => {
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [isNestedInput, setIsNestedInputs] = useState<boolean>(false);
+  const [isNestedInput, setIsSplitInputs] = useState<boolean>(false);
   const [inputs, setInputs] = useState<string[]>([]);
 
   const selectType = (type: TYPE_PARAMS) => {
@@ -82,7 +82,7 @@ export const CmdParamsVector = ({
     <>
       <div className={FormTitleStyle}>
         <label className={LabelStyle}>inputs</label>
-        {isEditor && (
+        {canEdit && (
           <div className="flex items-center">
             <label
               htmlFor="checkbox"
@@ -96,7 +96,7 @@ export const CmdParamsVector = ({
               checked={isNestedInput}
               onChange={(e) => {
                 resetEdge('target');
-                setIsNestedInputs(e.target.checked);
+                setIsSplitInputs(e.target.checked);
                 if (e.target.checked) {
                   addInputItem();
                 } else {
@@ -124,7 +124,7 @@ export const CmdParamsVector = ({
             >
               <select
                 className={InputStyle}
-                disabled={!isEditor}
+                disabled={!canEdit}
                 value={type}
                 onChange={(evt) => {
                   selectType(evt.target.value as TYPE_PARAMS);
@@ -190,7 +190,7 @@ export const CmdParamsVector = ({
                       name={`elements[${index}]`}
                       style={{ top: `${90 + 28 * index}px` }}
                     />
-                    {isEditor && (
+                    {canEdit && (
                       <button
                         className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
                         style={{
@@ -204,7 +204,7 @@ export const CmdParamsVector = ({
                   </td>
                 </tr>
               ))}
-              {isEditor && (
+              {canEdit && (
                 <tr>
                   <td
                     style={{

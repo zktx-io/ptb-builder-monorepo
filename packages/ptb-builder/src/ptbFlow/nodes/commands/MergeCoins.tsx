@@ -44,6 +44,7 @@ export const MergeCoins = ({ id, data }: PTBNodeProp) => {
         id={id}
         input1={{ label: 'destination', type: 'object' }}
         input2={{ label: 'source', type: 'object[]' }}
+        data={data}
         resetEdge={resetEdge}
         updateState={(paramLength: (number | undefined)[]) => {
           data.getIoLength = () => paramLength;

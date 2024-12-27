@@ -14,9 +14,10 @@ const isVariableNode = (node: PTBNode): boolean => {
     case PTBNodeType.SplitCoins:
     case PTBNodeType.MoveCall:
     case PTBNodeType.MergeCoins:
-    case PTBNodeType.Publish:
     case PTBNodeType.TransferObjects:
     case PTBNodeType.MakeMoveVec:
+    case PTBNodeType.Publish:
+    case PTBNodeType.Upgrade:
       return false;
     default:
       break;
@@ -31,7 +32,10 @@ const preprocess = (
     string,
     { node: PTBNode; outputs?: (string | undefined)[] }
   >,
-): { inputs: (string | undefined)[][]; outputs?: (string | undefined)[] } => {
+): {
+  inputs: [string | undefined, ...Array<(string | undefined)[]>];
+  outputs?: (string | undefined)[];
+} => {
   const getSourceHandleID = (
     prefix: string,
     type: string,
@@ -120,7 +124,7 @@ const preprocess = (
           ? fromArray('amounts:number[]')
           : fromSplit('number', ioLength[0]);
       return {
-        inputs: [[coin], amounts],
+        inputs: [coin, amounts],
         outputs: new Array(ioLength[1] || amounts.length).fill(undefined),
       };
     }
@@ -131,7 +135,7 @@ const preprocess = (
           ? fromArray('objects:object[]')
           : fromSplit('object', ioLength[0]);
       return {
-        inputs: [[address], objects],
+        inputs: [address, objects],
       };
     }
     case PTBNodeType.MergeCoins: {
@@ -141,7 +145,7 @@ const preprocess = (
           ? fromArray('source:object[]')
           : fromSplit('object', ioLength[0]);
       return {
-        inputs: [[destination], source],
+        inputs: [destination, source],
       };
     }
     case PTBNodeType.MakeMoveVec: {
@@ -152,29 +156,27 @@ const preprocess = (
           ? fromArray(`elements:${NumericTypes.has(type) ? 'number' : type}[]`)
           : fromSplit(NumericTypes.has(type) ? 'number' : type, ioLength[0]);
       return {
-        inputs: [[type], element],
+        inputs: [type, element],
         outputs: [undefined],
       };
     }
     case PTBNodeType.MoveCall: {
       const target = node.data.moveCall
-        ? [
-            node.data.moveCall.package,
-            node.data.moveCall.module,
-            node.data.moveCall.function,
-          ]
-        : [undefined];
+        ? `${node.data.moveCall.package}::${node.data.moveCall.module}::${node.data.moveCall.function}`
+        : undefined;
       const typeParams = forMoveCall('type', ioLength[0] || 0);
       const params = forMoveCall('input', ioLength[1] || 0);
       return {
-        inputs: [[...target], [...params], [...typeParams]],
+        inputs: [target, [...params], [...typeParams]],
         outputs: new Array(ioLength[2] || 0).fill(undefined),
       };
     }
     case PTBNodeType.Publish:
-      return { inputs: [], outputs: [undefined] };
+      return { inputs: [undefined, [undefined]], outputs: [undefined] };
+    case PTBNodeType.Upgrade:
+      return { inputs: [undefined, [undefined]], outputs: [undefined] };
     default:
-      return { inputs: [] };
+      return { inputs: [undefined, [undefined]] };
   }
 };
 
@@ -185,7 +187,7 @@ export const generateFlow = (
   inputs: Record<string, PTBNode>;
   commands: {
     node: PTBNode;
-    inputs: (string | undefined)[][];
+    inputs: [string | undefined, ...Array<(string | undefined)[]>];
     results?: (string | undefined)[];
   }[];
 } => {
@@ -205,17 +207,19 @@ export const generateFlow = (
   const inputs: Record<string, PTBNode> = {};
   const commands: {
     node: PTBNode;
-    inputs: (string | undefined)[][];
+    inputs: [string | undefined, ...Array<(string | undefined)[]>];
     results?: (string | undefined)[];
   }[] = [];
   const dictionary: Record<
     string,
     {
       node: PTBNode;
-      inputs: (string | undefined)[][];
+      inputs: [string | undefined, ...Array<(string | undefined)[]>];
       outputs?: (string | undefined)[];
     }
-  > = Object.fromEntries(nodes.map((node) => [node.id, { node, inputs: [] }]));
+  > = Object.fromEntries(
+    nodes.map((node) => [node.id, { node, inputs: [undefined, [undefined]] }]),
+  );
 
   path.forEach((node) => {
     try {

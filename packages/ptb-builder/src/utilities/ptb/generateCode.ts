@@ -34,21 +34,20 @@ const convert2 = (type: PTBNodeType, value: string | string[]): string => {
 
 const genereateCommand = (
   node: PTBNode,
-  inputs: (string | undefined)[][],
+  inputs: [string | undefined, ...Array<(string | undefined)[]>],
   dictionary: Record<string, string>,
 ): string => {
   switch (node.type) {
     case PTBNodeType.SplitCoins:
-      return `tx.splitCoins(${connvert(inputs[0][0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
     case PTBNodeType.MergeCoins:
-      return `tx.mergeCoins(${connvert(inputs[0][0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
     case PTBNodeType.TransferObjects:
-      return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0][0], dictionary)})`;
+      return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0], dictionary)})`;
     case PTBNodeType.MakeMoveVec:
       return `tx.makeMoveVec({\n\ttype: '${inputs[0]}',\n\telements: [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}],\n})`;
     case PTBNodeType.MoveCall: {
-      const target =
-        inputs[0][0] !== undefined ? `'${inputs[0].join('::')}'` : 'undefined';
+      const target = inputs[0] !== undefined ? inputs[0] : 'undefined';
       const params = inputs[1]?.map((v) => connvert(v, dictionary)).join(', ');
       const typeparams = inputs[2]
         ?.map((v) => connvert(v, dictionary))
@@ -64,6 +63,7 @@ const genereateCommand = (
       return `tx.moveCall({\n${formattedArgs},\n})`;
     }
     case PTBNodeType.Publish:
+    case PTBNodeType.Upgrade:
     default:
       return '';
   }

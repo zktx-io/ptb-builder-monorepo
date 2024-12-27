@@ -1,18 +1,20 @@
 import React from 'react';
 
-import { TransactionBlockData } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
+import { ReactFlowProvider } from '@xyflow/react';
 
 import { EnqueueToast, NETWORK, StateProvider } from './provider';
 import { PTBFlow } from './ptbFlow';
-
 import '@xyflow/react/dist/base.css';
 import './index.css';
+import { PTB_SCHEME } from './utilities';
+
+export { PTB_SCHEME } from './utilities';
 
 export const PTBBuilder = ({
   wallet,
   network,
-  txbOrPtb,
+  restore,
   update,
   excuteTx,
   enqueueToast,
@@ -20,35 +22,37 @@ export const PTBBuilder = ({
 }: {
   wallet?: string;
   network?: 'mainnet' | 'testnet' | 'devnet';
-  txbOrPtb?: TransactionBlockData | string;
-  update?: (ptbJson: string) => void;
+  restore?: string | PTB_SCHEME;
+  update?: (ptb: PTB_SCHEME) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
   enqueueToast?: EnqueueToast;
   options?: {
     themeSwitch?: boolean;
     minZoom?: number;
     maxZoom?: number;
-    isEditor?: boolean;
+    canEdit?: boolean;
   };
 }) => {
   return (
-    <StateProvider
-      wallet={wallet}
-      txbOrPtb={txbOrPtb}
-      isEditor={options ? !!options.isEditor : false}
-      network={(network as NETWORK | undefined) || NETWORK.DevNet}
-      enqueueToast={enqueueToast}
-    >
-      <PTBFlow
-        excuteTx={excuteTx}
-        disableNetwork={!!network}
-        themeSwitch={options?.themeSwitch}
-        update={(data) => {
-          update && update(data);
-        }}
-        minZoom={options?.minZoom || 0.25}
-        maxZoom={options?.maxZoom || 2}
-      />
-    </StateProvider>
+    <ReactFlowProvider>
+      <StateProvider
+        wallet={wallet}
+        canEdit={!!options?.canEdit || typeof restore !== 'string'}
+        network={(network as NETWORK | undefined) || NETWORK.DevNet}
+        enqueueToast={enqueueToast}
+      >
+        <PTBFlow
+          disableNetwork={!!network}
+          themeSwitch={options?.themeSwitch}
+          restore={restore}
+          excuteTx={excuteTx}
+          update={(data) => {
+            update && update(data);
+          }}
+          minZoom={options?.minZoom || 0.25}
+          maxZoom={options?.maxZoom || 2}
+        />
+      </StateProvider>
+    </ReactFlowProvider>
   );
 };

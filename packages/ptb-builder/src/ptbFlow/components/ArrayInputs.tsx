@@ -27,7 +27,7 @@ export const ArrayInputs = ({
     addButton: string;
   };
 }) => {
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
 
   return (
     <>
@@ -46,7 +46,7 @@ export const ArrayInputs = ({
                   return (
                     <select
                       className={InputStyle}
-                      disabled={!isEditor}
+                      disabled={!canEdit}
                       value={item}
                       onChange={(e) => updateItem(index, e.target.value)}
                     >
@@ -60,7 +60,7 @@ export const ArrayInputs = ({
                   className: InputStyle,
                   placeholder,
                   autoComplete: 'off',
-                  readOnly: !isEditor,
+                  readOnly: !canEdit,
                   value: item,
                   onChange: (
                     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -87,7 +87,7 @@ export const ArrayInputs = ({
                     }}
                   >
                     {renderInput()}
-                    {isEditor && (
+                    {canEdit && (
                       <button
                         className={style.deleteButton}
                         style={{
@@ -102,7 +102,7 @@ export const ArrayInputs = ({
                 </tr>
               );
             })}
-            {isEditor && (
+            {canEdit && (
               <tr>
                 <td
                   style={{

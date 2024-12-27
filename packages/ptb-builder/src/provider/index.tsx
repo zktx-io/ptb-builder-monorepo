@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 
-import { SuiClient, TransactionBlockData } from '@mysten/sui/client';
+import { SuiClient } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
 import { EnqueueToast, setToast } from './toastManager';
@@ -27,12 +27,10 @@ export const NETWORKS: NETWORK[] = [
 export interface IState {
   colorMode: ColorModeClass;
   hasPath: boolean;
-  isEditor: boolean;
+  canEdit: boolean;
   network: NETWORK;
   client?: SuiClient;
-  txbOrPtb?: TransactionBlockData | string;
   wallet?: string;
-  disableUpdate?: boolean;
 }
 
 const StateContext = createContext<IState | undefined>(undefined);
@@ -41,16 +39,14 @@ const StateUpdateContext = createContext<
 >(undefined);
 
 export const StateProvider = ({
-  isEditor,
+  canEdit,
   network,
-  txbOrPtb,
   children,
   wallet,
   enqueueToast,
 }: {
-  isEditor: boolean;
+  canEdit: boolean;
   network: NETWORK;
-  txbOrPtb?: TransactionBlockData | string;
   wallet?: string;
   enqueueToast?: EnqueueToast;
   children: ReactNode;
@@ -59,13 +55,13 @@ export const StateProvider = ({
     network,
     colorMode: 'dark',
     hasPath: false,
-    isEditor,
+    canEdit,
     wallet,
   });
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, isEditor, txbOrPtb }));
-  }, [isEditor, txbOrPtb]);
+    setState((oldState) => ({ ...oldState, canEdit }));
+  }, [canEdit]);
 
   useEffect(() => {
     setToast((message, options) => {

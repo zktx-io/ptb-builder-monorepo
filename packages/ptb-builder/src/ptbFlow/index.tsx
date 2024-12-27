@@ -12,6 +12,7 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   XYPosition,
 } from '@xyflow/react';
 
@@ -25,17 +26,24 @@ import {
   Panel,
   PTB,
 } from '../components';
+import { autoLayoutFlow } from '../components/autoLayoutFlow';
+import {
+  enqueueToast,
+  NETWORK,
+  useStateContext,
+  useStateUpdateContext,
+} from '../provider';
+import { getTxbData, PTB_SCHEME, useDebounce } from '../utilities';
 import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
-import { Parse } from '../components/Parse';
-import { useStateContext, useStateUpdateContext } from '../provider';
-import { toJson } from '../utilities/json/toJson';
+// import { decodeTxb } from '../utilities/ptb/decodeTxb';
 
 export const PTBFlow = ({
   disableNetwork,
   themeSwitch,
   minZoom,
   maxZoom,
+  restore,
   update,
   excuteTx,
 }: {
@@ -43,21 +51,28 @@ export const PTBFlow = ({
   themeSwitch?: boolean;
   minZoom: number;
   maxZoom: number;
-  update: (json: string) => void;
+  restore?: string | PTB_SCHEME;
+  update: (ptb: PTB_SCHEME) => void;
   excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
-  const initialized = useRef<boolean>(false);
   // eslint-disable-next-line no-restricted-syntax
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  // eslint-disable-next-line no-restricted-syntax
+  const [rfInstance, setRfInstance] = useState<any>(null);
+  const { setViewport, fitView } = useReactFlow();
 
   const setState = useStateUpdateContext();
-  const { isEditor, network, disableUpdate } = useStateContext();
+  const { canEdit, network } = useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<PTBNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<PTBEdge>([]);
-  const [ptbJson, setPtbJson] = useState<string>('');
+  const [prevRestore, setPrevRestore] = useState<string>('');
+  const { debouncedFunction: debouncedUpdate, cancel } = useDebounce(
+    update,
+    100,
+  );
 
   const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
   const [menu, setMenu] = useState<ContextProp | undefined>(undefined);
@@ -75,16 +90,19 @@ export const PTBFlow = ({
           data: {
             label,
           },
+          deletable:
+            !canEdit ||
+            (type !== PTBNodeType.Start && type !== PTBNodeType.End),
         },
       ]);
     },
-    [setNodes],
+    [canEdit, setNodes],
   );
 
   const handleContextMenu = useCallback(
     (event: any, item?: PTBNode | PTBEdge) => {
       event.preventDefault();
-      if (ref.current && isEditor) {
+      if (ref.current && canEdit) {
         const pane = (ref.current as any).getBoundingClientRect();
         setMenu(
           item
@@ -120,12 +138,12 @@ export const PTBFlow = ({
         );
       }
     },
-    [isEditor],
+    [canEdit],
   );
 
   const onConnect = useCallback(
     (params: Connection) => {
-      if (isEditor && params.source !== params.target) {
+      if (canEdit && params.source !== params.target) {
         if (params.sourceHandle!.split(':')[1] === 'command') {
           setEdges((eds) => {
             const flowEdges = eds.filter(
@@ -165,7 +183,7 @@ export const PTBFlow = ({
         }
       }
     },
-    [setEdges, isEditor],
+    [setEdges, canEdit],
   );
 
   useEffect(() => {
@@ -179,22 +197,18 @@ export const PTBFlow = ({
 
   useEffect(() => {
     if (nodes.length || edges.length) {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
+      if (rfInstance) {
+        const flow = rfInstance.toObject();
+        debouncedUpdate({ network, ...flow });
       }
-      debounceRef.current = setTimeout(() => {
-        const json = toJson({ network, nodes, edges });
-        if (!disableUpdate && ptbJson !== json) {
-          update(json);
-        } else {
-          setPtbJson(json);
-          setState((oldState) => ({ ...oldState, disableUpdate: false }));
-        }
-        // eslint-disable-next-line no-restricted-syntax
-        debounceRef.current = null;
-      }, 100);
     }
-  }, [disableUpdate, edges, network, nodes, ptbJson, setState, update]);
+  }, [nodes, edges, rfInstance, network, debouncedUpdate]);
+
+  useEffect(() => {
+    return () => {
+      cancel();
+    };
+  }, [cancel]);
 
   useEffect(() => {
     setState((oldData) => ({
@@ -204,27 +218,82 @@ export const PTBFlow = ({
   }, [edges, nodes, setState]);
 
   useEffect(() => {
-    if (isEditor && !initialized.current) {
-      initialized.current = true;
-      const clientWidth = window.innerWidth;
-      const clientHeight = window.innerHeight;
-      const startX = clientWidth * 0.15;
-      const endX = clientWidth * 0.85;
-      const centerY = clientHeight / 2 - 50;
-      createNode(
-        '@start',
-        { x: startX - 90, y: centerY },
-        PTB.Start.Name,
-        PTB.Start.Type,
-      );
-      createNode(
-        '@end',
-        { x: endX - 90, y: centerY },
-        PTB.End.Name,
-        PTB.End.Type,
-      );
-    }
-  }, [createNode, isEditor]);
+    const init = async () => {
+      try {
+        if (typeof restore === 'string') {
+          /*
+          if (restore !== '' && prevRestore !== restore) {
+            setPrevRestore(restore);
+            const txb = await getTxbData(network, restore);
+            const decodedData = decodeTxb(txb);
+            const { nodes: layoutedNodes, edges: layoutedEdges } =
+              await autoLayoutFlow(
+                [...(decodedData.nodes || [])],
+                [...(decodedData.edges || [])],
+              );
+            setNodes(layoutedNodes);
+            setEdges(layoutedEdges);
+            setTimeout(() => {
+              fitView();
+            }, 1);
+          }
+            */
+        } else if (typeof restore === 'object') {
+          const { version, network, flow } = restore;
+          if (flow) {
+            if (version !== '2') {
+              enqueueToast('Invalid version', { variant: 'error' });
+            } else {
+              setNodes([...(flow.nodes || [])]);
+              setEdges([...(flow.edges || [])]);
+              setViewport(flow.viewport);
+              setState((oldState) => ({
+                ...oldState,
+                network: network as NETWORK,
+              }));
+            }
+          } else {
+            const temp = JSON.stringify(restore);
+            if (temp !== prevRestore) {
+              setPrevRestore(JSON.stringify(restore));
+              setNodes([]);
+              setEdges([]);
+              const clientWidth = window.innerWidth;
+              const clientHeight = window.innerHeight;
+              const startX = clientWidth * 0.15;
+              const endX = clientWidth * 0.85;
+              const centerY = clientHeight / 2 - 50;
+              createNode(
+                '@start',
+                { x: startX - 90, y: centerY },
+                PTB.Start.Name,
+                PTB.Start.Type,
+              );
+              createNode(
+                '@end',
+                { x: endX - 90, y: centerY },
+                PTB.End.Name,
+                PTB.End.Type,
+              );
+            }
+          }
+        }
+      } catch (error) {
+        enqueueToast(`${error}`, { variant: 'error' });
+      }
+    };
+    init();
+  }, [
+    createNode,
+    fitView,
+    network,
+    prevRestore,
+    restore,
+    setState,
+    setEdges,
+    setNodes,
+    setViewport,
+  ]);
 
   return (
     <div
@@ -245,6 +314,7 @@ export const PTBFlow = ({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onInit={setRfInstance}
         nodeTypes={{ ...PTBNodes }}
         edgeTypes={{ ...PTBEdges }}
         onPaneClick={() => setMenu(() => undefined)}
@@ -318,8 +388,9 @@ export const PTBFlow = ({
               </select>
             </div>
           )}
-          {isEditor && <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />}
-          <Parse />
+          {canEdit && restore !== undefined && (
+            <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />
+          )}
         </Panel>
         {menu && (
           <ContextMenu

@@ -10,7 +10,8 @@ import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
-import { CmdParamsMoveCall, getPackageData } from '../../components';
+import { getPackageData } from '../../../utilities';
+import { CmdParamsMoveCall } from '../../components';
 import { PtbHandleProcess } from '../handles';
 import {
   ButtonStyles,
@@ -43,7 +44,7 @@ const deleteTxContext = (
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { client } = useStateContext();
   const { setEdges } = useReactFlow();
-  const { isEditor } = useStateContext();
+  const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
   const [packageId, setPackageId] = useState<string>(
@@ -58,7 +59,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
 
   const [packageData, setPackageData] = useState<
     Record<string, SuiMoveNormalizedModule> | undefined
-  >(undefined);
+  >(data.moveCall?.data || undefined);
   const [functions, setFunctions] = useState<string[]>([]);
   const [dictionary, setDictionary] = useState<
     Record<string, SuiMoveNormalizedFunction>
@@ -181,22 +182,22 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           value={packageId}
           autoComplete="off"
           className={InputStyle}
-          readOnly={!!packageData || !isEditor}
-          disabled={!isEditor}
+          readOnly={!!packageData || !canEdit}
+          disabled={!canEdit}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setPackageId(() => event.target.value);
           }}
         />
-        {!packageData && isEditor && (
+        {!packageData && canEdit && (
           <button
             className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
-            disabled={!isEditor}
+            disabled={!canEdit}
             onClick={loadPackage}
           >
             Load
           </button>
         )}
-        {(!!packageData || !isEditor) && (
+        {(!!packageData || !canEdit) && (
           <>
             <label className={LabelStyle} style={{ fontSize: '0.6rem' }}>
               Module
@@ -204,7 +205,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
             <select
               className={InputStyle}
               value={selectedModule}
-              disabled={!isEditor}
+              disabled={!canEdit}
               onChange={(evt) => {
                 if (packageData) {
                   const selected = evt.target.value;
@@ -250,7 +251,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
             <select
               className={InputStyle}
               value={selectedFunction}
-              disabled={!isEditor}
+              disabled={!canEdit}
               onChange={(evt) => {
                 setSelectedFunction(evt.target.value);
                 resetEdge();
@@ -275,7 +276,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 input
               </p>
               <CmdParamsMoveCall
-                prefix="Input"
+                label="Input"
+                prefix="input"
                 typeHandle="target"
                 types={selectedAbility}
                 params={selectedInputs}
@@ -292,7 +294,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 output
               </p>
               <CmdParamsMoveCall
-                prefix="Output"
+                label="Output"
+                prefix="result"
                 typeHandle="source"
                 types={[]}
                 params={selectedOutputs}
@@ -311,13 +314,13 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
       <PtbHandleProcess
         typeHandle="target"
         style={{
-          top: !!packageData || !isEditor ? '147px' : '65px',
+          top: !!packageData || !canEdit ? '147px' : '65px',
         }}
       />
       <PtbHandleProcess
         typeHandle="source"
         style={{
-          top: !!packageData || !isEditor ? '147px' : '65px',
+          top: !!packageData || !canEdit ? '147px' : '65px',
         }}
       />
     </div>
