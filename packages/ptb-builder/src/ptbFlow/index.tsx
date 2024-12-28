@@ -26,7 +26,7 @@ import {
   Panel,
   PTB,
 } from '../components';
-// import { autoLayoutFlow } from '../components/autoLayoutFlow';
+import { autoLayoutFlow } from '../components/autoLayoutFlow';
 import {
   enqueueToast,
   NETWORK,
@@ -34,14 +34,13 @@ import {
   useStateUpdateContext,
 } from '../provider';
 import {
-  // getTxbData,
+  decodeTxb,
+  getPath,
   PTB_SCHEME,
   PTB_SCHEME_VERSION,
   useDebounce,
 } from '../utilities';
-import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
-// import { decodeTxb } from '../utilities/ptb/decodeTxb';
 
 export const PTBFlow = ({
   disableNetwork,
@@ -69,8 +68,13 @@ export const PTBFlow = ({
   const { setViewport, fitView } = useReactFlow();
 
   const setState = useStateUpdateContext();
-  const { canEdit, network, exportPackageData, importPackageData } =
-    useStateContext();
+  const {
+    canEdit,
+    network,
+    exportPackageData,
+    importPackageData,
+    fetchPackageData,
+  } = useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<PTBNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<PTBEdge>([]);
@@ -233,23 +237,27 @@ export const PTBFlow = ({
     const init = async () => {
       try {
         if (typeof restore === 'string') {
-          /*
-          if (restore !== '' && prevRestore !== restore) {
+          if (restore !== '' && prevRestore !== restore && fetchPackageData) {
             setPrevRestore(restore);
-            const txb = await getTxbData(network, restore);
-            const decodedData = decodeTxb(txb);
+            const decodedData = await decodeTxb(
+              network,
+              restore,
+              fetchPackageData,
+            );
             const { nodes: layoutedNodes, edges: layoutedEdges } =
               await autoLayoutFlow(
                 [...(decodedData.nodes || [])],
                 [...(decodedData.edges || [])],
               );
             setNodes(layoutedNodes);
-            setEdges(layoutedEdges);
+            setTimeout(() => {
+              setEdges(layoutedEdges);
+              fitView();
+            }, 100);
             setTimeout(() => {
               fitView();
             }, 1);
           }
-            */
         } else if (typeof restore === 'object') {
           const { version, network, flow } = restore;
           if (flow) {
@@ -300,13 +308,16 @@ export const PTBFlow = ({
     init();
   }, [
     createNode,
+    fitView,
     importPackageData,
     prevRestore,
     restore,
+    setState,
     setEdges,
     setNodes,
-    setState,
     setViewport,
+    network,
+    fetchPackageData,
   ]);
 
   return (
