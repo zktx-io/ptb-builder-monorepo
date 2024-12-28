@@ -47,7 +47,7 @@ const genereateCommand = (
     case PTBNodeType.MakeMoveVec:
       return `tx.makeMoveVec({\n\ttype: '${inputs[0]}',\n\telements: [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}],\n})`;
     case PTBNodeType.MoveCall: {
-      const target = inputs[0] !== undefined ? inputs[0] : 'undefined';
+      const target = inputs[0] !== undefined ? `'${inputs[0]}'` : 'undefined';
       const typeparams = inputs[1]
         ?.map((v) => connvert(v, dictionary))
         .join(', ');
