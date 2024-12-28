@@ -1,6 +1,6 @@
 {
   "name": "@zktx.io/ptb-builder",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Sui programmable transaction blocks builder",
   "type": "module",
   "main": "dist/index.cjs.js",
