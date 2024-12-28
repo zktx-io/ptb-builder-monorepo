@@ -10,9 +10,9 @@ import React, {
 import { SuiClient, SuiMoveNormalizedModules } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
-import { getPackageData, toPTBModuleData } from './getPackageData';
 import { EnqueueToast, setToast } from './toastManager';
 import { PTBModuleData } from '../ptbFlow/nodes/types';
+import { getPackageData, toPTBModuleData } from '../utilities';
 export { EnqueueToast, setToast, enqueueToast } from './toastManager';
 
 export enum NETWORK {

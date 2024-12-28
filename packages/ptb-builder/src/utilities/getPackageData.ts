@@ -6,7 +6,7 @@ import {
   SuiMoveNormalizedType,
 } from '@mysten/sui/client';
 
-import { enqueueToast } from '.';
+import { enqueueToast } from '../provider';
 import { PTBModuleData } from '../ptbFlow/nodes/types';
 
 const deleteTxContext = (
