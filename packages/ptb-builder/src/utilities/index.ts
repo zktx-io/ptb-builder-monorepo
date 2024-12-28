@@ -5,7 +5,7 @@ import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 export { DEBOUNCE, useDebounce } from './debounce';
 export { getPath } from './getPath';
 export { getPackageData, toPTBModuleData } from './getPackageData';
-export { getTxbData } from './getTxbData';
+export { decodeTxb } from './ptb/decodeTxb';
 
 export const PTB_SCHEME_VERSION = '2';
 export interface PTB_SCHEME {

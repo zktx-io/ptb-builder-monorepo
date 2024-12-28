@@ -18,7 +18,7 @@ interface Handle {
   type?: TYPE;
 }
 
-const getTypeName = (
+export const getTypeName = (
   paramType: SuiMoveNormalizedType,
 ): { placeholder: string; type?: TYPE } => {
   if (typeof paramType === 'string') {

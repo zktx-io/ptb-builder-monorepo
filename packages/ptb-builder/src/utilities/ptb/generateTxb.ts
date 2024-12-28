@@ -2,22 +2,27 @@ import {
   Transaction,
   TransactionArgument,
   TransactionObjectArgument,
-  TransactionResult,
 } from '@mysten/sui/transactions';
 
 import { generateFlow } from './generateFlow';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 
-type DictionaryItem =
-  | number
-  | string
-  | TransactionObjectArgument
-  | TransactionResult;
+interface Result {
+  $kind: 'Result';
+  Result: number;
+}
 
 interface NestedResult {
   $kind: 'NestedResult';
   NestedResult: [number, number];
 }
+
+type DictionaryItem =
+  | number
+  | string
+  | TransactionObjectArgument
+  | Result
+  | NestedResult;
 
 const connvert = (
   id: string | undefined,
@@ -46,7 +51,7 @@ const genereateCommand = (
   results?: (string | undefined)[],
 ): {
   tx: Transaction;
-  nestedResults?: TransactionResult | NestedResult[];
+  nestedResults?: Result | NestedResult[];
 } => {
   try {
     switch (node.type) {

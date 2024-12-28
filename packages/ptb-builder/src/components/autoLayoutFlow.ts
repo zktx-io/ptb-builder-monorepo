@@ -1,6 +1,6 @@
-import { Edge, Node } from '@xyflow/react';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
+import { PTB } from './Menu.data';
 import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 
 const elk = new ELK();
@@ -9,15 +9,17 @@ const layoutOptions = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
   'elk.layered.spacing.edgeNodeBetweenLayers': '40',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '40',
   'elk.spacing.nodeNode': '40',
-  // 'elk.layered.crossingMinimization.strategy': 'INTERACTIVE',
+  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
   'elk.layered.nodePlacement.strategy': 'SIMPLE',
+  'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
 };
 
 export const autoLayoutFlow = async (nodes: PTBNode[], edges: PTBEdge[]) => {
-  const getTargetHandles = (n: Node) =>
+  const getTargetHandles = (n: PTBNode) =>
     edges.filter((e) => e.target === n.id).map((e) => ({ id: e.target }));
-  const getSourceHandles = (n: Node) =>
+  const getSourceHandles = (n: PTBNode) =>
     edges.filter((e) => e.source === n.id).map((e) => ({ id: e.source }));
   const graph: ElkNode = {
     id: 'root',
@@ -35,10 +37,16 @@ export const autoLayoutFlow = async (nodes: PTBNode[], edges: PTBEdge[]) => {
           side: 'EAST',
         },
       }));
+      const height: number =
+        n.measured && n.measured.height
+          ? n.measured.height
+          : n.type === PTB.MakeMoveVec.Type
+            ? 150
+            : 100;
       return {
         id: n.id,
         width: n.measured ? n.measured.width : 200,
-        height: n.measured ? n.measured.height : 100,
+        height,
         properties: {
           'org.eclipse.elk.portConstraints': 'FIXED_ORDER',
         },

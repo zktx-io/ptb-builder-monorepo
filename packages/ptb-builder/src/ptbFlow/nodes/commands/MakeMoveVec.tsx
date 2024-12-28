@@ -11,7 +11,7 @@ import { TYPE_PARAMS } from '../types';
 export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
   const { setEdges, setNodes } = useReactFlow();
   const [type, setType] = useState<TYPE_PARAMS>(
-    data.makeMoveVector || 'string',
+    data.makeMoveVector || 'object',
   );
 
   const resetEdge = (handle: 'source' | 'target') => {
@@ -47,6 +47,7 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
       <CmdParamsVector
         id={id}
         type={type}
+        data={data}
         resetEdge={resetEdge}
         updateState={(type: TYPE_PARAMS, splitInputs?: number) => {
           setType(type);

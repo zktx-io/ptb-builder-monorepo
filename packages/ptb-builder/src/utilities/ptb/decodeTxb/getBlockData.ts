@@ -4,9 +4,9 @@ import {
   SuiTransactionBlock,
 } from '@mysten/sui/client';
 
-import { NETWORK } from '../provider';
+import { NETWORK } from '../../../provider';
 
-export const getTxbData = async (
+export const getBlockData = async (
   network: NETWORK,
   txHash: string,
 ): Promise<SuiTransactionBlock> => {

@@ -1,6 +1,6 @@
+import { getPath } from '../';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 import { NumericTypes, TYPE_PARAMS } from '../../ptbFlow/nodes/types';
-import { getPath } from '../getPath';
 
 const extractIndex = (sourceHandle: string): number | undefined => {
   const match = sourceHandle.match(/\[(.*?)\](?=[^:]*:)/);

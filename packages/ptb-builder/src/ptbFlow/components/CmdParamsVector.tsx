@@ -12,6 +12,7 @@ import {
 } from '../nodes/styles';
 import {
   NumericTypes,
+  PTBNodeData,
   TYPE_ARRAY,
   TYPE_PARAMS,
   TYPE_VECTOR,
@@ -20,6 +21,7 @@ import {
 interface CmdParamsVectorProps {
   id: string;
   type: TYPE_PARAMS;
+  data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
   updateState: (type: TYPE_PARAMS, splitInputs?: number) => void;
 }
@@ -40,14 +42,19 @@ const PARAMS: TYPE_PARAMS[] = [
 export const CmdParamsVector = ({
   id,
   type,
+  data,
   resetEdge,
   updateState,
 }: CmdParamsVectorProps) => {
   const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [isSplitInputs, setIsSplitInputs] = useState<boolean>(false);
-  const [inputs, setInputs] = useState<string[]>([]);
+  const [isSplitInputs, setIsSplitInputs] = useState<boolean>(
+    !!data.splitInputs || false,
+  );
+  const [inputs, setInputs] = useState<string[]>(
+    data.splitInputs ? new Array(data.splitInputs).fill('') : [],
+  );
 
   const handleResetEdge = (handle: 'source' | 'target') => {
     resetEdge(handle);
@@ -82,6 +89,11 @@ export const CmdParamsVector = ({
       updateNodeInternals(id);
     }
   };
+
+  useEffect(() => {
+    updateState(type, isSplitInputs ? inputs.length : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -262,7 +274,7 @@ export const CmdParamsVector = ({
                   typeParams={`vector<${type}>` as TYPE_VECTOR}
                   name={`result`}
                   style={{
-                    top: `${inputs.length > 0 ? 134 + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
+                    top: `${inputs.length > 0 ? 106 + (canEdit ? 28 : 0) + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
                   }}
                 />
               </td>
