@@ -135,9 +135,13 @@ const genereateCommand = (
             node.data.moveCall?.function!
           ].parameters;
         const target = inputs[0] !== undefined ? inputs[0] : undefined;
-        const argument =
+        const typeArguments =
           inputs[1] && inputs[1].length > 0
-            ? inputs[1].map((v, i) => {
+            ? inputs[1].map((v) => connvert(v, dictionary) as string)
+            : undefined;
+        const argument =
+          inputs[2] && inputs[2].length > 0
+            ? inputs[2].map((v, i) => {
                 const temp = connvert(v, dictionary);
                 if (temp && typeof temp === 'number' && types && types[i]) {
                   switch (types[i]) {
@@ -157,10 +161,6 @@ const genereateCommand = (
                 }
                 return temp as TransactionArgument;
               })
-            : undefined;
-        const typeArguments =
-          inputs[2] && inputs[2].length > 0
-            ? inputs[2].map((v) => connvert(v, dictionary) as string)
             : undefined;
         if (target) {
           const result = tx.moveCall({
