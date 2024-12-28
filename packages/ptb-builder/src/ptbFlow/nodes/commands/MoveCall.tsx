@@ -1,16 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
-import {
-  SuiMoveAbilitySet,
-  SuiMoveNormalizedFunction,
-  SuiMoveNormalizedModule,
-  SuiMoveNormalizedType,
-} from '@mysten/sui/client';
+import { SuiMoveAbilitySet, SuiMoveNormalizedType } from '@mysten/sui/client';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
-import { getPackageData } from '../../../utilities';
 import { CmdParamsMoveCall } from '../../components';
 import { PtbHandleProcess } from '../handles';
 import {
@@ -20,51 +14,21 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
-
-const deleteTxContext = (
-  types: SuiMoveNormalizedType[],
-): SuiMoveNormalizedType[] => {
-  return types.filter((type) => {
-    if (typeof type === 'object') {
-      const struct =
-        (type as any).MutableReference?.Struct ||
-        (type as any).Reference?.Struct ||
-        (type as any).Struct;
-      return !(
-        struct &&
-        struct.address === '0x2' &&
-        struct.module === 'tx_context' &&
-        struct.name === 'TxContext'
-      );
-    }
-    return true;
-  });
-};
+import { PTBModuleData } from '../types';
 
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
-  const { client } = useStateContext();
-  const { setEdges } = useReactFlow();
+  const { fetchPackageData } = useStateContext();
+  const { setEdges, setNodes } = useReactFlow();
   const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [packageId, setPackageId] = useState<string>(
-    data.moveCall?.package || '',
-  );
-  const [selectedModule, setSelectedModule] = useState<string>(
-    data.moveCall?.module || '',
-  );
-  const [selectedFunction, setSelectedFunction] = useState<string>(
-    data.moveCall?.function || '',
+  const [packageData, setPackageData] = useState<PTBModuleData | undefined>(
+    undefined,
   );
 
-  const [packageData, setPackageData] = useState<
-    Record<string, SuiMoveNormalizedModule> | undefined
-  >(data.moveCall?.data || undefined);
-  const [functions, setFunctions] = useState<string[]>([]);
-  const [dictionary, setDictionary] = useState<
-    Record<string, SuiMoveNormalizedFunction>
-  >({});
-
+  const [packageId, setPackageId] = useState<string>('');
+  const [selectedModule, setSelectedModule] = useState<string>('');
+  const [selectedFunction, setSelectedFunction] = useState<string>('');
   const [selectedAbility, setSelectedAbility] = useState<SuiMoveAbilitySet[]>(
     [],
   );
@@ -76,39 +40,103 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   >([]);
 
   const loadPackage = async () => {
-    if (client && !!packageId) {
-      const initPackageData = await getPackageData(client, packageId);
-
-      if (initPackageData && Object.keys(initPackageData).length > 0) {
-        setPackageData(initPackageData);
-        const initModule = Object.keys(initPackageData)[0];
-        setSelectedModule(initModule);
-
-        const initFunctions: string[] = [];
-        const initDictionary: Record<string, SuiMoveNormalizedFunction> = {};
-        Object.keys(initPackageData[initModule].exposedFunctions)
-          .filter(
-            (item) =>
-              initPackageData[initModule].exposedFunctions[item].visibility ===
-                'Public' ||
-              initPackageData[initModule].exposedFunctions[item].isEntry,
-          )
-          .forEach((item) => {
-            initFunctions.push(item);
-            initDictionary[item] =
-              initPackageData[initModule].exposedFunctions[item];
-          });
-        setFunctions(initFunctions);
-        setDictionary(initDictionary);
-        setSelectedFunction(initFunctions.length > 0 ? initFunctions[0] : '');
-      } else {
-        setPackageData(undefined);
-        setSelectedModule('');
-        setFunctions([]);
-        setSelectedFunction('');
+    if (!!packageId && fetchPackageData) {
+      const temp = await fetchPackageData(packageId);
+      setPackageData(temp);
+      if (temp) {
+        const func =
+          (temp._nameModules_[0] &&
+            temp.modules[temp._nameModules_[0]]._nameFunctions_[0]) ||
+          '';
+        updateNode(temp, {
+          package: packageId,
+          module: temp._nameModules_[0],
+          function: func,
+        });
       }
     }
   };
+
+  const updateNode = useCallback(
+    (
+      ptbModuleData: PTBModuleData,
+      moveCallData: {
+        package: string;
+        module: string;
+        function: string;
+      },
+    ) => {
+      setSelectedModule(moveCallData.module);
+      setSelectedFunction(moveCallData.function);
+      if (moveCallData.module && moveCallData.function) {
+        setSelectedAbility(
+          ptbModuleData.modules[moveCallData.module].exposedFunctions[
+            moveCallData.function
+          ].typeParameters,
+        );
+        setSelectedInputs(
+          ptbModuleData.modules[moveCallData.module].exposedFunctions[
+            moveCallData.function
+          ].parameters,
+        );
+        setSelectedOutputs(
+          ptbModuleData.modules[moveCallData.module].exposedFunctions[
+            moveCallData.function
+          ].return,
+        );
+      }
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === id) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                moveCall: {
+                  ...moveCallData,
+                  getModuleData: () => ptbModuleData,
+                },
+              },
+            };
+          }
+          return node;
+        }),
+      );
+      updateNodeInternals(id);
+    },
+    [id, setNodes, updateNodeInternals],
+  );
+
+  useEffect(() => {
+    const init = async (moveCall?: {
+      package?: string;
+      module?: string;
+      function?: string;
+    }) => {
+      if (
+        fetchPackageData &&
+        moveCall &&
+        moveCall.package &&
+        moveCall.module &&
+        moveCall.function
+      ) {
+        setPackageId(moveCall.package);
+        setSelectedModule(moveCall.module);
+        setSelectedFunction(moveCall.function);
+        const temp = await fetchPackageData(moveCall.package);
+        setPackageData(temp);
+        if (temp) {
+          updateNode(temp, {
+            package: moveCall.package,
+            module: moveCall.module,
+            function: moveCall.function,
+          });
+        }
+      }
+    };
+    init(data.moveCall);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetEdge = () => {
     setEdges((eds) =>
@@ -120,51 +148,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   };
 
   useEffect(() => {
-    if (selectedFunction) {
-      const selected = dictionary[selectedFunction];
-      if (selected) {
-        const inputs = deleteTxContext(selected.parameters);
-        setSelectedOutputs(() => selected.return);
-        setSelectedAbility(() => selected.typeParameters);
-        setSelectedInputs(() => inputs);
-        data.moveCall = {
-          package: packageId,
-          module: selectedModule,
-          function: selectedFunction,
-        };
-        data.getMoveCallInputs = () => inputs;
-        data.getIoLength = () => [
-          selected.typeParameters.length,
-          inputs.length,
-          selected.return.length,
-        ];
-      } else {
-        !!packageData && setSelectedOutputs([]);
-        !!packageData && setSelectedAbility([]);
-        !!packageData && setSelectedInputs([]);
-        data.getMoveCallInputs = undefined;
-        data.moveCall = undefined;
-        data.getIoLength = () => [0, 0, 0];
-      }
-    } else {
-      setSelectedOutputs([]);
-      setSelectedAbility([]);
-      setSelectedInputs([]);
-      data.getMoveCallInputs = undefined;
-      data.moveCall = undefined;
-      data.getIoLength = () => [0, 0, 0];
-    }
     updateNodeInternals(id);
-  }, [
-    data,
-    dictionary,
-    id,
-    packageData,
-    packageId,
-    selectedFunction,
-    selectedModule,
-    updateNodeInternals,
-  ]);
+  }, [id, updateNodeInternals]);
 
   return (
     <div className={NodeStyles.moveCall}>
@@ -207,43 +192,21 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               value={selectedModule}
               disabled={!canEdit}
               onChange={(evt) => {
-                if (packageData) {
-                  const selected = evt.target.value;
-                  setSelectedModule(() => selected);
-                  const initFunctions: string[] = [];
-                  const initDictionary: Record<
-                    string,
-                    SuiMoveNormalizedFunction
-                  > = {};
-                  Object.keys(packageData[selected].exposedFunctions)
-                    .filter(
-                      (item) =>
-                        packageData[selected].exposedFunctions[item]
-                          .visibility === 'Public',
-                    )
-                    .forEach((item) => {
-                      initFunctions.push(item);
-                      initDictionary[item] =
-                        packageData[selected].exposedFunctions[item];
-                    });
-                  setFunctions(initFunctions);
-                  setDictionary(initDictionary);
-                  setSelectedFunction(
-                    initFunctions.length > 0 ? initFunctions[0] : '',
-                  );
-                  resetEdge();
-                }
+                updateNode(packageData!, {
+                  package: packageId,
+                  module: evt.target.value,
+                  function:
+                    packageData!.modules[evt.target.value]._nameFunctions_[0] ||
+                    '',
+                });
+                resetEdge();
               }}
             >
-              {packageData ? (
-                Object.keys(packageData).map((item, key) => (
-                  <option value={item} key={key}>
-                    {item}
-                  </option>
-                ))
-              ) : (
-                <option>{selectedModule}</option>
-              )}
+              {packageData!._nameModules_.map((item, key) => (
+                <option value={item} key={key}>
+                  {item}
+                </option>
+              ))}
             </select>
             <label className={LabelStyle} style={{ fontSize: '0.6rem' }}>
               Function
@@ -253,18 +216,20 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
               value={selectedFunction}
               disabled={!canEdit}
               onChange={(evt) => {
-                setSelectedFunction(evt.target.value);
+                updateNode(packageData!, {
+                  package: packageId,
+                  module: selectedModule,
+                  function: evt.target.value,
+                });
                 resetEdge();
               }}
             >
-              {packageData ? (
-                functions.map((item, key) => (
+              {packageData!.modules[selectedModule]._nameFunctions_.map(
+                (item, key) => (
                   <option value={item} key={key}>
                     {item}
                   </option>
-                ))
-              ) : (
-                <option>{selectedFunction}</option>
+                ),
               )}
             </select>
           </>

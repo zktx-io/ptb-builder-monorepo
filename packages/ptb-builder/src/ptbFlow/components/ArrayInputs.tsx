@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+
+import { useUpdateNodeInternals } from '@xyflow/react';
 
 import { useStateContext } from '../../provider';
 import { InputStyle } from '../nodes/styles';
 
 export const ArrayInputs = ({
+  id,
   isShow,
   isBoolean,
   isNumber,
@@ -14,6 +17,7 @@ export const ArrayInputs = ({
   updateItem,
   style,
 }: {
+  id: string;
   isShow: boolean;
   isBoolean?: boolean;
   isNumber?: boolean;
@@ -28,6 +32,26 @@ export const ArrayInputs = ({
   };
 }) => {
   const { canEdit } = useStateContext();
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  const handleAddItem = () => {
+    addItem();
+    updateNodeInternals(id);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    removeItem(index);
+    updateNodeInternals(id);
+  };
+
+  const handleUpdateItem = (index: number, value: any) => {
+    updateItem(index, value);
+    updateNodeInternals(id);
+  };
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals]);
 
   return (
     <>
@@ -48,7 +72,7 @@ export const ArrayInputs = ({
                       className={InputStyle}
                       disabled={!canEdit}
                       value={item}
-                      onChange={(e) => updateItem(index, e.target.value)}
+                      onChange={(e) => handleUpdateItem(index, e.target.value)}
                     >
                       <option value="false">false</option>
                       <option value="true">true</option>
@@ -65,7 +89,7 @@ export const ArrayInputs = ({
                   onChange: (
                     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
                   ) =>
-                    updateItem(
+                    handleUpdateItem(
                       index,
                       isNumber ? Number(e.target.value) : e.target.value,
                     ),
@@ -93,7 +117,7 @@ export const ArrayInputs = ({
                         style={{
                           minWidth: '20px',
                         }}
-                        onClick={() => removeItem(index)}
+                        onClick={() => handleRemoveItem(index)}
                       >
                         x
                       </button>
@@ -110,7 +134,7 @@ export const ArrayInputs = ({
                     justifyContent: 'flex-end',
                   }}
                 >
-                  <button className={style.addButton} onClick={addItem}>
+                  <button className={style.addButton} onClick={handleAddItem}>
                     Add
                   </button>
                 </td>

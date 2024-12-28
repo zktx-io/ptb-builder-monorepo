@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 
+export const DEBOUNCE = 200;
 export const useDebounce = (
   callback: (...args: any[]) => void,
   delay: number,

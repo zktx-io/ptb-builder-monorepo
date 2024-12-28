@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { ArrayInputs } from '../../components';
 import { PtbHandleArray } from '../handles';
 import {
@@ -20,37 +21,39 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
   );
   const [items, setItems] = useState<number[]>((data.value as number[]) || [0]);
 
-  const addItem = () => {
-    data.value = [...items, 0];
-    setItems(() => [...(data.value as number[])]);
-  };
-
-  const removeItem = (index: number) => {
-    if (items.length > 1) {
-      data.value = items.filter((_, i) => i !== index);
-      setItems(() => [...(data.value as number[])]);
-    }
-  };
-
-  const updateItem = (index: number, value: number) => {
-    const updatedItems = items.map((item, i) => (i === index ? value : item));
-    data.value = updatedItems;
-    setItems(updatedItems);
-  };
-
-  useEffect(() => {
+  const { debouncedFunction: updateNodes } = useDebounce((updatedItems) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
           return {
             ...node,
-            data: { ...node.data, value: items },
+            data: { ...node.data, value: updatedItems },
           };
         }
         return node;
       }),
     );
-  }, [id, items, setNodes]);
+  }, DEBOUNCE);
+
+  const addItem = () => {
+    const updatedItems = [...items, 0];
+    setItems(updatedItems);
+    updateNodes(updatedItems);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length > 1) {
+      const updatedItems = items.filter((_, i) => i !== index);
+      setItems(updatedItems);
+      updateNodes(updatedItems);
+    }
+  };
+
+  const updateItem = (index: number, value: number) => {
+    const updatedItems = items.map((item, i) => (i === index ? value : item));
+    setItems(updatedItems);
+    updateNodes(updatedItems);
+  };
 
   return (
     <div className={NodeStyles.number}>
@@ -75,6 +78,7 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
           </div>
         </div>
         <ArrayInputs
+          id={id}
           isNumber
           isShow={isShow}
           items={items}

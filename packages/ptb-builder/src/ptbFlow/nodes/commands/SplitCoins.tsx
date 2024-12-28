@@ -8,7 +8,7 @@ import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
 export const SplitCoins = ({ id, data }: PTBNodeProp) => {
-  const { setEdges } = useReactFlow();
+  const { setEdges, setNodes } = useReactFlow();
 
   const resetEdge = (handle: 'source' | 'target') => {
     setEdges((eds) =>
@@ -48,8 +48,21 @@ export const SplitCoins = ({ id, data }: PTBNodeProp) => {
         output={{ label: 'result', type: 'object[]' }}
         data={data}
         resetEdge={resetEdge}
-        updateState={(paramLength: (number | undefined)[]) => {
-          data.getIoLength = () => paramLength;
+        updateState={(
+          splitInputs: number | undefined,
+          splitOutputs: number | undefined,
+        ) => {
+          setNodes((nds) =>
+            nds.map((node) => {
+              if (node.id === id) {
+                return {
+                  ...node,
+                  data: { ...node.data, splitInputs, splitOutputs },
+                };
+              }
+              return node;
+            }),
+          );
         }}
       />
     </div>

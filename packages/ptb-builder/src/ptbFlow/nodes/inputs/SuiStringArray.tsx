@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { ArrayInputs } from '../../components';
 import { PtbHandleArray } from '../handles';
 import {
@@ -22,37 +23,42 @@ export const SuiStringArray = ({ id, data }: PTBNodeProp) => {
     (data.value as string[]) || [''],
   );
 
+  const { debouncedFunction: updateNodes } = useDebounce(
+    (updatedItems: string[]) => {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === id) {
+            return {
+              ...node,
+              data: { ...node.data, value: updatedItems },
+            };
+          }
+          return node;
+        }),
+      );
+    },
+    DEBOUNCE,
+  );
+
   const addItem = () => {
-    data.value = [...items, ''];
-    setItems(() => [...(data.value as string[])]);
+    const updatedItems = [...items, ''];
+    setItems(updatedItems);
+    updateNodes(updatedItems);
   };
 
   const removeItem = (index: number) => {
     if (items.length > 1) {
-      data.value = items.filter((_, i) => i !== index);
-      setItems(() => [...(data.value as string[])]);
+      const updatedItems = items.filter((_, i) => i !== index);
+      setItems(updatedItems);
+      updateNodes(updatedItems);
     }
   };
 
   const updateItem = (index: number, value: string) => {
     const updatedItems = items.map((item, i) => (i === index ? value : item));
-    data.value = updatedItems;
     setItems(updatedItems);
+    updateNodes(updatedItems);
   };
-
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: { ...node.data, value: items },
-          };
-        }
-        return node;
-      }),
-    );
-  }, [id, items, setNodes]);
 
   return (
     <div className={NodeStyles.string}>
@@ -77,6 +83,7 @@ export const SuiStringArray = ({ id, data }: PTBNodeProp) => {
           </div>
         </div>
         <ArrayInputs
+          id={id}
           isShow={isShow}
           items={items}
           placeholder="Enter string"

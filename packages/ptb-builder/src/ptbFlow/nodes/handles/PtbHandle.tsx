@@ -15,7 +15,7 @@ export const PtbHandle = ({
   typeHandle: 'source' | 'target';
   typeParams: TYPE_PARAMS | 'number';
   name: string;
-  style?: { [key: string]: string };
+  style?: Record<string, string>;
 }) => {
   return (
     <Handle

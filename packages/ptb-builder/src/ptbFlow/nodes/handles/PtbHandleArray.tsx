@@ -15,7 +15,7 @@ export const PtbHandleArray = ({
   typeHandle: 'source' | 'target';
   typeParams: TYPE_ARRAY | 'number[]';
   name: string;
-  style?: { [key: string]: string };
+  style?: Record<string, string>;
 }) => {
   return (
     <Handle

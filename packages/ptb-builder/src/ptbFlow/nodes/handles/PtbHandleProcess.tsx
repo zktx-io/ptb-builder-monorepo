@@ -10,7 +10,7 @@ export const PtbHandleProcess = ({
   style,
 }: {
   typeHandle: 'source' | 'target';
-  style?: { [key: string]: string };
+  style?: Record<string, string>;
 }) => {
   return (
     <Handle

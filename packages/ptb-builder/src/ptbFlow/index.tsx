@@ -26,14 +26,19 @@ import {
   Panel,
   PTB,
 } from '../components';
-import { autoLayoutFlow } from '../components/autoLayoutFlow';
+// import { autoLayoutFlow } from '../components/autoLayoutFlow';
 import {
   enqueueToast,
   NETWORK,
   useStateContext,
   useStateUpdateContext,
 } from '../provider';
-import { getTxbData, PTB_SCHEME, useDebounce } from '../utilities';
+import {
+  // getTxbData,
+  PTB_SCHEME,
+  PTB_SCHEME_VERSION,
+  useDebounce,
+} from '../utilities';
 import { getPath } from '../utilities/getPath';
 import { InputStyle } from './nodes/styles';
 // import { decodeTxb } from '../utilities/ptb/decodeTxb';
@@ -64,7 +69,8 @@ export const PTBFlow = ({
   const { setViewport, fitView } = useReactFlow();
 
   const setState = useStateUpdateContext();
-  const { canEdit, network } = useStateContext();
+  const { canEdit, network, exportPackageData, importPackageData } =
+    useStateContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<PTBNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<PTBEdge>([]);
@@ -199,10 +205,16 @@ export const PTBFlow = ({
     if (nodes.length || edges.length) {
       if (rfInstance) {
         const flow = rfInstance.toObject();
-        debouncedUpdate({ network, ...flow });
+        const updateData: PTB_SCHEME = {
+          version: PTB_SCHEME_VERSION,
+          network,
+          flow,
+          modules: exportPackageData ? exportPackageData() : {},
+        };
+        debouncedUpdate(updateData);
       }
     }
-  }, [nodes, edges, rfInstance, network, debouncedUpdate]);
+  }, [nodes, edges, network, rfInstance, debouncedUpdate, exportPackageData]);
 
   useEffect(() => {
     return () => {
@@ -245,12 +257,14 @@ export const PTBFlow = ({
               enqueueToast('Invalid version', { variant: 'error' });
             } else {
               setNodes([...(flow.nodes || [])]);
-              setEdges([...(flow.edges || [])]);
               setViewport(flow.viewport);
               setState((oldState) => ({
                 ...oldState,
                 network: network as NETWORK,
               }));
+              setTimeout(() => {
+                setEdges([...(flow.edges || [])]);
+              }, 100);
             }
           } else {
             const temp = JSON.stringify(restore);
@@ -277,6 +291,7 @@ export const PTBFlow = ({
               );
             }
           }
+          importPackageData && importPackageData(restore.modules || {});
         }
       } catch (error) {
         enqueueToast(`${error}`, { variant: 'error' });
@@ -285,13 +300,12 @@ export const PTBFlow = ({
     init();
   }, [
     createNode,
-    fitView,
-    network,
+    importPackageData,
     prevRestore,
     restore,
-    setState,
     setEdges,
     setNodes,
+    setState,
     setViewport,
   ]);
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
 import { useUpdateNodeInternals } from '@xyflow/react';
-import { flushSync } from 'react-dom';
 
 import { useStateContext } from '../../provider';
 import { PtbHandle, PtbHandleArray, PtbHandleVector } from '../nodes/handles';
@@ -22,7 +21,7 @@ interface CmdParamsVectorProps {
   id: string;
   type: TYPE_PARAMS;
   resetEdge: (handle: 'source' | 'target') => void;
-  updateState: (type: TYPE_PARAMS, paramLength: (number | undefined)[]) => void;
+  updateState: (type: TYPE_PARAMS, splitInputs?: number) => void;
 }
 
 const PARAMS: TYPE_PARAMS[] = [
@@ -47,32 +46,42 @@ export const CmdParamsVector = ({
   const { canEdit } = useStateContext();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const [isNestedInput, setIsSplitInputs] = useState<boolean>(false);
+  const [isSplitInputs, setIsSplitInputs] = useState<boolean>(false);
   const [inputs, setInputs] = useState<string[]>([]);
+
+  const handleResetEdge = (handle: 'source' | 'target') => {
+    resetEdge(handle);
+    updateNodeInternals(id);
+  };
 
   const selectType = (type: TYPE_PARAMS) => {
     resetEdge('target');
     resetEdge('source');
-    flushSync(() =>
-      updateState(type, [isNestedInput ? inputs.length : undefined, undefined]),
-    );
+    updateState(type, isSplitInputs ? inputs.length : undefined);
     updateNodeInternals(id);
   };
 
-  const addInputItem = () => {
-    setInputs((oldData) => [...oldData, '']);
+  const addInputItem = (checkeck: boolean) => {
+    if (checkeck) {
+      setInputs((oldData) => [...oldData, '']);
+      updateState(
+        type,
+        checkeck || isSplitInputs ? inputs.length + 1 : undefined,
+      );
+    } else {
+      setInputs([]);
+      updateState(type, undefined);
+    }
   };
 
   const removeInputItem = (index: number) => {
     if (inputs.length > 1) {
       resetEdge('target');
       setInputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
+      updateState(type, inputs.length - 1);
+      updateNodeInternals(id);
     }
   };
-
-  useEffect(() => {
-    updateState(type, [isNestedInput ? inputs.length : undefined, undefined]);
-  }, [inputs.length, isNestedInput, type, updateState]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -93,15 +102,11 @@ export const CmdParamsVector = ({
             <input
               type="checkbox"
               id="checkbox"
-              checked={isNestedInput}
+              checked={isSplitInputs}
               onChange={(e) => {
-                resetEdge('target');
+                handleResetEdge('target');
                 setIsSplitInputs(e.target.checked);
-                if (e.target.checked) {
-                  addInputItem();
-                } else {
-                  setInputs([]);
-                }
+                addInputItem(e.target.checked);
               }}
             />
           </div>
@@ -138,7 +143,7 @@ export const CmdParamsVector = ({
               </select>
             </td>
           </tr>
-          {!isNestedInput ? (
+          {!isSplitInputs ? (
             <tr>
               <td
                 style={{
@@ -214,7 +219,7 @@ export const CmdParamsVector = ({
                   >
                     <button
                       className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                      onClick={addInputItem}
+                      onClick={() => addInputItem(isSplitInputs)}
                     >
                       Add
                     </button>
@@ -226,7 +231,7 @@ export const CmdParamsVector = ({
         </tbody>
       </table>
 
-      <div className={isNestedInput ? '' : 'mt-2'}>
+      <div className={isSplitInputs ? '' : 'mt-2'}>
         <div className={FormTitleStyle}>
           <label className={LabelStyle}>ouputs</label>
         </div>
@@ -257,7 +262,7 @@ export const CmdParamsVector = ({
                   typeParams={`vector<${type}>` as TYPE_VECTOR}
                   name={`result`}
                   style={{
-                    top: `${inputs.length > 0 ? 134 + 28 * inputs.length : 134 + (isNestedInput ? 0 : 8)}px`,
+                    top: `${inputs.length > 0 ? 134 + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
                   }}
                 />
               </td>

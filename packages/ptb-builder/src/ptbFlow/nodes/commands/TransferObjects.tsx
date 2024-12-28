@@ -8,7 +8,7 @@ import { PtbHandleProcess } from '../handles';
 import { NodeStyles } from '../styles';
 
 export const TransferObjects = ({ id, data }: PTBNodeProp) => {
-  const { setEdges } = useReactFlow();
+  const { setEdges, setNodes } = useReactFlow();
 
   const resetEdge = () => {
     setEdges((eds) =>
@@ -46,8 +46,18 @@ export const TransferObjects = ({ id, data }: PTBNodeProp) => {
         input2={{ label: 'objects', type: 'object[]' }}
         data={data}
         resetEdge={resetEdge}
-        updateState={(paramLength: (number | undefined)[]) => {
-          data.getIoLength = () => paramLength;
+        updateState={(splitInputs: number | undefined) => {
+          setNodes((nds) =>
+            nds.map((node) => {
+              if (node.id === id) {
+                return {
+                  ...node,
+                  data: { ...node.data, splitInputs },
+                };
+              }
+              return node;
+            }),
+          );
         }}
       />
     </div>

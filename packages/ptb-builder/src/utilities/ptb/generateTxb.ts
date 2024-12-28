@@ -129,8 +129,11 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MoveCall: {
+        const moduleData = node.data.moveCall!.getModuleData!();
         const types =
-          node.data.getMoveCallInputs && node.data.getMoveCallInputs();
+          moduleData?.modules[node.data.moveCall?.module!].exposedFunctions[
+            node.data.moveCall?.function!
+          ].parameters;
         const target = inputs[0] !== undefined ? inputs[0] : undefined;
         const argument =
           inputs[1] && inputs[1].length > 0

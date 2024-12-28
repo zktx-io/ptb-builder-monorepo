@@ -1,15 +1,16 @@
-import { NETWORK } from '../provider';
+import { SuiMoveNormalizedModules } from '@mysten/sui/dist/cjs/client';
+
 import { PTBEdge, PTBNode } from '../ptbFlow/nodes';
 
-export { useDebounce } from './debounce';
+export { DEBOUNCE, useDebounce } from './debounce';
 export { getPath } from './getPath';
-export { getPackageData } from './getPackageData';
+export { getPackageData } from '../provider/getPackageData';
 export { getTxbData } from './getTxbData';
 
 export const PTB_SCHEME_VERSION = '2';
 export interface PTB_SCHEME {
   version?: string;
-  network?: NETWORK;
+  network?: 'mainnet' | 'testnet' | 'devnet';
   flow?: {
     nodes: PTBNode[];
     edges: PTBEdge[];
@@ -19,4 +20,5 @@ export interface PTB_SCHEME {
       zoom: number;
     };
   };
+  modules: Record<string, SuiMoveNormalizedModules>;
 }

@@ -15,7 +15,7 @@ export const PtbHandleVector = ({
   typeHandle: 'source' | 'target';
   typeParams: TYPE_VECTOR;
   name: string;
-  style?: { [key: string]: string };
+  style?: Record<string, string>;
 }) => {
   return (
     <Handle

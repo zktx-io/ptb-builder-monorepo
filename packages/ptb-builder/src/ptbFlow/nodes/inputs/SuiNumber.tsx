@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
@@ -14,19 +15,28 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
     (data.value as number) || 0,
   );
 
-  useEffect(() => {
+  const { debouncedFunction: updateNodes } = useDebounce((value) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
           return {
             ...node,
-            data: { ...node.data, value: inputValue },
+            data: { ...node.data, value },
           };
         }
         return node;
       }),
     );
-  }, [inputValue, setNodes, id]);
+  }, DEBOUNCE);
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    const numericValue = Number(value);
+    if (value === '' || (!Number.isNaN(numericValue) && numericValue >= 0)) {
+      setInputValue(numericValue);
+      updateNodes(numericValue);
+    }
+  };
 
   return (
     <div className={NodeStyles.number}>
@@ -40,16 +50,7 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
           readOnly={!canEdit}
           value={inputValue}
           min={0}
-          onChange={(event) => {
-            const value = event.target.value;
-            const numericValue = Number(value);
-            if (
-              value === '' ||
-              (!Number.isNaN(numericValue) && numericValue >= 0)
-            ) {
-              setInputValue(numericValue);
-            }
-          }}
+          onChange={handleChange}
         />
       </div>
       <PtbHandle typeHandle="source" typeParams="number" name="inputs" />

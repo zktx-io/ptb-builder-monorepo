@@ -84,10 +84,12 @@ const preprocess = (
         const edge = params[key];
         const targetIndex = extractIndex(edge.targetHandle!);
         const sourceIndex = extractIndex(edge.sourceHandle!);
-        data[targetIndex!] =
-          sourceIndex !== undefined
-            ? `${edge.source}[${sourceIndex}]`
-            : edge.source;
+        if (targetIndex !== undefined && targetIndex < data.length) {
+          data[targetIndex] =
+            sourceIndex !== undefined
+              ? `${edge.source}[${sourceIndex}]`
+              : edge.source;
+        }
       });
     return data;
   };
@@ -104,36 +106,36 @@ const preprocess = (
         const edge = params[key];
         const targetIndex = extractIndex(edge.targetHandle!);
         const sourceIndex = extractIndex(edge.sourceHandle!);
-        data[targetIndex!] =
-          sourceIndex !== undefined
-            ? `${edge.source}[${sourceIndex}]`
-            : edge.source;
+        if (targetIndex !== undefined && targetIndex < data.length) {
+          data[targetIndex] =
+            sourceIndex !== undefined
+              ? `${edge.source}[${sourceIndex}]`
+              : edge.source;
+        }
       });
     return data;
   };
-
-  const ioLength = node.data.getIoLength
-    ? node.data.getIoLength()
-    : [undefined, undefined];
 
   switch (node.type) {
     case PTBNodeType.SplitCoins: {
       const coin = getSourceHandleID('coin', 'object');
       const amounts =
-        params['amounts:number[]'] || ioLength[0] === undefined
+        params['amounts:number[]'] || node.data.splitInputs === undefined
           ? fromArray('amounts:number[]')
-          : fromSplit('number', ioLength[0]);
+          : fromSplit('number', node.data.splitInputs);
       return {
         inputs: [coin, amounts],
-        outputs: new Array(ioLength[1] || amounts.length).fill(undefined),
+        outputs: new Array(node.data.splitOutputs || amounts.length).fill(
+          undefined,
+        ),
       };
     }
     case PTBNodeType.TransferObjects: {
       const address = getSourceHandleID('address', 'address');
       const objects =
-        params['objects:object[]'] || ioLength[0] === undefined
+        params['objects:object[]'] || node.data.splitInputs === undefined
           ? fromArray('objects:object[]')
-          : fromSplit('object', ioLength[0]);
+          : fromSplit('object', node.data.splitInputs);
       return {
         inputs: [address, objects],
       };
@@ -141,9 +143,9 @@ const preprocess = (
     case PTBNodeType.MergeCoins: {
       const destination = getSourceHandleID('destination', 'object');
       const source =
-        params['source:object[]'] || ioLength[0] === undefined
+        params['source:object[]'] || node.data.splitInputs === undefined
           ? fromArray('source:object[]')
-          : fromSplit('object', ioLength[0]);
+          : fromSplit('object', node.data.splitInputs);
       return {
         inputs: [destination, source],
       };
@@ -152,9 +154,12 @@ const preprocess = (
       const type = node.data.makeMoveVector!;
       const element =
         params[`elements:${NumericTypes.has(type) ? 'number' : type}[]`] ||
-        ioLength[0] === undefined
+        node.data.splitInputs === undefined
           ? fromArray(`elements:${NumericTypes.has(type) ? 'number' : type}[]`)
-          : fromSplit(NumericTypes.has(type) ? 'number' : type, ioLength[0]);
+          : fromSplit(
+              NumericTypes.has(type) ? 'number' : type,
+              node.data.splitInputs,
+            );
       return {
         inputs: [type, element],
         outputs: [undefined],
@@ -164,11 +169,35 @@ const preprocess = (
       const target = node.data.moveCall
         ? `${node.data.moveCall.package}::${node.data.moveCall.module}::${node.data.moveCall.function}`
         : undefined;
-      const typeParams = forMoveCall('type', ioLength[0] || 0);
-      const params = forMoveCall('input', ioLength[1] || 0);
+      const moduleData =
+        node.data.moveCall &&
+        node.data.moveCall.getModuleData &&
+        node.data.moveCall.getModuleData();
+      let splitTypes = 0;
+      let splitInputs = 0;
+      let splitOutputs = 0;
+      if (moduleData && node.data.moveCall) {
+        splitTypes = node.data.moveCall.module
+          ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
+              node.data.moveCall.function!
+            ].typeParameters.length
+          : 0;
+        splitInputs = node.data.moveCall.module
+          ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
+              node.data.moveCall.function!
+            ].parameters.length
+          : 0;
+        splitOutputs = node.data.moveCall.module
+          ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
+              node.data.moveCall.function!
+            ].return.length
+          : 0;
+      }
+      const typeParams = forMoveCall('type', splitTypes);
+      const params = forMoveCall('input', splitInputs);
       return {
-        inputs: [target, [...params], [...typeParams]],
-        outputs: new Array(ioLength[2] || 0).fill(undefined),
+        inputs: [target, [...typeParams], [...params]],
+        outputs: new Array(splitOutputs).fill(undefined),
       };
     }
     case PTBNodeType.Publish:

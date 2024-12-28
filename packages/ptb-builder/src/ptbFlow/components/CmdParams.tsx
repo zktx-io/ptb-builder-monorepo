@@ -24,7 +24,7 @@ interface CmdParamsProps {
   };
   data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
-  updateState: (paramLength: (number | undefined)[]) => void;
+  updateState: (splitInputs?: number) => void;
 }
 
 export const CmdParams = ({
@@ -45,20 +45,28 @@ export const CmdParams = ({
     data.splitInputs ? new Array(data.splitInputs).fill('') : [],
   );
 
-  const addInputItem = () => {
-    setInputs((oldData) => [...oldData, '']);
+  const handleResetEdge = (handle: 'source' | 'target') => {
+    resetEdge(handle);
+    updateNodeInternals(id);
+  };
+
+  const addInputItem = (check: boolean) => {
+    if (check) {
+      setInputs((oldData) => [...oldData, '']);
+      updateState(inputs.length + 1);
+    } else {
+      setInputs([]);
+      updateState(undefined);
+    }
   };
 
   const removeInputItem = (index: number) => {
     if (inputs.length > 1) {
-      resetEdge('target');
       setInputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
+      updateState(inputs.length - 1);
+      handleResetEdge('target');
     }
   };
-
-  useEffect(() => {
-    updateState([isSplitInputs ? inputs.length : undefined, undefined]);
-  }, [inputs, isSplitInputs, updateState]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -81,13 +89,9 @@ export const CmdParams = ({
               id="checkbox"
               checked={isSplitInputs}
               onChange={(e) => {
-                resetEdge('target');
                 setIsSplitInputs(e.target.checked);
-                if (e.target.checked) {
-                  addInputItem();
-                } else {
-                  setInputs([]);
-                }
+                addInputItem(e.target.checked);
+                handleResetEdge('target');
               }}
             />
           </div>
@@ -193,7 +197,7 @@ export const CmdParams = ({
                   >
                     <button
                       className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                      onClick={addInputItem}
+                      onClick={() => addInputItem(isSplitInputs)}
                     >
                       Add
                     </button>

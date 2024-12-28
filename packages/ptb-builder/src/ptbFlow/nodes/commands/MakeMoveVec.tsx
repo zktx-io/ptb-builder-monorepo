@@ -9,7 +9,7 @@ import { NodeStyles } from '../styles';
 import { TYPE_PARAMS } from '../types';
 
 export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
-  const { setEdges } = useReactFlow();
+  const { setEdges, setNodes } = useReactFlow();
   const [type, setType] = useState<TYPE_PARAMS>(
     data.makeMoveVector || 'string',
   );
@@ -48,13 +48,19 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
         id={id}
         type={type}
         resetEdge={resetEdge}
-        updateState={(
-          type: TYPE_PARAMS,
-          paramLength: (number | undefined)[],
-        ) => {
+        updateState={(type: TYPE_PARAMS, splitInputs?: number) => {
           setType(type);
-          data.makeMoveVector = type;
-          data.getIoLength = () => paramLength;
+          setNodes((nds) =>
+            nds.map((node) => {
+              if (node.id === id) {
+                return {
+                  ...node,
+                  data: { ...node.data, splitInputs, makeMoveVector: type },
+                };
+              }
+              return node;
+            }),
+          );
         }}
       />
     </div>

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
@@ -14,19 +15,29 @@ export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
     (data.value as string[]) || ['', ''],
   );
 
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: { ...node.data, value: inputValue },
-          };
-        }
-        return node;
-      }),
-    );
-  }, [inputValue, setNodes, id]);
+  const { debouncedFunction: updateNodes } = useDebounce(
+    (updatedValue: string[]) => {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === id) {
+            return {
+              ...node,
+              data: { ...node.data, value: updatedValue },
+            };
+          }
+          return node;
+        }),
+      );
+    },
+    DEBOUNCE,
+  );
+
+  const handleInputChange = (index: number, value: string) => {
+    const updatedValue = [...inputValue];
+    updatedValue[index] = value;
+    setInputValue(updatedValue);
+    updateNodes(updatedValue);
+  };
 
   return (
     <div className={NodeStyles.object}>
@@ -39,9 +50,9 @@ export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
           className={InputStyle}
           readOnly={!canEdit}
           value={inputValue[0]}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-            setInputValue((old) => [event.target.value, old[1]]);
-          }}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+            handleInputChange(0, event.target.value)
+          }
         />
         <input
           type="text"
@@ -50,9 +61,9 @@ export const SuiObjectOption = ({ id, data }: PTBNodeProp) => {
           className={InputStyle}
           readOnly={!canEdit}
           value={inputValue[1]}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-            setInputValue((old) => [old[0], event.target.value]);
-          }}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+            handleInputChange(1, event.target.value)
+          }
         />
       </div>
       <PtbHandle typeHandle="source" typeParams="object" name="inputs" />

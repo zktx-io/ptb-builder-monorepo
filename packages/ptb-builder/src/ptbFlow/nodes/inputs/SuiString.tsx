@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
@@ -14,19 +15,25 @@ export const SuiString = ({ id, data }: PTBNodeProp) => {
     (data.value as string) || '',
   );
 
-  useEffect(() => {
+  const { debouncedFunction: updateNode } = useDebounce((value: string) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
           return {
             ...node,
-            data: { ...node.data, value: inputValue },
+            data: { ...node.data, value },
           };
         }
         return node;
       }),
     );
-  }, [inputValue, setNodes, id]);
+  }, DEBOUNCE);
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setInputValue(value);
+    updateNode(value);
+  };
 
   return (
     <div className={NodeStyles.string}>
@@ -39,9 +46,7 @@ export const SuiString = ({ id, data }: PTBNodeProp) => {
           className={InputStyle}
           readOnly={!canEdit}
           value={inputValue}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-            setInputValue(event.target.value);
-          }}
+          onChange={handleChange}
         />
       </div>
       <PtbHandle typeHandle="source" typeParams="string" name="inputs" />

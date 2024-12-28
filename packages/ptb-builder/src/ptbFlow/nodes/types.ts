@@ -1,7 +1,4 @@
-import {
-  SuiMoveNormalizedModules,
-  SuiMoveNormalizedType,
-} from '@mysten/sui/client';
+import { SuiMoveNormalizedModule } from '@mysten/sui/client';
 import { Connection, Edge, Node } from '@xyflow/react';
 
 export const NumericTypes = new Set([
@@ -91,12 +88,19 @@ export enum PTBNodeType {
   End = 'End',
 }
 
+interface SuiMoveNormalizedModuleWithNames extends SuiMoveNormalizedModule {
+  _nameFunctions_: string[];
+}
+
+export type PTBModuleData = {
+  _nameModules_: string[]; // module names
+  modules: Record<string, SuiMoveNormalizedModuleWithNames>;
+};
+
 export interface PTBNodeData {
   [key: string]: unknown;
   label: string;
   value?: string | string[] | number | number[];
-  getIoLength?: () => (number | undefined)[];
-  getMoveCallInputs?: () => SuiMoveNormalizedType[];
   splitInputs?: number;
   splitOutputs?: number;
   makeMoveVector?: TYPE_PARAMS;
@@ -104,7 +108,7 @@ export interface PTBNodeData {
     package?: string;
     module?: string;
     function?: string;
-    data?: SuiMoveNormalizedModules;
+    getModuleData?: () => PTBModuleData | undefined;
   };
 }
 

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
+import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
 
@@ -14,19 +15,25 @@ export const SuiBool = ({ id, data }: PTBNodeProp) => {
     data.value === 'true' ? 'true' : 'false',
   );
 
-  useEffect(() => {
+  const { debouncedFunction: updateNodes } = useDebounce((value: string) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
           return {
             ...node,
-            data: { ...node.data, value: inputValue },
+            data: { ...node.data, value },
           };
         }
         return node;
       }),
     );
-  }, [inputValue, setNodes, id]);
+  }, DEBOUNCE);
+
+  const handleChange = (evt: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = evt.target.value;
+    setInputValue(value);
+    updateNodes(value);
+  };
 
   return (
     <div className={NodeStyles.bool}>
@@ -36,9 +43,7 @@ export const SuiBool = ({ id, data }: PTBNodeProp) => {
           className={InputStyle}
           disabled={!canEdit}
           value={inputValue}
-          onChange={(evt) => {
-            setInputValue(evt.target.value);
-          }}
+          onChange={handleChange}
         >
           <option value="false">false</option>
           <option value="true">true</option>

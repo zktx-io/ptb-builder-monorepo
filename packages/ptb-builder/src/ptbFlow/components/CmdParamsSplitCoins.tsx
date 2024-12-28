@@ -28,7 +28,10 @@ interface CmdParamsSplitProps {
   };
   data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
-  updateState: (paramLength: (number | undefined)[]) => void;
+  updateState: (
+    splitInputs: number | undefined,
+    splitOutputs: number | undefined,
+  ) => void;
 }
 
 export const CmdParamsSplitCoins = ({
@@ -49,41 +52,65 @@ export const CmdParamsSplitCoins = ({
   const [inputs, setInputs] = useState<string[]>(
     data.splitInputs ? new Array(data.splitInputs).fill('') : [],
   );
-  const [isNestedOutputs, setIsNestedOutputs] = useState<boolean>(
+  const [isSplitOutputs, setIsSplitOutputs] = useState<boolean>(
     !!data.splitOutputs || false,
   );
   const [outputs, setOutputs] = useState<string[]>(
     data.splitOutputs ? new Array(data.splitInputs).fill('') : [],
   );
 
-  const addInputItem = () => {
-    setInputs((oldData) => [...oldData, '']);
+  const handleResetEdge = (handle: 'source' | 'target') => {
+    resetEdge(handle);
+    updateNodeInternals(id);
+  };
+
+  const addInputItem = (check: boolean) => {
+    if (check) {
+      setInputs((oldData) => [...oldData, '']);
+      updateState(
+        inputs.length + 1,
+        isSplitOutputs ? outputs.length : undefined,
+      );
+    } else {
+      setInputs([]);
+      updateState(undefined, isSplitOutputs ? outputs.length : undefined);
+    }
   };
 
   const removeInputItem = (index: number) => {
     if (inputs.length > 1) {
-      resetEdge('target');
       setInputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
+      updateState(
+        inputs.length - 1,
+        isSplitOutputs ? outputs.length : undefined,
+      );
+      handleResetEdge('target');
     }
   };
 
-  const addOutputItem = () => {
-    setOutputs((oldData) => [...oldData, '']);
+  const addOutputItem = (check: boolean) => {
+    if (check) {
+      setOutputs((oldData) => [...oldData, '']);
+      updateState(
+        isSplitInputs ? inputs.length : undefined,
+        outputs.length + 1,
+      );
+    } else {
+      setOutputs([]);
+      updateState(isSplitInputs ? inputs.length : undefined, undefined);
+    }
   };
 
   const removeOutputItem = (index: number) => {
     if (inputs.length > 1) {
-      resetEdge('target');
       setOutputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
+      updateState(
+        isSplitInputs ? inputs.length : undefined,
+        outputs.length - 1,
+      );
+      handleResetEdge('target');
     }
   };
-
-  useEffect(() => {
-    updateState([
-      isSplitInputs ? inputs.length : undefined,
-      isNestedOutputs ? inputs.length : undefined,
-    ]);
-  }, [inputs.length, isSplitInputs, isNestedOutputs, updateState]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -106,13 +133,9 @@ export const CmdParamsSplitCoins = ({
               id="checkbox"
               checked={isSplitInputs}
               onChange={(e) => {
-                resetEdge('target');
                 setIsSplitInputs(e.target.checked);
-                if (e.target.checked) {
-                  addInputItem();
-                } else {
-                  setInputs([]);
-                }
+                addInputItem(e.target.checked);
+                handleResetEdge('target');
               }}
             />
           </div>
@@ -218,7 +241,7 @@ export const CmdParamsSplitCoins = ({
                   >
                     <button
                       className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                      onClick={addInputItem}
+                      onClick={() => addInputItem(isSplitInputs)}
                     >
                       Add
                     </button>
@@ -244,15 +267,11 @@ export const CmdParamsSplitCoins = ({
               <input
                 type="checkbox"
                 id="checkbox"
-                checked={isNestedOutputs}
+                checked={isSplitOutputs}
                 onChange={(e) => {
-                  resetEdge('source');
-                  setIsNestedOutputs(e.target.checked);
-                  if (e.target.checked) {
-                    addOutputItem();
-                  } else {
-                    setOutputs([]);
-                  }
+                  setIsSplitOutputs(e.target.checked);
+                  addOutputItem(e.target.checked);
+                  handleResetEdge('source');
                 }}
               />
             </div>
@@ -266,7 +285,7 @@ export const CmdParamsSplitCoins = ({
           }}
         >
           <tbody>
-            {!isNestedOutputs ? (
+            {!isSplitOutputs ? (
               <tr>
                 <td
                   style={{
@@ -340,7 +359,7 @@ export const CmdParamsSplitCoins = ({
                     >
                       <button
                         className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                        onClick={addOutputItem}
+                        onClick={() => addOutputItem(isSplitOutputs)}
                       >
                         Add
                       </button>

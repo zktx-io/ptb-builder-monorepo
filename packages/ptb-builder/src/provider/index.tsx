@@ -1,15 +1,18 @@
 import React, {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useState,
 } from 'react';
 
-import { SuiClient } from '@mysten/sui/client';
+import { SuiClient, SuiMoveNormalizedModules } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
+import { getPackageData, toPTBModuleData } from './getPackageData';
 import { EnqueueToast, setToast } from './toastManager';
+import { PTBModuleData } from '../ptbFlow/nodes/types';
 export { EnqueueToast, setToast, enqueueToast } from './toastManager';
 
 export enum NETWORK {
@@ -31,7 +34,12 @@ export interface IState {
   network: NETWORK;
   client?: SuiClient;
   wallet?: string;
+  fetchPackageData?: (packageId: string) => Promise<PTBModuleData | undefined>;
+  exportPackageData?: () => Record<string, SuiMoveNormalizedModules>;
+  importPackageData?: (data: Record<string, SuiMoveNormalizedModules>) => void;
 }
+
+let packageDataCache: Record<string, SuiMoveNormalizedModules> = {};
 
 const StateContext = createContext<IState | undefined>(undefined);
 const StateUpdateContext = createContext<
@@ -59,6 +67,44 @@ export const StateProvider = ({
     wallet,
   });
 
+  const fetchPackageData = useCallback(
+    async (packageId: string): Promise<PTBModuleData | undefined> => {
+      try {
+        if (!packageId) {
+          return undefined;
+        }
+        if (!packageDataCache) {
+          packageDataCache = {};
+        }
+        if (packageDataCache[packageId]) {
+          return toPTBModuleData(packageDataCache[packageId]);
+        }
+        const data = await getPackageData(state.client, packageId);
+        if (data) {
+          packageDataCache[packageId] = data;
+        }
+        return toPTBModuleData(packageDataCache[packageId]);
+      } catch (error) {
+        throw error;
+      }
+    },
+    [state.client],
+  );
+
+  const exportPackageData = useCallback((): Record<
+    string,
+    SuiMoveNormalizedModules
+  > => {
+    return packageDataCache;
+  }, []);
+
+  const importPackageData = useCallback(
+    (data: Record<string, SuiMoveNormalizedModules>) => {
+      packageDataCache = data;
+    },
+    [],
+  );
+
   useEffect(() => {
     setState((oldState) => ({ ...oldState, canEdit }));
   }, [canEdit]);
@@ -70,7 +116,14 @@ export const StateProvider = ({
   }, [enqueueToast]);
 
   return (
-    <StateContext.Provider value={state}>
+    <StateContext.Provider
+      value={{
+        ...state,
+        fetchPackageData,
+        exportPackageData,
+        importPackageData,
+      }}
+    >
       <StateUpdateContext.Provider value={setState}>
         {children}
       </StateUpdateContext.Provider>
