@@ -202,11 +202,15 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 resetEdge();
               }}
             >
-              {packageData!._nameModules_.map((item, key) => (
-                <option value={item} key={key}>
-                  {item}
-                </option>
-              ))}
+              {packageData ? (
+                packageData._nameModules_.map((item, key) => (
+                  <option value={item} key={key}>
+                    {item}
+                  </option>
+                ))
+              ) : (
+                <option></option>
+              )}
             </select>
             <label className={LabelStyle} style={{ fontSize: '0.6rem' }}>
               Function
@@ -224,12 +228,16 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 resetEdge();
               }}
             >
-              {packageData!.modules[selectedModule]._nameFunctions_.map(
-                (item, key) => (
-                  <option value={item} key={key}>
-                    {item}
-                  </option>
-                ),
+              {packageData ? (
+                packageData!.modules[selectedModule]._nameFunctions_.map(
+                  (item, key) => (
+                    <option value={item} key={key}>
+                      {item}
+                    </option>
+                  ),
+                )
+              ) : (
+                <option></option>
               )}
             </select>
           </>
