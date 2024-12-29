@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/zktx.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#011829" />
+
+    <title>PTB Builder</title>
+    <meta name="description" content="PTB Builder" />
+
+    <meta property="og:title" content="PTB Builder" /> 
+    <meta property="og:description" content="PTB Builder is a visual development tool for managing Programmable Transaction Blocks on the Sui blockchain." /> 
+    <meta property="og:url" content="https://ptb-builder.walrus.site" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://ptb-builder.walrus.site/ptb-builder.png" /> 
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="PTB Builder" />
+    <meta name="twitter:description" content="PTB Builder is a visual development tool for managing Programmable Transaction Blocks on the Sui blockchain." />
+    <meta name="twitter:image" content="https://ptb-builder.walrus.site/ptb-builder.png" /> 
+
+    <!-- Start Single Page Apps for GitHub Pages -->
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages
+      // MIT License
+      // https://github.com/rafgraph/spa-github-pages
+      // This script checks to see if a redirect is present in the query string,
+      // converts it back into the correct url and adds it to the
+      // browser's history using window.history.replaceState(...),
+      // which won't cause the browser to attempt to load the new url.
+      // When the single page app is loaded further down in this file,
+      // the correct url will be waiting in the browser's history for
+      // the single page app to route accordingly.
+      (function (l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search
+            .slice(1)
+            .split('&')
+            .map(function (s) {
+              return s.replace(/~and~/g, '&');
+            })
+            .join('?');
+          window.history.replaceState(
+            null,
+            null,
+            l.pathname.slice(0, -1) + decoded + l.hash,
+          );
+        }
+      })(window.location);
+    </script>
+    <!-- End Single Page Apps for GitHub Pages -->
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
