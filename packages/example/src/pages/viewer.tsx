@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { PTBBuilder } from '@zktx.io/ptb-builder';
+import { PTB_SCHEME, PTBBuilder } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 import queryString from 'query-string';
 import { useLocation } from 'react-router-dom';
@@ -31,8 +31,9 @@ export const Viewer = () => {
           canEdit: false,
           themeSwitch: true,
         }}
-        update={(value: any) => {
-          // console.log(value);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        update={(_value: PTB_SCHEME) => {
+          // console.log(_value);
         }}
         enqueueToast={(message, options) => enqueueSnackbar(message, options)}
       />

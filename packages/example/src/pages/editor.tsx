@@ -53,9 +53,9 @@ export const Editor = () => {
     }
   };
 
-  const handleDrop = (ptb: any) => {
-    setNetwork((ptb as any).network);
-    ctx.selectNetwork((ptb as any).network);
+  const handleDrop = (ptb: PTB_SCHEME) => {
+    setNetwork(ptb.network || NETWORK);
+    ctx.selectNetwork(ptb.network || NETWORK);
     setPtb(JSON.stringify(ptb));
   };
 
@@ -69,8 +69,9 @@ export const Editor = () => {
             network={network}
             excuteTx={excuteTx}
             restore={ptb && JSON.parse(ptb)}
-            update={(value: PTB_SCHEME) => {
-              // console.log(value);
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            update={(_value: PTB_SCHEME) => {
+              // console.log(_value);
             }}
             options={{
               canEdit: true,

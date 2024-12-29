@@ -1,10 +1,11 @@
+import { PTB_SCHEME } from '@zktx.io/ptb-builder';
 import React, { useState } from 'react';
 
 export const DragAndDrop = ({
   onDrop,
   onChancel,
 }: {
-  onDrop: (data: object) => void;
+  onDrop: (data: PTB_SCHEME) => void;
   onChancel: () => void;
 }) => {
   const [isVisible, setIsVisible] = useState(true);
@@ -26,7 +27,7 @@ export const DragAndDrop = ({
             const json = JSON.parse(e.target?.result as string);
             onDrop(json);
             setIsVisible(false);
-          } catch (error) {
+          } catch {
             setMessage('Invalid JSON file.');
           }
         };
