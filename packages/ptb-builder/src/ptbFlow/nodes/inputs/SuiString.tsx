@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -7,6 +7,7 @@ import { useStateContext } from '../../../provider';
 import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
+import { updateNodeData } from './updateNodeData';
 
 export const SuiString = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
@@ -17,14 +18,10 @@ export const SuiString = ({ id, data }: PTBNodeProp) => {
 
   const { debouncedFunction: updateNode } = useDebounce((value: string) => {
     setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: { ...node.data, value },
-          };
-        }
-        return node;
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({ ...data, value }),
       }),
     );
   }, DEBOUNCE);
@@ -34,6 +31,18 @@ export const SuiString = ({ id, data }: PTBNodeProp) => {
     setInputValue(value);
     updateNode(value);
   };
+
+  useEffect(() => {
+    setInputValue((data.value as string) || '');
+    setNodes((nds) =>
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({ ...data, value: (data.value as string) || '' }),
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={NodeStyles.string}>

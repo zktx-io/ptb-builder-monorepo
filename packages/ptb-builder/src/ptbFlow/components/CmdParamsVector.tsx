@@ -272,7 +272,7 @@ export const CmdParamsVector = ({
                 <PtbHandleVector
                   typeHandle="source"
                   typeParams={`vector<${type}>` as TYPE_VECTOR}
-                  name={`result`}
+                  name="result"
                   style={{
                     top: `${inputs.length > 0 ? 106 + (canEdit ? 28 : 0) + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
                   }}

@@ -8,6 +8,7 @@ import { SuiNumberArray } from './SuiNumberArray';
 import { SuiObject } from './SuiObject';
 import { SuiObjectArray } from './SuiObjectArray';
 import { SuiObjectClock } from './SuiObjectClock';
+import { SuiObjectCoinWithBalance } from './SuiObjectCoinWithBalance';
 import { SuiObjectDenyList } from './SuiObjectDenyList';
 import { SuiObjectGas } from './SuiObjectGas';
 import { SuiObjectOption } from './SuiObjectOption';
@@ -34,4 +35,5 @@ export default {
   SuiObjectRandom,
   SuiObjectSystem,
   SuiObjectArray,
+  SuiObjectCoinWithBalance,
 };

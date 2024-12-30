@@ -65,14 +65,15 @@ export enum PTBNodeType {
   Number = 'SuiNumber',
   NumberArray = 'SuiNumberArray',
 
+  Object = 'SuiObject',
+  ObjectArray = 'SuiObjectArray',
   ObjectGas = 'SuiObjectGas',
   ObjectClock = 'SuiObjectClock',
   ObjectDenyList = 'SuiObjectDenyList',
   ObjectOption = 'SuiObjectOption',
   ObjectRandom = 'SuiObjectRandom',
   ObjectSystem = 'SuiObjectSystem',
-  Object = 'SuiObject',
-  ObjectArray = 'SuiObjectArray',
+  CoinWithBalance = 'SuiObjectCoinWithBalance',
   String = 'SuiString',
   StringArray = 'SuiStringArray',
 

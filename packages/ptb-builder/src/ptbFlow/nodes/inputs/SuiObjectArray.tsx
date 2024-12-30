@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -13,6 +13,7 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
+import { updateNodeData } from './updateNodeData';
 
 export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
@@ -27,14 +28,10 @@ export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
   const { debouncedFunction: updateNodes } = useDebounce(
     (updatedItems: string[]) => {
       setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === id) {
-            return {
-              ...node,
-              data: { ...node.data, value: updatedItems },
-            };
-          }
-          return node;
+        updateNodeData({
+          nodes: nds,
+          nodeId: id,
+          updater: (data) => ({ ...data, value: updatedItems }),
         }),
       );
     },
@@ -63,6 +60,22 @@ export const SuiObjectArray = ({ id, data }: PTBNodeProp) => {
     data.value = updatedItems;
     updateNodes(updatedItems);
   };
+
+  useEffect(() => {
+    setItems((data.value as string[]) || ['']);
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return {
+            ...node,
+            data: { ...node.data, value: (data.value as string[]) || [''] },
+          };
+        }
+        return node;
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={NodeStyles.object}>

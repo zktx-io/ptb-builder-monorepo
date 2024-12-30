@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -13,6 +13,7 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
+import { updateNodeData } from './updateNodeData';
 
 export const SuiAddressArray = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
@@ -25,14 +26,10 @@ export const SuiAddressArray = ({ id, data }: PTBNodeProp) => {
 
   const { debouncedFunction: updateNodes } = useDebounce((updatedItems) => {
     setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: { ...node.data, value: updatedItems },
-          };
-        }
-        return node;
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({ ...data, value: updatedItems }),
       }),
     );
   }, DEBOUNCE);
@@ -56,6 +53,21 @@ export const SuiAddressArray = ({ id, data }: PTBNodeProp) => {
     setItems(updatedItems);
     updateNodes(updatedItems);
   };
+
+  useEffect(() => {
+    setItems((data.value as string[]) || ['']);
+    setNodes((nds) =>
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({
+          ...data,
+          value: (data.value as string[]) || [''],
+        }),
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={NodeStyles.address}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -7,24 +7,19 @@ import { useStateContext } from '../../../provider';
 import { DEBOUNCE, useDebounce } from '../../../utilities';
 import { PtbHandle } from '../handles';
 import { FormStyle, InputStyle, LabelStyle, NodeStyles } from '../styles';
+import { updateNodeData } from './updateNodeData';
 
 export const SuiNumber = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
   const { canEdit } = useStateContext();
-  const [inputValue, setInputValue] = useState<number>(
-    (data.value as number) || 0,
-  );
+  const [inputValue, setInputValue] = useState<number>(0);
 
   const { debouncedFunction: updateNodes } = useDebounce((value) => {
     setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: { ...node.data, value },
-          };
-        }
-        return node;
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({ ...data, value }),
       }),
     );
   }, DEBOUNCE);
@@ -37,6 +32,18 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
       updateNodes(numericValue);
     }
   };
+
+  useEffect(() => {
+    setInputValue((data.value as number) || 0);
+    setNodes((nds) =>
+      updateNodeData({
+        nodes: nds,
+        nodeId: id,
+        updater: (data) => ({ ...data, value: (data.value as number) || 0 }),
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={NodeStyles.number}>

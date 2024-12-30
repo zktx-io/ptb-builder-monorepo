@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -19,7 +19,7 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
   const [isShow, setIsShow] = useState<boolean>(
     data && data.value ? (data.value as string[]).length < 4 : true,
   );
-  const [items, setItems] = useState<number[]>((data.value as number[]) || [0]);
+  const [items, setItems] = useState<number[]>([0]);
 
   const { debouncedFunction: updateNodes } = useDebounce((updatedItems) => {
     setNodes((nds) =>
@@ -54,6 +54,22 @@ export const SuiNumberArray = ({ id, data }: PTBNodeProp) => {
     setItems(updatedItems);
     updateNodes(updatedItems);
   };
+
+  useEffect(() => {
+    setItems((data.value as number[]) || [0]);
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return {
+            ...node,
+            data: { ...node.data, value: (data.value as number[]) || [0] },
+          };
+        }
+        return node;
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={NodeStyles.number}>

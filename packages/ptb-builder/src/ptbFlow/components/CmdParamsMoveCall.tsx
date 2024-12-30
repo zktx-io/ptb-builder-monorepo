@@ -41,7 +41,7 @@ export const getTypeName = (
   }
 
   if (typeof paramType === 'object' && 'TypeParameter' in paramType) {
-    return { placeholder: `T${paramType.TypeParameter}`, type: 'string' };
+    return { placeholder: `T${paramType.TypeParameter}`, type: 'object' }; // this is correct for input params
   }
 
   if (typeof paramType === 'object' && 'Reference' in paramType) {

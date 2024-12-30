@@ -1,12 +1,16 @@
 import {
+  coinWithBalance,
   Transaction,
   TransactionArgument,
   TransactionObjectArgument,
+  TransactionResult,
 } from '@mysten/sui/transactions';
 
 import { generateFlow } from './generateFlow';
 import { readPackageData } from '../../provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
+
+const GAS_BUDGET = 0.5 * 500000000;
 
 interface Result {
   $kind: 'Result';
@@ -23,7 +27,8 @@ type DictionaryItem =
   | string
   | TransactionObjectArgument
   | Result
-  | NestedResult;
+  | NestedResult
+  | ((tx: Transaction) => TransactionResult);
 
 const connvert = (
   id: string | undefined,
@@ -57,11 +62,11 @@ const genereateCommand = (
   try {
     switch (node.type) {
       case PTBNodeType.SplitCoins: {
-        const coin = inputs[0];
+        const coin = connvert(inputs[0], dictionary);
         const amounts = inputs[1].map((v) => connvert(v, dictionary));
-        if (coin && dictionary[coin]) {
+        if (coin) {
           const result = tx.splitCoins(
-            dictionary[coin] as TransactionObjectArgument,
+            coin as TransactionObjectArgument,
             amounts as number[],
           );
           return {
@@ -153,7 +158,7 @@ const genereateCommand = (
           inputs[2] && inputs[2].length > 0
             ? inputs[2].map((v, i) => {
                 const temp = connvert(v, dictionary);
-                if (temp && typeof temp === 'number' && types && types[i]) {
+                if (typeof temp === 'number' && types && types[i]) {
                   switch (types[i]) {
                     case 'U8':
                       return tx.pure.u8(temp);
@@ -269,12 +274,26 @@ export const generateTxb = async (
           dictionary[key] = tx.object.system();
           break;
         case PTBNodeType.ObjectOption:
-          const temp = inputs[key].data.value;
-          if (temp && Array.isArray(temp)) {
-            dictionary[key] = tx.object.option({
-              type: temp[0] as string,
-              value: temp[1] as string,
-            })(tx);
+          {
+            const temp = inputs[key].data.value;
+            if (temp && Array.isArray(temp)) {
+              dictionary[key] = tx.object.option({
+                type: temp[0] as string,
+                value: temp[1] as string,
+              });
+            }
+          }
+          break;
+        case PTBNodeType.CoinWithBalance:
+          {
+            const temp = inputs[key].data.value;
+            if (temp && Array.isArray(temp)) {
+              dictionary[key] = coinWithBalance({
+                ...(temp[0] !== 'true' && { useGasCoin: false }),
+                ...(temp[1] && { type: temp[1] as string }),
+                balance: parseInt(temp[2] as string),
+              });
+            }
           }
           break;
         default:
@@ -293,6 +312,9 @@ export const generateTxb = async (
       tx = tx2;
       dictionary[node.id] = nestedResults;
     });
+
+    tx.setGasBudgetIfNotSet(GAS_BUDGET);
+    wallet && tx.setSenderIfNotSet(wallet);
 
     return tx;
   } catch (error) {

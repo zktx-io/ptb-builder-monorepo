@@ -26,6 +26,8 @@ const convert2 = (type: PTBNodeType, value: string | string[]): string => {
       return value as string;
     case PTBNodeType.ObjectOption:
       return `tx.object.option({ type: '${value[0]}', value: '${value[1]}' })`;
+    case PTBNodeType.CoinWithBalance:
+      return `coinWithBalance({\n\tbalance: ${value[2]}${value[1] ? `,\n\ttype: '${value[1]}'` : ''}${value[0] === 'false' ? `,\nuseGasCoin: ${value[0]}` : ''}\n})`;
     default:
       break;
   }
@@ -82,7 +84,7 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
 
     const lines: { line: string; comment: string }[] = [
       {
-        line: "// import { Transaction } from '@mysten/sui/transactions';",
+        line: "// import { coinWithBalance, Transaction } from '@mysten/sui/transactions';",
         comment: '',
       },
       {
@@ -98,6 +100,7 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
         line: 'const myAddress = wallet.getPublicKey().toSuiAddress();',
         comment: '',
       },
+      { line: 'const GAS_BUDGET = 0.5 * 500000000;', comment: '' },
       { line: 'const tx = new Transaction();', comment: '' },
       { line: '', comment: '' },
     ];
@@ -117,10 +120,12 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
         `const ${name} = ${
           value !== undefined
             ? Array.isArray(value) &&
-              inputs[key].type !== PTBNodeType.ObjectOption
+              inputs[key].type !== PTBNodeType.ObjectOption &&
+              inputs[key].type !== PTBNodeType.CoinWithBalance
               ? `[${value.map((v) => (typeof v === 'string' ? convert2(inputs[key].type as PTBNodeType, v) : v)).join(', ')}]`
               : typeof value === 'string' ||
-                  inputs[key].type === PTBNodeType.ObjectOption
+                  inputs[key].type === PTBNodeType.ObjectOption ||
+                  inputs[key].type === PTBNodeType.CoinWithBalance
                 ? convert2(
                     inputs[key].type as PTBNodeType,
                     value as string | string[],
@@ -145,6 +150,8 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
     });
 
     addCodeLine('', '');
+    addCodeLine('tx.setGasBudgetIfNotSet(GAS_BUDGET)', '');
+    addCodeLine('tx.setSenderIfNotSet(myAddress)', '');
     addCodeLine('wallet.signTransaction({ transaction: tx });', '');
 
     const paddingSize = 40;

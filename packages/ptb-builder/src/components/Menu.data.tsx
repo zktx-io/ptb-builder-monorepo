@@ -90,6 +90,10 @@ export const PTB = {
     Type: PTBNodeType.TransferObjects,
     Name: 'transferObjects',
   },
+  CoinWithBalance: {
+    Type: PTBNodeType.CoinWithBalance,
+    Name: 'coinWithBalance',
+  },
   MoveCall: {
     Type: PTBNodeType.MoveCall,
     Name: 'moveCall',
@@ -167,31 +171,6 @@ export const Menu: {
           type: PTB.ObjectGas.Type,
           icon: <IconCircle color="bg-blue-500" />,
         },
-        {
-          name: PTB.ObjectClock.Name,
-          type: PTB.ObjectClock.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectDenyList.Name,
-          type: PTB.ObjectDenyList.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectRandom.Name,
-          type: PTB.ObjectRandom.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectSystem.Name,
-          type: PTB.ObjectSystem.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
-        {
-          name: PTB.ObjectOption.Name,
-          type: PTB.ObjectOption.Type,
-          icon: <IconCircle color="bg-blue-500" />,
-        },
       ],
     },
     {
@@ -236,6 +215,41 @@ export const Menu: {
           name: PTB.NumberArray.Name,
           type: PTB.NumberArray.Type,
           icon: <IconSquare color="bg-red-500" />,
+        },
+      ],
+    },
+    {
+      name: 'Helper',
+      submenu: [
+        {
+          name: PTB.ObjectClock.Name,
+          type: PTB.ObjectClock.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectDenyList.Name,
+          type: PTB.ObjectDenyList.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectRandom.Name,
+          type: PTB.ObjectRandom.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectSystem.Name,
+          type: PTB.ObjectSystem.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.ObjectOption.Name,
+          type: PTB.ObjectOption.Type,
+          icon: <IconCircle color="bg-blue-500" />,
+        },
+        {
+          name: PTB.CoinWithBalance.Name,
+          type: PTB.CoinWithBalance.Type,
+          icon: <IconCircle color="bg-blue-500" />,
         },
       ],
     },

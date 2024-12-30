@@ -77,11 +77,15 @@ export const Code = ({
             width: '320px',
           }}
           minWidth="240px"
+          maxHeight="500px"
           enable={{
             left: true,
           }}
         >
-          <pre className="line-numbers">
+          <pre
+            className="line-numbers"
+            style={{ maxHeight: '500px', overflow: 'auto' }}
+          >
             <code className={`language-${language}`}>{code}</code>
           </pre>
         </Resizable>
