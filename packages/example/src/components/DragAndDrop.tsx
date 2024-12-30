@@ -1,5 +1,6 @@
-import { PTB_SCHEME } from '@zktx.io/ptb-builder';
 import React, { useState } from 'react';
+
+import { PTB_SCHEME } from '@zktx.io/ptb-builder';
 
 export const DragAndDrop = ({
   onDrop,
