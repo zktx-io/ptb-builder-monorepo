@@ -37,7 +37,7 @@ export const PTBBuilder = ({
     <ReactFlowProvider>
       <StateProvider
         wallet={wallet}
-        canEdit={!!options?.canEdit || typeof restore !== 'string'}
+        canEdit={!!options?.canEdit}
         network={(network as NETWORK | undefined) || NETWORK.DevNet}
         enqueueToast={enqueueToast}
       >

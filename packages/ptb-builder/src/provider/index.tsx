@@ -110,6 +110,14 @@ export const StateProvider = ({
   }, [canEdit]);
 
   useEffect(() => {
+    setState((oldState) => ({ ...oldState, wallet }));
+  }, [wallet]);
+
+  useEffect(() => {
+    setState((oldState) => ({ ...oldState, network }));
+  }, [network]);
+
+  useEffect(() => {
     setToast((message, options) => {
       enqueueToast && enqueueToast(message, { variant: options.variant });
     });
