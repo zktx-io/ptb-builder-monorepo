@@ -24,10 +24,6 @@ export const Editor = () => {
 
   const excuteTx = async (transaction: Transaction | undefined) => {
     if (account && transaction) {
-      transaction.setSender(account.address);
-      transaction.setGasOwner(account.address);
-      // transaction.setGasPrice(10000);
-      transaction.setGasBudget(10000000);
 
       // console.log(account.address);
       // console.log(await transaction.toJSON());
