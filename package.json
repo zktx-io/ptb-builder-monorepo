@@ -6,6 +6,7 @@
     "dev": "npm run build && cd packages/example && npm run dev",
     "build": "cd packages/ptb-builder && npm run build",
     "version:patch": "lerna version patch",
+    "version:minor": "lerna version minor",
     "prepare": "husky install"
   },
   "author": "daoauth",
