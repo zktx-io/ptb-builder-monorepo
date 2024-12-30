@@ -94,7 +94,6 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 ...node.data,
                 moveCall: {
                   ...moveCallData,
-                  getModuleData: () => ptbModuleData,
                 },
               },
             };

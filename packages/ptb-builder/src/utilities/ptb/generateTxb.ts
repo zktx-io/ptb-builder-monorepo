@@ -5,6 +5,7 @@ import {
 } from '@mysten/sui/transactions';
 
 import { generateFlow } from './generateFlow';
+import { readPackageData } from '../../provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 
 interface Result {
@@ -134,7 +135,11 @@ const genereateCommand = (
         throw new Error(`Invalid parameters for ${node.type}`);
       }
       case PTBNodeType.MoveCall: {
-        const moduleData = node.data.moveCall!.getModuleData!();
+        const moduleData = node.data.moveCall
+          ? node.data.moveCall.package
+            ? readPackageData(node.data.moveCall.package)
+            : undefined
+          : undefined;
         const types =
           moduleData?.modules[node.data.moveCall?.module!].exposedFunctions[
             node.data.moveCall?.function!

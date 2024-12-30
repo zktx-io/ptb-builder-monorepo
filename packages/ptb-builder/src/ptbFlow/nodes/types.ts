@@ -108,7 +108,6 @@ export interface PTBNodeData {
     package?: string;
     module?: string;
     function?: string;
-    getModuleData?: () => PTBModuleData | undefined;
   };
 }
 

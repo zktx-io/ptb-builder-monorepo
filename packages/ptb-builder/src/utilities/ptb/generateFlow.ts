@@ -1,4 +1,5 @@
 import { getPath } from '../';
+import { readPackageData } from '../../provider';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 import { NumericTypes, TYPE_PARAMS } from '../../ptbFlow/nodes/types';
 
@@ -171,8 +172,8 @@ const preprocess = (
         : undefined;
       const moduleData =
         node.data.moveCall &&
-        node.data.moveCall.getModuleData &&
-        node.data.moveCall.getModuleData();
+        node.data.moveCall.package &&
+        readPackageData(node.data.moveCall.package);
       let splitTypes = 0;
       let splitInputs = 0;
       let splitOutputs = 0;

@@ -156,3 +156,15 @@ export const useStateUpdateContext = () => {
   }
   return context;
 };
+
+export const readPackageData = (
+  packageId: string,
+): PTBModuleData | undefined => {
+  if (!packageId || !packageDataCache) {
+    return undefined;
+  }
+  if (packageDataCache[packageId]) {
+    return toPTBModuleData(packageDataCache[packageId]);
+  }
+  return undefined;
+};
