@@ -355,40 +355,16 @@ export const PTBFlow = ({
           gap={25}
           size={1}
         />
-        <Panel
-          position="top-right"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            gap: '10px',
-          }}
-        >
-          <div
+        {restore !== undefined && (
+          <Panel
+            position="top-right"
             style={{
-              textAlign: 'right',
-              display: 'inline-block',
-              fontSize: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: '10px',
             }}
           >
-            <select
-              className={InputStyle}
-              style={{ pointerEvents: 'all', width: '85px' }}
-              disabled={disableNetwork}
-              value={network}
-              onChange={(e) => {
-                setState((oldData) => ({
-                  ...oldData,
-                  network: e.target.value as any,
-                }));
-              }}
-            >
-              <option value="mainnet">Mainnet</option>
-              <option value="testnet">Testnet</option>
-              <option value="devnet">Devnet</option>
-            </select>
-          </div>
-          {themeSwitch && (
             <div
               style={{
                 textAlign: 'right',
@@ -399,25 +375,51 @@ export const PTBFlow = ({
               <select
                 className={InputStyle}
                 style={{ pointerEvents: 'all', width: '85px' }}
+                disabled={disableNetwork}
+                value={network}
                 onChange={(e) => {
-                  setColorMode(() => e.target.value as any);
-                  if (e.target.value === 'dark') {
-                    document.documentElement.classList.add('dark');
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                  }
+                  setState((oldData) => ({
+                    ...oldData,
+                    network: e.target.value as any,
+                  }));
                 }}
               >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
+                <option value="mainnet">Mainnet</option>
+                <option value="testnet">Testnet</option>
+                <option value="devnet">Devnet</option>
               </select>
             </div>
-          )}
-          {canEdit && restore !== undefined && (
-            <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />
-          )}
-        </Panel>
-        {menu && (
+            {themeSwitch && (
+              <div
+                style={{
+                  textAlign: 'right',
+                  display: 'inline-block',
+                  fontSize: '12px',
+                }}
+              >
+                <select
+                  className={InputStyle}
+                  style={{ pointerEvents: 'all', width: '85px' }}
+                  onChange={(e) => {
+                    setColorMode(() => e.target.value as any);
+                    if (e.target.value === 'dark') {
+                      document.documentElement.classList.add('dark');
+                    } else {
+                      document.documentElement.classList.remove('dark');
+                    }
+                  }}
+                >
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </div>
+            )}
+            {canEdit && restore !== undefined && (
+              <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />
+            )}
+          </Panel>
+        )}
+        {restore !== undefined && menu && (
           <ContextMenu
             {...menu}
             onClick={onPaneClick}
