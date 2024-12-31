@@ -25,7 +25,6 @@ export const Editor = () => {
 
   const excuteTx = async (transaction: Transaction | undefined) => {
     if (account && transaction) {
-
       // console.log(account.address);
       // console.log(await transaction.toJSON());
 
@@ -62,7 +61,10 @@ export const Editor = () => {
     <div style={{ width: '100vw', height: '100vh' }}>
       {account ? (
         <>
-          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb({ version: '2', modules: {} })} />
+          <DragAndDrop
+            onDrop={handleDrop}
+            onChancel={() => setPtb({ version: '2', modules: {} })}
+          />
           <PTBBuilder
             wallet={account.address}
             network={network}
