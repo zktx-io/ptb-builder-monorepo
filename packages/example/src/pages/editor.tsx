@@ -19,7 +19,8 @@ export const Editor = () => {
   const [network, setNetwork] = React.useState<
     'mainnet' | 'testnet' | 'devnet'
   >(NETWORK);
-  const [ptb, setPtb] = React.useState<string | undefined>(undefined);
+  const [ptb, setPtb] = React.useState<PTB_SCHEME | undefined>(undefined);
+  const [backup, setBackup] = React.useState<PTB_SCHEME | undefined>(undefined);
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
   const excuteTx = async (transaction: Transaction | undefined) => {
@@ -38,36 +39,38 @@ export const Editor = () => {
             enqueueSnackbar(`${result.digest}`, {
               variant: 'success',
             });
+            setPtb(backup);
           },
           onError: (error) => {
             enqueueSnackbar(`${error}`, {
               variant: 'error',
             });
+            setPtb(backup);
           },
         },
       );
     }
   };
 
-  const handleDrop = (ptb: PTB_SCHEME) => {
-    setNetwork(ptb.network || NETWORK);
-    ctx.selectNetwork(ptb.network || NETWORK);
-    setPtb(JSON.stringify(ptb));
+  const handleDrop = (file: PTB_SCHEME) => {
+    setNetwork(file.network || NETWORK);
+    ctx.selectNetwork(file.network || NETWORK);
+    setPtb(file);
   };
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       {account ? (
         <>
-          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb('{}')} />
+          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb({} as PTB_SCHEME)} />
           <PTBBuilder
             wallet={account.address}
             network={network}
             excuteTx={excuteTx}
-            restore={ptb && JSON.parse(ptb)}
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            update={(_value: PTB_SCHEME) => {
-              // console.log(_value);
+            restore={ptb}
+            update={(file: PTB_SCHEME) => {
+              setBackup(file);
+              // console.log(value);
             }}
             options={{
               canEdit: true,
