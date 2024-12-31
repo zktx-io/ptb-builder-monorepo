@@ -259,7 +259,8 @@ export const PTBFlow = ({
             }, 1);
           }
         } else if (typeof restore === 'object') {
-          const { version, network, flow } = restore;
+          const { version, flow } = restore;
+          importPackageData && importPackageData(restore.modules || {});
           if (flow) {
             if (version !== '2') {
               enqueueToast('Invalid version', { variant: 'error' });
@@ -268,7 +269,7 @@ export const PTBFlow = ({
               setViewport(flow.viewport);
               setState((oldState) => ({
                 ...oldState,
-                network: network as NETWORK,
+                network: (restore.network as NETWORK) || network,
               }));
               setTimeout(() => {
                 setEdges([...(flow.edges || [])]);
@@ -299,7 +300,6 @@ export const PTBFlow = ({
               );
             }
           }
-          importPackageData && importPackageData(restore.modules || {});
         }
       } catch (error) {
         enqueueToast(`${error}`, { variant: 'error' });

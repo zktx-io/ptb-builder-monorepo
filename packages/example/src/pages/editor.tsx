@@ -62,7 +62,7 @@ export const Editor = () => {
     <div style={{ width: '100vw', height: '100vh' }}>
       {account ? (
         <>
-          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb({} as PTB_SCHEME)} />
+          <DragAndDrop onDrop={handleDrop} onChancel={() => setPtb({ version: '2', modules: {} })} />
           <PTBBuilder
             wallet={account.address}
             network={network}
