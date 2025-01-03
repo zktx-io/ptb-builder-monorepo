@@ -2,22 +2,21 @@ import { generateFlow } from './generateFlow';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 
 const connvert = (
-  id: string | undefined,
-  dictionary: Record<string, string>,
+  id: string,
+  dictionary: Record<string, { name: string; results?: string[] }>,
 ): string => {
-  if (id === undefined) {
+  if (!id) {
     return 'undefined';
   }
   const match = id.match(/\[(\d+)\]$/);
   if (match) {
-    const index = match[1];
-    return `${dictionary[id.replace(`[${index}]`, '')]}[${index}]`;
+    return `${dictionary[id.replace(match[0], '')].name}[${match[1]}]`;
   }
-  return dictionary[id];
+  return dictionary[id] ? dictionary[id].name : 'undefined';
 };
 
-const convert2 = (type: PTBNodeType, value: string | string[]): string => {
-  switch (type) {
+const convert2 = (node: PTBNode, value: string | string[]): string => {
+  switch (node.type) {
     case PTBNodeType.AddressWallet:
     case PTBNodeType.ObjectClock:
     case PTBNodeType.ObjectGas:
@@ -28,6 +27,8 @@ const convert2 = (type: PTBNodeType, value: string | string[]): string => {
       return `tx.object.option({ type: '${value[0]}', value: '${value[1]}' })`;
     case PTBNodeType.CoinWithBalance:
       return `coinWithBalance({\n\tbalance: ${value[2]}${value[1] ? `,\n\ttype: '${value[1]}'` : ''}${value[0] === 'false' ? `,\nuseGasCoin: ${value[0]}` : ''}\n})`;
+    case PTBNodeType.NumberVector:
+      return `tx.pure.vector('${node.data.label.replace('vector<', '').replace('>', '')}', [${(value as string[]).join(',')}])`;
     default:
       break;
   }
@@ -36,20 +37,32 @@ const convert2 = (type: PTBNodeType, value: string | string[]): string => {
 
 const genereateCommand = (
   node: PTBNode,
-  inputs: [string | undefined, ...Array<(string | undefined)[]>],
-  dictionary: Record<string, string>,
+  inputs: [string, ...Array<string[]>],
+  dictionary: Record<string, { name: string; results?: string[] }>,
 ): string => {
   switch (node.type) {
     case PTBNodeType.SplitCoins:
-      return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+        return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
+      } else {
+        return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      }
     case PTBNodeType.MergeCoins:
-      return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+        return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
+      } else {
+        return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
+      }
     case PTBNodeType.TransferObjects:
-      return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0], dictionary)})`;
+      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+        return `tx.transferObjects([${connvert(inputs[1][0], dictionary)}], ${connvert(inputs[0], dictionary)})`;
+      } else {
+        return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0], dictionary)})`;
+      }
     case PTBNodeType.MakeMoveVec:
       return `tx.makeMoveVec({\n\ttype: '${inputs[0]}',\n\telements: [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}],\n})`;
     case PTBNodeType.MoveCall: {
-      const target = inputs[0] !== undefined ? `'${inputs[0]}'` : 'undefined';
+      const target = !!inputs[0] ? `'${inputs[0]}'` : 'undefined';
       const typeparams = inputs[1]
         ?.map((v) => connvert(v, dictionary))
         .join(', ');
@@ -111,44 +124,42 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
 
     let varIndex = 1;
     let cmdIndex = 1;
-    const dictionary: Record<string, string> = {};
+    const dictionary: Record<string, { name: string; sources?: string[] }> = {};
     Object.keys(inputs).forEach((key) => {
       const { value } = inputs[key].data;
       const name = `val_${varIndex++}`;
-      dictionary[key] = name;
+      dictionary[key] = { name };
       addCodeLine(
         `const ${name} = ${
           value !== undefined
             ? Array.isArray(value) &&
               inputs[key].type !== PTBNodeType.ObjectOption &&
-              inputs[key].type !== PTBNodeType.CoinWithBalance
-              ? `[${value.map((v) => (typeof v === 'string' ? convert2(inputs[key].type as PTBNodeType, v) : v)).join(', ')}]`
+              inputs[key].type !== PTBNodeType.CoinWithBalance &&
+              inputs[key].type !== PTBNodeType.NumberVector
+              ? `[${value.map((v) => (typeof v === 'string' ? convert2(inputs[key], v) : v)).join(', ')}]`
               : typeof value === 'string' ||
                   inputs[key].type === PTBNodeType.ObjectOption ||
-                  inputs[key].type === PTBNodeType.CoinWithBalance
-                ? convert2(
-                    inputs[key].type as PTBNodeType,
-                    value as string | string[],
-                  )
+                  inputs[key].type === PTBNodeType.CoinWithBalance ||
+                  inputs[key].type === PTBNodeType.NumberVector
+                ? convert2(inputs[key], value as string | string[])
                 : value
             : 'undefined'
         };`,
         '',
       );
     });
-    commands.forEach(({ node, inputs, results }) => {
-      if (results) {
+    commands.forEach(({ node, targets, sources }) => {
+      if (sources) {
         const name = `cmd_${cmdIndex++}`;
-        dictionary[node.id] = name;
+        dictionary[node.id] = { name, sources };
         addCodeLine(
-          `const ${name} = ${genereateCommand(node, inputs, dictionary)}`,
+          `const ${name} = ${genereateCommand(node, targets, dictionary)}`,
           '',
         );
       } else {
-        addCodeLine(`${genereateCommand(node, inputs, dictionary)}`, '');
+        addCodeLine(`${genereateCommand(node, targets, dictionary)}`, '');
       }
     });
-
     addCodeLine('', '');
     addCodeLine('tx.setGasBudgetIfNotSet(GAS_BUDGET)', '');
     addCodeLine('tx.setSenderIfNotSet(myAddress)', '');

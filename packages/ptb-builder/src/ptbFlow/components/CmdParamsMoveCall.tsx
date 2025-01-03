@@ -87,13 +87,17 @@ export const CmdParamsMoveCall = ({
   const [handles, setHandles] = React.useState<Handle[]>([]);
 
   useEffect(() => {
-    setHandles(
-      params.map((item, i) => {
-        const id = `${prefix}[${i}]`;
-        return { id, ...getTypeName(item) };
-      }),
-    );
-  }, [params, prefix]);
+    if (params.length > 1 || typeHandle === 'target') {
+      setHandles(
+        params.map((item, i) => {
+          const id = `${prefix}[${i}]`;
+          return { id, ...getTypeName(item) };
+        }),
+      );
+    } else if (params.length === 1) {
+      setHandles([{ id: prefix, ...getTypeName(params[0]) }]);
+    }
+  }, [params, prefix, typeHandle]);
 
   return (
     <>

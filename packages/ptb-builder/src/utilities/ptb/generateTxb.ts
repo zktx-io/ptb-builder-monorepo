@@ -31,18 +31,17 @@ type DictionaryItem =
   | ((tx: Transaction) => TransactionResult);
 
 const connvert = (
-  id: string | undefined,
+  id: string,
   dictionary: Record<string, undefined | DictionaryItem | DictionaryItem[]>,
 ): undefined | DictionaryItem | DictionaryItem[] => {
-  if (id === undefined) {
+  if (!id) {
     return undefined;
   }
   const match = id.match(/\[(\d+)\]$/);
   if (match) {
-    const index = match[1];
-    const data = dictionary[id.replace(`[${index}]`, '')];
+    const data = dictionary[id.replace(`${match[0]}`, '')];
     if (data && Array.isArray(data)) {
-      return data[parseInt(index, 10)];
+      return data[parseInt(match[1], 10)];
     }
     return undefined;
   }
@@ -51,10 +50,10 @@ const connvert = (
 
 const genereateCommand = (
   node: PTBNode,
-  inputs: [string | undefined, ...Array<(string | undefined)[]>],
+  inputs: [string, ...Array<string[]>],
   dictionary: Record<string, undefined | DictionaryItem | DictionaryItem[]>,
   tx: Transaction,
-  results?: (string | undefined)[],
+  results?: string[],
 ): {
   tx: Transaction;
   nestedResults?: Result | NestedResult[];
@@ -63,81 +62,84 @@ const genereateCommand = (
     switch (node.type) {
       case PTBNodeType.SplitCoins: {
         const coin = connvert(inputs[0], dictionary);
-        const amounts = inputs[1].map((v) => connvert(v, dictionary));
-        if (coin) {
-          const result = tx.splitCoins(
-            coin as TransactionObjectArgument,
-            amounts as number[],
-          );
-          return {
-            tx,
-            nestedResults: (amounts as any[]).map(
-              (_, i) => result[i] as NestedResult,
-            ),
-          };
+        let amounts;
+        if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+          amounts = [connvert(inputs[1][0], dictionary)];
+        } else {
+          amounts = inputs[1].map((v) => connvert(v, dictionary));
         }
-        throw new Error(`Invalid parameters for ${node.type}`);
+        const result = tx.splitCoins(
+          coin as TransactionObjectArgument,
+          amounts as number[],
+        );
+        return {
+          tx,
+          nestedResults: (amounts as any[]).map(
+            (_, i) => result[i] as NestedResult,
+          ),
+        };
       }
       case PTBNodeType.MergeCoins: {
         const destination = connvert(inputs[0], dictionary);
-        const sources = inputs[1].map((v) => connvert(v, dictionary));
-        if (destination) {
-          tx.mergeCoins(
-            destination as TransactionObjectArgument,
-            sources as TransactionObjectArgument[],
-          );
-          return { tx };
+        let sources;
+        if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+          sources = [connvert(inputs[1][0], dictionary)];
+        } else {
+          sources = inputs[1].map((v) => connvert(v, dictionary));
         }
-        throw new Error(`Invalid parameters for ${node.type}`);
+        tx.mergeCoins(
+          destination as TransactionObjectArgument,
+          sources as TransactionObjectArgument[],
+        );
+        return { tx };
       }
       case PTBNodeType.TransferObjects: {
-        const objects = inputs[1].map((v) => connvert(v, dictionary));
         const address = connvert(inputs[0], dictionary);
-        if (address) {
-          tx.transferObjects(
-            objects as TransactionObjectArgument[],
-            address as TransactionObjectArgument,
-          );
-          return { tx };
+        let objects;
+        if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+          objects = [connvert(inputs[1][0], dictionary)];
+        } else {
+          objects = inputs[1].map((v) => connvert(v, dictionary));
         }
-        throw new Error(`Invalid parameters for ${node.type}`);
+        tx.transferObjects(
+          objects as TransactionObjectArgument[],
+          address as TransactionObjectArgument,
+        );
+        return { tx };
       }
       case PTBNodeType.MakeMoveVec: {
         const type = inputs[0];
         const elements = inputs[1].map((v) => connvert(v, dictionary));
-        if (type) {
-          const result = tx.makeMoveVec({
-            type: type,
-            elements: elements.map((v) => {
-              switch (type) {
-                case 'address':
-                  return tx.pure.address(v as string);
-                case 'string':
-                  return tx.pure.string(v as string);
-                case 'u8':
-                  return tx.pure.u8(v as number);
-                case 'u16':
-                  return tx.pure.u16(v as number);
-                case 'u32':
-                  return tx.pure.u32(v as number);
-                case 'u64':
-                  return tx.pure.u64(v as number);
-                case 'u128':
-                  return tx.pure.u128(v as number);
-                case 'u256':
-                  return tx.pure.u256(v as number);
-                case 'object':
-                  return tx.object(`${v}`);
-                case 'bool':
-                  return tx.pure.bool(v === 'true');
-                default:
-                  return `${v}`;
-              }
-            }),
-          });
-          return { tx, nestedResults: result };
-        }
-        throw new Error(`Invalid parameters for ${node.type}`);
+        const result = tx.makeMoveVec({
+          type: type,
+          elements: elements.map((v) => {
+            switch (type) {
+              case 'address':
+                return tx.pure.address(v as string);
+              case 'string':
+                return tx.pure.string(v as string);
+              case 'u8':
+                return tx.pure.u8(v as number);
+              case 'u16':
+                return tx.pure.u16(v as number);
+              case 'u32':
+                return tx.pure.u32(v as number);
+              case 'u64':
+                return tx.pure.u64(v as number);
+              case 'u128':
+                return tx.pure.u128(v as number);
+              case 'u256':
+                return tx.pure.u256(v as number);
+              case 'object':
+                return tx.object(`${v}`);
+              case 'bool':
+                return tx.pure.bool(v === 'true');
+              default:
+                return `${v}`;
+            }
+          }),
+        });
+        return { tx, nestedResults: result };
       }
       case PTBNodeType.MoveCall: {
         const moduleData = node.data.moveCall
@@ -185,20 +187,22 @@ const genereateCommand = (
           });
           return {
             tx,
-            nestedResults:
-              results &&
-              (results as any[]).map((_, i) => result[i] as NestedResult),
+            nestedResults: results
+              ? results.length > 1
+                ? (results as any[]).map((_, i) => result[i] as NestedResult)
+                : result
+              : undefined,
           };
         }
-        throw new Error(`Invalid parameters for ${node.type}`);
+        throw `Invalid parameters for ${node.type}`;
       }
       case PTBNodeType.Publish:
       case PTBNodeType.Upgrade:
       default:
-        throw new Error(`Invalid command type: ${node.type}`);
+        throw `Invalid command type: ${node.type}`;
     }
   } catch (error) {
-    throw new Error(`Failed to generate command: ${error}`);
+    throw `${error} (${node.type})`;
   }
 };
 
@@ -216,7 +220,7 @@ export const generateTxb = async (
       undefined | DictionaryItem | DictionaryItem[]
     > = {};
     Object.keys(inputs).forEach((key) => {
-      const { value } = inputs[key].data;
+      const { value, label } = inputs[key].data;
       switch (inputs[key].type) {
         case PTBNodeType.Address:
           dictionary[key] = tx.pure.address(value as string);
@@ -242,6 +246,7 @@ export const generateTxb = async (
           );
           break;
         case PTBNodeType.String:
+        case PTBNodeType.StringArray0x2suiSUI:
           dictionary[key] = value as string;
           break;
         case PTBNodeType.Number:
@@ -249,6 +254,12 @@ export const generateTxb = async (
           break;
         case PTBNodeType.NumberArray:
           dictionary[key] = (value as number[]).map((v) => v);
+          break;
+        case PTBNodeType.NumberVector:
+          dictionary[key] = tx.pure.vector(
+            label.replace('vector<', '').replace('>', '') as any,
+            value as number[],
+          );
           break;
         case PTBNodeType.Object:
           dictionary[key] = tx.object(value as string);
@@ -301,13 +312,13 @@ export const generateTxb = async (
       }
     });
 
-    commands.forEach(({ node, inputs, results }) => {
+    commands.forEach(({ node, targets, sources }) => {
       const { tx: tx2, nestedResults } = genereateCommand(
         node,
-        inputs,
+        targets,
         dictionary,
         tx,
-        results,
+        sources,
       );
       tx = tx2;
       dictionary[node.id] = nestedResults;
@@ -318,6 +329,6 @@ export const generateTxb = async (
 
     return tx;
   } catch (error) {
-    throw new Error(`${error}`);
+    throw error;
   }
 };

@@ -1,5 +1,6 @@
 import { getPath } from '../';
 import { readPackageData } from '../../provider';
+import { getTypeName } from '../../ptbFlow/components';
 import { PTBEdge, PTBNode, PTBNodeType } from '../../ptbFlow/nodes';
 import { NumericTypes, TYPE_PARAMS } from '../../ptbFlow/nodes/types';
 
@@ -29,33 +30,30 @@ const isVariableNode = (node: PTBNode): boolean => {
 const preprocess = (
   node: PTBNode,
   params: Record<string, PTBEdge>,
-  dictionary: Record<
-    string,
-    { node: PTBNode; outputs?: (string | undefined)[] }
-  >,
+  dictionary: Record<string, { node: PTBNode; outputs?: string[] }>,
 ): {
-  inputs: [string | undefined, ...Array<(string | undefined)[]>];
-  outputs?: (string | undefined)[];
+  targets: [string, ...Array<string[]>];
+  sources?: string[];
 } => {
-  const getSourceHandleID = (
-    prefix: string,
-    type: string,
-  ): string | undefined => {
+  const getSourceHandleID = (prefix: string, type: string): string => {
     const handle = `${prefix}:${type}`;
     if (params[handle]) {
       const source = dictionary[params[handle].source];
-      if (isVariableNode(source.node)) {
+      if (
+        isVariableNode(source.node) ||
+        params[handle].sourceHandle?.startsWith('result:')
+      ) {
         return source.node.id;
       }
-      const index = extractIndex(params[handle].sourceHandle!);
-      if (index !== undefined) {
-        return `${source.node.id}[${index}]`;
+      const sourceIndex = extractIndex(params[handle].sourceHandle!);
+      if (sourceIndex !== undefined) {
+        return `${source.node.id}[${sourceIndex}]`;
       }
     }
-    return undefined;
+    return '';
   };
 
-  const fromArray = (handle: string): (string | undefined)[] => {
+  const fromArray = (handle: string): string[] => {
     if (handle.endsWith('[]') && params[handle]) {
       const source = dictionary[params[handle].source];
       const sourceId = dictionary[params[handle].source].node.id;
@@ -65,19 +63,20 @@ const preprocess = (
         return new Array(length)
           .fill(undefined)
           .map((_, index) => `${sourceId}[${index}]`);
-      }
-      if (source.outputs) {
+      } else if (source.outputs) {
         return source.outputs.map((_, index) => `${sourceId}[${index}]`);
+      } else {
+        return [sourceId];
       }
     }
-    return [undefined];
+    return [''];
   };
 
   const fromSplit = (
     type: TYPE_PARAMS | 'number',
     length: number,
-  ): (string | undefined)[] => {
-    const data: (string | undefined)[] = new Array(length).fill(undefined);
+  ): string[] => {
+    const data: string[] = new Array(length).fill('');
     Object.keys(params)
       .filter((key) => key.endsWith(type))
       .sort()
@@ -95,11 +94,8 @@ const preprocess = (
     return data;
   };
 
-  const forMoveCall = (
-    prefix: string,
-    length: number,
-  ): (string | undefined)[] => {
-    const data: (string | undefined)[] = new Array(length).fill(undefined);
+  const forMoveCall = (prefix: string, length: number): string[] => {
+    const data: string[] = new Array(length).fill('');
     Object.keys(params)
       .filter((key) => key.startsWith(prefix))
       .sort()
@@ -120,63 +116,77 @@ const preprocess = (
   switch (node.type) {
     case PTBNodeType.SplitCoins: {
       const coin = getSourceHandleID('coin', 'object');
-      const amounts =
-        params['amounts:number[]'] || node.data.splitInputs === undefined
-          ? fromArray('amounts:number[]')
-          : fromSplit('number', node.data.splitInputs);
+      const amounts = params['amounts:number[]']
+        ? fromArray('amounts:number[]')
+        : params['result:number[]']
+          ? fromArray('result:number[]')
+          : node.data.splitInputs
+            ? fromSplit('number', node.data.splitInputs)
+            : [''];
       return {
-        inputs: [coin, amounts],
-        outputs: new Array(node.data.splitOutputs || amounts.length).fill(
-          undefined,
-        ),
+        targets: [coin, amounts],
+        sources: node.data.splitOutputs
+          ? new Array(node.data.splitOutputs || amounts.length)
+              .fill(undefined)
+              .map((_, index) => `result[${index}]:object`)
+          : ['result:object[]'],
       };
     }
     case PTBNodeType.TransferObjects: {
       const address = getSourceHandleID('address', 'address');
-      const objects =
-        params['objects:object[]'] || node.data.splitInputs === undefined
-          ? fromArray('objects:object[]')
-          : fromSplit('object', node.data.splitInputs);
+      const objects = params['objects:object[]']
+        ? fromArray('objects:object[]')
+        : params['result:object[]']
+          ? fromArray('result:object[]')
+          : node.data.splitInputs
+            ? fromSplit('object', node.data.splitInputs)
+            : [''];
       return {
-        inputs: [address, objects],
+        targets: [address, objects],
       };
     }
     case PTBNodeType.MergeCoins: {
       const destination = getSourceHandleID('destination', 'object');
-      const source =
-        params['source:object[]'] || node.data.splitInputs === undefined
-          ? fromArray('source:object[]')
-          : fromSplit('object', node.data.splitInputs);
+      const source = params['source:object[]']
+        ? fromArray('source:object[]')
+        : params['result:object[]']
+          ? fromArray('result:object[]')
+          : node.data.splitInputs
+            ? fromSplit('object', node.data.splitInputs)
+            : [''];
       return {
-        inputs: [destination, source],
+        targets: [destination, source],
       };
     }
     case PTBNodeType.MakeMoveVec: {
       const type = node.data.makeMoveVector!;
-      const element =
-        params[`elements:${NumericTypes.has(type) ? 'number' : type}[]`] ||
-        node.data.splitInputs === undefined
-          ? fromArray(`elements:${NumericTypes.has(type) ? 'number' : type}[]`)
-          : fromSplit(
-              NumericTypes.has(type) ? 'number' : type,
-              node.data.splitInputs,
-            );
+      const elementType = `${NumericTypes.has(type) ? 'number' : type}[]`;
+      const element = params[`elements:${elementType}`]
+        ? fromArray(`elements:${elementType}`)
+        : params[`result:${elementType}`]
+          ? fromArray(`result:${elementType}`)
+          : node.data.splitInputs
+            ? fromSplit(
+                NumericTypes.has(type) ? 'number' : type,
+                node.data.splitInputs,
+              )
+            : [''];
       return {
-        inputs: [type, element],
-        outputs: [undefined],
+        targets: [type, element],
+        sources: [`result<${type}>`],
       };
     }
     case PTBNodeType.MoveCall: {
       const target = node.data.moveCall
         ? `${node.data.moveCall.package}::${node.data.moveCall.module}::${node.data.moveCall.function}`
-        : undefined;
+        : '';
       const moduleData =
         node.data.moveCall &&
         node.data.moveCall.package &&
         readPackageData(node.data.moveCall.package);
       let splitTypes = 0;
       let splitInputs = 0;
-      let splitOutputs = 0;
+      const sources: string[] = [];
       if (moduleData && node.data.moveCall) {
         splitTypes = node.data.moveCall.module
           ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
@@ -188,25 +198,41 @@ const preprocess = (
               node.data.moveCall.function!
             ].parameters.length
           : 0;
-        splitOutputs = node.data.moveCall.module
-          ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
-              node.data.moveCall.function!
-            ].return.length
-          : 0;
+        sources.push(
+          ...(node.data.moveCall.module
+            ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
+                node.data.moveCall.function!
+              ].return.length > 1
+              ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
+                  node.data.moveCall.function!
+                ].return.map(
+                  (type, index) => `result[${index}]:${getTypeName(type).type}`,
+                )
+              : [
+                  `result:${
+                    getTypeName(
+                      moduleData.modules[node.data.moveCall.module]
+                        .exposedFunctions[node.data.moveCall.function!]
+                        .return[0],
+                    ).type
+                  }`,
+                ]
+            : []),
+        );
       }
       const typeParams = forMoveCall('type', splitTypes);
       const params = forMoveCall('input', splitInputs);
       return {
-        inputs: [target, [...typeParams], [...params]],
-        outputs: new Array(splitOutputs).fill(undefined),
+        targets: [target, [...typeParams], [...params]],
+        sources,
       };
     }
     case PTBNodeType.Publish:
-      return { inputs: [undefined, [undefined]], outputs: [undefined] };
+      return { targets: ['', ['']], sources: ['result:object'] };
     case PTBNodeType.Upgrade:
-      return { inputs: [undefined, [undefined]], outputs: [undefined] };
+      return { targets: ['', ['']], sources: ['result:object'] };
     default:
-      return { inputs: [undefined, [undefined]] };
+      return { targets: ['', ['']] };
   }
 };
 
@@ -217,8 +243,8 @@ export const generateFlow = (
   inputs: Record<string, PTBNode>;
   commands: {
     node: PTBNode;
-    inputs: [string | undefined, ...Array<(string | undefined)[]>];
-    results?: (string | undefined)[];
+    targets: [string, ...Array<string[]>];
+    sources?: string[];
   }[];
 } => {
   const startNode = nodes.find((node) => node.type === PTBNodeType.Start);
@@ -237,19 +263,17 @@ export const generateFlow = (
   const inputs: Record<string, PTBNode> = {};
   const commands: {
     node: PTBNode;
-    inputs: [string | undefined, ...Array<(string | undefined)[]>];
-    results?: (string | undefined)[];
+    targets: [string, ...Array<string[]>];
+    sources?: string[];
   }[] = [];
   const dictionary: Record<
     string,
     {
       node: PTBNode;
-      inputs: [string | undefined, ...Array<(string | undefined)[]>];
-      outputs?: (string | undefined)[];
+      targets?: [string, ...Array<string[]>];
+      sources?: string[];
     }
-  > = Object.fromEntries(
-    nodes.map((node) => [node.id, { node, inputs: [undefined, [undefined]] }]),
-  );
+  > = Object.fromEntries(nodes.map((node) => [node.id, { node }]));
 
   path.forEach((node) => {
     try {
@@ -264,12 +288,12 @@ export const generateFlow = (
             inputs[edge.source] = dictionary[edge.source].node;
           }
         });
-      const temp = preprocess(node, params, dictionary);
-      commands.push({ node, inputs: temp.inputs, results: temp.outputs });
+      const { targets, sources } = preprocess(node, params, dictionary);
+      commands.push({ node, targets, sources });
       dictionary[node.id] = {
         ...dictionary[node.id],
-        inputs: temp.inputs,
-        outputs: temp.outputs,
+        targets,
+        sources,
       };
     } catch (error) {
       throw new Error("Can't generate preprocess");

@@ -5,6 +5,7 @@ import {
 } from '@mysten/sui/client';
 
 import { PTB } from '../../../components';
+import { readPackageData } from '../../../provider';
 import { getTypeName } from '../../../ptbFlow/components';
 import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 import { PTBModuleData, TYPE_PARAMS } from '../../../ptbFlow/nodes/types';
@@ -59,6 +60,7 @@ const getEdge = (
     name: string;
     type: string;
   },
+  dictionary: Record<string, PTBNode>,
 ): PTBEdge => {
   if (typeof arg === 'object' && 'Input' in arg) {
     const index = arg.Input;
@@ -74,18 +76,52 @@ const getEdge = (
   }
   if (typeof arg === 'object' && 'Result' in arg) {
     const index = arg.Result;
-    return {
-      id,
-      type: 'Data',
-      source: `cmd-${index}`,
-      sourceHandle: `result:${targetHandle.type}`,
-      target: targetId,
-      targetHandle: `${targetHandle.name}:${targetHandle.type}`,
-      deletable: false,
-    };
+    if (dictionary[`cmd-${index}`].type !== PTB.SplitCoins.Type) {
+      return {
+        id,
+        type: 'Data',
+        source: `cmd-${index}`,
+        sourceHandle: `result:${targetHandle.type}`,
+        target: targetId,
+        targetHandle: `${targetHandle.name}:${targetHandle.type}`,
+        deletable: false,
+      };
+    } else {
+      return {
+        id,
+        type: 'Data',
+        source: `cmd-${index}`,
+        sourceHandle: `result[0]:object`,
+        target: targetId,
+        targetHandle: `${targetHandle.name}:${targetHandle.type}`,
+        deletable: false,
+      };
+    }
   }
   if (typeof arg === 'object' && 'NestedResult' in arg) {
     const [index, result] = arg.NestedResult;
+    if (dictionary[`cmd-${index}`].type === PTB.MoveCall.Type) {
+      const node = dictionary[`cmd-${index}`];
+      const moduleData = node.data.moveCall?.package
+        ? readPackageData(node.data.moveCall.package)
+        : undefined;
+      const returnLength =
+        moduleData &&
+        moduleData.modules[node.data.moveCall!.module!].exposedFunctions[
+          node.data.moveCall!.function!
+        ].return.length;
+      if (returnLength === 1) {
+        return {
+          id,
+          type: 'Data',
+          source: `cmd-${index}`,
+          sourceHandle: `result:object`,
+          target: targetId,
+          targetHandle: `${targetHandle.name}:${targetHandle.type}`,
+          deletable: false,
+        };
+      }
+    }
     return {
       id,
       type: 'Data',
@@ -116,17 +152,29 @@ export const getTransactionNode = (
   const edges: PTBEdge[] = [];
   if ('SplitCoins' in tx) {
     edges.push(
-      getEdge(`path-0-${id}`, tx.SplitCoins[0], id, {
-        name: 'coin',
-        type: 'object',
-      }),
+      getEdge(
+        `path-0-${id}`,
+        tx.SplitCoins[0],
+        id,
+        {
+          name: 'coin',
+          type: 'object',
+        },
+        dictionary,
+      ),
     );
     edges.push(
       ...tx.SplitCoins[1].map((item, index) =>
-        getEdge(`path-1-${index}-${id}`, item, id, {
-          name: `amounts[${index}]`,
-          type: 'number',
-        }),
+        getEdge(
+          `path-1-${index}-${id}`,
+          item,
+          id,
+          {
+            name: `amounts[${index}]`,
+            type: 'number',
+          },
+          dictionary,
+        ),
       ),
     );
     return {
@@ -149,17 +197,29 @@ export const getTransactionNode = (
   if ('TransferObjects' in tx) {
     edges.push(
       ...tx.TransferObjects[0].map((item, index) =>
-        getEdge(`path-0-${index}-${id}`, item, id, {
-          name: `objects[${index}]`,
-          type: 'object',
-        }),
+        getEdge(
+          `path-0-${index}-${id}`,
+          item,
+          id,
+          {
+            name: `objects[${index}]`,
+            type: 'object',
+          },
+          dictionary,
+        ),
       ),
     );
     edges.push(
-      getEdge(`path-1-${id}`, tx.TransferObjects[1], id, {
-        name: 'address',
-        type: 'address',
-      }),
+      getEdge(
+        `path-1-${id}`,
+        tx.TransferObjects[1],
+        id,
+        {
+          name: 'address',
+          type: 'address',
+        },
+        dictionary,
+      ),
     );
     return {
       nodes: [
@@ -179,17 +239,29 @@ export const getTransactionNode = (
   }
   if ('MergeCoins' in tx) {
     edges.push(
-      getEdge(`path-0-${id}`, tx.MergeCoins[0], id, {
-        name: 'destination',
-        type: 'object',
-      }),
+      getEdge(
+        `path-0-${id}`,
+        tx.MergeCoins[0],
+        id,
+        {
+          name: 'destination',
+          type: 'object',
+        },
+        dictionary,
+      ),
     );
     edges.push(
       ...tx.MergeCoins[1].map((item, index) =>
-        getEdge(`path-1-${index}-${id}`, item, id, {
-          name: `source[${index}]`,
-          type: 'object',
-        }),
+        getEdge(
+          `path-1-${index}-${id}`,
+          item,
+          id,
+          {
+            name: `source[${index}]`,
+            type: 'object',
+          },
+          dictionary,
+        ),
       ),
     );
     return {
@@ -278,10 +350,16 @@ export const getTransactionNode = (
       const temp = getTypeName(parameters[i]);
       temp.type &&
         edges.push(
-          getEdge(`path-${index}-${id}`, arg, id, {
-            name: `input[${i}]`,
-            type: temp.type,
-          }),
+          getEdge(
+            `path-${index}-${id}`,
+            arg,
+            id,
+            {
+              name: `input[${i}]`,
+              type: temp.type,
+            },
+            dictionary,
+          ),
         );
       index++;
     });
