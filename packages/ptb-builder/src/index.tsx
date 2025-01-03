@@ -33,6 +33,7 @@ export const PTBBuilder = ({
     canEdit?: boolean;
   };
 }) => {
+  const [backup, setBackup] = React.useState<string | undefined>(undefined);
   return (
     <ReactFlowProvider>
       <StateProvider
@@ -47,7 +48,11 @@ export const PTBBuilder = ({
           restore={restore}
           excuteTx={excuteTx}
           update={(data) => {
-            update && update(data);
+            const temp = JSON.stringify(data);
+            if (update && temp !== backup) {
+              setBackup(temp);
+              update(data);
+            }
           }}
           minZoom={options?.minZoom || 0.25}
           maxZoom={options?.maxZoom || 2}
