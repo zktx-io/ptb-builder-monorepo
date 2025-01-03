@@ -64,6 +64,7 @@ export enum PTBNodeType {
 
   Number = 'SuiNumber',
   NumberArray = 'SuiNumberArray',
+  NumberVector = 'SuiNumberVector',
 
   Object = 'SuiObject',
   ObjectArray = 'SuiObjectArray',
@@ -76,6 +77,7 @@ export enum PTBNodeType {
   CoinWithBalance = 'SuiObjectCoinWithBalance',
   String = 'SuiString',
   StringArray = 'SuiStringArray',
+  StringArray0x2suiSUI = 'SuiString0x2suiSUI',
 
   MergeCoins = 'MergeCoins',
   SplitCoins = 'SplitCoins',

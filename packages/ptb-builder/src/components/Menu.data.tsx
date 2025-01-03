@@ -2,6 +2,7 @@ import React from 'react';
 
 import { IconCircle } from './IconCircle';
 import { IconSquare } from './IconSquare';
+import { IconTriangle } from './IconTriangle';
 import { PTBNodeType } from '../ptbFlow/nodes/types';
 
 export const PTB = {
@@ -32,6 +33,30 @@ export const PTB = {
   NumberArray: {
     Type: PTBNodeType.NumberArray,
     Name: 'number[]',
+  },
+  NumberVectorU8: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u8>',
+  },
+  NumberVectorU16: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u16>',
+  },
+  NumberVectorU32: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u32>',
+  },
+  NumberVectorU64: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u64>',
+  },
+  NumberVectorU128: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u128>',
+  },
+  NumberVectorU256: {
+    Type: PTBNodeType.NumberVector,
+    Name: 'vector<u256>',
   },
   ObjectGas: {
     Type: PTBNodeType.ObjectGas,
@@ -72,6 +97,10 @@ export const PTB = {
   StringArray: {
     Type: PTBNodeType.StringArray,
     Name: 'string[]',
+  },
+  StringArray0x2suiSUI: {
+    Type: PTBNodeType.StringArray0x2suiSUI,
+    Name: '0x2::sui::SUI',
   },
 
   MakeMoveVec: {
@@ -201,6 +230,11 @@ export const Menu: {
           type: PTB.StringArray.Type,
           icon: <IconSquare color="bg-green-500" />,
         },
+        {
+          name: PTB.StringArray0x2suiSUI.Name,
+          type: PTB.StringArray0x2suiSUI.Type,
+          icon: <IconCircle color="bg-green-500" />,
+        },
       ],
     },
     {
@@ -215,6 +249,36 @@ export const Menu: {
           name: PTB.NumberArray.Name,
           type: PTB.NumberArray.Type,
           icon: <IconSquare color="bg-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU8.Name,
+          type: PTB.NumberVectorU8.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU16.Name,
+          type: PTB.NumberVectorU16.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU32.Name,
+          type: PTB.NumberVectorU32.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU64.Name,
+          type: PTB.NumberVectorU64.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU128.Name,
+          type: PTB.NumberVectorU128.Type,
+          icon: <IconTriangle color="text-red-500" />,
+        },
+        {
+          name: PTB.NumberVectorU256.Name,
+          type: PTB.NumberVectorU256.Type,
+          icon: <IconTriangle color="text-red-500" />,
         },
       ],
     },
