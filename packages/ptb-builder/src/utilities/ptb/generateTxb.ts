@@ -82,8 +82,12 @@ const genereateCommand = (
       case PTBNodeType.MergeCoins: {
         const destination = connvert(inputs[0], dictionary);
         let sources;
-        if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
-          sources = [connvert(inputs[1][0], dictionary)];
+        if (inputs[1].length === 1) {
+          if (inputs[1][0].endsWith('[]')) {
+            sources = connvert(inputs[1][0], dictionary);
+          } else {
+            sources = [connvert(inputs[1][0], dictionary)];
+          }
         } else {
           sources = inputs[1].map((v) => connvert(v, dictionary));
         }
@@ -96,8 +100,12 @@ const genereateCommand = (
       case PTBNodeType.TransferObjects: {
         const address = connvert(inputs[0], dictionary);
         let objects;
-        if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
-          objects = [connvert(inputs[1][0], dictionary)];
+        if (inputs[1].length === 1) {
+          if (inputs[1][0].endsWith('[]')) {
+            objects = connvert(inputs[1][0], dictionary);
+          } else {
+            objects = [connvert(inputs[1][0], dictionary)];
+          }
         } else {
           objects = inputs[1].map((v) => connvert(v, dictionary));
         }

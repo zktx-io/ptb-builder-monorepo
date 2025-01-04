@@ -12,7 +12,11 @@ const connvert = (
   if (match) {
     return `${dictionary[id.replace(match[0], '')].name}[${match[1]}]`;
   }
-  return dictionary[id] ? dictionary[id].name : 'undefined';
+  return dictionary[id]
+    ? dictionary[id].name
+    : dictionary[id.replace('[]', '')]
+      ? dictionary[id.replace('[]', '')].name
+      : 'undefined';
 };
 
 const convert2 = (node: PTBNode, value: string | string[]): string => {
@@ -42,19 +46,28 @@ const genereateCommand = (
 ): string => {
   switch (node.type) {
     case PTBNodeType.SplitCoins:
-      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+      if (inputs[1].length === 1) {
+        if (inputs[1][0].endsWith('[]')) {
+          return `tx.splitCoins(${connvert(inputs[0], dictionary)}, ${connvert(inputs[1][0], dictionary)})`;
+        }
         return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
       } else {
         return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
       }
     case PTBNodeType.MergeCoins:
-      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+      if (inputs[1].length === 1) {
+        if (inputs[1][0].endsWith('[]')) {
+          return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, ${connvert(inputs[1][0], dictionary)})`;
+        }
         return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
       } else {
         return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}])`;
       }
     case PTBNodeType.TransferObjects:
-      if (inputs[1].length === 1 && !inputs[1][0].endsWith(']')) {
+      if (inputs[1].length === 1) {
+        if (inputs[1][0].endsWith('[]')) {
+          return `tx.transferObjects(${connvert(inputs[1][0], dictionary)}, ${connvert(inputs[0], dictionary)})`;
+        }
         return `tx.transferObjects([${connvert(inputs[1][0], dictionary)}], ${connvert(inputs[0], dictionary)})`;
       } else {
         return `tx.transferObjects([${inputs[1].map((v) => connvert(v, dictionary)).join(', ')}], ${connvert(inputs[0], dictionary)})`;

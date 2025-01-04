@@ -66,7 +66,7 @@ const preprocess = (
       } else if (source.outputs) {
         return source.outputs.map((_, index) => `${sourceId}[${index}]`);
       } else {
-        return [sourceId];
+        return [`${sourceId}[]`];
       }
     }
     return [''];
