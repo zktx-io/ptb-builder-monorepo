@@ -1,7 +1,8 @@
 import {
+  ExecutionStatus,
   getFullnodeUrl,
   SuiClient,
-  SuiTransactionBlock,
+  TransactionBlockData,
 } from '@mysten/sui/client';
 
 import { NETWORK } from '../../../provider';
@@ -9,7 +10,10 @@ import { NETWORK } from '../../../provider';
 export const getBlockData = async (
   network: NETWORK,
   txHash: string,
-): Promise<SuiTransactionBlock> => {
+): Promise<{
+  status?: ExecutionStatus;
+  data: TransactionBlockData;
+}> => {
   try {
     const client = new SuiClient({
       url: getFullnodeUrl(network),
@@ -19,10 +23,14 @@ export const getBlockData = async (
       options: {
         showInput: true,
         showObjectChanges: true,
+        showEffects: true,
       },
     });
     if (res.transaction) {
-      return res.transaction;
+      return {
+        status: res.effects ? res.effects.status : undefined,
+        data: res.transaction.data,
+      };
     } else {
       throw new Error('No transaction found');
     }

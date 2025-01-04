@@ -12,6 +12,7 @@ export const decodeTxb = async (
   fetchPackageData: (packageId: string) => Promise<PTBModuleData | undefined>,
 ): Promise<{ nodes: PTBNode[]; edges: PTBEdge[] }> => {
   const {
+    status,
     data: { transaction: txb },
   } = await getBlockData(network, txHash);
 
@@ -38,6 +39,11 @@ export const decodeTxb = async (
       deletable: false,
       data: {
         label: PTB.End.Name,
+        value: status
+          ? status.status === 'success'
+            ? [status.status]
+            : [status.status, status.error || '']
+          : undefined,
       },
     });
 
