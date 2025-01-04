@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import {
   addEdge,
@@ -195,15 +194,6 @@ export const PTBFlow = ({
     },
     [setEdges, canEdit],
   );
-
-  useEffect(() => {
-    setState((oldData) => ({
-      ...oldData,
-      client: new SuiClient({
-        url: getFullnodeUrl(network),
-      }),
-    }));
-  }, [network, setState]);
 
   useEffect(() => {
     if (nodes.length || edges.length) {

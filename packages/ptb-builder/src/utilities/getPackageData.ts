@@ -1,4 +1,5 @@
 import {
+  getFullnodeUrl,
   SuiClient,
   SuiMoveNormalizedFunction,
   SuiMoveNormalizedModule,
@@ -6,7 +7,7 @@ import {
   SuiMoveNormalizedType,
 } from '@mysten/sui/client';
 
-import { enqueueToast } from '../provider';
+import { enqueueToast, NETWORK } from '../provider';
 import { PTBModuleData } from '../ptbFlow/nodes/types';
 
 const deleteTxContext = (
@@ -63,25 +64,22 @@ export const toPTBModuleData = (
 };
 
 export const getPackageData = async (
-  client: SuiClient | undefined,
+  network: NETWORK,
   packageId: string,
 ): Promise<SuiMoveNormalizedModules | undefined> => {
-  if (client) {
-    try {
-      const modules: SuiMoveNormalizedModules =
-        await client.getNormalizedMoveModulesByPackage({
-          package: packageId,
-        });
-      return modules;
-    } catch (error) {
-      enqueueToast(`${error}`, {
-        variant: 'error',
+  try {
+    const client = new SuiClient({
+      url: getFullnodeUrl(network),
+    });
+    const modules: SuiMoveNormalizedModules =
+      await client.getNormalizedMoveModulesByPackage({
+        package: packageId,
       });
-      return undefined;
-    }
+    return modules;
+  } catch (error) {
+    enqueueToast(`${error}`, {
+      variant: 'error',
+    });
+    return undefined;
   }
-  enqueueToast('client error', {
-    variant: 'error',
-  });
-  return undefined;
 };

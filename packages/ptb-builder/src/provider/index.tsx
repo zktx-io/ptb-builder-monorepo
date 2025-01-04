@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 
-import { SuiClient, SuiMoveNormalizedModules } from '@mysten/sui/client';
+import { SuiMoveNormalizedModules } from '@mysten/sui/client';
 import { ColorModeClass } from '@xyflow/react';
 
 import { EnqueueToast, setToast } from './toastManager';
@@ -32,7 +32,6 @@ export interface IState {
   hasPath: boolean;
   canEdit: boolean;
   network: NETWORK;
-  client?: SuiClient;
   wallet?: string;
   fetchPackageData?: (packageId: string) => Promise<PTBModuleData | undefined>;
   exportPackageData?: () => Record<string, SuiMoveNormalizedModules>;
@@ -79,7 +78,7 @@ export const StateProvider = ({
         if (packageDataCache[packageId]) {
           return toPTBModuleData(packageDataCache[packageId]);
         }
-        const data = await getPackageData(state.client, packageId);
+        const data = await getPackageData(network, packageId);
         if (data) {
           packageDataCache[packageId] = data;
         }
@@ -88,7 +87,7 @@ export const StateProvider = ({
         throw error;
       }
     },
-    [state.client],
+    [network],
   );
 
   const exportPackageData = useCallback((): Record<
