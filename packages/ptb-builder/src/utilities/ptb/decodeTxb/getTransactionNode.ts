@@ -32,6 +32,11 @@ const getVectorType = (
   if (typeof arg === 'object' && 'Result' in arg) {
     const type = dictionary[`cmd-${arg.Result}`].type;
     switch (type) {
+      case PTB.SplitCoins.Type:
+        return {
+          source: `cmd-${arg.Result}`,
+          sourceHandle: `result[0]:object`,
+        };
       case PTB.MoveCall.Type:
       // TODO: Fix this type cast
       default:
