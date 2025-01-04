@@ -28,6 +28,9 @@
     "url": "https://github.com/zktx-io/ptb-builder-monorepo/issues"
   },
   "homepage": "https://github.com/zktx-io/ptb-builder-monorepo#readme",
+  "files": [
+    "dist/"
+  ],
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
