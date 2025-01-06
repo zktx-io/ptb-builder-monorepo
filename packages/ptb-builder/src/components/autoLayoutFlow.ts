@@ -38,11 +38,7 @@ export const autoLayoutFlow = async (nodes: PTBNode[], edges: PTBEdge[]) => {
         },
       }));
       const height: number =
-        n.measured && n.measured.height
-          ? n.measured.height
-          : n.type === PTB.MakeMoveVec.Type
-            ? 150
-            : 100;
+        n.measured && n.measured.height ? n.measured.height : 150;
       return {
         id: n.id,
         width: n.measured ? n.measured.width : 200,

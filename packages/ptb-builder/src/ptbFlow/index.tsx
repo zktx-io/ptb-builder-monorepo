@@ -64,7 +64,7 @@ export const PTBFlow = ({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   // eslint-disable-next-line no-restricted-syntax
   const [rfInstance, setRfInstance] = useState<any>(null);
-  const { setViewport, fitView } = useReactFlow();
+  const { setViewport, fitView, getNodes } = useReactFlow();
 
   const setState = useStateUpdateContext();
   const {
@@ -234,19 +234,21 @@ export const PTBFlow = ({
               restore,
               fetchPackageData,
             );
-            const { nodes: layoutedNodes, edges: layoutedEdges } =
-              await autoLayoutFlow(
-                [...(decodedData.nodes || [])],
-                [...(decodedData.edges || [])],
-              );
-            setNodes(layoutedNodes);
+            setNodes(decodedData.nodes);
             setTimeout(() => {
-              setEdges(layoutedEdges);
-              fitView();
+              setTimeout(async () => {
+                const { nodes: layoutedNodes, edges: layoutedEdges } =
+                  await autoLayoutFlow(
+                    getNodes() as PTBNode[],
+                    decodedData.edges,
+                  );
+                setNodes([...layoutedNodes]);
+                setEdges([...layoutedEdges]);
+                setTimeout(() => {
+                  fitView();
+                }, 5);
+              }, 50);
             }, 100);
-            setTimeout(() => {
-              fitView();
-            }, 1);
           }
         } else if (typeof restore === 'object') {
           const { version, flow } = restore;
@@ -298,16 +300,17 @@ export const PTBFlow = ({
     init();
   }, [
     createNode,
+    fetchPackageData,
     fitView,
+    getNodes,
     importPackageData,
+    network,
     prevRestore,
     restore,
-    setState,
     setEdges,
     setNodes,
+    setState,
     setViewport,
-    network,
-    fetchPackageData,
   ]);
 
   return (

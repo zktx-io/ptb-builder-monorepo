@@ -10,6 +10,8 @@ import { getTypeName } from '../../../ptbFlow/components';
 import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 import { PTBModuleData, TYPE_PARAMS } from '../../../ptbFlow/nodes/types';
 
+const InitX = -300;
+
 const getVectorType = (
   arg: SuiArgument,
   dictionary: Record<string, PTBNode>,
@@ -186,7 +188,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.SplitCoins.Type,
           deletable: false,
           data: {
@@ -230,7 +232,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.TransferObjects.Type,
           deletable: false,
           data: {
@@ -273,7 +275,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.MergeCoins.Type,
           deletable: false,
           data: {
@@ -311,7 +313,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.MakeMoveVec.Type,
           deletable: false,
           data: {
@@ -333,7 +335,7 @@ export const getTransactionNode = (
     tx.MoveCall.type_arguments?.forEach((arg) => {
       argumentTypes.push({
         id: `input-${index}-${id}`,
-        position: { x: 0, y: 0 },
+        position: { x: InitX, y: 0 },
         type: PTB.String.Type,
         deletable: false,
         data: {
@@ -372,7 +374,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.MoveCall.Type,
           deletable: false,
           data: {
@@ -394,7 +396,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Publish.Type,
           deletable: false,
           data: {
@@ -410,7 +412,7 @@ export const getTransactionNode = (
       nodes: [
         {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Upgrade.Type,
           deletable: false,
           data: {

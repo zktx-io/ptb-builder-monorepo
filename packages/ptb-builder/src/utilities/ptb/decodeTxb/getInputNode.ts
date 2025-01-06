@@ -3,6 +3,8 @@ import { SuiCallArg } from '@mysten/sui/client';
 import { PTB } from '../../../components';
 import { PTBNode } from '../../../ptbFlow/nodes';
 
+const InitX = -300;
+
 export const getInputNode = (
   id: string,
   input: SuiCallArg,
@@ -12,7 +14,7 @@ export const getInputNode = (
       case 'address':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Address.Type,
           deletable: false,
           data: {
@@ -23,7 +25,7 @@ export const getInputNode = (
       case 'bool':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Bool.Type,
           deletable: false,
           data: {
@@ -39,7 +41,7 @@ export const getInputNode = (
       case 'u256':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Number.Type,
           deletable: false,
           data: {
@@ -50,7 +52,7 @@ export const getInputNode = (
       case 'string':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.String.Type,
           deletable: false,
           data: {
@@ -61,7 +63,7 @@ export const getInputNode = (
       case 'vector<u8>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU8.Type,
           deletable: false,
           data: {
@@ -72,7 +74,7 @@ export const getInputNode = (
       case 'vector<u16>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU16.Type,
           deletable: false,
           data: {
@@ -83,7 +85,7 @@ export const getInputNode = (
       case 'vector<u32>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU32.Type,
           deletable: false,
           data: {
@@ -94,7 +96,7 @@ export const getInputNode = (
       case 'vector<u64>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU64.Type,
           deletable: false,
           data: {
@@ -105,7 +107,7 @@ export const getInputNode = (
       case 'vector<u128>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU128.Type,
           deletable: false,
           data: {
@@ -116,7 +118,7 @@ export const getInputNode = (
       case 'vector<u256>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.NumberVectorU256.Type,
           deletable: false,
           data: {
@@ -127,7 +129,7 @@ export const getInputNode = (
       case 'vector<address>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.AddressVector.Type,
           deletable: false,
           data: {
@@ -138,7 +140,7 @@ export const getInputNode = (
       case 'vector<bool>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.BoolVector.Type,
           deletable: false,
           data: {
@@ -149,7 +151,7 @@ export const getInputNode = (
       case 'vector<string>':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.StringVector.Type,
           deletable: false,
           data: {
@@ -160,7 +162,7 @@ export const getInputNode = (
       case '0x2::object::ID':
         return {
           id,
-          position: { x: 0, y: 0 },
+          position: { x: InitX, y: 0 },
           type: PTB.Object.Type,
           deletable: false,
           data: {
@@ -174,7 +176,7 @@ export const getInputNode = (
             if (input.value.length === 1) {
               return {
                 id,
-                position: { x: 0, y: 0 },
+                position: { x: InitX, y: 0 },
                 type: PTB.Number.Type,
                 deletable: false,
                 data: {
@@ -185,7 +187,7 @@ export const getInputNode = (
             } else {
               return {
                 id,
-                position: { x: 0, y: 0 },
+                position: { x: InitX, y: 0 },
                 type: PTB.NumberArray.Type,
                 deletable: false,
                 data: {
@@ -201,7 +203,7 @@ export const getInputNode = (
   } else {
     return {
       id,
-      position: { x: 0, y: 0 },
+      position: { x: InitX, y: 0 },
       type: PTB.Object.Type,
       deletable: false,
       data: {

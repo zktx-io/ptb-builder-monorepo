@@ -6,6 +6,8 @@ import { enqueueToast, NETWORK } from '../../../provider';
 import { PTBEdge, PTBNode } from '../../../ptbFlow/nodes';
 import { PTBModuleData } from '../../../ptbFlow/nodes/types';
 
+const InitX = -300;
+
 export const decodeTxb = async (
   network: NETWORK,
   txHash: string,
@@ -24,7 +26,7 @@ export const decodeTxb = async (
 
     nodes.push({
       id: '@start',
-      position: { x: 0, y: 0 },
+      position: { x: InitX, y: 0 },
       type: PTB.Start.Type,
       deletable: false,
       data: {
@@ -34,7 +36,7 @@ export const decodeTxb = async (
 
     nodes.push({
       id: '@end',
-      position: { x: 0, y: 0 },
+      position: { x: InitX, y: 0 },
       type: PTB.End.Type,
       deletable: false,
       data: {
@@ -49,7 +51,7 @@ export const decodeTxb = async (
 
     nodes.push({
       id: '@gasCoin',
-      position: { x: 0, y: 0 },
+      position: { x: InitX, y: 0 },
       type: PTB.ObjectGas.Type,
       deletable: false,
       data: {
