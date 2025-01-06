@@ -43,7 +43,8 @@ export type TYPE_VECTOR =
   | 'vector<u128>'
   | 'vector<u256>'
   | 'vector<bool>'
-  | 'vector<object>';
+  | 'vector<object>'
+  | 'vector<string>';
 
 export type TYPE =
   | TYPE_PARAMS
@@ -57,10 +58,12 @@ export type TYPE =
 export enum PTBNodeType {
   Address = 'SuiAddress',
   AddressArray = 'SuiAddressArray',
+  AddressVector = 'SuiAddressVector',
   AddressWallet = 'SuiAddressWallet',
 
   Bool = 'SuiBool',
   BoolArray = 'SuiBoolArray',
+  BoolVector = 'SuiBoolVector',
 
   Number = 'SuiNumber',
   NumberArray = 'SuiNumberArray',
@@ -68,6 +71,7 @@ export enum PTBNodeType {
 
   Object = 'SuiObject',
   ObjectArray = 'SuiObjectArray',
+  ObjectVector = 'SuiObjectVector',
   ObjectGas = 'SuiObjectGas',
   ObjectClock = 'SuiObjectClock',
   ObjectDenyList = 'SuiObjectDenyList',
@@ -77,6 +81,7 @@ export enum PTBNodeType {
   CoinWithBalance = 'SuiObjectCoinWithBalance',
   String = 'SuiString',
   StringArray = 'SuiStringArray',
+  StringVector = 'SuiStringVector',
   StringArray0x2suiSUI = 'SuiString0x2suiSUI',
 
   MergeCoins = 'MergeCoins',

@@ -10,9 +10,9 @@ export const PTB = {
     Type: PTBNodeType.Address,
     Name: 'address',
   },
-  AddressArray: {
-    Type: PTBNodeType.AddressArray,
-    Name: 'address[]',
+  AddressVector: {
+    Type: PTBNodeType.AddressVector,
+    Name: 'vector<address>',
   },
   AddressWallet: {
     Type: PTBNodeType.AddressWallet,
@@ -22,17 +22,13 @@ export const PTB = {
     Type: PTBNodeType.Bool,
     Name: 'bool',
   },
-  BoolArray: {
-    Type: PTBNodeType.BoolArray,
-    Name: 'bool[]',
+  BoolVector: {
+    Type: PTBNodeType.BoolVector,
+    Name: 'vector<bool>',
   },
   Number: {
     Type: PTBNodeType.Number,
     Name: 'number',
-  },
-  NumberArray: {
-    Type: PTBNodeType.NumberArray,
-    Name: 'number[]',
   },
   NumberVectorU8: {
     Type: PTBNodeType.NumberVector,
@@ -86,21 +82,42 @@ export const PTB = {
     Type: PTBNodeType.Object,
     Name: 'object',
   },
-  ObjectArray: {
-    Type: PTBNodeType.ObjectArray,
-    Name: 'object[]',
+  ObjectVector: {
+    Type: PTBNodeType.ObjectVector,
+    Name: 'object',
   },
   String: {
     Type: PTBNodeType.String,
     Name: 'string',
   },
-  StringArray: {
-    Type: PTBNodeType.StringArray,
-    Name: 'string[]',
+  StringVector: {
+    Type: PTBNodeType.StringVector,
+    Name: 'vector<string>',
   },
   StringArray0x2suiSUI: {
     Type: PTBNodeType.StringArray0x2suiSUI,
     Name: '0x2::sui::SUI',
+  },
+
+  AddressArray: {
+    Type: PTBNodeType.AddressArray,
+    Name: 'address[]',
+  },
+  BoolArray: {
+    Type: PTBNodeType.BoolArray,
+    Name: 'bool[]',
+  },
+  NumberArray: {
+    Type: PTBNodeType.NumberArray,
+    Name: 'number[]',
+  },
+  ObjectArray: {
+    Type: PTBNodeType.ObjectArray,
+    Name: 'object[]',
+  },
+  StringArray: {
+    Type: PTBNodeType.StringArray,
+    Name: 'string[]',
   },
 
   MakeMoveVec: {
@@ -180,6 +197,11 @@ export const Menu: {
           type: PTB.AddressArray.Type,
           icon: <IconSquare color="bg-yellow-500" />,
         },
+        {
+          name: PTB.AddressVector.Name,
+          type: PTB.AddressVector.Type,
+          icon: <IconTriangle color="text-yellow-500" />,
+        },
       ],
     },
     {
@@ -215,6 +237,11 @@ export const Menu: {
           type: PTB.BoolArray.Type,
           icon: <IconSquare color="bg-pink-500" />,
         },
+        {
+          name: PTB.BoolVector.Name,
+          type: PTB.BoolVector.Type,
+          icon: <IconTriangle color="text-pink-500" />,
+        },
       ],
     },
     {
@@ -229,6 +256,11 @@ export const Menu: {
           name: PTB.StringArray.Name,
           type: PTB.StringArray.Type,
           icon: <IconSquare color="bg-green-500" />,
+        },
+        {
+          name: PTB.StringVector.Name,
+          type: PTB.StringVector.Type,
+          icon: <IconTriangle color="text-green-500" />,
         },
         {
           name: PTB.StringArray0x2suiSUI.Name,

@@ -34,6 +34,16 @@ export const getTypeName = (
     const typeArgs = struct.typeArguments
       .map((param) => getTypeName(param).placeholder)
       .join(',');
+    // TODO: This is a hack to handle Option type
+    if (
+      `${struct.address}::${struct.module}::${struct.name}` ===
+      '0x1::option::Option'
+    ) {
+      return {
+        placeholder: `${struct.address}::${struct.module}::${struct.name}${typeArgs && `<${typeArgs}>`}`,
+        type: `vector<${typeArgs.toLowerCase()}>` as TYPE_VECTOR,
+      };
+    }
     return {
       placeholder: `${struct.address}::${struct.module}::${struct.name}${typeArgs && `<${typeArgs}>`}`,
       type: 'object',

@@ -31,6 +31,14 @@ const convert2 = (node: PTBNode, value: string | string[]): string => {
       return `tx.object.option({ type: '${value[0]}', value: '${value[1]}' })`;
     case PTBNodeType.CoinWithBalance:
       return `coinWithBalance({\n\tbalance: ${value[2]}${value[1] ? `,\n\ttype: '${value[1]}'` : ''}${value[0] === 'false' ? `,\nuseGasCoin: ${value[0]}` : ''}\n})`;
+    case PTBNodeType.AddressVector:
+      return `tx.pure.vector('address', [${(value as string[]).join(',')}])`;
+    case PTBNodeType.BoolVector:
+      return `tx.pure.vector('bool', [${(value as string[]).join(',')}])`;
+    case PTBNodeType.StringVector:
+      return `tx.pure.vector('string', [${(value as string[]).join(',')}])`;
+    case PTBNodeType.ObjectVector:
+      return `tx.pure.vector('id', [${(value as string[]).join(',')}])`;
     case PTBNodeType.NumberVector:
       return `tx.pure.vector('${node.data.label.replace('vector<', '').replace('>', '')}', [${(value as string[]).join(',')}])`;
     default:

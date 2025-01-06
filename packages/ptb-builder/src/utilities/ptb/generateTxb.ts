@@ -245,6 +245,9 @@ export const generateTxb = async (
             tx.pure.address(value as string),
           );
           break;
+        case PTBNodeType.AddressVector:
+          dictionary[key] = tx.pure.vector('address', value as string[]);
+          break;
         case PTBNodeType.Bool:
           dictionary[key] = tx.pure.bool(value === 'true');
           break;
@@ -253,9 +256,18 @@ export const generateTxb = async (
             tx.pure.bool(value === 'true'),
           );
           break;
+        case PTBNodeType.BoolVector:
+          dictionary[key] = tx.pure.vector(
+            'bool',
+            (value as string[]).map((v) => v === 'true'),
+          );
+          break;
         case PTBNodeType.String:
         case PTBNodeType.StringArray0x2suiSUI:
           dictionary[key] = value as string;
+          break;
+        case PTBNodeType.StringVector:
+          dictionary[key] = tx.pure.vector('string', value as string[]);
           break;
         case PTBNodeType.Number:
           dictionary[key] = value as number;
@@ -276,6 +288,9 @@ export const generateTxb = async (
           dictionary[key] = (value as string[]).map((v) =>
             tx.object(value as string),
           );
+          break;
+        case PTBNodeType.ObjectVector:
+          dictionary[key] = tx.pure.vector('id', value as string[]);
           break;
         case PTBNodeType.ObjectClock:
           dictionary[key] = tx.object.clock();

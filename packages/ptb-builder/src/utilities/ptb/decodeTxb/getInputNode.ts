@@ -124,6 +124,39 @@ export const getInputNode = (
             value: input.value as number[],
           },
         };
+      case 'vector<address>':
+        return {
+          id,
+          position: { x: 0, y: 0 },
+          type: PTB.AddressVector.Type,
+          deletable: false,
+          data: {
+            label: PTB.AddressVector.Name,
+            value: input.value as string[],
+          },
+        };
+      case 'vector<bool>':
+        return {
+          id,
+          position: { x: 0, y: 0 },
+          type: PTB.BoolVector.Type,
+          deletable: false,
+          data: {
+            label: PTB.BoolVector.Name,
+            value: input.value as string[],
+          },
+        };
+      case 'vector<string>':
+        return {
+          id,
+          position: { x: 0, y: 0 },
+          type: PTB.StringVector.Type,
+          deletable: false,
+          data: {
+            label: PTB.StringVector.Name,
+            value: input.value as string[],
+          },
+        };
       case '0x2::object::ID':
         return {
           id,
@@ -136,19 +169,31 @@ export const getInputNode = (
           },
         };
       default:
-        // TODO: support array
         if (Array.isArray(input.value)) {
           if (typeof input.value[0] === 'number') {
-            return {
-              id,
-              position: { x: 0, y: 0 },
-              type: PTB.Number.Type,
-              deletable: false,
-              data: {
-                label: PTB.Number.Name,
-                value: `${input.value[0]}`,
-              },
-            };
+            if (input.value.length === 1) {
+              return {
+                id,
+                position: { x: 0, y: 0 },
+                type: PTB.Number.Type,
+                deletable: false,
+                data: {
+                  label: PTB.Number.Name,
+                  value: input.value[0] as number,
+                },
+              };
+            } else {
+              return {
+                id,
+                position: { x: 0, y: 0 },
+                type: PTB.NumberArray.Type,
+                deletable: false,
+                data: {
+                  label: PTB.NumberVectorU8.Name, // TODO: support vector
+                  value: input.value as number[],
+                },
+              };
+            }
           }
         }
         return undefined;
