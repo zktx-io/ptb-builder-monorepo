@@ -82,7 +82,7 @@ export enum PTBNodeType {
   String = 'SuiString',
   StringArray = 'SuiStringArray',
   StringVector = 'SuiStringVector',
-  StringArray0x2suiSUI = 'SuiString0x2suiSUI',
+  String0x2suiSUI = 'SuiString0x2suiSUI',
 
   MergeCoins = 'MergeCoins',
   SplitCoins = 'SplitCoins',
