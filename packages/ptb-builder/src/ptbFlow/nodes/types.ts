@@ -105,6 +105,13 @@ export type PTBModuleData = {
   modules: Record<string, SuiMoveNormalizedModuleWithNames>;
 };
 
+export interface PTBMoveCall {
+  package?: string;
+  module?: string;
+  function?: string;
+  getTypeArgs?: () => string[];
+}
+
 export interface PTBNodeData {
   [key: string]: unknown;
   label: string;
@@ -112,11 +119,7 @@ export interface PTBNodeData {
   splitInputs?: number;
   splitOutputs?: number;
   makeMoveVector?: TYPE_PARAMS;
-  moveCall?: {
-    package?: string;
-    module?: string;
-    function?: string;
-  };
+  moveCall?: PTBMoveCall;
 }
 
 export interface PTBNodeProp {

@@ -354,7 +354,7 @@ export const getTransactionNode = (
       index++;
     });
     tx.MoveCall.arguments?.forEach((arg, i) => {
-      const temp = getTypeName(parameters[i]);
+      const temp = getTypeName(parameters[i], []);
       temp.type &&
         edges.push(
           getEdge(
@@ -383,6 +383,7 @@ export const getTransactionNode = (
               package: tx.MoveCall.package,
               module: tx.MoveCall.module,
               function: tx.MoveCall.function,
+              getTypeArgs: () => tx.MoveCall.type_arguments || [],
             },
           },
         },

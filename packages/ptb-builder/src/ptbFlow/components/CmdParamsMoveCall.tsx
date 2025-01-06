@@ -20,6 +20,7 @@ interface Handle {
 
 export const getTypeName = (
   paramType: SuiMoveNormalizedType,
+  typeArgs: string[],
 ): { placeholder: string; type?: TYPE } => {
   if (typeof paramType === 'string') {
     const temp = paramType.toLowerCase();
@@ -31,39 +32,51 @@ export const getTypeName = (
 
   if (typeof paramType === 'object' && 'Struct' in paramType) {
     const struct = paramType.Struct;
-    const typeArgs = struct.typeArguments
-      .map((param) => getTypeName(param).placeholder)
+    const placeholder = struct.typeArguments
+      .map((param) => getTypeName(param, typeArgs).placeholder)
       .join(',');
-    // TODO: This is a hack to handle Option type
-    if (
-      `${struct.address}::${struct.module}::${struct.name}` ===
-      '0x1::option::Option'
-    ) {
-      return {
-        placeholder: `${struct.address}::${struct.module}::${struct.name}${typeArgs && `<${typeArgs}>`}`,
-        type: `vector<${typeArgs.toLowerCase()}>` as TYPE_VECTOR,
-      };
+
+    let type: TYPE | undefined = undefined;
+    switch (`${struct.address}::${struct.module}::${struct.name}`) {
+      case '0x1::option::Option':
+        if (
+          typeof struct.typeArguments[0] === 'object' &&
+          'TypeParameter' in struct.typeArguments[0]
+        ) {
+          type = typeArgs[struct.typeArguments[0].TypeParameter] as TYPE_PARAMS;
+        } else {
+          type = (
+            struct.typeArguments[0] as string
+          ).toLowerCase() as TYPE_PARAMS;
+        }
+        break;
+      default:
+        type = 'object';
+        break;
     }
     return {
-      placeholder: `${struct.address}::${struct.module}::${struct.name}${typeArgs && `<${typeArgs}>`}`,
-      type: 'object',
+      placeholder: `${struct.address}::${struct.module}::${struct.name}${placeholder && `<${placeholder}>`}`,
+      type,
     };
   }
 
   if (typeof paramType === 'object' && 'TypeParameter' in paramType) {
-    return { placeholder: `T${paramType.TypeParameter}`, type: 'object' }; // this is correct for input params
+    return {
+      placeholder: `T${paramType.TypeParameter}`,
+      // type: type as TYPE, // this is correct for input params
+    };
   }
 
   if (typeof paramType === 'object' && 'Reference' in paramType) {
-    return getTypeName(paramType.Reference);
+    return getTypeName(paramType.Reference, typeArgs);
   }
 
   if (typeof paramType === 'object' && 'MutableReference' in paramType) {
-    return getTypeName(paramType.MutableReference);
+    return getTypeName(paramType.MutableReference, typeArgs);
   }
 
   if (typeof paramType === 'object' && 'Vector' in paramType) {
-    const { placeholder, type } = getTypeName(paramType.Vector);
+    const { placeholder, type } = getTypeName(paramType.Vector, typeArgs);
     return {
       placeholder: `Vector<${placeholder}>`,
       type: (type === 'number'
@@ -84,6 +97,7 @@ interface CmdParamsMoveCallProps {
   types: SuiMoveAbilitySet[];
   params: SuiMoveNormalizedType[];
   yPosition: number;
+  typeArgs: string[];
 }
 
 export const CmdParamsMoveCall = ({
@@ -93,6 +107,7 @@ export const CmdParamsMoveCall = ({
   types,
   params,
   yPosition,
+  typeArgs,
 }: CmdParamsMoveCallProps) => {
   const [handles, setHandles] = React.useState<Handle[]>([]);
 
@@ -101,13 +116,13 @@ export const CmdParamsMoveCall = ({
       setHandles(
         params.map((item, i) => {
           const id = `${prefix}[${i}]`;
-          return { id, ...getTypeName(item) };
+          return { id, ...getTypeName(item, typeArgs) };
         }),
       );
     } else if (params.length === 1) {
-      setHandles([{ id: prefix, ...getTypeName(params[0]) }]);
+      setHandles([{ id: prefix, ...getTypeName(params[0], typeArgs) }]);
     }
-  }, [params, prefix, typeHandle]);
+  }, [params, prefix, typeArgs, typeHandle]);
 
   return (
     <>

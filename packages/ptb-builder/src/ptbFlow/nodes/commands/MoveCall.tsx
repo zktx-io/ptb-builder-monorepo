@@ -14,7 +14,7 @@ import {
   LabelStyle,
   NodeStyles,
 } from '../styles';
-import { PTBModuleData } from '../types';
+import { PTBModuleData, PTBMoveCall } from '../types';
 
 export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const { fetchPackageData } = useStateContext();
@@ -38,6 +38,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const [selectedOutputs, setSelectedOutputs] = useState<
     SuiMoveNormalizedType[]
   >([]);
+  const [selectedTypeArgs, setSelectedTypeArgs] = useState<string[]>([]);
 
   const loadPackage = async () => {
     if (!!packageId && fetchPackageData) {
@@ -52,6 +53,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           package: packageId,
           module: temp._nameModules_[0],
           function: func,
+          getTypeArgs: () => selectedTypeArgs,
         });
       }
     }
@@ -64,6 +66,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         package: string;
         module: string;
         function: string;
+        getTypeArgs: () => string[];
       },
     ) => {
       setSelectedModule(moveCallData.module);
@@ -107,18 +110,16 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   );
 
   useEffect(() => {
-    const init = async (moveCall?: {
-      package?: string;
-      module?: string;
-      function?: string;
-    }) => {
+    const init = async (moveCall?: PTBMoveCall) => {
       if (
         fetchPackageData &&
         moveCall &&
         moveCall.package &&
         moveCall.module &&
-        moveCall.function
+        moveCall.function &&
+        moveCall.getTypeArgs
       ) {
+        setSelectedTypeArgs(moveCall.getTypeArgs());
         setPackageId(moveCall.package);
         setSelectedModule(moveCall.module);
         setSelectedFunction(moveCall.function);
@@ -129,6 +130,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
             package: moveCall.package,
             module: moveCall.module,
             function: moveCall.function,
+            getTypeArgs: moveCall.getTypeArgs,
           });
         }
       }
@@ -197,6 +199,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                   function:
                     packageData!.modules[evt.target.value]._nameFunctions_[0] ||
                     '',
+                  getTypeArgs: () => selectedTypeArgs,
                 });
                 resetEdge();
               }}
@@ -223,6 +226,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                   package: packageId,
                   module: selectedModule,
                   function: evt.target.value,
+                  getTypeArgs: () => selectedTypeArgs,
                 });
                 resetEdge();
               }}
@@ -254,6 +258,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                 types={selectedAbility}
                 params={selectedInputs}
                 yPosition={221}
+                typeArgs={selectedTypeArgs}
               />
             </>
           )}
@@ -277,6 +282,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
                       (selectedInputs.length + selectedAbility.length) * 42
                     : 221
                 }
+                typeArgs={selectedTypeArgs}
               />
             </>
           )}

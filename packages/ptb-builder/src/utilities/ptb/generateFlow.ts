@@ -206,7 +206,8 @@ const preprocess = (
               ? moduleData.modules[node.data.moveCall.module].exposedFunctions[
                   node.data.moveCall.function!
                 ].return.map(
-                  (type, index) => `result[${index}]:${getTypeName(type).type}`,
+                  (type, index) =>
+                    `result[${index}]:${getTypeName(type, []).type}`,
                 )
               : [
                   `result:${
@@ -214,6 +215,7 @@ const preprocess = (
                       moduleData.modules[node.data.moveCall.module]
                         .exposedFunctions[node.data.moveCall.function!]
                         .return[0],
+                      [],
                     ).type
                   }`,
                 ]
