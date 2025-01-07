@@ -12,9 +12,10 @@ import { PTBModuleData, TYPE_PARAMS } from '../../../ptbFlow/nodes/types';
 
 const InitX = -300;
 
-const getVectorType = (
+const getMakeMoveVectorInputType = (
   arg: SuiArgument,
   dictionary: Record<string, PTBNode>,
+  modules: Record<string, PTBModuleData | undefined>,
 ): { source: string; sourceHandle: string } | undefined => {
   if (typeof arg === 'object' && 'Input' in arg) {
     const type = dictionary[`input-${arg.Input}`].type;
@@ -40,8 +41,25 @@ const getVectorType = (
           sourceHandle: `result[0]:object`,
         };
       case PTB.MoveCall.Type:
-      // TODO: Fix this type cast
+        const moveCall = dictionary[`cmd-${arg.Result}`].data.moveCall;
+        if (
+          moveCall &&
+          moveCall.package &&
+          moveCall.module &&
+          moveCall.function
+        ) {
+          const results =
+            modules[moveCall.package]?.modules[moveCall.module]
+              .exposedFunctions[moveCall?.function!].return;
+          if (results) {
+            const result = results[0];
+            return typeof result === 'object' && 'Struct' in result
+              ? { source: `cmd-${arg.Result}`, sourceHandle: `result:object` }
+              : undefined;
+          }
+        }
       default:
+        break;
     }
   }
   if (typeof arg === 'object' && 'NestedResult' in arg) {
@@ -53,7 +71,28 @@ const getVectorType = (
           sourceHandle: `result[${arg.NestedResult[1]}]:object`,
         };
       case PTB.MoveCall.Type:
+        const moveCall = dictionary[`cmd-${arg.NestedResult[0]}`].data.moveCall;
+        if (
+          moveCall &&
+          moveCall.package &&
+          moveCall.module &&
+          moveCall.function
+        ) {
+          const results =
+            modules[moveCall.package]?.modules[moveCall.module]
+              .exposedFunctions[moveCall?.function!].return;
+          if (results) {
+            const result = results[arg.NestedResult[1]];
+            return typeof result === 'object' && 'Struct' in result
+              ? {
+                  source: `cmd-${arg.NestedResult[0]}`,
+                  sourceHandle: `result[${arg.NestedResult[1]}]:object`,
+                }
+              : undefined;
+          }
+        }
       default:
+        break;
     }
   }
   return undefined;
@@ -294,7 +333,7 @@ export const getTransactionNode = (
       makeMoveVector = tx.MakeMoveVec[0] as TYPE_PARAMS;
     }
     tx.MakeMoveVec[1].forEach((item, index) => {
-      const temp = getVectorType(item, dictionary);
+      const temp = getMakeMoveVectorInputType(item, dictionary, modules);
       if (temp) {
         makeMoveVector = temp.sourceHandle.split(':')[1] as TYPE_PARAMS;
         temp &&

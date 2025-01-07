@@ -46,7 +46,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.Number.Name,
-            value: input.value as string,
+            value: parseInt(input.value as string, 10),
           },
         };
       case 'string':
@@ -68,7 +68,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU8.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u16>':
@@ -79,7 +79,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU16.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u32>':
@@ -90,7 +90,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU32.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u64>':
@@ -101,7 +101,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU64.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u128>':
@@ -112,7 +112,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU128.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u256>':
@@ -123,7 +123,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU256.Name,
-            value: input.value as number[],
+            value: (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<address>':

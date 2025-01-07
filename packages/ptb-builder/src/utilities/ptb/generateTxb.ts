@@ -119,7 +119,7 @@ const genereateCommand = (
         const type = inputs[0];
         const elements = inputs[1].map((v) => connvert(v, dictionary));
         const result = tx.makeMoveVec({
-          type: type,
+          type: type, // TODO: fix type
           elements: elements.map((v) => {
             switch (type) {
               case 'address':
@@ -138,15 +138,18 @@ const genereateCommand = (
                 return tx.pure.u128(v as number);
               case 'u256':
                 return tx.pure.u256(v as number);
-              case 'object':
-                return tx.object(`${v}`);
               case 'bool':
                 return tx.pure.bool(v === 'true');
+              case 'object':
+                return typeof v === 'string'
+                  ? tx.object(`${v}`)
+                  : (v as TransactionObjectArgument);
               default:
-                return `${v}`;
+                return v as TransactionObjectArgument;
             }
           }),
         });
+
         return { tx, nestedResults: result };
       }
       case PTBNodeType.MoveCall: {

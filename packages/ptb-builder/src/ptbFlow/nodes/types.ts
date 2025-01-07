@@ -109,6 +109,7 @@ export interface PTBMoveCall {
   package?: string;
   module?: string;
   function?: string;
+  setTypeArgs?: () => string[];
   getTypeArgs?: () => string[];
 }
 

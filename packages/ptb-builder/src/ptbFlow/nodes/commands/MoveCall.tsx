@@ -66,11 +66,15 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         package: string;
         module: string;
         function: string;
-        getTypeArgs: () => string[];
+        getTypeArgs?: () => string[];
       },
     ) => {
       setSelectedModule(moveCallData.module);
       setSelectedFunction(moveCallData.function);
+      if (moveCallData.getTypeArgs) {
+        setSelectedTypeArgs(moveCallData.getTypeArgs());
+        moveCallData.getTypeArgs = () => selectedTypeArgs;
+      }
       if (moveCallData.module && moveCallData.function) {
         setSelectedAbility(
           ptbModuleData.modules[moveCallData.module].exposedFunctions[
@@ -106,7 +110,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
       );
       updateNodeInternals(id);
     },
-    [id, setNodes, updateNodeInternals],
+    [id, selectedTypeArgs, setNodes, updateNodeInternals],
   );
 
   useEffect(() => {
@@ -116,10 +120,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         moveCall &&
         moveCall.package &&
         moveCall.module &&
-        moveCall.function &&
-        moveCall.getTypeArgs
+        moveCall.function
       ) {
-        setSelectedTypeArgs(moveCall.getTypeArgs());
         setPackageId(moveCall.package);
         setSelectedModule(moveCall.module);
         setSelectedFunction(moveCall.function);
