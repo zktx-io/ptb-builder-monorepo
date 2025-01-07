@@ -17,10 +17,55 @@ const layoutOptions = {
 };
 
 export const autoLayoutFlow = async (nodes: PTBNode[], edges: PTBEdge[]) => {
+  const typeEdges = edges
+    .filter((e) => e.targetHandle && e.targetHandle.startsWith('type'))
+    .sort((a, b) => {
+      const targetA = a.targetHandle ?? '';
+      const targetB = b.targetHandle ?? '';
+      return targetB.localeCompare(targetA);
+    });
+  const inputEdges = edges
+    .filter((e) => e.targetHandle && e.targetHandle.startsWith('input'))
+    .sort((a, b) => {
+      const targetA = a.targetHandle ?? '';
+      const targetB = b.targetHandle ?? '';
+      return targetB.localeCompare(targetA);
+    });
+  const coinEdges = edges.filter(
+    (e) => e.targetHandle && e.targetHandle.startsWith('coin'),
+  );
+  const amountsEdges = edges
+    .filter((e) => e.targetHandle && e.targetHandle.startsWith('amounts'))
+    .sort((a, b) => {
+      const targetA = a.targetHandle ?? '';
+      const targetB = b.targetHandle ?? '';
+      return targetB.localeCompare(targetA);
+    });
+  const otherEdges = edges
+    .filter(
+      (e) =>
+        e.targetHandle &&
+        !e.targetHandle.startsWith('type') &&
+        !e.targetHandle.startsWith('input') &&
+        !e.targetHandle.startsWith('amounts') &&
+        !e.targetHandle.startsWith('coin'),
+    )
+    .sort((a, b) => {
+      const targetA = a.targetHandle ?? '';
+      const targetB = b.targetHandle ?? '';
+      return targetB.localeCompare(targetA);
+    });
+  const sortedEdges = [
+    ...otherEdges,
+    ...inputEdges,
+    ...typeEdges,
+    ...amountsEdges,
+    ...coinEdges,
+  ];
   const getTargetHandles = (n: PTBNode) =>
-    edges.filter((e) => e.target === n.id).map((e) => ({ id: e.target }));
+    sortedEdges.filter((e) => e.target === n.id).map((e) => ({ id: e.target }));
   const getSourceHandles = (n: PTBNode) =>
-    edges.filter((e) => e.source === n.id).map((e) => ({ id: e.source }));
+    sortedEdges.filter((e) => e.source === n.id).map((e) => ({ id: e.source }));
   const graph: ElkNode = {
     id: 'root',
     layoutOptions,
@@ -49,7 +94,7 @@ export const autoLayoutFlow = async (nodes: PTBNode[], edges: PTBEdge[]) => {
         ports: [{ id: n.id }, ...targetPorts, ...sourcePorts],
       };
     }),
-    edges: edges.map((e) => ({
+    edges: sortedEdges.map((e) => ({
       id: e.id,
       sources: [e.source],
       targets: [e.target],
