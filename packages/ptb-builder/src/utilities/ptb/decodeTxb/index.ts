@@ -125,7 +125,7 @@ export const decodeTxb = async (
         : true,
     );
 
-    return { nodes: filteredNodes, edges };
+    return { nodes: filteredNodes, edges: edges.reverse() };
   } else {
     enqueueToast(`not support transaction: ${txb.kind}`, {
       variant: 'warning',
