@@ -20,6 +20,10 @@ export default {
   ],
   plugins: [
     peerDepsExternal(),
+    resolve({
+      browser: true,
+      preferBuiltins: false,
+    }),
     resolve(),
     commonjs({
       include: /node_modules/,
