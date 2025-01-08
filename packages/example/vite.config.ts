@@ -8,4 +8,7 @@ export default defineConfig({
     minify: 'esbuild',
     sourcemap: false,
   },
+  server: {
+    port: 3000,
+  },
 });
