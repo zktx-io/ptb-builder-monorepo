@@ -88,7 +88,7 @@ export const Editor = () => {
           style={{
             width: '100vw',
             height: '100vh',
-            backgroundColor: 'black',
+            backgroundColor: '#011829',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',

@@ -56,16 +56,16 @@ export const DragAndDrop = ({
             left: 0,
             width: '100vw',
             height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: '#011829',
             color: 'white',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 9999, // 최상위 레이어
+            zIndex: 9999,
             fontSize: '24px',
             textAlign: 'center',
-            userSelect: 'none', // 텍스트 선택 방지
+            userSelect: 'none',
             transition: 'opacity 0.3s ease',
           }}
         >
