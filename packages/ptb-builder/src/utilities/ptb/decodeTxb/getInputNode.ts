@@ -1,4 +1,5 @@
 import { SuiCallArg } from '@mysten/sui/client';
+import { fromHex } from '@mysten/sui/utils';
 
 import { PTB } from '../../../components';
 import { PTBNode } from '../../../ptbFlow/nodes';
@@ -68,7 +69,10 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU8.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value:
+              typeof input.value === 'string'
+                ? Array.from(fromHex(input.value))
+                : (input.value as string[]).map((v) => parseInt(v, 10)),
           },
         };
       case 'vector<u16>':
