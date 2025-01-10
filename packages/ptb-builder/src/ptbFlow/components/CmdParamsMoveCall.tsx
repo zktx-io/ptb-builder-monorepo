@@ -44,6 +44,11 @@ export const getTypeName = (
           'TypeParameter' in struct.typeArguments[0]
         ) {
           type = typeArgs[struct.typeArguments[0].TypeParameter] as TYPE_PARAMS;
+        } else if (
+          typeof struct.typeArguments[0] === 'object' &&
+          'Struct' in struct.typeArguments[0]
+        ) {
+          type = getTypeName(struct.typeArguments[0], typeArgs).type;
         } else {
           type = (
             struct.typeArguments[0] as string
