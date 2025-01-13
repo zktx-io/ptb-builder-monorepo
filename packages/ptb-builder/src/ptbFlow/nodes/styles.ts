@@ -76,14 +76,9 @@ export const ButtonStyles = {
       'transition-colors duration-300 ease-in-out hover:bg-blue-500/20 dark:hover:bg-blue-400/20',
   },
   command: {
-    text: 'text-stone-700 dark:text-stone-300',
+    text: 'text-gray-700 dark:text-gray-400 hover:text-stone-700 dark:hover:text-stone-300',
     hoverBackground:
       'transition-colors duration-300 ease-in-out hover:bg-stone-500/20 dark:hover:bg-stone-500/20',
-  },
-  transaction: {
-    text: 'text-gray-700 dark:text-gray-300',
-    hoverBackground:
-      'transition-colors duration-300 ease-in-out hover:bg-gray-400/20 dark:hover:bg-gray-500/20',
   },
 };
 
@@ -101,8 +96,6 @@ export const NodeStyles = {
     'transition-colors duration-300 ease-in-out rounded-full w-[140px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
   command:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
-  moveCall:
-    'transition-colors duration-300 ease-in-out rounded-lg w-[220px] backdrop-blur-lg py-2 px-2 border-2 shadow border-stone-300 bg-gray-300/60 dark:border-stone-700 dark:bg-gray-800/60 hover:border-stone-500 dark:hover:border-stone-500 cursor-move',
 };
 
 export const FormStyle = 'flex flex-col space-y-0';

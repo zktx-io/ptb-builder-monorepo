@@ -3,27 +3,37 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 import { IconCircle } from '../../../components';
-import { HandleStyles } from '../styles';
+import { HandleStyles, LabelStyle } from '../styles';
 import { isValidHandleType, NumericTypes, TYPE_PARAMS } from '../types';
 
 export const PtbHandle = ({
+  label,
+  tootlip,
+  name,
   typeHandle,
   typeParams,
-  name,
   style,
 }: {
+  label?: string;
+  tootlip?: string;
+  name: string;
   typeHandle: 'source' | 'target';
   typeParams: TYPE_PARAMS | 'number';
-  name: string;
   style?: Record<string, string>;
 }) => {
   return (
     <Handle
       type={typeHandle}
+      title={tootlip}
       position={typeHandle === 'source' ? Position.Right : Position.Left}
       id={`${name}:${typeParams}`}
-      className={`flex items-center justify-center w-3 h-3 ${NumericTypes.has(typeParams) ? HandleStyles.number.background : (HandleStyles as any)[typeParams].background}`}
-      style={{ backgroundColor: 'transparent', ...style, padding: 0 }}
+      className={`flex items-center w-3 h-3 ${NumericTypes.has(typeParams) ? HandleStyles.number.background : (HandleStyles as any)[typeParams].background}`}
+      style={{
+        ...style,
+        backgroundColor: 'transparent',
+        padding: 0,
+        justifyContent: typeHandle === 'source' ? 'flex-end' : 'flex-start',
+      }}
       isValidConnection={(connection: any) =>
         isValidHandleType(
           connection,
@@ -32,13 +42,33 @@ export const PtbHandle = ({
         )
       }
     >
-      <IconCircle
-        color={
-          NumericTypes.has(typeParams)
-            ? HandleStyles.number.background
-            : (HandleStyles as any)[typeParams].background
-        }
-      />
+      <div
+        className="flex items-center gap-2"
+        style={{
+          flexDirection: typeHandle === 'source' ? 'row' : 'row-reverse',
+          pointerEvents: 'none',
+          position: 'relative',
+          left: typeHandle === 'source' ? '' : '-2px',
+          right: typeHandle === 'source' ? '-2px' : '',
+        }}
+      >
+        {label && (
+          <label
+            title={tootlip}
+            className={LabelStyle}
+            style={{ fontSize: '0.6rem', pointerEvents: 'auto' }}
+          >
+            {label}
+          </label>
+        )}
+        <IconCircle
+          color={
+            NumericTypes.has(typeParams)
+              ? HandleStyles.number.background
+              : (HandleStyles as any)[typeParams].background
+          }
+        />
+      </div>
     </Handle>
   );
 };

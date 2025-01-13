@@ -4,12 +4,7 @@ import { useUpdateNodeInternals } from '@xyflow/react';
 
 import { useStateContext } from '../../provider';
 import { PtbHandle, PtbHandleArray, PtbHandleVector } from '../nodes/handles';
-import {
-  ButtonStyles,
-  FormTitleStyle,
-  InputStyle,
-  LabelStyle,
-} from '../nodes/styles';
+import { ButtonStyles, InputStyle } from '../nodes/styles';
 import {
   NumericTypes,
   PTBNodeData,
@@ -18,12 +13,14 @@ import {
   TYPE_VECTOR,
 } from '../nodes/types';
 
+const YStart = 74;
+const YGap = 24;
+
 interface CmdParamsVectorProps {
   id: string;
-  type: TYPE_PARAMS;
   data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
-  updateState: (type: TYPE_PARAMS, splitInputs?: number) => void;
+  updateState: (type: TYPE_PARAMS, omit: boolean, splitInputs?: number) => void;
 }
 
 const PARAMS: TYPE_PARAMS[] = [
@@ -41,7 +38,6 @@ const PARAMS: TYPE_PARAMS[] = [
 
 export const CmdParamsVector = ({
   id,
-  type,
   data,
   resetEdge,
   updateState,
@@ -55,45 +51,52 @@ export const CmdParamsVector = ({
   const [inputs, setInputs] = useState<string[]>(
     data.splitInputs ? new Array(data.splitInputs).fill('') : [],
   );
-
-  const handleResetEdge = (handle: 'source' | 'target') => {
-    resetEdge(handle);
-    updateNodeInternals(id);
-  };
+  const [type, setType] = useState<TYPE_PARAMS>(
+    data.makeMoveVector?.type || 'object',
+  );
+  const [omit, setOmit] = useState<boolean>(
+    !!data.makeMoveVector?.omit || false,
+  );
 
   const selectType = (type: TYPE_PARAMS) => {
     resetEdge('target');
     resetEdge('source');
-    updateState(type, isSplitInputs ? inputs.length : undefined);
-    updateNodeInternals(id);
+    setType(type);
+    updateState(type, omit, isSplitInputs ? inputs.length : undefined);
   };
 
-  const addInputItem = (checkeck: boolean) => {
+  const handleAdd = (checkeck: boolean) => {
     if (checkeck) {
-      setInputs((oldData) => [...oldData, '']);
+      setInputs((old) => [...old, '']);
       updateState(
         type,
+        omit,
         checkeck || isSplitInputs ? inputs.length + 1 : undefined,
       );
     } else {
       setInputs([]);
-      updateState(type, undefined);
+      updateState(type, omit, undefined);
     }
   };
 
-  const removeInputItem = (index: number) => {
+  const handleRemove = () => {
     if (inputs.length > 1) {
       resetEdge('target');
-      setInputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
-      updateState(type, inputs.length - 1);
+      setInputs((old) => old.slice(0, -1));
+      updateState(type, omit, inputs.length - 1);
       updateNodeInternals(id);
     }
   };
 
   useEffect(() => {
-    updateState(type, isSplitInputs ? inputs.length : undefined);
+    updateState(type, omit, isSplitInputs ? inputs.length : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleResetEdge = (handle: 'source' | 'target') => {
+    resetEdge(handle);
+    updateNodeInternals(id);
+  };
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -101,10 +104,35 @@ export const CmdParamsVector = ({
 
   return (
     <>
-      <div className={FormTitleStyle}>
-        <label className={LabelStyle}>inputs</label>
+      <div className="flex items-center gap-2">
+        <select
+          className={InputStyle}
+          disabled={!canEdit}
+          value={type}
+          onChange={(evt) => {
+            selectType(evt.target.value as TYPE_PARAMS);
+          }}
+        >
+          {PARAMS.map((param, key) => (
+            <option key={key} value={param}>
+              {param}
+            </option>
+          ))}
+        </select>
+        <input
+          type="checkbox"
+          title="omit type"
+          checked={omit}
+          onChange={(e) => {
+            setOmit(e.target.checked);
+            updateState(type, e.target.checked, inputs.length);
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-end w-full mt-2">
         {canEdit && (
-          <div className="flex items-center">
+          <>
             <label
               htmlFor="checkbox"
               className="text-xs text-gray-900 dark:text-gray-100 mr-1"
@@ -116,172 +144,70 @@ export const CmdParamsVector = ({
               id="checkbox"
               checked={isSplitInputs}
               onChange={(e) => {
-                handleResetEdge('target');
                 setIsSplitInputs(e.target.checked);
-                addInputItem(e.target.checked);
+                handleAdd(e.target.checked);
+                handleResetEdge('target');
               }}
             />
-          </div>
+          </>
         )}
       </div>
-      <table
+      {!isSplitInputs ? (
+        <PtbHandleArray
+          label="elements"
+          typeHandle="target"
+          typeParams={
+            `${NumericTypes.has(type) ? 'number' : type}[]` as TYPE_ARRAY
+          }
+          name="elements"
+          style={{ top: `${YStart + YGap}px` }}
+        />
+      ) : (
+        <>
+          {inputs.map((_, index) => (
+            <PtbHandle
+              key={`inputs-${index}`}
+              label={`elements[${index}]`}
+              typeHandle="target"
+              typeParams={
+                NumericTypes.has(type) ? 'number' : (type as TYPE_PARAMS)
+              }
+              name={`elements[${index}]`}
+              style={{ top: `${YStart + YGap * (index + 1)}px` }}
+            />
+          ))}
+        </>
+      )}
+      <PtbHandleVector
+        label="result"
+        tootlip={`vector<${type}>`}
+        typeHandle="source"
+        typeParams={`vector<${type}>` as TYPE_VECTOR}
+        name="result"
+        style={{ top: `${YStart + YGap}px` }}
+      />
+      <div
         style={{
           width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: '13px',
+          height: (inputs.length || 1) * 24 + (canEdit ? 8 : 24),
         }}
-      >
-        <tbody>
-          <tr>
-            <td
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <select
-                className={InputStyle}
-                disabled={!canEdit}
-                value={type}
-                onChange={(evt) => {
-                  selectType(evt.target.value as TYPE_PARAMS);
-                }}
-              >
-                {PARAMS.map((param, key) => (
-                  <option key={key} value={param}>
-                    {param}
-                  </option>
-                ))}
-              </select>
-            </td>
-          </tr>
-          {!isSplitInputs ? (
-            <tr>
-              <td
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <input
-                  type="text"
-                  placeholder={`${type}[]`}
-                  autoComplete="off"
-                  className={InputStyle}
-                  readOnly
-                />
-                <PtbHandleArray
-                  typeHandle="target"
-                  typeParams={
-                    `${NumericTypes.has(type) ? 'number' : type}[]` as TYPE_ARRAY
-                  }
-                  name="elements"
-                  style={{ top: '90px' }}
-                />
-              </td>
-            </tr>
-          ) : (
-            <>
-              {inputs.map((_, index) => (
-                <tr key={index}>
-                  <td
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <input
-                      type="text"
-                      placeholder={type}
-                      autoComplete="off"
-                      className={InputStyle}
-                      readOnly
-                    />
-                    <PtbHandle
-                      typeHandle="target"
-                      typeParams={
-                        NumericTypes.has(type)
-                          ? 'number'
-                          : (type as TYPE_PARAMS)
-                      }
-                      name={`elements[${index}]`}
-                      style={{ top: `${90 + 28 * index}px` }}
-                    />
-                    {canEdit && (
-                      <button
-                        className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                        style={{
-                          minWidth: '20px',
-                        }}
-                        onClick={() => removeInputItem(index)}
-                      >
-                        x
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {canEdit && (
-                <tr>
-                  <td
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                    }}
-                  >
-                    <button
-                      className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                      onClick={() => addInputItem(isSplitInputs)}
-                    >
-                      Add
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </>
-          )}
-        </tbody>
-      </table>
-
-      <div className={isSplitInputs ? '' : 'mt-2'}>
-        <div className={FormTitleStyle}>
-          <label className={LabelStyle}>ouputs</label>
+      />
+      {canEdit && isSplitInputs && (
+        <div className="flex w-full border-1 border-stone-300 dark:border-stone-700 rounded-md">
+          <button
+            className={`flex-1 py-1 text-center text-xs rounded-l-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
+            onClick={() => handleAdd(true)}
+          >
+            Add
+          </button>
+          <button
+            className={`flex-1 py-1 text-center text-xs rounded-r-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
+            onClick={handleRemove}
+          >
+            Delete
+          </button>
         </div>
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: '13px',
-          }}
-        >
-          <tbody>
-            <tr>
-              <td
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <input
-                  type="text"
-                  placeholder={`vector<${type}>`}
-                  autoComplete="off"
-                  className={InputStyle}
-                  readOnly
-                />
-                <PtbHandleVector
-                  typeHandle="source"
-                  typeParams={`vector<${type}>` as TYPE_VECTOR}
-                  name="result"
-                  style={{
-                    top: `${inputs.length > 0 ? 106 + (canEdit ? 28 : 0) + 28 * inputs.length : 134 + (isSplitInputs ? 0 : 8)}px`,
-                  }}
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      )}
     </>
   );
 };

@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 
 import { SuiMoveAbilitySet, SuiMoveNormalizedType } from '@mysten/sui/client';
 
 import { PtbHandle, PtbHandleArray, PtbHandleVector } from '../nodes/handles';
-import { FormStyle, InputStyle, LabelStyle } from '../nodes/styles';
+import { PtbHandleNA } from '../nodes/handles/PtbHandleNA';
 import {
   NumericTypes,
   TYPE_ARRAY,
@@ -12,11 +12,29 @@ import {
 } from '../nodes/types';
 
 type TYPE = TYPE_PARAMS | TYPE_ARRAY | TYPE_VECTOR | 'number' | 'number[]';
-interface Handle {
+export interface Handle {
   id: string;
   placeholder: string;
   type?: TYPE;
 }
+
+const YStart = 185;
+const YGap = 24;
+
+export const convertParams = (
+  typeHandle: 'source' | 'target',
+  prefix: string,
+  params: SuiMoveNormalizedType[],
+  typeArgs: string[],
+): Handle[] => {
+  if (params.length > 1 || typeHandle === 'target') {
+    return params.map((item, i) => {
+      const id = `${prefix}[${i}]`;
+      return { id, ...getTypeName(item, typeArgs) };
+    });
+  }
+  return [{ id: prefix, ...getTypeName(params[0], typeArgs) }];
+};
 
 export const getTypeName = (
   paramType: SuiMoveNormalizedType,
@@ -96,91 +114,62 @@ export const getTypeName = (
 };
 
 interface CmdParamsMoveCallProps {
-  label: string;
-  prefix: string;
   typeHandle: 'source' | 'target';
   types: SuiMoveAbilitySet[];
-  params: SuiMoveNormalizedType[];
-  yPosition: number;
-  typeArgs: string[];
+  params: Handle[];
 }
 
 export const CmdParamsMoveCall = ({
-  label,
-  prefix,
   typeHandle,
   types,
   params,
-  yPosition,
-  typeArgs,
 }: CmdParamsMoveCallProps) => {
-  const [handles, setHandles] = React.useState<Handle[]>([]);
-
-  useEffect(() => {
-    if (params.length > 1 || typeHandle === 'target') {
-      setHandles(
-        params.map((item, i) => {
-          const id = `${prefix}[${i}]`;
-          return { id, ...getTypeName(item, typeArgs) };
-        }),
-      );
-    } else if (params.length === 1) {
-      setHandles([{ id: prefix, ...getTypeName(params[0], typeArgs) }]);
-    }
-  }, [params, prefix, typeArgs, typeHandle]);
-
   return (
     <>
-      {types.map((_, index) => (
-        <div key={index} className={FormStyle}>
-          <label
-            className={LabelStyle}
-            style={{ fontSize: '0.6rem' }}
-          >{`Type${index}`}</label>
-          <input
-            readOnly
-            type="text"
-            placeholder={`T${index}`}
-            autoComplete="off"
-            className={InputStyle}
-          />
-          <PtbHandle
-            typeHandle="target"
-            typeParams="string"
-            name={`type[${index}]`}
-            style={{ top: `${yPosition + index * 42}px` }}
-          />
-        </div>
+      {types.map((item, index) => (
+        <PtbHandle
+          key={`T${index}`}
+          label={`T${index}`}
+          tootlip={item.abilities.join(',')}
+          name={`type[${index}]`}
+          typeHandle="target"
+          typeParams="string"
+          style={{ top: `${YStart + index * 24}px` }}
+        />
       ))}
-      {handles.map((item, index) => {
-        let handleComponent;
+      {params.map((item, index) => {
+        const top = `${YStart + (index + types.length) * YGap}px`;
         switch (item.type) {
           case 'address':
           case 'bool':
           case 'object':
           case 'number':
-            handleComponent = (
+            return (
               <PtbHandle
+                key={index}
+                label={item.id}
+                tootlip={item.placeholder}
+                name={item.id}
                 typeHandle={typeHandle}
                 typeParams={item.type}
-                name={item.id}
-                style={{ top: `${yPosition + (index + types.length) * 42}px` }}
+                style={{ top }}
               />
             );
-            break;
           case 'address[]':
           case 'bool[]':
           case 'object[]':
           case 'number[]':
-            handleComponent = (
+            return (
               <PtbHandleArray
+                key={index}
+                label={item.id}
+                tootlip={item.placeholder}
+                name={item.id}
                 typeHandle={typeHandle}
                 typeParams={item.type}
-                name={item.id}
-                style={{ top: `${yPosition + (index + types.length) * 42}px` }}
+                style={{ top }}
               />
             );
-            break;
           case 'vector<address>':
           case 'vector<bool>':
           case 'vector<object>':
@@ -190,35 +179,29 @@ export const CmdParamsMoveCall = ({
           case 'vector<u64>':
           case 'vector<u128>':
           case 'vector<u256>':
-            handleComponent = (
+            return (
               <PtbHandleVector
+                key={index}
+                label={item.id}
+                tootlip={item.placeholder}
+                name={item.id}
                 typeHandle={typeHandle}
                 typeParams={item.type}
-                name={item.id}
-                style={{ top: `${yPosition + (index + types.length) * 42}px` }}
+                style={{ top }}
               />
             );
-            break;
           default:
-            handleComponent = <></>;
-            break;
+            return (
+              <PtbHandleNA
+                key={index}
+                label={item.id}
+                tootlip={item.placeholder}
+                name={item.id}
+                typeHandle={typeHandle}
+                style={{ top }}
+              />
+            );
         }
-        return (
-          <div key={index} className={FormStyle}>
-            <label
-              className={LabelStyle}
-              style={{ fontSize: '0.6rem' }}
-            >{`${label}${index}`}</label>
-            <input
-              readOnly
-              type="text"
-              placeholder={item.placeholder}
-              autoComplete="off"
-              className={InputStyle}
-            />
-            {handleComponent}
-          </div>
-        );
       })}
     </>
   );

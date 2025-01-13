@@ -105,15 +105,15 @@ export const StateProvider = ({
   );
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, canEdit }));
+    setState((old) => ({ ...old, canEdit }));
   }, [canEdit]);
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, wallet }));
+    setState((old) => ({ ...old, wallet }));
   }, [wallet]);
 
   useEffect(() => {
-    setState((oldState) => ({ ...oldState, network }));
+    setState((old) => ({ ...old, network }));
   }, [network]);
 
   useEffect(() => {

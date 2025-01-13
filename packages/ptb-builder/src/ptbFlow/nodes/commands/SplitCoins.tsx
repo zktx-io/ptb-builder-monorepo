@@ -48,16 +48,13 @@ export const SplitCoins = ({ id, data }: PTBNodeProp) => {
         output={{ label: 'result', type: 'object[]' }}
         data={data}
         resetEdge={resetEdge}
-        updateState={(
-          splitInputs: number | undefined,
-          splitOutputs: number | undefined,
-        ) => {
+        updateState={(splitInputs: number | undefined) => {
           setNodes((nds) =>
             nds.map((node) => {
               if (node.id === id) {
                 return {
                   ...node,
-                  data: { ...node.data, splitInputs, splitOutputs },
+                  data: { ...node.data, splitInputs },
                 };
               }
               return node;

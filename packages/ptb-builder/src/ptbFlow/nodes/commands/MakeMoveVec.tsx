@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -10,9 +10,6 @@ import { TYPE_PARAMS } from '../types';
 
 export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
   const { setEdges, setNodes } = useReactFlow();
-  const [type, setType] = useState<TYPE_PARAMS>(
-    data.makeMoveVector || 'object',
-  );
 
   const resetEdge = (handle: 'source' | 'target') => {
     setEdges((eds) =>
@@ -46,17 +43,23 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
       />
       <CmdParamsVector
         id={id}
-        type={type}
         data={data}
         resetEdge={resetEdge}
-        updateState={(type: TYPE_PARAMS, splitInputs?: number) => {
-          setType(type);
+        updateState={(
+          type: TYPE_PARAMS,
+          omit: boolean,
+          splitInputs?: number,
+        ) => {
           setNodes((nds) =>
             nds.map((node) => {
               if (node.id === id) {
                 return {
                   ...node,
-                  data: { ...node.data, splitInputs, makeMoveVector: type },
+                  data: {
+                    ...node.data,
+                    splitInputs,
+                    makeMoveVector: { type, omit },
+                  },
                 };
               }
               return node;

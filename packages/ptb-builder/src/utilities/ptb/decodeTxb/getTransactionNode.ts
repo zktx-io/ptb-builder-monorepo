@@ -233,7 +233,6 @@ export const getTransactionNode = (
           data: {
             label: PTB.SplitCoins.Name,
             splitInputs: edges.length - 1,
-            splitOutputs: edges.length - 1,
           },
         },
       ],
@@ -358,7 +357,10 @@ export const getTransactionNode = (
           data: {
             label: PTB.MakeMoveVec.Name,
             splitInputs: tx.MakeMoveVec[1].length,
-            makeMoveVector: makeMoveVector || 'object',
+            makeMoveVector: {
+              type: makeMoveVector || 'object',
+              omit: true,
+            },
           },
         },
       ],

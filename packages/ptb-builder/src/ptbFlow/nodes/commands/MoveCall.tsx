@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { SuiMoveAbilitySet, SuiMoveNormalizedType } from '@mysten/sui/client';
+import { SuiMoveAbilitySet } from '@mysten/sui/client';
 import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { useStateContext } from '../../../provider';
 import { CmdParamsMoveCall } from '../../components';
+import { convertParams, Handle } from '../../components/CmdParamsMoveCall';
 import { PtbHandleProcess } from '../handles';
 import {
   ButtonStyles,
@@ -32,12 +33,8 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   const [selectedAbility, setSelectedAbility] = useState<SuiMoveAbilitySet[]>(
     [],
   );
-  const [selectedInputs, setSelectedInputs] = useState<SuiMoveNormalizedType[]>(
-    [],
-  );
-  const [selectedOutputs, setSelectedOutputs] = useState<
-    SuiMoveNormalizedType[]
-  >([]);
+  const [selectedInputs, setSelectedInputs] = useState<Handle[]>([]);
+  const [selectedOutputs, setSelectedOutputs] = useState<Handle[]>([]);
   const [selectedTypeArgs, setSelectedTypeArgs] = useState<string[]>([]);
 
   const loadPackage = async () => {
@@ -82,14 +79,22 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           ].typeParameters,
         );
         setSelectedInputs(
-          ptbModuleData.modules[moveCallData.module].exposedFunctions[
-            moveCallData.function
-          ].parameters,
+          convertParams(
+            'target',
+            'input',
+            ptbModuleData.modules[moveCallData.module].exposedFunctions[
+              moveCallData.function
+            ].parameters,
+            selectedTypeArgs,
+          ),
         );
-        setSelectedOutputs(
+        convertParams(
+          'source',
+          'result',
           ptbModuleData.modules[moveCallData.module].exposedFunctions[
             moveCallData.function
           ].return,
+          selectedTypeArgs,
         );
       }
       setNodes((nds) =>
@@ -108,16 +113,17 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           return node;
         }),
       );
-      updateNodeInternals(id);
+      setTimeout(() => {
+        updateNodeInternals(id);
+      }, 5);
     },
     [id, selectedTypeArgs, setNodes, updateNodeInternals],
   );
 
   useEffect(() => {
-    const init = async (moveCall?: PTBMoveCall) => {
+    const init = async (moveCall: PTBMoveCall) => {
       if (
         fetchPackageData &&
-        moveCall &&
         moveCall.package &&
         moveCall.module &&
         moveCall.function
@@ -137,7 +143,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         }
       }
     };
-    init(data.moveCall);
+    data.moveCall && init(data.moveCall);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -148,6 +154,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
           !((edge.target === id || edge.source === id) && edge.type === 'Data'),
       ),
     );
+    updateNodeInternals(id);
   };
 
   useEffect(() => {
@@ -155,7 +162,7 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
   }, [id, updateNodeInternals]);
 
   return (
-    <div className={NodeStyles.moveCall}>
+    <div className={NodeStyles.command}>
       <p className="text-base text-center text-gray-700 dark:text-gray-400">
         MoveCall
       </p>
@@ -249,46 +256,37 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
         )}
         <div>
           {(selectedInputs.length > 0 || selectedAbility.length > 0) && (
-            <>
-              <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
-                input
-              </p>
-              <CmdParamsMoveCall
-                label="Input"
-                prefix="input"
-                typeHandle="target"
-                types={selectedAbility}
-                params={selectedInputs}
-                yPosition={221}
-                typeArgs={selectedTypeArgs}
-              />
-            </>
+            <CmdParamsMoveCall
+              typeHandle="target"
+              types={selectedAbility}
+              params={selectedInputs}
+            />
           )}
         </div>
 
         <div>
           {selectedOutputs.length > 0 && (
-            <>
-              <p className="text-base text-center text-gray-700 dark:text-gray-400 mt-3">
-                output
-              </p>
-              <CmdParamsMoveCall
-                label="Output"
-                prefix="result"
-                typeHandle="source"
-                types={[]}
-                params={selectedOutputs}
-                yPosition={
-                  selectedInputs.length + selectedAbility.length > 0
-                    ? 260 +
-                      (selectedInputs.length + selectedAbility.length) * 42
-                    : 221
-                }
-                typeArgs={selectedTypeArgs}
-              />
-            </>
+            <CmdParamsMoveCall
+              typeHandle="source"
+              types={[]}
+              params={selectedOutputs}
+            />
           )}
         </div>
+
+        {!!selectedFunction && (
+          <div
+            style={{
+              height:
+                Math.max(
+                  selectedOutputs.length,
+                  selectedInputs.length + selectedAbility.length,
+                ) *
+                  24 +
+                18,
+            }}
+          />
+        )}
       </div>
 
       <PtbHandleProcess

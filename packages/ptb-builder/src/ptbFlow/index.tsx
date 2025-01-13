@@ -217,8 +217,8 @@ export const PTBFlow = ({
   }, [cancel]);
 
   useEffect(() => {
-    setState((oldData) => ({
-      ...oldData,
+    setState((old) => ({
+      ...old,
       hasPath: getPath(nodes, edges).length > 0,
     }));
   }, [edges, nodes, setState]);
@@ -259,8 +259,8 @@ export const PTBFlow = ({
             } else {
               setNodes([...(flow.nodes || [])]);
               setViewport(flow.viewport);
-              setState((oldState) => ({
-                ...oldState,
+              setState((old) => ({
+                ...old,
                 network: (restore.network as NETWORK) || network,
               }));
               setTimeout(() => {
@@ -371,8 +371,8 @@ export const PTBFlow = ({
                 disabled={disableNetwork}
                 value={network}
                 onChange={(e) => {
-                  setState((oldData) => ({
-                    ...oldData,
+                  setState((old) => ({
+                    ...old,
                     network: e.target.value as any,
                   }));
                 }}

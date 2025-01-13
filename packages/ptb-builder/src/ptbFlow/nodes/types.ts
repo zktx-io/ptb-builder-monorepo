@@ -118,8 +118,7 @@ export interface PTBNodeData {
   label: string;
   value?: string | string[] | number | number[];
   splitInputs?: number;
-  splitOutputs?: number;
-  makeMoveVector?: TYPE_PARAMS;
+  makeMoveVector?: { type: TYPE_PARAMS; omit: boolean };
   moveCall?: PTBMoveCall;
 }
 

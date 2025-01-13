@@ -4,13 +4,11 @@ import { useUpdateNodeInternals } from '@xyflow/react';
 
 import { useStateContext } from '../../provider';
 import { PtbHandle, PtbHandleArray } from '../nodes/handles';
-import {
-  ButtonStyles,
-  FormTitleStyle,
-  InputStyle,
-  LabelStyle,
-} from '../nodes/styles';
+import { ButtonStyles } from '../nodes/styles';
 import { PTBNodeData, TYPE_ARRAY, TYPE_PARAMS } from '../nodes/types';
+
+const YStart = 80;
+const YGap = 24;
 
 interface CmdParamsProps {
   id: string;
@@ -45,14 +43,9 @@ export const CmdParams = ({
     data.splitInputs ? new Array(data.splitInputs).fill('') : [],
   );
 
-  const handleResetEdge = (handle: 'source' | 'target') => {
-    resetEdge(handle);
-    updateNodeInternals(id);
-  };
-
-  const addInputItem = (check: boolean) => {
+  const handleAdd = (check: boolean) => {
     if (check) {
-      setInputs((oldData) => [...oldData, '']);
+      setInputs((old) => [...old, '']);
       updateState(inputs.length + 1);
     } else {
       setInputs([]);
@@ -60,12 +53,16 @@ export const CmdParams = ({
     }
   };
 
-  const removeInputItem = (index: number) => {
+  const handleRemove = () => {
     if (inputs.length > 1) {
-      setInputs((oldItems) => [...oldItems.filter((_, i) => i !== index)]);
+      setInputs((old) => old.slice(0, -1));
       updateState(inputs.length - 1);
-      handleResetEdge('target');
     }
+  };
+
+  const handleResetEdge = (handle: 'source' | 'target') => {
+    resetEdge(handle);
+    updateNodeInternals(id);
   };
 
   useEffect(() => {
@@ -74,10 +71,9 @@ export const CmdParams = ({
 
   return (
     <>
-      <div className={FormTitleStyle}>
-        <label className={LabelStyle}>inputs</label>
+      <div className="flex items-center justify-end w-full mt-4">
         {canEdit && (
-          <div className="flex items-center">
+          <>
             <label
               htmlFor="checkbox"
               className="text-xs text-gray-900 dark:text-gray-100 mr-1"
@@ -90,124 +86,68 @@ export const CmdParams = ({
               checked={isSplitInputs}
               onChange={(e) => {
                 setIsSplitInputs(e.target.checked);
-                addInputItem(e.target.checked);
+                handleAdd(e.target.checked);
                 handleResetEdge('target');
               }}
             />
-          </div>
+          </>
         )}
       </div>
-      <table
+
+      <PtbHandle
+        label={input1.label}
+        tootlip={input1.type}
+        typeHandle="target"
+        typeParams={input1.type}
+        name={input1.label}
+        style={{ top: '56px' }}
+      />
+      {!isSplitInputs ? (
+        <PtbHandleArray
+          label={input2.label}
+          tootlip={input2.type}
+          typeHandle="target"
+          typeParams={input2.type}
+          name={input2.label}
+          style={{ top: `${YStart}px` }}
+        />
+      ) : (
+        <>
+          {inputs.map((_, index) => (
+            <PtbHandle
+              key={`inputs-${index}`}
+              label={`${input2.label}[${index}]`}
+              tootlip={input2.type.replace('[]', '') as any}
+              typeHandle="target"
+              typeParams={input2.type.replace('[]', '') as any}
+              name={`${input2.label}[${index}]`}
+              style={{ top: `${YStart + YGap * index}px` }}
+            />
+          ))}
+        </>
+      )}
+      <div
         style={{
           width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: '13px',
+          height: (inputs.length || 1) * 24 + (canEdit ? 8 : 24),
         }}
-      >
-        <tbody>
-          <tr>
-            <td
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <input
-                type="text"
-                placeholder={input1.label}
-                autoComplete="off"
-                className={InputStyle}
-                readOnly
-              />
-              <PtbHandle
-                typeHandle="target"
-                typeParams={input1.type}
-                name={input1.label}
-                style={{ top: '62px' }}
-              />
-            </td>
-          </tr>
-          {!isSplitInputs ? (
-            <tr>
-              <td
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <input
-                  type="text"
-                  placeholder={input2.label}
-                  autoComplete="off"
-                  className={InputStyle}
-                  readOnly
-                />
-                <PtbHandleArray
-                  typeHandle="target"
-                  typeParams={input2.type}
-                  name={input2.label}
-                  style={{ top: '90px' }}
-                />
-              </td>
-            </tr>
-          ) : (
-            <>
-              {inputs.map((_, index) => (
-                <tr key={index}>
-                  <td
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <input
-                      type="text"
-                      placeholder={input2.label}
-                      autoComplete="off"
-                      className={InputStyle}
-                      readOnly
-                    />
-                    <PtbHandle
-                      typeHandle="target"
-                      typeParams={input2.type.replace('[]', '') as any}
-                      name={`${input2.label}[${index}]`}
-                      style={{ top: `${90 + 28 * index}px` }}
-                    />
-                    {canEdit && (
-                      <button
-                        className={`text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                        style={{
-                          minWidth: '20px',
-                        }}
-                        onClick={() => removeInputItem(index)}
-                      >
-                        x
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {canEdit && (
-                <tr>
-                  <td
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                    }}
-                  >
-                    <button
-                      className={`w-full py-1 text-center text-xs rounded-md ${ButtonStyles.transaction.text} ${ButtonStyles.transaction.hoverBackground}`}
-                      onClick={() => addInputItem(isSplitInputs)}
-                    >
-                      Add
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </>
-          )}
-        </tbody>
-      </table>
+      />
+      {canEdit && isSplitInputs && (
+        <div className="flex w-full border-1 border-stone-300 dark:border-stone-700 rounded-md">
+          <button
+            className={`flex-1 py-1 text-center text-xs rounded-l-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
+            onClick={() => handleAdd(true)}
+          >
+            Add
+          </button>
+          <button
+            className={`flex-1 py-1 text-center text-xs rounded-r-md ${ButtonStyles.command.text} ${ButtonStyles.command.hoverBackground}`}
+            onClick={handleRemove}
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </>
   );
 };

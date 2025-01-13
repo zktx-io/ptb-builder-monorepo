@@ -17,15 +17,37 @@ export const Data = ({
   sourceHandleId,
   selected,
 }: EdgeProps) => {
-  const [edgePath] = getBezierPath({
+  const { colorMode } = useStateContext();
+
+  const EXTEND_LENGTH = 10;
+
+  const extendHorizontal = (
+    x1: number,
+    x2: number,
+    length: number,
+  ): { startX: number; endX: number } => {
+    if (x1 < x2) {
+      return { startX: x1 - length, endX: x2 + length };
+    } else {
+      return { startX: x1 + length, endX: x2 - length };
+    }
+  };
+
+  const { startX: extendedSourceX, endX: extendedTargetX } = extendHorizontal(
     sourceX,
+    targetX,
+    EXTEND_LENGTH,
+  );
+
+  const [edgePath] = getBezierPath({
+    sourceX: extendedSourceX,
     sourceY,
     sourcePosition,
-    targetX,
+    targetX: extendedTargetX,
     targetY,
     targetPosition,
   });
-  const { colorMode } = useStateContext();
+
   const getColor = (type: string): string => {
     const match = type.match(/^vector<([^>]+)>$|^([^[]+)\[\]$|^([^[]+)$/);
     if (match) {

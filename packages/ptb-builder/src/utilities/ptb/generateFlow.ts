@@ -125,8 +125,8 @@ const preprocess = (
             : [''];
       return {
         targets: [coin, amounts],
-        sources: node.data.splitOutputs
-          ? new Array(node.data.splitOutputs || amounts.length)
+        sources: node.data.splitInputs
+          ? new Array(node.data.splitInputs || amounts.length)
               .fill(undefined)
               .map((_, index) => `result[${index}]:object`)
           : ['result:object[]'],
@@ -159,7 +159,7 @@ const preprocess = (
       };
     }
     case PTBNodeType.MakeMoveVec: {
-      const type = node.data.makeMoveVector!;
+      const type = node.data.makeMoveVector!.type;
       const elementType = `${NumericTypes.has(type) ? 'number' : type}[]`;
       const element = params[`elements:${elementType}`]
         ? fromArray(`elements:${elementType}`)
