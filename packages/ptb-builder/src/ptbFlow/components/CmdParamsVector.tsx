@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 
-import { useUpdateNodeInternals } from '@xyflow/react';
-
 import { useStateContext } from '../../provider';
 import { PtbHandle, PtbHandleArray, PtbHandleVector } from '../nodes/handles';
 import { ButtonStyles, InputStyle } from '../nodes/styles';
@@ -17,7 +15,6 @@ const YStart = 74;
 const YGap = 24;
 
 interface CmdParamsVectorProps {
-  id: string;
   data: PTBNodeData;
   resetEdge: (handle: 'source' | 'target') => void;
   updateState: (type: TYPE_PARAMS, omit: boolean, splitInputs?: number) => void;
@@ -37,13 +34,11 @@ const PARAMS: TYPE_PARAMS[] = [
 ];
 
 export const CmdParamsVector = ({
-  id,
   data,
   resetEdge,
   updateState,
 }: CmdParamsVectorProps) => {
   const { canEdit } = useStateContext();
-  const updateNodeInternals = useUpdateNodeInternals();
 
   const [isSplitInputs, setIsSplitInputs] = useState<boolean>(
     !!data.splitInputs || false,
@@ -84,7 +79,6 @@ export const CmdParamsVector = ({
       resetEdge('target');
       setInputs((old) => old.slice(0, -1));
       updateState(type, omit, inputs.length - 1);
-      updateNodeInternals(id);
     }
   };
 
@@ -92,15 +86,6 @@ export const CmdParamsVector = ({
     updateState(type, omit, isSplitInputs ? inputs.length : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleResetEdge = (handle: 'source' | 'target') => {
-    resetEdge(handle);
-    updateNodeInternals(id);
-  };
-
-  useEffect(() => {
-    updateNodeInternals(id);
-  }, [id, updateNodeInternals]);
 
   return (
     <>
@@ -146,7 +131,7 @@ export const CmdParamsVector = ({
               onChange={(e) => {
                 setIsSplitInputs(e.target.checked);
                 handleAdd(e.target.checked);
-                handleResetEdge('target');
+                resetEdge('target');
               }}
             />
           </>

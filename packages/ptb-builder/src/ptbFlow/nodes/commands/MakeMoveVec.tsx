@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
-import { useReactFlow } from '@xyflow/react';
+import { useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 
 import { PTBNodeProp } from '..';
 import { CmdParamsVector } from '../../components';
@@ -10,6 +10,7 @@ import { TYPE_PARAMS } from '../types';
 
 export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
   const { setEdges, setNodes } = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   const resetEdge = (handle: 'source' | 'target') => {
     setEdges((eds) =>
@@ -22,7 +23,12 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
           ),
       ),
     );
+    updateNodeInternals(id);
   };
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals]);
 
   return (
     <div className={NodeStyles.command}>
@@ -42,7 +48,6 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
         }}
       />
       <CmdParamsVector
-        id={id}
         data={data}
         resetEdge={resetEdge}
         updateState={(
@@ -65,6 +70,7 @@ export const MakeMoveVec = ({ id, data }: PTBNodeProp) => {
               return node;
             }),
           );
+          updateNodeInternals(id);
         }}
       />
     </div>
