@@ -19,31 +19,11 @@ export const Data = ({
 }: EdgeProps) => {
   const { colorMode } = useStateContext();
 
-  const EXTEND_LENGTH = 10;
-
-  const extendHorizontal = (
-    x1: number,
-    x2: number,
-    length: number,
-  ): { startX: number; endX: number } => {
-    if (x1 < x2) {
-      return { startX: x1 - length, endX: x2 + length };
-    } else {
-      return { startX: x1 + length, endX: x2 - length };
-    }
-  };
-
-  const { startX: extendedSourceX, endX: extendedTargetX } = extendHorizontal(
-    sourceX,
-    targetX,
-    EXTEND_LENGTH,
-  );
-
   const [edgePath] = getBezierPath({
-    sourceX: extendedSourceX,
+    sourceX: sourceX - 10,
     sourceY,
     sourcePosition,
-    targetX: extendedTargetX,
+    targetX: targetX + 10,
     targetY,
     targetPosition,
   });
