@@ -20,10 +20,10 @@ export const Data = ({
   const { colorMode } = useStateContext();
 
   const [edgePath] = getBezierPath({
-    sourceX: sourceX - 10,
+    sourceX: sourceX - 5,
     sourceY,
     sourcePosition,
-    targetX: targetX + 10,
+    targetX: targetX + 5,
     targetY,
     targetPosition,
   });
