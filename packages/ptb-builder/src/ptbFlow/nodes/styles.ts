@@ -17,11 +17,11 @@ export const HandleStyles = {
   },
   bool: {
     background:
-      'transition-colors duration-300 ease-in-out bg-pink-200 dark:bg-pink-600 hover:bg-pink-500 dark:hover:bg-pink-400',
+      'transition-colors duration-300 ease-in-out bg-purple-200 dark:bg-purple-600 hover:bg-purple-500 dark:hover:bg-purple-400',
     borderB:
-      'transition-colors duration-300 ease-in-out bg-pink-200/0 border-b-pink-200 dark:border-b-pink-600 hover:border-b-pink-500 dark:hover:border-b-pink-400',
+      'transition-colors duration-300 ease-in-out bg-purple-200/0 border-b-purple-200 dark:border-b-purple-600 hover:border-b-purple-500 dark:hover:border-b-purple-400',
     border:
-      'transition-colors duration-300 ease-in-out text-pink-200 dark:text-pink-600 hover:text-pink-500 dark:hover:text-pink-400',
+      'transition-colors duration-300 ease-in-out text-purple-200 dark:text-purple-600 hover:text-purple-500 dark:hover:text-purple-400',
   },
   string: {
     background:
@@ -61,9 +61,9 @@ export const ButtonStyles = {
       'transition-colors duration-300 ease-in-out hover:bg-red-500/20 dark:hover:bg-red-400/20',
   },
   bool: {
-    text: 'text-pink-700 dark:text-pink-300',
+    text: 'text-purple-700 dark:text-purple-300',
     hoverBackground:
-      'transition-colors duration-300 ease-in-out hover:bg-pink-500/20 dark:hover:bg-pink-400/20',
+      'transition-colors duration-300 ease-in-out hover:bg-purple-500/20 dark:hover:bg-purple-400/20',
   },
   string: {
     text: 'text-green-700 dark:text-green-300',
@@ -87,7 +87,7 @@ export const NodeStyles = {
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-yellow-300 bg-yellow-300/60 dark:border-yellow-600/60 dark:bg-yellow-600/60 hover:border-yellow-500 dark:hover:border-yellow-400 cursor-move',
   number:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-red-300 bg-red-300/60 dark:border-red-600/60 dark:bg-red-600/60 hover:border-red-500 dark:hover:border-red-400 cursor-move',
-  bool: 'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-pink-300 bg-pink-300/60 dark:border-pink-600/60 dark:bg-pink-600/60 hover:border-pink-500 dark:hover:border-pink-400 cursor-move',
+  bool: 'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-purple-300 bg-purple-300/60 dark:border-purple-600/60 dark:bg-purple-600/60 hover:border-purple-500 dark:hover:border-purple-400 cursor-move',
   string:
     'transition-colors duration-300 ease-in-out rounded-lg w-[180px] backdrop-blur-lg py-1 px-1 border-2 shadow border-green-300 bg-green-300/60 dark:border-green-600/60 dark:bg-green-600/60 hover:border-green-500 dark:hover:border-green-400 cursor-move',
   object:

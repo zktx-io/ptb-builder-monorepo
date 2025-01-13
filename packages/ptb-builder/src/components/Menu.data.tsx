@@ -204,12 +204,12 @@ export const Menu: {
         {
           name: PTB.Bool.Name,
           type: PTB.Bool.Type,
-          icon: <IconCircle color="bg-pink-500" />,
+          icon: <IconCircle color="bg-purple-500" />,
         },
         {
           name: PTB.BoolVector.Name,
           type: PTB.BoolVector.Type,
-          icon: <IconTriangle color="text-pink-500" />,
+          icon: <IconTriangle color="text-purple-500" />,
         },
       ],
     },
