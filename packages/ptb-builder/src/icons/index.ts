@@ -1,8 +1,11 @@
+export { IconSui } from './IconSui';
 export { IconCircle } from './IconCircle';
 export { IconSquare } from './IconSquare';
 export { IconTriangle } from './IconTriangle';
 export { IconGas } from './IconGas';
 export { IconClock } from './IconClock';
+export { IconBan } from './IconBan';
+export { IconDice } from './IconDice';
 export { IconSystem } from './IconSystem';
 export { IconSuccess } from './IconSuccess';
 export { IconFailure } from './IconFailure';
