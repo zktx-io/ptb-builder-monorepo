@@ -37,6 +37,9 @@ const connvert = (
   if (!id) {
     return undefined;
   }
+  if (id.endsWith('[]')) {
+    return dictionary[id.replace('[]', '')];
+  }
   const match = id.match(/\[(\d+)\]$/);
   if (match) {
     const data = dictionary[id.replace(`${match[0]}`, '')];
@@ -74,20 +77,18 @@ const genereateCommand = (
         );
         return {
           tx,
-          nestedResults: (amounts as any[]).map(
-            (_, i) => result[i] as NestedResult,
-          ),
+          nestedResults:
+            node.data.splitInputs === undefined
+              ? result
+              : (amounts as any[]).map((_, i) => result[i] as NestedResult),
         };
       }
       case PTBNodeType.MergeCoins: {
         const destination = connvert(inputs[0], dictionary);
         let sources;
         if (inputs[1].length === 1) {
-          if (inputs[1][0].endsWith('[]')) {
-            sources = connvert(inputs[1][0], dictionary);
-          } else {
-            sources = [connvert(inputs[1][0], dictionary)];
-          }
+          const temp = connvert(inputs[1][0], dictionary);
+          sources = Array.isArray(temp) ? temp : [temp];
         } else {
           sources = inputs[1].map((v) => connvert(v, dictionary));
         }
@@ -101,11 +102,8 @@ const genereateCommand = (
         const address = connvert(inputs[0], dictionary);
         let objects;
         if (inputs[1].length === 1) {
-          if (inputs[1][0].endsWith('[]')) {
-            objects = connvert(inputs[1][0], dictionary);
-          } else {
-            objects = [connvert(inputs[1][0], dictionary)];
-          }
+          const temp = connvert(inputs[1][0], dictionary);
+          objects = Array.isArray(temp) ? temp : [temp];
         } else {
           objects = inputs[1].map((v) => connvert(v, dictionary));
         }

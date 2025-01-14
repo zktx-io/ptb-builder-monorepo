@@ -8,6 +8,9 @@ const connvert = (
   if (!id) {
     return 'undefined';
   }
+  if (id.endsWith('[]')) {
+    return dictionary[id.replace('[]', '')].name;
+  }
   const match = id.match(/\[(\d+)\]$/);
   if (match) {
     return `${dictionary[id.replace(match[0], '')].name}[${match[1]}]`;
@@ -56,7 +59,7 @@ const genereateCommand = (
     case PTBNodeType.SplitCoins:
       if (inputs[1].length === 1) {
         if (inputs[1][0].endsWith('[]')) {
-          return `tx.splitCoins(${connvert(inputs[0], dictionary)}, ${connvert(inputs[1][0], dictionary)})`;
+          return `tx.splitCoins([${connvert(inputs[0], dictionary)}], ${connvert(inputs[1][0], dictionary)})`;
         }
         return `tx.splitCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
       } else {
@@ -65,7 +68,7 @@ const genereateCommand = (
     case PTBNodeType.MergeCoins:
       if (inputs[1].length === 1) {
         if (inputs[1][0].endsWith('[]')) {
-          return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, ${connvert(inputs[1][0], dictionary)})`;
+          return `tx.mergeCoins([${connvert(inputs[0], dictionary)}], ${connvert(inputs[1][0], dictionary)})`;
         }
         return `tx.mergeCoins(${connvert(inputs[0], dictionary)}, [${connvert(inputs[1][0], dictionary)}])`;
       } else {

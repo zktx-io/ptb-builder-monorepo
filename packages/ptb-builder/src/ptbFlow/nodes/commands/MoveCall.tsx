@@ -88,13 +88,15 @@ export const MoveCall = ({ id, data }: PTBNodeProp) => {
             selectedTypeArgs,
           ),
         );
-        convertParams(
-          'source',
-          'result',
-          ptbModuleData.modules[moveCallData.module].exposedFunctions[
-            moveCallData.function
-          ].return,
-          selectedTypeArgs,
+        setSelectedOutputs(
+          convertParams(
+            'source',
+            'result',
+            ptbModuleData.modules[moveCallData.module].exposedFunctions[
+              moveCallData.function
+            ].return,
+            selectedTypeArgs,
+          ),
         );
       }
       setNodes((nds) =>
