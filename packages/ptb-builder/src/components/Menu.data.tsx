@@ -1,8 +1,6 @@
 import React from 'react';
 
-import { IconCircle } from './IconCircle';
-import { IconSquare } from './IconSquare';
-import { IconTriangle } from './IconTriangle';
+import { IconCircle, IconSquare, IconTriangle } from '../icons';
 import { PTBNodeType } from '../ptbFlow/nodes/types';
 
 export const PTB = {
@@ -16,7 +14,7 @@ export const PTB = {
   },
   AddressWallet: {
     Type: PTBNodeType.AddressWallet,
-    Name: 'wallet',
+    Name: 'my wallet',
   },
   Bool: {
     Type: PTBNodeType.Bool,

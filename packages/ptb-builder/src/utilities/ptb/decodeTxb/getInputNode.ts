@@ -50,17 +50,6 @@ export const getInputNode = (
             value: parseInt(input.value as string, 10),
           },
         };
-      case 'string':
-        return {
-          id,
-          position: { x: InitX, y: 0 },
-          type: PTB.String.Type,
-          deletable: false,
-          data: {
-            label: PTB.String.Name,
-            value: input.value as string,
-          },
-        };
       case 'vector<u8>':
         return {
           id,
@@ -174,6 +163,31 @@ export const getInputNode = (
             value: input.value as string,
           },
         };
+      case 'string':
+        switch (input.value) {
+          case '0x2::sui::SUI':
+          case '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI':
+            return {
+              id,
+              position: { x: InitX, y: 0 },
+              type: PTB.String0x2suiSUI.Type,
+              deletable: false,
+              data: {
+                label: PTB.String0x2suiSUI.Name,
+              },
+            };
+          default:
+            return {
+              id,
+              position: { x: InitX, y: 0 },
+              type: PTB.String.Type,
+              deletable: false,
+              data: {
+                label: PTB.String.Name,
+                value: input.value as string,
+              },
+            };
+        }
       default:
         if (Array.isArray(input.value)) {
           if (typeof input.value[0] === 'number') {
@@ -205,6 +219,50 @@ export const getInputNode = (
         return undefined;
     }
   } else {
+    switch (input.objectId) {
+      case '0x0000000000000000000000000000000000000000000000000000000000000005':
+        return {
+          id,
+          position: { x: InitX, y: 0 },
+          type: PTB.ObjectSystem.Type,
+          deletable: false,
+          data: {
+            label: PTB.ObjectSystem.Name,
+          },
+        };
+      case '0x0000000000000000000000000000000000000000000000000000000000000006':
+        return {
+          id,
+          position: { x: InitX, y: 0 },
+          type: PTB.ObjectClock.Type,
+          deletable: false,
+          data: {
+            label: PTB.ObjectClock.Name,
+          },
+        };
+      case '0x0000000000000000000000000000000000000000000000000000000000000008':
+        return {
+          id,
+          position: { x: InitX, y: 0 },
+          type: PTB.ObjectRandom.Type,
+          deletable: false,
+          data: {
+            label: PTB.ObjectRandom.Name,
+          },
+        };
+      case '0x0000000000000000000000000000000000000000000000000000000000000403':
+        return {
+          id,
+          position: { x: InitX, y: 0 },
+          type: PTB.ObjectDenyList.Type,
+          deletable: false,
+          data: {
+            label: PTB.ObjectDenyList.Name,
+          },
+        };
+      default:
+        break;
+    }
     return {
       id,
       position: { x: InitX, y: 0 },
