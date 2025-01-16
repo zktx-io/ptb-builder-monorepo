@@ -35,7 +35,7 @@ jobs:
           site-path: '/tmp/example/dist'
           object-id: '0xf4c70c1e2b6bcd902b8c269987a2ca024345b1b46c2cce783ef2c8e14e571bdd'
           network: 'testnet'
-          epochs: 200
+          epochs: 180
         env:
           SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
           SUI_KEYSTORE: ${{ secrets.SUI_KEYSTORE }}
