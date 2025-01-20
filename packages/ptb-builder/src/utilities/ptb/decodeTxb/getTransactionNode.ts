@@ -374,16 +374,33 @@ export const getTransactionNode = (
       modules[tx.MoveCall.package]?.modules[tx.MoveCall.module]
         ?.exposedFunctions[tx.MoveCall.function].parameters || [];
     tx.MoveCall.type_arguments?.forEach((arg) => {
-      argumentTypes.push({
-        id: `input-${index}-${id}`,
-        position: { x: InitX, y: 0 },
-        type: PTB.String.Type,
-        deletable: false,
-        data: {
-          label: PTB.String.Name,
-          value: arg,
-        },
-      });
+      switch (arg) {
+        case '0x2::sui::SUI':
+        case '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI':
+          argumentTypes.push({
+            id: `input-${index}-${id}`,
+            position: { x: InitX, y: 0 },
+            type: PTB.String0x2suiSUI.Type,
+            deletable: false,
+            data: {
+              label: PTB.String0x2suiSUI.Name,
+              value: arg,
+            },
+          });
+          break;
+        default:
+          argumentTypes.push({
+            id: `input-${index}-${id}`,
+            position: { x: InitX, y: 0 },
+            type: PTB.String.Type,
+            deletable: false,
+            data: {
+              label: PTB.String.Name,
+              value: arg,
+            },
+          });
+          break;
+      }
       edges.push({
         type: 'Data',
         id: `path-${index}-${id}`,

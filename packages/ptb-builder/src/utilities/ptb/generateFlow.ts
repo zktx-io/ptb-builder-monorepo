@@ -298,6 +298,7 @@ export const generateFlow = (
         sources,
       };
     } catch (error) {
+      console.log(error);
       throw new Error("Can't generate preprocess");
     }
   });

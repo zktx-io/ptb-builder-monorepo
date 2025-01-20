@@ -271,15 +271,15 @@ export const generateTxb = async (
           dictionary[key] = tx.pure.vector('string', value as string[]);
           break;
         case PTBNodeType.Number:
-          dictionary[key] = value as number;
+          dictionary[key] = value as string;
           break;
         case PTBNodeType.NumberArray:
-          dictionary[key] = (value as number[]).map((v) => v);
+          dictionary[key] = (value as string[]).map((v) => v);
           break;
         case PTBNodeType.NumberVector:
           dictionary[key] = tx.pure.vector(
             label.replace('vector<', '').replace('>', '') as any,
-            value as number[],
+            (value as string[]).map((v) => BigInt(v)),
           );
           break;
         case PTBNodeType.Object:

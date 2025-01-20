@@ -10,13 +10,12 @@ import { NodeStyles } from '../styles';
 export const SplitCoins = ({ id, data }: PTBNodeProp) => {
   const { setEdges, setNodes } = useReactFlow();
 
-  const resetEdge = (handle: 'source' | 'target') => {
+  const resetEdge = () => {
     setEdges((eds) =>
       eds.filter(
         (edge) =>
           !(
-            ((edge.target === id && handle === 'target') ||
-              (edge.source === id && handle === 'source')) &&
+            (edge.target === id || edge.source === id) &&
             edge.type === 'Data' &&
             edge.targetHandle !== 'coin:object'
           ),

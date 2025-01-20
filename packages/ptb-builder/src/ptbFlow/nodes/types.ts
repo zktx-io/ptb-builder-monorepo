@@ -116,7 +116,7 @@ export interface PTBMoveCall {
 export interface PTBNodeData {
   [key: string]: unknown;
   label: string;
-  value?: string | string[] | number | number[];
+  value?: string | string[];
   splitInputs?: number;
   makeMoveVector?: { type: TYPE_PARAMS; omit: boolean };
   moveCall?: PTBMoveCall;

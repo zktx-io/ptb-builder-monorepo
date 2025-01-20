@@ -19,7 +19,7 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
       updateNodeData({
         nodes: nds,
         nodeId: id,
-        updater: (data) => ({ ...data, value }),
+        updater: (data) => ({ ...data, value: `${value}` }),
       }),
     );
   }, DEBOUNCE);
@@ -34,12 +34,15 @@ export const SuiNumber = ({ id, data }: PTBNodeProp) => {
   };
 
   useEffect(() => {
-    setInputValue((data.value as number) || 0);
+    setInputValue(data.value ? parseInt(data.value as string) : 0);
     setNodes((nds) =>
       updateNodeData({
         nodes: nds,
         nodeId: id,
-        updater: (data) => ({ ...data, value: (data.value as number) || 0 }),
+        updater: (data) => ({
+          ...data,
+          value: data.value ? parseInt(data.value as string) : 0,
+        }),
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

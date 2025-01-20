@@ -21,7 +21,7 @@ interface CmdParamsProps {
     type: TYPE_ARRAY;
   };
   data: PTBNodeData;
-  resetEdge: (handle: 'source' | 'target') => void;
+  resetEdge: () => void;
   updateState: (splitInputs?: number) => void;
 }
 
@@ -60,8 +60,8 @@ export const CmdParams = ({
     }
   };
 
-  const handleResetEdge = (handle: 'source' | 'target') => {
-    resetEdge(handle);
+  const handleResetEdge = () => {
+    resetEdge();
     updateNodeInternals(id);
   };
 
@@ -87,7 +87,7 @@ export const CmdParams = ({
               onChange={(e) => {
                 setIsSplitInputs(e.target.checked);
                 handleAdd(e.target.checked);
-                handleResetEdge('target');
+                handleResetEdge();
               }}
             />
           </>

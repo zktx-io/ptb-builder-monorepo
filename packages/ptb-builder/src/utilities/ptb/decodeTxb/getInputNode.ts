@@ -47,7 +47,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.Number.Name,
-            value: parseInt(input.value as string, 10),
+            value: `${input.value}`,
           },
         };
       case 'vector<u8>':
@@ -60,8 +60,8 @@ export const getInputNode = (
             label: PTB.NumberVectorU8.Name,
             value:
               typeof input.value === 'string'
-                ? Array.from(fromHex(input.value))
-                : (input.value as string[]).map((v) => parseInt(v, 10)),
+                ? Array.from(fromHex(input.value)).map((v) => `${v}`)
+                : (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<u16>':
@@ -72,7 +72,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU16.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value: (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<u32>':
@@ -83,7 +83,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU32.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value: (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<u64>':
@@ -94,7 +94,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU64.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value: (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<u128>':
@@ -105,7 +105,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU128.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value: (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<u256>':
@@ -116,7 +116,7 @@ export const getInputNode = (
           deletable: false,
           data: {
             label: PTB.NumberVectorU256.Name,
-            value: (input.value as string[]).map((v) => parseInt(v, 10)),
+            value: (input.value as string[]).map((v) => `${v}`),
           },
         };
       case 'vector<address>':
@@ -199,7 +199,7 @@ export const getInputNode = (
                 deletable: false,
                 data: {
                   label: PTB.Number.Name,
-                  value: input.value[0] as number,
+                  value: `${input.value[0]}`,
                 },
               };
             } else {
@@ -210,7 +210,7 @@ export const getInputNode = (
                 deletable: false,
                 data: {
                   label: PTB.NumberVectorU8.Name, // TODO: support vector
-                  value: input.value as number[],
+                  value: `${input.value}`,
                 },
               };
             }

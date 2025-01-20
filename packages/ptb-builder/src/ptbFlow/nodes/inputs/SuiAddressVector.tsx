@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
 import { useReactFlow } from '@xyflow/react';
 
@@ -17,12 +17,6 @@ import { updateNodeData } from './updateNodeData';
 
 export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
   const { setNodes } = useReactFlow();
-  const [isShow, setIsShow] = useState<boolean>(
-    data && data.value ? (data.value as string[]).length < 4 : true,
-  );
-  const [items, setItems] = useState<string[]>(
-    (data.value as string[]) || [''],
-  );
 
   const { debouncedFunction: updateNodes } = useDebounce((updatedItems) => {
     setNodes((nds) =>
@@ -33,41 +27,6 @@ export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
       }),
     );
   }, DEBOUNCE);
-
-  const addItem = () => {
-    const updatedItems = [...items, ''];
-    setItems(updatedItems);
-    updateNodes(updatedItems);
-  };
-
-  const removeItem = (index: number) => {
-    if (items.length > 1) {
-      const updatedItems = items.filter((_, i) => i !== index);
-      setItems(updatedItems);
-      updateNodes(updatedItems);
-    }
-  };
-
-  const updateItem = (index: number, value: string) => {
-    const updatedItems = items.map((item, i) => (i === index ? value : item));
-    setItems(updatedItems);
-    updateNodes(updatedItems);
-  };
-
-  useEffect(() => {
-    setItems((data.value as string[]) || ['']);
-    setNodes((nds) =>
-      updateNodeData({
-        nodes: nds,
-        nodeId: id,
-        updater: (data) => ({
-          ...data,
-          value: (data.value as string[]) || [''],
-        }),
-      }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <div className={NodeStyles.address}>
@@ -81,28 +40,17 @@ export const SuiAddressVector = ({ id, data }: PTBNodeProp) => {
             >
               Show
             </label>
-            <input
-              type="checkbox"
-              id="checkbox"
-              checked={isShow}
-              onChange={(e) => {
-                setIsShow(e.target.checked);
-              }}
-            />
           </div>
         </div>
         <ArrayInputs
           id={id}
-          isShow={isShow}
-          items={items}
           placeholder="Enter address"
-          addItem={addItem}
-          removeItem={removeItem}
-          updateItem={updateItem}
           style={{
             deleteButton: `text-center text-xs rounded-md ${ButtonStyles.address.text} ${ButtonStyles.address.hoverBackground}`,
             addButton: `w-full py-1 text-center text-xs rounded-md ${ButtonStyles.address.text} ${ButtonStyles.address.hoverBackground}`,
           }}
+          data={(data.value as string[]) || ['']}
+          update={updateNodes}
         />
       </div>
       <PtbHandleVector

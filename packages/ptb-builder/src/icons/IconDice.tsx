@@ -31,7 +31,7 @@ export const IconDice = ({
         M18,70 a10,10 0 1,1 20,0 a10,10 0 1,1 -20,0
         M63,70 a10,10 0 1,1 20,0 a10,10 0 1,1 -20,0
       "
-        fill-rule="evenodd"
+        fillRule="evenodd"
         fill="currentColor"
       />
     </svg>
