@@ -23,7 +23,6 @@ interface NestedResult {
 }
 
 type DictionaryItem =
-  | number
   | string
   | TransactionObjectArgument
   | Result
@@ -73,7 +72,7 @@ const genereateCommand = (
         }
         const result = tx.splitCoins(
           coin as TransactionObjectArgument,
-          amounts as number[],
+          (amounts as string[]).map((v) => parseInt(v, 10)),
         );
         return {
           tx,
@@ -125,17 +124,17 @@ const genereateCommand = (
               case 'string':
                 return tx.pure.string(v as string);
               case 'u8':
-                return tx.pure.u8(v as number);
+                return tx.pure.u8(parseInt(v as string));
               case 'u16':
-                return tx.pure.u16(v as number);
+                return tx.pure.u16(parseInt(v as string));
               case 'u32':
-                return tx.pure.u32(v as number);
+                return tx.pure.u32(parseInt(v as string));
               case 'u64':
-                return tx.pure.u64(v as number);
+                return tx.pure.u64(BigInt(v as string));
               case 'u128':
-                return tx.pure.u128(v as number);
+                return tx.pure.u128(BigInt(v as string));
               case 'u256':
-                return tx.pure.u256(v as number);
+                return tx.pure.u256(BigInt(v as string));
               case 'bool':
                 return tx.pure.bool(v === 'true');
               case 'object':

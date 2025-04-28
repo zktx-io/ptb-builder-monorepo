@@ -29,25 +29,43 @@ const convert2 = (node: PTBNode, value: string | string[]): string => {
     case PTBNodeType.ObjectGas:
     case PTBNodeType.ObjectRandom:
     case PTBNodeType.ObjectSystem:
+    case PTBNodeType.Bool:
+    case PTBNodeType.Number:
       return value as string;
+    case PTBNodeType.String:
+    case PTBNodeType.Address:
+      return `'${value}'`;
+    case PTBNodeType.Object:
+      return `tx.object('${value}')`;
+    case PTBNodeType.BoolArray:
+    case PTBNodeType.NumberArray:
+      return `[${(value as string[]).join(', ')}]`;
+    case PTBNodeType.AddressArray:
+    case PTBNodeType.StringArray:
+      return `[${(value as string[]).map((item) => `'${item}'`).join(', ')}]`;
+    case PTBNodeType.ObjectArray:
+      return `[${(value as string[]).map((item) => `tx.object('${item}')`).join(', ')}]`;
     case PTBNodeType.ObjectOption:
       return `tx.object.option({ type: '${value[0]}', value: '${value[1]}' })`;
     case PTBNodeType.CoinWithBalance:
       return `coinWithBalance({\n\tbalance: ${value[2]}${value[1] ? `,\n\ttype: '${value[1]}'` : ''}${value[0] === 'false' ? `,\nuseGasCoin: ${value[0]}` : ''}\n})`;
-    case PTBNodeType.AddressVector:
-      return `tx.pure.vector('address', [${(value as string[]).join(',')}])`;
     case PTBNodeType.BoolVector:
       return `tx.pure.vector('bool', [${(value as string[]).join(',')}])`;
+    case PTBNodeType.AddressVector:
+      return `tx.pure.vector('address', [${(value as string[]).map((item) => `'${item}'`).join(',')}])`;
     case PTBNodeType.StringVector:
-      return `tx.pure.vector('string', [${(value as string[]).join(',')}])`;
+      return `tx.pure.vector('string', [${(value as string[]).map((item) => `'${item}'`).join(',')}])`;
     case PTBNodeType.ObjectVector:
-      return `tx.pure.vector('id', [${(value as string[]).join(',')}])`;
+      return `tx.pure.vector('id', [${(value as string[]).map((item) => `'${item}'`).join(',')}])`;
     case PTBNodeType.NumberVector:
       return `tx.pure.vector('${node.data.label.replace('vector<', '').replace('>', '')}', [${(value as string[]).join(',')}])`;
     default:
       break;
   }
-  return `'${value}'`;
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => `${v}`).join(', ')}]`;
+  }
+  return `${value}`;
 };
 
 const genereateCommand = (
@@ -154,21 +172,7 @@ export const generateCode = (nodes: PTBNode[], edges: PTBEdge[]): string => {
       const name = `val_${varIndex++}`;
       dictionary[key] = { name };
       addCodeLine(
-        `const ${name} = ${
-          value !== undefined
-            ? Array.isArray(value) &&
-              inputs[key].type !== PTBNodeType.ObjectOption &&
-              inputs[key].type !== PTBNodeType.CoinWithBalance &&
-              inputs[key].type !== PTBNodeType.NumberVector
-              ? `[${value.map((v) => (typeof v === 'string' ? convert2(inputs[key], v) : v)).join(', ')}]`
-              : typeof value === 'string' ||
-                  inputs[key].type === PTBNodeType.ObjectOption ||
-                  inputs[key].type === PTBNodeType.CoinWithBalance ||
-                  inputs[key].type === PTBNodeType.NumberVector
-                ? convert2(inputs[key], value as string | string[])
-                : value
-            : 'undefined'
-        };`,
+        `const ${name} = ${value === undefined ? 'undefined' : convert2(inputs[key], value)};`,
         '',
       );
     });
