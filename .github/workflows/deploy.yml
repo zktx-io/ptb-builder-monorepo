@@ -41,4 +41,5 @@ jobs:
     with:
       working-directory: './packages/example'
     secrets:
+      GIT_SIGNER_PIN: ${{ secrets.GIT_SIGNER_PIN }}
       ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
