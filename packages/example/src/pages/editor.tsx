@@ -28,9 +28,11 @@ export const Editor = () => {
       // console.log(account.address);
       // console.log(await transaction.toJSON());
 
+      const jsonTx = await transaction.toJSON();
+
       signAndExecuteTransaction(
         {
-          transaction,
+          transaction: jsonTx,
           chain: `sui:${network}`,
         },
         {
