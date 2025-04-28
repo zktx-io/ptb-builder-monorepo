@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   deploy-and-publish:
+    # Publish the packages (only when `-front` is NOT in the tag)
+    if: contains(github.event.release.tag_name, '-front') == false
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,9 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Publish the packages (only when `-front` is NOT in the tag)
       - name: publish programmable transaction blocks builder package
-        if: contains(github.event.release.tag_name, '-front') == false
         uses: JS-DevTools/npm-publish@v3
         id: ptb-builder
         with:
@@ -33,11 +34,11 @@ jobs:
           package: "packages/ptb-builder/package.json"
           strategy: upgrade
 
-      # Frontend deployment step (only when `-front` IS in the tag)
-      - name: Deploy Walrus Site with Provenance
-        if: contains(github.event.release.tag_name, '-front') == true
-        uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.4.1
-        with:
-          working-directory: './packages/example'
-        secrets:
-          ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
+  deploy-frontend:
+     # Frontend deployment step (only when `-front` IS in the tag)
+    if: contains(github.event.release.tag_name, '-front') == true
+    uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.4.1
+    with:
+      working-directory: './packages/example'
+    secrets:
+      ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
