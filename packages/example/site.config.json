@@ -1,5 +1,5 @@
 {
-  "network": "mainnet",
+  "network": "testnet",
   "owner": "0x581f7a81a582b72d1212c7ba7806fa3cc99c1466c8ef403456d0ad0ec4311ebf",
   "site_name": "ptb-builder",
   "metadata": {
