@@ -1,41 +1,43 @@
-name: Deploy Walrus Site using Walrus Sites GA
+name: Deploy and Publish
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: write
+  actions: read
 
 jobs:
-  deploy:
+  deploy-and-publish:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-  
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
 
-      - name: Copy example package to temporary directory
-        run: |
-          mkdir -p /tmp/example
-          cp -r ./packages/example/* /tmp/example/
-
-      - name: Install dependencies in temporary directory and Build React app
-        run: |
-          cd /tmp/example
-          npm install
-          npm run build
-
-      - name: Deploy PTB Builder to Walrus
-        uses: zktx-io/walrus-sites-ga@v0.3.0
+      # Publish the packages (only when `-front` is NOT in the tag)
+      - name: publish programmable transaction blocks builder package
+        if: contains(github.event.release.tag_name, '-front') == false
+        uses: JS-DevTools/npm-publish@v3
+        id: ptb-builder
         with:
-          site-path: '/tmp/example/dist'
-          object-id: '0xf4c70c1e2b6bcd902b8c269987a2ca024345b1b46c2cce783ef2c8e14e571bdd'
-          network: 'testnet'
-          epochs: 180
-        env:
-          SUI_ADDRESS: ${{ vars.SUI_ADDRESS }}
-          SUI_KEYSTORE: ${{ secrets.SUI_KEYSTORE }}
+          access: public
+          provenance: true
+          token: ${{ secrets.NPM_TOKEN }}
+          package: "packages/ptb-builder/package.json"
+          strategy: upgrade
+
+      # Frontend deployment step (only when `-front` IS in the tag)
+      - name: Deploy Walrus Site with Provenance
+        if: contains(github.event.release.tag_name, '-front') == true
+        uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.4.1
+        with:
+          working-directory: './packages/example'
+        secrets:
+          ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
