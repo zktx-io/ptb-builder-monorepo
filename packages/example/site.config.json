@@ -1,0 +1,17 @@
+{
+  "network": "mainnet",
+  "owner": "0x581f7a81a582b72d1212c7ba7806fa3cc99c1466c8ef403456d0ad0ec4311ebf",
+  "site_name": "ptb-builder",
+  "metadata": {
+    "link": "https://ptb.wal.app",
+    "image_url": "https://docs.zktx.io/images/ptb-builder.png",
+    "name": "ptb-builder",
+    "description": "Sign, attest, and verify with absolute confidence.",
+    "project_url": "https://github.com/zktx-io/ptb-builder-monorepo",
+    "creator": "zktx.io"
+  },
+  "epochs": 10,
+  "path": "./dist",
+  "gas_budget": 100000000,
+  "write_retry_limit": 15
+}
