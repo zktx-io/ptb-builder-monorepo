@@ -37,7 +37,7 @@ jobs:
   deploy-frontend:
      # Frontend deployment step (only when `-front` IS in the tag)
     if: contains(github.event.release.tag_name, '-front') == true
-    uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.4.5
+    uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.4.6
     with:
       working-directory: './packages/example'
     secrets:
