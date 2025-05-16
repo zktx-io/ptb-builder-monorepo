@@ -8,7 +8,7 @@ https://github.com/user-attachments/assets/0e7a3d47-451a-4cea-a36d-9df23d931cf2
 
 ## Demo
 
-- [https://ptb-builder.walrus.site/](https://ptb-builder.walrus.site/)
+- [https://ptb.wal.app/](https://ptb.wal.app/)
 
 ## Key Use Cases
 
