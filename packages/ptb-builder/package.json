@@ -51,8 +51,8 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@mysten/sui": "^1.18.0",
-    "@xyflow/react": "^12.3.6",
+    "@mysten/sui": "^1.37.1",
+    "@xyflow/react": "^12.8.2",
     "elkjs": "^0.9.3",
     "prismjs": "^1.29.0",
     "re-resizable": "^6.10.3"
