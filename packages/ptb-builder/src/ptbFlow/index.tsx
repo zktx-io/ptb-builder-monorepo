@@ -48,7 +48,7 @@ export const PTBFlow = ({
   maxZoom,
   restore,
   update,
-  excuteTx,
+  executeTx,
 }: {
   disableNetwork: boolean;
   themeSwitch?: boolean;
@@ -56,7 +56,7 @@ export const PTBFlow = ({
   maxZoom: number;
   restore?: string | PTB_SCHEME;
   update: (ptb: PTB_SCHEME) => void;
-  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  executeTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   // eslint-disable-next-line no-restricted-syntax
   const ref = useRef<HTMLDivElement>(null);
@@ -408,7 +408,7 @@ export const PTBFlow = ({
               </div>
             )}
             {canEdit && restore !== undefined && (
-              <Code nodes={nodes} edges={edges} excuteTx={excuteTx} />
+              <Code nodes={nodes} edges={edges} executeTx={executeTx} />
             )}
           </Panel>
         )}

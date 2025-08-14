@@ -14,11 +14,11 @@ import { generateCode, generateTxb } from '../utilities/ptb';
 export const Code = ({
   nodes,
   edges,
-  excuteTx,
+  executeTx,
 }: {
   nodes: PTBNode[];
   edges: PTBEdge[];
-  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  executeTx?: (transaction: Transaction | undefined) => Promise<void>;
 }) => {
   const language = 'javascript';
 
@@ -28,11 +28,11 @@ export const Code = ({
   const [isExcute, setIsExcute] = useState<boolean>(false);
 
   const handleExcuteTransaction = async () => {
-    if (excuteTx && !isExcute) {
+    if (executeTx && !isExcute) {
       try {
         setIsExcute(true);
         const transaction = await generateTxb(nodes, edges, wallet);
-        await excuteTx(transaction);
+        await executeTx(transaction);
       } catch (error) {
         enqueueToast(`${error}`, { variant: 'error' });
       } finally {
@@ -90,7 +90,7 @@ export const Code = ({
           </pre>
         </Resizable>
       )}
-      {code && isVisible && !!excuteTx && (
+      {code && isVisible && !!executeTx && (
         <div className="flex items-center justify-end">
           <button
             disabled={isExcute || !wallet}

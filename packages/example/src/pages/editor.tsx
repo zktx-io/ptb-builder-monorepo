@@ -23,7 +23,7 @@ export const Editor = () => {
   const [backup, setBackup] = React.useState<PTB_SCHEME | undefined>(undefined);
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
-  const excuteTx = async (transaction: Transaction | undefined) => {
+  const executeTx = async (transaction: Transaction | undefined) => {
     if (account && transaction) {
       // console.log(account.address);
       // console.log(await transaction.toJSON());
@@ -70,11 +70,11 @@ export const Editor = () => {
           <PTBBuilder
             wallet={account.address}
             network={network}
-            excuteTx={excuteTx}
+            executeTx={executeTx}
             restore={ptb}
             update={(file: PTB_SCHEME) => {
               setBackup(file);
-              // console.log(value);
+              console.log(file);
             }}
             options={{
               canEdit: true,

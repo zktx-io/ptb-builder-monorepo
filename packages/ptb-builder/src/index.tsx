@@ -16,7 +16,7 @@ export const PTBBuilder = ({
   network,
   restore,
   update,
-  excuteTx,
+  executeTx,
   enqueueToast,
   options,
 }: {
@@ -24,7 +24,7 @@ export const PTBBuilder = ({
   network?: 'mainnet' | 'testnet' | 'devnet';
   restore?: string | PTB_SCHEME;
   update?: (ptb: PTB_SCHEME) => void;
-  excuteTx?: (transaction: Transaction | undefined) => Promise<void>;
+  executeTx?: (transaction: Transaction | undefined) => Promise<void>;
   enqueueToast?: EnqueueToast;
   options?: {
     themeSwitch?: boolean;
@@ -46,7 +46,7 @@ export const PTBBuilder = ({
           disableNetwork={!!network}
           themeSwitch={options?.themeSwitch}
           restore={restore}
-          excuteTx={excuteTx}
+          executeTx={executeTx}
           update={(data) => {
             const temp = JSON.stringify(data);
             if (update && temp !== backup) {
