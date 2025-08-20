@@ -6,56 +6,45 @@
    PTB THEME: CSS VARIABLES
    ============================================================ */
 
-/* Light (default) */
+/* Light (default theme) */
 :root {
   /* Flow (command → command) */
   --ptb-flow-stroke: #9ca3af; /* gray-400 */
   --ptb-flow-width: 2.75;
   --ptb-flow-dash: 5 5;
 
-  /* IO edges by category */
+  /* IO edge colors by category */
   --ptb-io-address-stroke: #f59e0b; /* amber-500 */
   --ptb-io-address-width: 2.5;
-
-  --ptb-io-number-stroke: #ef4444; /* red-500 */
+  --ptb-io-number-stroke: #ef4444;  /* red-500 */
   --ptb-io-number-width: 2.5;
-
-  --ptb-io-bool-stroke: #8b5cf6; /* violet-500 */
+  --ptb-io-bool-stroke: #8b5cf6;    /* violet-500 */
   --ptb-io-bool-width: 2.5;
-
-  --ptb-io-string-stroke: #10b981; /* emerald-500 */
+  --ptb-io-string-stroke: #10b981;  /* emerald-500 */
   --ptb-io-string-width: 2.5;
-
-  --ptb-io-object-stroke: #3b82f6; /* blue-500 */
+  --ptb-io-object-stroke: #3b82f6;  /* blue-500 */
   --ptb-io-object-width: 2.5;
-
   --ptb-io-unknown-stroke: #737373; /* gray-500 */
   --ptb-io-unknown-width: 2;
   --ptb-io-unknown-dash: 4 4;
 
-  /* Node base surface (border + background) */
+  /* Node surfaces (border + background) */
   --ptb-node-command-border: #9ca3af;
   --ptb-node-command-bg: rgba(209, 213, 219, 0.6);
-
   --ptb-node-address-border: #fde68a;
   --ptb-node-address-bg: rgba(253, 230, 138, 0.6);
-
   --ptb-node-number-border: #fca5a5;
   --ptb-node-number-bg: rgba(252, 165, 165, 0.6);
-
   --ptb-node-bool-border: #c4b5fd;
   --ptb-node-bool-bg: rgba(196, 181, 253, 0.6);
-
   --ptb-node-string-border: #86efac;
   --ptb-node-string-bg: rgba(134, 239, 172, 0.6);
-
   --ptb-node-object-border: #93c5fd;
   --ptb-node-object-bg: rgba(147, 197, 253, 0.6);
-
   --ptb-node-unknown-border: #a3a3a3;
   --ptb-node-unknown-bg: rgba(163, 163, 163, 0.6);
 
-  /* Hover/Active (light) */
+  /* Hover / Active states */
   --ptb-node-command-border-hover: #6b7280;
   --ptb-node-command-bg-hover: rgba(209, 213, 219, 0.75);
   --ptb-node-command-border-active: #4b5563;
@@ -92,60 +81,49 @@
   --ptb-node-unknown-bg-active: rgba(163, 163, 163, 0.9);
 }
 
-/* Dark overrides */
+/* Dark theme overrides */
 .dark {
   --ptb-flow-stroke: #374151;
-
   --ptb-io-unknown-stroke: #a3a3a3;
 
   --ptb-node-command-border: #374151;
   --ptb-node-command-bg: rgba(31, 41, 55, 0.6);
-
   --ptb-node-address-border: #f59e0b66;
   --ptb-node-address-bg: #f59e0b33;
-
   --ptb-node-number-border: #ef444466;
   --ptb-node-number-bg: #ef444433;
-
   --ptb-node-bool-border: #8b5cf666;
   --ptb-node-bool-bg: #8b5cf633;
-
   --ptb-node-string-border: #10b98166;
   --ptb-node-string-bg: #10b98133;
-
   --ptb-node-object-border: #3b82f666;
   --ptb-node-object-bg: #3b82f633;
 
+  /* Dark hover/active */
   --ptb-node-command-border-hover: #6b7280;
   --ptb-node-command-bg-hover: rgba(31, 41, 55, 0.75);
   --ptb-node-command-border-active: #9ca3af;
   --ptb-node-command-bg-active: rgba(31, 41, 55, 0.95);
-
   --ptb-node-address-border-hover: #f59e0b99;
   --ptb-node-address-bg-hover: #f59e0b55;
   --ptb-node-address-border-active: #f59e0bcc;
   --ptb-node-address-bg-active: #f59e0b77;
-
   --ptb-node-number-border-hover: #ef444499;
   --ptb-node-number-bg-hover: #ef444455;
   --ptb-node-number-border-active: #ef4444cc;
   --ptb-node-number-bg-active: #ef444477;
-
   --ptb-node-bool-border-hover: #8b5cf699;
   --ptb-node-bool-bg-hover: #8b5cf655;
   --ptb-node-bool-border-active: #8b5cf6cc;
   --ptb-node-bool-bg-active: #8b5cf677;
-
   --ptb-node-string-border-hover: #10b98199;
   --ptb-node-string-bg-hover: #10b98155;
   --ptb-node-string-border-active: #10b981cc;
   --ptb-node-string-bg-active: #10b98177;
-
   --ptb-node-object-border-hover: #3b82f699;
   --ptb-node-object-bg-hover: #3b82f655;
   --ptb-node-object-border-active: #3b82f6cc;
   --ptb-node-object-bg-active: #3b82f677;
-
   --ptb-node-unknown-border-hover: #a3a3a3;
   --ptb-node-unknown-bg-hover: #a3a3a355;
   --ptb-node-unknown-border-active: #d4d4d4;
@@ -162,19 +140,19 @@
   stroke: var(--ptb-flow-stroke);
   stroke-width: var(--ptb-flow-width);
   stroke-dasharray: var(--ptb-flow-dash);
-  animation: none;
-  will-change: stroke-dashoffset;
-  transform: translateZ(0);
   fill: none;
   vector-effect: non-scaling-stroke;
+  transform: translateZ(0);
   stroke-opacity: 1;
+  will-change: stroke-dashoffset;
 }
 
-/* Global flow animation toggle */
+/* Animate flow edges if parent has .ptb-flow-active */
 .ptb-flow-active .ptb-flow-edge {
   animation: ptb-flow-dash 1.8s linear infinite;
 }
 
+/* Selected edge glow */
 .ptb-flow-edge.is-selected {
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.25));
 }
@@ -187,7 +165,7 @@
 .ptb-io-edge--object  { stroke: var(--ptb-io-object-stroke);  stroke-width: var(--ptb-io-object-width); }
 .ptb-io-edge--unknown { stroke: var(--ptb-io-unknown-stroke); stroke-width: var(--ptb-io-unknown-width); stroke-dasharray: var(--ptb-io-unknown-dash); }
 
-/* Make thin paths clickable */
+/* Make thin edges clickable */
 .react-flow__edge, .react-flow__edge-path { cursor: pointer; }
 .react-flow__edge-path { pointer-events: stroke; }
 
@@ -195,20 +173,18 @@
    NODE STYLES
    ============================================================ */
 
-/* Keep existing positioning; only set relative to host the ring */
 .ptb-node-shell {
-  position: relative;            /* required for ::after ring */
+  position: relative; 
   border-width: 2px;
+  z-index: 0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
   will-change: border-color, background-color;
-  z-index: 0;                    /* baseline layer */
 }
 
-/* No default shadow growth */
+/* Active ring on selection/drag */
 .react-flow__node.dragging .ptb-node-shell,
 .react-flow__node.selected .ptb-node-shell { box-shadow: none; }
 
-/* Active ring BEHIND everything inside the node (including handles) */
 .react-flow__node.dragging .ptb-node-shell::after,
 .react-flow__node.selected  .ptb-node-shell::after {
   content: "";
@@ -217,10 +193,10 @@
   border: 2px solid var(--ptb-active-ring, transparent);
   border-radius: inherit;
   pointer-events: none;
-  z-index: 0; /* ring behind */
+  z-index: 0;
 }
 
-/* Category → active ring color */
+/* Assign ring color per node type */
 .ptb-node--command { --ptb-active-ring: var(--ptb-node-command-border-active); }
 .ptb-node--address { --ptb-active-ring: var(--ptb-node-address-border-active); }
 .ptb-node--number  { --ptb-active-ring: var(--ptb-node-number-border-active); }
@@ -229,65 +205,23 @@
 .ptb-node--object  { --ptb-active-ring: var(--ptb-node-object-border-active); }
 .ptb-node--unknown { --ptb-active-ring: var(--ptb-node-unknown-border-active); }
 
-/* Base surfaces by category (so hover can override cleanly) */
-.ptb-node--command .ptb-node-shell { 
-  border-color: var(--ptb-node-command-border);
-  background:   var(--ptb-node-command-bg);
-}
-.ptb-node--address .ptb-node-shell { 
-  border-color: var(--ptb-node-address-border);
-  background:   var(--ptb-node-address-bg);
-}
-.ptb-node--number .ptb-node-shell { 
-  border-color: var(--ptb-node-number-border);
-  background:   var(--ptb-node-number-bg);
-}
-.ptb-node--bool .ptb-node-shell { 
-  border-color: var(--ptb-node-bool-border);
-  background:   var(--ptb-node-bool-bg);
-}
-.ptb-node--string .ptb-node-shell { 
-  border-color: var(--ptb-node-string-border);
-  background:   var(--ptb-node-string-bg);
-}
-.ptb-node--object .ptb-node-shell { 
-  border-color: var(--ptb-node-object-border);
-  background:   var(--ptb-node-object-bg);
-}
-.ptb-node--unknown .ptb-node-shell { 
-  border-color: var(--ptb-node-unknown-border);
-  background:   var(--ptb-node-unknown-bg);
-}
+/* Base surfaces per type */
+.ptb-node--command .ptb-node-shell { border-color: var(--ptb-node-command-border); background: var(--ptb-node-command-bg); }
+.ptb-node--address .ptb-node-shell { border-color: var(--ptb-node-address-border); background: var(--ptb-node-address-bg); }
+.ptb-node--number  .ptb-node-shell { border-color: var(--ptb-node-number-border);  background: var(--ptb-node-number-bg); }
+.ptb-node--bool    .ptb-node-shell { border-color: var(--ptb-node-bool-border);    background: var(--ptb-node-bool-bg); }
+.ptb-node--string  .ptb-node-shell { border-color: var(--ptb-node-string-border);  background: var(--ptb-node-string-bg); }
+.ptb-node--object  .ptb-node-shell { border-color: var(--ptb-node-object-border);  background: var(--ptb-node-object-bg); }
+.ptb-node--unknown .ptb-node-shell { border-color: var(--ptb-node-unknown-border); background: var(--ptb-node-unknown-bg); }
 
-/* Hover effects */
-.react-flow__node:has(.ptb-node--command):hover .ptb-node-shell {
-  border-color: var(--ptb-node-command-border-hover);
-  background:   var(--ptb-node-command-bg-hover);
-}
-.react-flow__node:has(.ptb-node--address):hover .ptb-node-shell {
-  border-color: var(--ptb-node-address-border-hover);
-  background:   var(--ptb-node-address-bg-hover);
-}
-.react-flow__node:has(.ptb-node--number):hover .ptb-node-shell {
-  border-color: var(--ptb-node-number-border-hover);
-  background:   var(--ptb-node-number-bg-hover);
-}
-.react-flow__node:has(.ptb-node--bool):hover .ptb-node-shell {
-  border-color: var(--ptb-node-bool-border-hover);
-  background:   var(--ptb-node-bool-bg-hover);
-}
-.react-flow__node:has(.ptb-node--string):hover .ptb-node-shell {
-  border-color: var(--ptb-node-string-border-hover);
-  background:   var(--ptb-node-string-bg-hover);
-}
-.react-flow__node:has(.ptb-node--object):hover .ptb-node-shell {
-  border-color: var(--ptb-node-object-border-hover);
-  background:   var(--ptb-node-object-bg-hover);
-}
-.react-flow__node:has(.ptb-node--unknown):hover .ptb-node-shell {
-  border-color: var(--ptb-node-unknown-border-hover);
-  background:   var(--ptb-node-unknown-bg-hover);
-}
+/* Hover effect overrides */
+.react-flow__node:has(.ptb-node--command):hover .ptb-node-shell { border-color: var(--ptb-node-command-border-hover); background: var(--ptb-node-command-bg-hover); }
+.react-flow__node:has(.ptb-node--address):hover .ptb-node-shell { border-color: var(--ptb-node-address-border-hover); background: var(--ptb-node-address-bg-hover); }
+.react-flow__node:has(.ptb-node--number):hover .ptb-node-shell  { border-color: var(--ptb-node-number-border-hover);  background: var(--ptb-node-number-bg-hover); }
+.react-flow__node:has(.ptb-node--bool):hover .ptb-node-shell    { border-color: var(--ptb-node-bool-border-hover);    background: var(--ptb-node-bool-bg-hover); }
+.react-flow__node:has(.ptb-node--string):hover .ptb-node-shell  { border-color: var(--ptb-node-string-border-hover);  background: var(--ptb-node-string-bg-hover); }
+.react-flow__node:has(.ptb-node--object):hover .ptb-node-shell  { border-color: var(--ptb-node-object-border-hover);  background: var(--ptb-node-object-bg-hover); }
+.react-flow__node:has(.ptb-node--unknown):hover .ptb-node-shell { border-color: var(--ptb-node-unknown-border-hover); background: var(--ptb-node-unknown-bg-hover); }
 
 /* ============================================================
    HANDLE STYLES
@@ -297,53 +231,36 @@
   width: 12px;
   height: 12px;
   border: 2px solid transparent;
-  background: #ccc; /* fallback */
+  background: #ccc;
   box-sizing: border-box;
   box-shadow: 0 0 0 1px rgba(0,0,0,.15);
-
-  /* keep stacking above node shell/ring */
   z-index: 2;
   pointer-events: all;
 }
 
-.ptb-handle--io   { /* as-is */ }
+/* Flow handle slightly larger */
 .ptb-handle--flow { width: 14px; height: 14px; }
 
-/* Direction hooks (optional) */
-.ptb-handle--in  { /* no-op */ }
-.ptb-handle--out { /* no-op */ }
-
-/* Cardinality: single=circle, array=rounded square, vector=diamond */
-.ptb-handle--single { border-radius: 9999px; }
-.ptb-handle--array  { border-radius: 4px; }
+/* Cardinality shapes */
+.ptb-handle--single { border-radius: 9999px; } /* circle */
+.ptb-handle--array  { border-radius: 4px; }    /* rounded square */
 .ptb-handle--vector {
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  transform-origin: center center; /* rotate around center when applied */
+  transform-origin: center center;
 }
+
+/* Flow vector handles larger */
 .ptb-handle--vector.ptb-handle--flow { width: 16px; height: 16px; }
 
-/* --- Vector shape base: no transform here (let RF's centering work) --- */
-
-/* Right-side vector: include RF's translate + rotate, with tiny inward nudge */
+/* Side-specific transforms for vector (diamond) */
 .react-flow__handle-right.ptb-handle--vector {
-  /* RF default: translate(50%, -50%); we keep it and add rotate */
   transform: translate(calc(50% + 1px), -50%) rotate(45deg);
 }
-
-/* Left-side vector: include RF's translate + rotate, with tiny inward nudge */
 .react-flow__handle-left.ptb-handle--vector {
-  /* RF default: translate(-50%, -50%); we keep it and add rotate */
   transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
 }
-
-/* If your "flow" vector handle is larger, keep the same idea */
-.ptb-handle--vector.ptb-handle--flow {
-  width: 16px;
-  height: 16px;
-}
-
 .react-flow__handle-right.ptb-handle--vector.ptb-handle--flow {
   transform: translate(calc(50% + 1px), -50%) rotate(45deg);
 }
@@ -351,7 +268,7 @@
   transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
 }
 
-/* IO category colors */
+/* IO handle colors */
 .ptb-handle--address { background: var(--ptb-io-address-stroke); }
 .ptb-handle--number  { background: var(--ptb-io-number-stroke);  }
 .ptb-handle--bool    { background: var(--ptb-io-bool-stroke);    }
@@ -359,12 +276,12 @@
 .ptb-handle--object  { background: var(--ptb-io-object-stroke);  }
 .ptb-handle--unknown { background: var(--ptb-io-unknown-stroke); }
 
-/* Flow handle color = command outline color (Start/End unified as Command) */
+/* Flow handle color = command border */
 .react-flow__node:has(.ptb-node--command) .ptb-handle--flow {
   background:   var(--ptb-node-command-border);
   border-color: var(--ptb-node-command-border);
 }
 
-/* Subtle affordance */
+/* Hover affordance */
 .react-flow__handle:hover,
 .ptb-handle:hover { filter: brightness(1.05); }
