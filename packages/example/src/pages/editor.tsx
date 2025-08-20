@@ -7,7 +7,12 @@ import {
   useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { PTB_SCHEME, PTBBuilder } from '@zktx.io/ptb-builder';
+import {
+  PTBBuilder,
+  PTBGraph,
+  PTBScheme,
+  ToastVariant,
+} from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 
 import { DragAndDrop } from '../components/DragAndDrop';
@@ -19,41 +24,54 @@ export const Editor = () => {
   const [network, setNetwork] = React.useState<
     'mainnet' | 'testnet' | 'devnet'
   >(NETWORK);
-  const [ptb, setPtb] = React.useState<PTB_SCHEME | undefined>(undefined);
-  const [backup, setBackup] = React.useState<PTB_SCHEME | undefined>(undefined);
+  const [ptb, setPtb] = React.useState<PTBScheme | undefined>(undefined);
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
-  const executeTx = async (transaction: Transaction | undefined) => {
-    if (account && transaction) {
-      // console.log(account.address);
-      // console.log(await transaction.toJSON());
-
-      const jsonTx = await transaction.toJSON();
-
-      signAndExecuteTransaction(
-        {
-          transaction: jsonTx,
-          chain: `sui:${network}`,
-        },
-        {
-          onSuccess: (result) => {
-            enqueueSnackbar(`${result.digest}`, {
-              variant: 'success',
+  const executeTx = (
+    transaction: Transaction | undefined,
+  ): Promise<{ digest?: string; error?: string }> => {
+    return new Promise((resolve, reject) => {
+      if (account && transaction) {
+        transaction
+          .toJSON()
+          .then((jsonTx) => {
+            signAndExecuteTransaction(
+              {
+                transaction: jsonTx,
+                chain: `sui:${network}`,
+              },
+              {
+                onSuccess: (result) => {
+                  resolve({ digest: result.digest });
+                },
+                onError: (error) => {
+                  reject({
+                    error: error.message || 'Transaction execution failed',
+                  });
+                },
+              },
+            );
+          })
+          .catch((error) => {
+            reject({
+              error: error.message || 'Transaction serialization failed',
             });
-            setPtb(backup);
-          },
-          onError: (error) => {
-            enqueueSnackbar(`${error}`, {
-              variant: 'error',
-            });
-            setPtb(backup);
-          },
-        },
-      );
-    }
+          });
+      }
+    });
   };
 
-  const handleDrop = (file: PTB_SCHEME) => {
+  const handleToast = ({
+    message,
+    variant,
+  }: {
+    message: string;
+    variant?: ToastVariant;
+  }) => {
+    enqueueSnackbar(message, { variant });
+  };
+
+  const handleDrop = (file: PTBScheme) => {
     setNetwork(file.network || NETWORK);
     ctx.selectNetwork(file.network || NETWORK);
     setPtb(file);
@@ -65,24 +83,29 @@ export const Editor = () => {
         <>
           <DragAndDrop
             onDrop={handleDrop}
-            onChancel={() => setPtb({ version: '2', modules: {} })}
+            onChancel={() =>
+              setPtb({ ...ptb, network, sender: account.address } as PTBScheme)
+            }
           />
           <PTBBuilder
-            wallet={account.address}
             network={network}
-            executeTx={executeTx}
-            restore={ptb}
-            update={(file: PTB_SCHEME) => {
-              setBackup(file);
-              console.log(file);
+            initialGraph={ptb?.graph}
+            onChange={(g: PTBGraph) => {
+              if (ptb) {
+                setPtb({ ...ptb, graph: g });
+              } else {
+                setPtb({
+                  version: 'ptb_3',
+                  network,
+                  sender: account.address,
+                  graph: g,
+                } as PTBScheme);
+              }
             }}
-            options={{
-              canEdit: true,
-              themeSwitch: true,
+            adapters={{
+              executeTx,
+              toast: handleToast,
             }}
-            enqueueToast={(message, options) =>
-              enqueueSnackbar(message, options)
-            }
           />
         </>
       ) : (

@@ -41,7 +41,7 @@ function App() {
       }}
     >
       <WalletProvider autoConnect>
-        <RouterProvider router={router} />;
+        <RouterProvider router={router} />
       </WalletProvider>
     </SuiClientProvider>
   );
