@@ -12,12 +12,15 @@ import {
 
 import {
   cardinalityOf,
+  cardinalityOfSerialized,
   ioCategoryOf,
+  ioCategoryOfSerialized,
   isTypeCompatible,
 } from '../../ptb/graph/typecheck';
+import { serializePTBType } from '../../ptb/graph/types';
 import type { Port, PTBType } from '../../ptb/graph/types';
 
-/** Strip optional ":type" suffix from a handle id. */
+/** Drop optional ":type" suffix to recover port id only. */
 const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
 
 export function PTBHandleIO({
@@ -27,19 +30,31 @@ export function PTBHandleIO({
   style,
   ...rest
 }: Omit<HandleProps, 'type' | 'position' | 'id'> & {
-  port: Port; // role: 'io', direction: 'in' | 'out'
+  /** Port must be role: 'io' */
+  port: Port;
   position: Position;
 }) {
-  // Pull nodes/edges from store
+  // Access RF store for live validation preview
   const nodes = useStore(
     (s: any) => (s.getNodes ? s.getNodes() : s.nodes) as any[],
   );
   const edges = useStore((s: any) => s.edges as any[]);
 
-  const card = cardinalityOf(port.dataType);
-  const cat = ioCategoryOf(port.dataType);
+  // Prefer a serialized type hint if provided by the port (e.g., "address[]"),
+  // otherwise fall back to the structured PTBType serialization.
+  const serializedHint: string | undefined =
+    (port as any).typeStr ??
+    (port.dataType ? serializePTBType(port.dataType) : undefined);
 
-  // Helpers that accept nullable ids from React Flow and normalize them
+  // Shape: try serialized-first (can detect [] = array), else structured (vector/single)
+  const shape =
+    cardinalityOfSerialized(serializedHint) || cardinalityOf(port.dataType);
+
+  // Color category: also prefer serialized (keeps edge/node color logic consistent)
+  const category =
+    ioCategoryOfSerialized(serializedHint) || ioCategoryOf(port.dataType);
+
+  // Helpers that accept nullable ids from RF and normalize them
   const findNode = (id: string | null | undefined) =>
     id ? nodes.find((n) => n.id === id) : undefined;
 
@@ -58,30 +73,29 @@ export function PTBHandleIO({
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
 
-    // Normalize null → undefined for the basic presence checks
     const src = c.source ?? undefined;
     const tgt = c.target ?? undefined;
     if (!src || !tgt) return false;
 
     if (port.direction === 'in') {
-      // Enforce at most one incoming edge to the target handle
+      // target handle accepts only 1 incoming edge
       const targetBusy = edges?.some(
         (e) => e.target === c.target && e.targetHandle === c.targetHandle,
       );
       if (targetBusy) return false;
 
-      // Live type preview when both ends are known
-      const srcT = findPortType(c.source, c.sourceHandle);
-      const dstT = findPortType(c.target, c.targetHandle);
-      if (srcT && dstT) return isTypeCompatible(srcT, dstT);
-      return true; // allow preview to continue; final check on edge add
-    } else {
-      // This handle is a source; fan-out allowed, still preview types if available
+      // live type preview
       const srcT = findPortType(c.source, c.sourceHandle);
       const dstT = findPortType(c.target, c.targetHandle);
       if (srcT && dstT) return isTypeCompatible(srcT, dstT);
       return true;
     }
+
+    // source can fan-out; still preview types if available
+    const srcT = findPortType(c.source, c.sourceHandle);
+    const dstT = findPortType(c.target, c.targetHandle);
+    if (srcT && dstT) return isTypeCompatible(srcT, dstT);
+    return true;
   };
 
   return (
@@ -94,8 +108,10 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        `ptb-handle--${card}`,
-        `ptb-handle--${cat}`,
+        // attach exactly one shape class
+        `ptb-handle--${shape}`, // 'single' | 'vector' | 'array'
+        // attach color category class
+        `ptb-handle--${category}`, // 'number' | 'string' | ...
         className,
       ]
         .filter(Boolean)
