@@ -33,8 +33,12 @@ function IoEdgeImpl(props: EdgeProps) {
   });
 
   // Support both v11 (sourceHandle/targetHandle) and v12 (sourceHandleId/targetHandleId).
-  const srcH = (props as any).sourceHandleId ?? (props as any).sourceHandle;
-  const tgtH = (props as any).targetHandleId ?? (props as any).targetHandle;
+  const srcH =
+    (props as any).sourceHandleId ??
+    ((props as any).sourceHandle as string | null | undefined);
+  const tgtH =
+    (props as any).targetHandleId ??
+    ((props as any).targetHandle as string | null | undefined);
 
   // Prefer source handle's type; fall back to target.
   const serializedType = typeOf(srcH) ?? typeOf(tgtH);
