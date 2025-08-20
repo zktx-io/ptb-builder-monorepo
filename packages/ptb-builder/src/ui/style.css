@@ -316,8 +316,40 @@
 /* Cardinality: single=circle, array=rounded square, vector=diamond */
 .ptb-handle--single { border-radius: 9999px; }
 .ptb-handle--array  { border-radius: 4px; }
-.ptb-handle--vector { transform: rotate(45deg); border-radius: 2px; }
+.ptb-handle--vector {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  transform-origin: center center; /* rotate around center when applied */
+}
 .ptb-handle--vector.ptb-handle--flow { width: 16px; height: 16px; }
+
+/* --- Vector shape base: no transform here (let RF's centering work) --- */
+
+/* Right-side vector: include RF's translate + rotate, with tiny inward nudge */
+.react-flow__handle-right.ptb-handle--vector {
+  /* RF default: translate(50%, -50%); we keep it and add rotate */
+  transform: translate(calc(50% + 1px), -50%) rotate(45deg);
+}
+
+/* Left-side vector: include RF's translate + rotate, with tiny inward nudge */
+.react-flow__handle-left.ptb-handle--vector {
+  /* RF default: translate(-50%, -50%); we keep it and add rotate */
+  transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
+}
+
+/* If your "flow" vector handle is larger, keep the same idea */
+.ptb-handle--vector.ptb-handle--flow {
+  width: 16px;
+  height: 16px;
+}
+
+.react-flow__handle-right.ptb-handle--vector.ptb-handle--flow {
+  transform: translate(calc(50% + 1px), -50%) rotate(45deg);
+}
+.react-flow__handle-left.ptb-handle--vector.ptb-handle--flow {
+  transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
+}
 
 /* IO category colors */
 .ptb-handle--address { background: var(--ptb-io-address-stroke); }
