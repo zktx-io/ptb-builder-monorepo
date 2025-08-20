@@ -5,7 +5,6 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 import { buildHandleId } from '../ptb/graph/helpers';
-import { type IOCategory, ioCategoryOf } from '../ptb/graph/typecheck';
 import {
   PTBEdge,
   PTBGraph,
@@ -14,31 +13,28 @@ import {
 } from '../ptb/graph/types';
 import { PORTS } from '../ptb/portTemplates';
 
-/** Minimal data stored on RF node; keep UI-only hints here. */
+/** Minimal data stored on React Flow node (UI-only). */
 export interface RFNodeData extends Record<string, unknown> {
-  /** Display label for node */
+  /** Node label shown in the UI */
   label?: string;
-  /** Category hint for Variable nodes (used for colors/styles) */
-  type?: IOCategory;
-  /** Reference to full PTB node (optional, for inspectors/debug) */
+  /** Full PTB node reference for inspectors/debugging */
   ptbNode?: PTBNode;
 }
 
 /** Convert PTBGraph → React Flow representation */
 export function ptbToRF(graph: PTBGraph): {
-  /** RF nodes for rendering */
+  /** React Flow nodes */
   nodes: RFNode<RFNodeData>[];
-  /** RF edges for rendering */
+  /** React Flow edges */
   edges: RFEdge[];
 } {
   const nodes: RFNode<RFNodeData>[] = graph.nodes.map((n) => ({
     id: n.id,
     type: mapPTBNodeToRFType(n),
-    position: n.position ?? { x: 0, y: 0 }, // fallback if not set
+    position: n.position ?? { x: 0, y: 0 },
     data: {
       label: n.label,
       ptbNode: n,
-      ...(n.kind === 'Variable' ? { type: ioCategoryOf(n.varType) } : {}),
     },
   }));
 
@@ -50,29 +46,32 @@ export function ptbToRF(graph: PTBGraph): {
     targetHandle: buildHandleIdForRF(graph, e.target, e.targetPort),
     type: mapPTBEdgeToRFType(e),
     data: {
-      // UI-only hint for inspectors (not persisted in PTBGraph)
+      // Serialized type (UI hint, not persisted in PTBGraph)
       dataType: e.dataType ? serializePTBType(e.dataType) : undefined,
+      // Preserve cast metadata if present
+      cast: (e as any).cast,
     },
+    // Optional UI-only label (not mapped back to PTBGraph)
+    label: (e as any).label,
   }));
 
   return { nodes, edges };
 }
 
-/** Convert a single PTB node → RF node */
+/** Convert a single PTB node → React Flow node */
 export function ptbNodeToRF(node: PTBNode): RFNode<RFNodeData> {
   const { nodes } = ptbToRF({ nodes: [node], edges: [] } as PTBGraph);
   return nodes[0];
 }
 
-/** Convert a single PTB edge → RF edge */
+/** Convert a single PTB edge → React Flow edge */
 export function ptbEdgeToRF(edge: PTBEdge): RFEdge {
   const { edges } = ptbToRF({ nodes: [], edges: [edge] } as PTBGraph);
   return edges[0];
 }
 
-/** Convert RF graph → PTBGraph
- *  - `prev` is optional and allows preserving PTB-only fields
- *    (params, outputs, varType, etc.)
+/** Convert React Flow graph → PTBGraph
+ *  - `prev` allows preserving PTB-specific fields (params, outputs, varType, etc.)
  */
 export function rfToPTB(
   rfNodes: RFNode<RFNodeData>[],
@@ -97,6 +96,8 @@ export function rfToPTB(
   const edges: PTBEdge[] = rfEdges.map((re) => {
     const s = parseHandleId(re.sourceHandle);
     const t = parseHandleId(re.targetHandle);
+    const cast = (re as any).data?.cast as PTBEdge['cast'] | undefined;
+
     return {
       id: re.id,
       kind: mapRFTypeToPTBEdgeKind(re.type as string),
@@ -104,6 +105,7 @@ export function rfToPTB(
       sourcePort: s.portId,
       target: re.target,
       targetPort: t.portId,
+      ...(cast ? { cast } : {}), // Preserve cast metadata if available
     };
   });
 
@@ -112,7 +114,7 @@ export function rfToPTB(
 
 /* ------------------------- Mapping helpers ------------------------- */
 
-/** Map PTB node kind → RF node type string */
+/** Map PTB node kind → React Flow node type */
 function mapPTBNodeToRFType(n: PTBNode): string {
   switch (n.kind) {
     case 'Start':
@@ -128,12 +130,12 @@ function mapPTBNodeToRFType(n: PTBNode): string {
   }
 }
 
-/** Map PTB edge kind → RF edge type string (style) */
+/** Map PTB edge kind → React Flow edge type */
 function mapPTBEdgeToRFType(e: PTBEdge): string {
   return e.kind === 'flow' ? 'ptb-flow' : 'ptb-io';
 }
 
-/** Map RF node type string → PTB skeleton (ports + kind) */
+/** Map React Flow node type → PTB skeleton (ports + kind) */
 function mapRFTypeToPTBSkeleton(rfType: string) {
   if (rfType === 'ptb-start') return { kind: 'Start', ports: PORTS.start() };
   if (rfType === 'ptb-end') return { kind: 'End', ports: PORTS.end() };
@@ -144,12 +146,12 @@ function mapRFTypeToPTBSkeleton(rfType: string) {
   return { kind: 'Utility', ports: [], extra: {} };
 }
 
-/** Map RF edge type string → PTB edge kind */
+/** Map React Flow edge type → PTB edge kind */
 function mapRFTypeToPTBEdgeKind(rfType?: string): PTBEdge['kind'] {
   return rfType === 'ptb-flow' ? 'flow' : 'io';
 }
 
-/** Build RF handle id from PTB port */
+/** Build React Flow handle id from PTB port */
 function buildHandleIdForRF(
   graph: PTBGraph,
   nodeId: string,
@@ -170,7 +172,7 @@ function parseHandleId(handleId?: string | null): {
   return { portId, type };
 }
 
-/** Preserve PTB-specific fields during RF → PTB conversion */
+/** Preserve PTB-specific fields when converting back from RF */
 function pickPTBSpecificData(base?: PTBNode): Partial<PTBNode> | undefined {
   if (!base) return;
   switch (base.kind) {
@@ -192,6 +194,6 @@ function pickPTBSpecificData(base?: PTBNode): Partial<PTBNode> | undefined {
 /* ------------------------------------------------------------------
  * Notes:
  * - This adapter is the single integration point with React Flow.
- * - PTB schema/storage format must remain RF-agnostic.
- * - When RF API changes, only update this adapter.
+ * - PTB schema and storage format must remain independent of RF.
+ * - If React Flow API changes, only this adapter needs updates.
  * ------------------------------------------------------------------ */
