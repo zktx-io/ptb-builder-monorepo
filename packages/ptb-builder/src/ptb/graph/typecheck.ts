@@ -127,3 +127,39 @@ export function inferCastTarget(
   }
   return undefined;
 }
+
+/** -------- Serialized-type helpers (for handleId strings) -------- */
+
+/** unwrap vector wrappers in serialized form: vector<T> -> T (recursively) */
+function baseOfSerializedType(s?: string): string | undefined {
+  if (!s) return undefined;
+  let t = s.trim();
+  // unwrap nested vectors: vector<vector<T>> -> T
+  while (t.toLowerCase().startsWith('vector<') && t.endsWith('>')) {
+    t = t.slice(7, -1).trim();
+  }
+  return t.toLowerCase();
+}
+
+/** IOCategory from serialized PTB type string (kept consistent with ioCategoryOf) */
+export function ioCategoryOfSerialized(s?: string): IOCategory {
+  const base = baseOfSerializedType(s);
+  if (!base) return 'unknown';
+
+  if (base.startsWith('object') || base.startsWith('coin')) return 'object';
+  if (base === 'address') return 'address';
+  if (base === 'string') return 'string';
+  if (base === 'bool') return 'bool';
+  if (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'].includes(base))
+    return 'number';
+  if (base === 'number') return 'number';
+
+  return 'unknown';
+}
+
+/** Cardinality ('vector' if serialized type is vector<...>, else 'single') */
+export function cardinalityOfSerialized(s?: string): Cardinality {
+  if (!s) return 'single';
+  const trimmed = s.trim().toLowerCase();
+  return trimmed.startsWith('vector<') ? 'vector' : 'single';
+}
