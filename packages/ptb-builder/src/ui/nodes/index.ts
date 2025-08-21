@@ -1,4 +1,4 @@
-import BaseCommand from './cmds/BaseCommand/BaseCommand';
+import { BaseCommand } from './cmds/BaseCommand/BaseCommand';
 import { EndNode } from './EndNode';
 import { StartNode } from './StartNode';
 import { VarNode } from './vars/VarNode';
