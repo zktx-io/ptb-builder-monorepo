@@ -21,28 +21,31 @@ import {
 import { serializePTBType } from '../../ptb/graph/types';
 import type { Port, PTBType } from '../../ptb/graph/types';
 
-// Normalize: drop optional ":type" suffix to recover port id only
 const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
+
+type PTBHandleIOProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
+  port: Port;
+  position: Position;
+  label?: string;
+  labelGap?: number; // px
+};
 
 export function PTBHandleIO({
   port,
   position,
   className,
   style,
+  label,
+  labelGap = 8,
   ...rest
-}: Omit<HandleProps, 'type' | 'position' | 'id'> & {
-  port: Port;
-  position: Position;
-}) {
+}: PTBHandleIOProps) {
   const nodes = useStore(
     (s: any) => (s.getNodes ? s.getNodes() : s.nodes) as any[],
   );
   const edges = useStore((s: any) => s.edges as any[]);
 
-  // Handle id includes serialized type suffix
   const handleId = useMemo(() => buildHandleId(port), [port]);
 
-  // Serialized type hint: explicit string, else structured PTBType
   const serializedHint = useMemo(
     () =>
       (port as any).typeStr ??
@@ -50,26 +53,22 @@ export function PTBHandleIO({
     [port],
   );
 
-  // Shape: single | vector | array
   const shape = useMemo(
     () =>
       cardinalityOfSerialized(serializedHint) || cardinalityOf(port.dataType),
     [serializedHint, port],
   );
 
-  // Category: number | string | bool | address | object | unknown
   const category = useMemo(
     () => ioCategoryOfSerialized(serializedHint) || ioCategoryOf(port.dataType),
     [serializedHint, port],
   );
 
-  // Force color injection via CSS var
   const colorVar =
     category && category !== 'unknown'
       ? `--ptb-io-${category}-stroke`
       : undefined;
 
-  // ---- Helpers ----
   const findNode = (id: string | null | undefined) =>
     id ? nodes.find((n) => n.id === id) : undefined;
 
@@ -92,12 +91,10 @@ export function PTBHandleIO({
     if (!src || !tgt) return false;
 
     if (port.direction === 'in') {
-      // Target handles accept only one incoming edge
       const targetBusy = edges?.some(
         (e) => e.target === c.target && e.targetHandle === c.targetHandle,
       );
       if (targetBusy) return false;
-
       const srcT = findPortType(c.source, c.sourceHandle as any);
       const dstT = findPortType(c.target, c.targetHandle as any);
       if (srcT && dstT) return isTypeCompatible(srcT, dstT);
@@ -110,6 +107,10 @@ export function PTBHandleIO({
     return true;
   };
 
+  const isLeft = position === Position.Left;
+  const isVector = shape === 'vector';
+  const isArray = shape === 'array';
+
   return (
     <Handle
       {...rest}
@@ -120,8 +121,8 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        `ptb-handle--${shape}`,
-        `ptb-handle--${category}`,
+        `ptb-handle--${shape}`, // single | array | vector
+        `ptb-handle--${category}`, // number | string | object | ...
         className,
       ]
         .filter(Boolean)
@@ -129,13 +130,45 @@ export function PTBHandleIO({
       style={{
         width: 12,
         height: 12,
+        overflow: 'visible',
         ...(style || {}),
         ...(colorVar
-          ? { background: `var(${colorVar})`, borderColor: `var(${colorVar})` }
+          ? {
+              color: `var(${colorVar})`,
+              ...(isVector || isArray
+                ? {}
+                : {
+                    background: `var(${colorVar})`,
+                    borderColor: `var(${colorVar})`,
+                  }),
+            }
           : {}),
       }}
       isValidConnection={isValidConnection}
-    />
+    >
+      {isVector && (
+        <span className="ptb-handle-glyph ptb-handle-glyph--vector" />
+      )}
+      {isArray && <span className="ptb-handle-glyph ptb-handle-glyph--array" />}
+      {label ? (
+        <div
+          className={`ptb-handle-label absolute ${isLeft ? 'ptb-handle-label--left' : 'ptb-handle-label--right'}`}
+          style={{
+            top: '50%',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            fontSize: 11,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+          }}
+          data-ptb-handle-label={port.id}
+        >
+          {label}
+        </div>
+      ) : (
+        <></>
+      )}
+    </Handle>
   );
 }
 

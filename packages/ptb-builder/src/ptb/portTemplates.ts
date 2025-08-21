@@ -1,26 +1,58 @@
 // src/ptb/portTemplates.ts
 import type { Port, PTBType } from './graph/types';
 
-/** -------- Flow helpers (no command-specific IO here) -------- */
-const flowIn = (id = 'prev'): Port => ({ id, direction: 'in', role: 'flow' });
-const flowOut = (id = 'next'): Port => ({ id, direction: 'out', role: 'flow' });
+/** Options for building a Port (UI-friendly) */
+export type PortOptions = {
+  /** Optional type carried by the port */
+  dataType?: PTBType;
+  /** Optional pre-serialized type hint (overrides dataType serialization if provided) */
+  typeStr?: string;
+  /** Optional handle label shown next to the port */
+  label?: string;
+};
 
-/** Default unknown type (placeholder) */
-const UNKNOWN: PTBType = { kind: 'unknown' };
+/** Merge a PTBType or a PortOptions into a PortOptions object */
+function normalizeOptions(arg?: PTBType | PortOptions): PortOptions {
+  if (!arg) return {};
+  // If it looks like a PTBType (has 'kind'), treat as dataType
+  if (typeof arg === 'object' && 'kind' in arg) {
+    return { dataType: arg as PTBType };
+  }
+  return arg as PortOptions;
+}
+
+/** -------- Flow helpers (no command-specific IO here) -------- */
+export const flowIn = (id = 'prev', opts?: PortOptions): Port => ({
+  id,
+  direction: 'in',
+  role: 'flow',
+  ...normalizeOptions(opts),
+});
+
+export const flowOut = (id = 'next', opts?: PortOptions): Port => ({
+  id,
+  direction: 'out',
+  role: 'flow',
+  ...normalizeOptions(opts),
+});
 
 /** -------- IO helpers (reusable outside this file) -------- */
-export const ioIn = (id: string, dataType?: PTBType): Port => ({
+export const ioIn = (id: string, opts?: PTBType | PortOptions): Port => ({
   id,
   direction: 'in',
   role: 'io',
-  dataType,
+  ...normalizeOptions(opts),
 });
-export const ioOut = (id: string, dataType?: PTBType): Port => ({
+
+export const ioOut = (id: string, opts?: PTBType | PortOptions): Port => ({
   id,
   direction: 'out',
   role: 'io',
-  dataType,
+  ...normalizeOptions(opts),
 });
+
+/** -------- Default unknown type (placeholder) -------- */
+export const UNKNOWN: PTBType = { kind: 'unknown' };
 
 /** -------- Standard Port Sets -------- */
 export const PORTS = {
@@ -40,14 +72,12 @@ export const PORTS = {
   },
 
   /** Variable out: single out port with optional type */
-  variableOut(dataType?: PTBType): Port[] {
+  variableOut(opts?: PTBType | PortOptions): Port[] {
     return [
-      {
-        id: 'out',
-        direction: 'out',
-        role: 'io',
-        dataType: dataType ?? UNKNOWN,
-      },
+      ioOut('out', {
+        dataType: UNKNOWN,
+        ...normalizeOptions(opts),
+      }),
     ];
   },
 } as const;

@@ -41,14 +41,10 @@
 
   /* =======================
      Node surfaces (border/bg)
-     Normal = darkest
-     Hover  = brighter
-     Active = brightest
-     Borders are opaque; BG uses alpha.
      ======================= */
 
   /* Command (gray) */
-  --ptb-node-command-border:        #4b5563; /* gray-600 (normal) */
+  --ptb-node-command-border:        #4b5563; /* gray-600 */
   --ptb-node-command-bg:            rgba(209,213,219,0.60); /* gray-300 */
   --ptb-node-command-border-hover:  #6b7280; /* gray-500 */
   --ptb-node-command-bg-hover:      rgba(209,213,219,0.75);
@@ -109,7 +105,7 @@
   --ptb-flow-stroke: #374151; /* gray-700 */
   --ptb-io-unknown-stroke: #a3a3a3;
 
-  /* IO edge colors (normal, tuned for dark background) */
+  /* IO edge colors (normal, tuned for dark) */
   --ptb-io-address-stroke: #d97706; /* amber-600 */
   --ptb-io-number-stroke:  #dc2626; /* red-600 */
   --ptb-io-bool-stroke:    #7c3aed; /* violet-600 */
@@ -117,7 +113,7 @@
   --ptb-io-object-stroke:  #2563eb; /* blue-600 */
   --ptb-io-unknown-stroke: #737373; /* gray-500 */
 
-  /* IO edge colors (selected/active = brighter, tuned for dark) */
+  /* IO selected/active */
   --ptb-io-address-stroke-active: #f59e0b; /* amber-500 */
   --ptb-io-number-stroke-active:  #ef4444; /* red-500 */
   --ptb-io-bool-stroke-active:    #8b5cf6; /* violet-500 */
@@ -198,12 +194,10 @@
   stroke-opacity: 1;
   will-change: stroke-dashoffset;
 }
-
 .ptb-flow-active .ptb-flow-edge { animation: ptb-flow-dash 1.8s linear infinite; }
 .ptb-flow-edge.is-selected { filter: drop-shadow(0 0 2px rgba(0,0,0,0.25)); }
 
-/* IO edge: solid, no dash/animation. 
-   We set XYFlow edge stroke variables here so XYFlow's selected rule uses our colors. */
+/* IO edge (solid, no dash/animation). Selected state uses XY vars we set. */
 .ptb-io-edge {
   stroke-dasharray: none !important;
   animation: none !important;
@@ -211,53 +205,23 @@
   stroke-linejoin: round;
   stroke-opacity: 1;
 
-  /* Safe defaults (in case category didn’t set them) */
+  /* Safe defaults */
   --xy-edge-stroke: var(--ptb-io-unknown-stroke);
   --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
 }
-
-/* Category → set stroke variables and width */
-.ptb-io-edge--address {
-  --xy-edge-stroke: var(--ptb-io-address-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-address-stroke-active);
-  stroke-width: var(--ptb-io-address-width);
-}
-.ptb-io-edge--number  {
-  --xy-edge-stroke: var(--ptb-io-number-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-number-stroke-active);
-  stroke-width: var(--ptb-io-number-width);
-}
-.ptb-io-edge--bool    {
-  --xy-edge-stroke: var(--ptb-io-bool-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-bool-stroke-active);
-  stroke-width: var(--ptb-io-bool-width);
-}
-.ptb-io-edge--string  {
-  --xy-edge-stroke: var(--ptb-io-string-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-string-stroke-active);
-  stroke-width: var(--ptb-io-string-width);
-}
-.ptb-io-edge--object  {
-  --xy-edge-stroke: var(--ptb-io-object-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-object-stroke-active);
-  stroke-width: var(--ptb-io-object-width);
-}
-.ptb-io-edge--unknown {
-  --xy-edge-stroke: var(--ptb-io-unknown-stroke);
-  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
-  stroke-width: var(--ptb-io-unknown-width);
-  stroke-dasharray: var(--ptb-io-unknown-dash);
-}
+/* Category → stroke vars + width */
+.ptb-io-edge--address { --xy-edge-stroke: var(--ptb-io-address-stroke);  --xy-edge-stroke-selected: var(--ptb-io-address-stroke-active);  stroke-width: var(--ptb-io-address-width); }
+.ptb-io-edge--number  { --xy-edge-stroke: var(--ptb-io-number-stroke);   --xy-edge-stroke-selected: var(--ptb-io-number-stroke-active);   stroke-width: var(--ptb-io-number-width);  }
+.ptb-io-edge--bool    { --xy-edge-stroke: var(--ptb-io-bool-stroke);     --xy-edge-stroke-selected: var(--ptb-io-bool-stroke-active);     stroke-width: var(--ptb-io-bool-width);    }
+.ptb-io-edge--string  { --xy-edge-stroke: var(--ptb-io-string-stroke);   --xy-edge-stroke-selected: var(--ptb-io-string-stroke-active);   stroke-width: var(--ptb-io-string-width);  }
+.ptb-io-edge--object  { --xy-edge-stroke: var(--ptb-io-object-stroke);   --xy-edge-stroke-selected: var(--ptb-io-object-stroke-active);   stroke-width: var(--ptb-io-object-width);  }
+.ptb-io-edge--unknown { --xy-edge-stroke: var(--ptb-io-unknown-stroke);  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);  stroke-width: var(--ptb-io-unknown-width); stroke-dasharray: var(--ptb-io-unknown-dash); }
 
 /* Ensure base state uses our variable even on older XYFlow builds */
-.react-flow__edge .react-flow__edge-path.ptb-io-edge {
-  stroke: var(--xy-edge-stroke);
-}
+.react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke); }
 
-/* Hover brighten (falls back to selected if no hover var is provided) */
-.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge {
-  stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected));
-}
+/* Hover brighten (fallbacks to selected if no hover var is provided) */
+.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected)); }
 
 /* Keep pointer affordance and hit-test behavior */
 .react-flow__edge, .react-flow__edge-path { cursor: pointer; }
@@ -327,11 +291,12 @@
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-node-shell { border-color: var(--ptb-node-unknown-border-active); background: var(--ptb-node-unknown-bg-active); }
 
 /* ============================================================
-   HANDLE STYLES
-   - Handles mirror node border color (normal/hover/active).
-   - Use currentColor so outline and fill match the node border.
+   HANDLE & LABEL STYLES (CLEAN)
+   - Parent never rotates; only vector glyph rotates to diamond.
+   - Labels are always horizontal and overflow outside 12x12 box.
    ============================================================ */
 
+/* Base handle */
 .ptb-handle {
   width: 12px;
   height: 12px;
@@ -339,70 +304,93 @@
   background-color: currentColor;   /* fill    = currentColor */
   box-sizing: border-box;
   box-shadow: 0 0 0 1px rgba(0,0,0,.15);
-  z-index: 2;
+  color: inherit;
   pointer-events: all;
-  color: inherit;                   /* color is inherited from node state */
+  overflow: visible;                 /* allow glyph/label overflow */
+  z-index: 10;
+  
 }
 
+/* Flow handle slightly bigger (optional) */
 .ptb-handle--flow { width: 14px; height: 14px; }
 
-/* Shapes */
-.ptb-handle--single { border-radius: 9999px; } /* circle */
-.ptb-handle--array  { border-radius: 4px; }    /* rounded square */
+/* Shape variants (parent never rotates) */
+.ptb-handle--single { border-radius: 9999px; }  /* circle */
+.ptb-handle--array  { border-radius: 4px; }     /* rounded square */
+
+/* Vector parent is transparent; glyph draws the diamond */
 .ptb-handle--vector {
-  width: 12px;
-  height: 12px;
+  background-color: transparent;
+  border-color: transparent;
+  border-radius: 2px;               /* nicer corners for diamond */
+}
+
+/* Glyph layer inside handle (rotatable) */
+.ptb-handle-glyph {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;              /* never block pointer */
+}
+.ptb-handle-glyph--vector {
+  width: 100%;
+  height: 100%;
+  background-color: currentColor;
   border-radius: 2px;
+  transform: rotate(45deg);
   transform-origin: center center;
 }
-.ptb-handle--vector.ptb-handle--flow { width: 16px; height: 16px; }
-
-/* Vector alignment for left/right */
-.react-flow__handle-right.ptb-handle--vector {
-  transform: translate(calc(50% + 1px), -50%) rotate(45deg);
-}
-.react-flow__handle-left.ptb-handle--vector {
-  transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
-}
-.react-flow__handle-right.ptb-handle--vector.ptb-handle--flow {
-  transform: translate(calc(50% + 1px), -50%) rotate(45deg);
-}
-.react-flow__handle-left.ptb-handle--vector.ptb-handle--flow {
-  transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
+/* Bigger diamond when combined with flow */
+.ptb-handle--flow .ptb-handle-glyph--vector {
+  width: 100%;
+  height: 100%;
 }
 
-/* Handle color sync with node border (Normal / Hover / Active) */
+/* ------- Labels (rendered inside <Handle>) ------- */
+.ptb-handle-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);   /* no rotation ever */
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #111827;                /* gray-900 (light) */
+}
+.dark .ptb-handle-label { color: #e5e7eb; } /* gray-200 (dark) */
+.ptb-handle-label--left  { left:  calc(100% + 8px); text-align: left; }
+.ptb-handle-label--right { right: calc(100% + 8px); text-align: right; }
+
+/* ===== Handle color sync with node border (Normal / Hover / Active) ===== */
 .react-flow__node:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border); }
 .react-flow__node:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border); }
-.react-flow__node:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border);  }
-.react-flow__node:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border);    }
-.react-flow__node:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border);  }
-.react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border);  }
+.react-flow__node:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border); }
+.react-flow__node:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border); }
+.react-flow__node:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border); }
+.react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
 
-/* Hover */
+/* Hover / Selected */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
-.react-flow__node:has(.ptb-node--address):hover .ptb-handle--io { color: var(--ptb-node-address-border-hover); }
-.react-flow__node:has(.ptb-node--number):hover  .ptb-handle--io { color: var(--ptb-node-number-border-hover);  }
-.react-flow__node:has(.ptb-node--bool):hover    .ptb-handle--io { color: var(--ptb-node-bool-border-hover);    }
-.react-flow__node:has(.ptb-node--string):hover  .ptb-handle--io { color: var(--ptb-node-string-border-hover);  }
-.react-flow__node:has(.ptb-node--object):hover  .ptb-handle--io { color: var(--ptb-node-object-border-hover);  }
-.react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
-
-/* Selected */
 .react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
+
+.react-flow__node:has(.ptb-node--address):hover .ptb-handle--io { color: var(--ptb-node-address-border-hover); }
 .react-flow__node.selected:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border-active); }
-.react-flow__node.selected:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border-active);  }
-.react-flow__node.selected:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border-active);    }
-.react-flow__node.selected:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border-active);  }
-.react-flow__node.selected:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border-active);  }
+
+.react-flow__node:has(.ptb-node--number):hover  .ptb-handle--io { color: var(--ptb-node-number-border-hover); }
+.react-flow__node.selected:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border-active); }
+
+.react-flow__node:has(.ptb-node--bool):hover    .ptb-handle--io { color: var(--ptb-node-bool-border-hover); }
+.react-flow__node.selected:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border-active); }
+
+.react-flow__node:has(.ptb-node--string):hover  .ptb-handle--io { color: var(--ptb-node-string-border-hover); }
+.react-flow__node.selected:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border-active); }
+
+.react-flow__node:has(.ptb-node--object):hover  .ptb-handle--io { color: var(--ptb-node-object-border-hover); }
+.react-flow__node.selected:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border-active); }
+
+.react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border-active); }
 
-/* Flow handles (command nodes) also follow states */
-.react-flow__node:has(.ptb-node--command) .ptb-handle--flow { color: var(--ptb-node-command-border); }
-.react-flow__node:has(.ptb-node--command):hover .ptb-handle--flow { color: var(--ptb-node-command-border-hover); }
-.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--flow { color: var(--ptb-node-command-border-active); }
-
-/* Hover affordance on handles */
+/* Subtle hover affordance on the handle icon itself */
 .react-flow__handle:hover,
 .ptb-handle:hover { filter: brightness(1.05); }

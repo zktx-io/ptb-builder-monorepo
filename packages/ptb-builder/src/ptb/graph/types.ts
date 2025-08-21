@@ -1,4 +1,4 @@
-// types.ts
+// src/ptb/graph/types.ts
 
 /** -------- Numeric widths (for precise Move-side types) -------- */
 export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
@@ -12,7 +12,6 @@ export type PTBScalar = 'bool' | 'string' | 'address' | 'number';
  * - scalar('number'): unified UI number
  * - move_numeric: precise numeric type (u64, etc.) required by MoveCall ports
  * - object: generic on-chain object with an optional 'typeTag'
- *   e.g. { kind: 'object', typeTag: '0x2::coin::Coin<0x2::sui::SUI>' }
  */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
@@ -25,11 +24,21 @@ export type PTBType =
 /** -------- Ports -------- */
 export type PortDirection = 'in' | 'out';
 export type PortRole = 'flow' | 'io';
+
 export interface Port {
-  id: string; // e.g. "prev", "next", "in_obj", "out_0"
+  /** Logical identifier used to attach edges, e.g. "prev", "next", "in_coin" */
+  id: string;
   direction: PortDirection;
   role: PortRole;
-  dataType?: PTBType; // optional type annotation for validation
+
+  /** Optional type annotation for validation & styling */
+  dataType?: PTBType;
+
+  /** Optional pre-serialized type hint used by builders/handles */
+  typeStr?: string;
+
+  /** Optional human-readable label to render next to the handle */
+  label?: string;
 }
 
 /** -------- Nodes -------- */
@@ -50,6 +59,26 @@ export type CommandKind =
   | 'publish'
   | 'upgrade';
 
+/** UI params stored on the node to drive port materialization */
+export interface CommandUIParams {
+  // SplitCoins
+  amountsMode?: 'scalar' | 'vector';
+  amountsExpanded?: boolean; // expansion of vector into N scalars (read-only count)
+  // MergeCoins
+  sourcesMode?: 'scalar' | 'vector';
+  sourcesExpanded?: boolean;
+  sourcesCount?: number;
+  // TransferObjects
+  objectsMode?: 'scalar' | 'vector';
+  objectsExpanded?: boolean;
+  objectsCount?: number;
+  // MakeMoveVec
+  elemsMode?: 'scalar' | 'vector';
+  elemsExpanded?: boolean;
+  elemsCount?: number;
+  elemType?: PTBType; // chosen element type for MakeMoveVec (default: object)
+}
+
 export interface StartNode extends NodeBase {
   kind: 'Start';
 }
@@ -60,13 +89,17 @@ export interface EndNode extends NodeBase {
 export interface CommandNode extends NodeBase {
   kind: 'Command';
   command: CommandKind;
-  params?: Record<string, unknown>;
+  /** Command/runtime params + UI state (toggle/expand/count) */
+  params?: {
+    runtime?: Record<string, unknown>;
+    ui?: CommandUIParams;
+  };
   outputs?: string[];
 }
 
 export interface VariableNode extends NodeBase {
   kind: 'Variable';
-  varType: PTBType; // UI uses unified scalar('number'); vectors/objects allowed
+  varType: PTBType;
   name: string;
   value?: unknown;
 }
@@ -125,7 +158,6 @@ export function serializePTBType(t: PTBType): string {
     case 'unknown':
       return 'unknown';
     default: {
-      // Exhaustiveness guard
       const _exhaustive: never = t;
       return String(_exhaustive);
     }
