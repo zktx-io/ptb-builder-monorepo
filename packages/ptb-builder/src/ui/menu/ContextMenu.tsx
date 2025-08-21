@@ -1,6 +1,4 @@
 // src/editor/ContextMenu.tsx
-// Context menu with hover submenus (pure UI). All mutations are delegated via callbacks.
-
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewport } from '@xyflow/react';
@@ -17,16 +15,10 @@ const MenuSubStyle =
   'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block bg-white dark:bg-stone-900 rounded-md shadow-lg z-50 w-[220px] whitespace-normal break-words';
 
 export interface ContextMenuProps {
-  /** Which surface was right-clicked */
   type: ContextType;
-  /** Screen coordinates (relative to container) where the menu should appear */
   position: { top: number; left: number };
-  /** Selected nodeId/edgeId when right-clicked on node/edge */
   targetId?: string;
-  /** Close the menu (parent controls visibility) */
   onClose: () => void;
-
-  /** Delegate mutations to parent */
   onAddNode?: (node: PTBNode) => void;
   onDeleteNode?: (id: string) => void;
   onDeleteEdge?: (id: string) => void;
@@ -45,7 +37,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   // eslint-disable-next-line no-restricted-syntax
   const rootRef = useRef<HTMLDivElement>(null);
 
-  /** Convert screen coords → flow coords and add node via parent callback. */
   const placeAndAdd = useCallback(
     (node: PTBNode) => {
       node.position = {
@@ -58,7 +49,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     [onAddNode, onClose, position.left, position.top, x, y, zoom],
   );
 
-  /** Thin router: delegates actions to parent handlers/factories. */
   const runAction = useCallback(
     (action: string) =>
       handleMenuAction(
@@ -72,7 +62,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     [placeAndAdd, targetId, onDeleteNode, onDeleteEdge, onClose],
   );
 
-  /** Escape key closes the menu. */
+  // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -81,32 +71,38 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  /** Click outside closes the menu. */
+  // Close on outside click: use CAPTURE + pointerdown and composedPath
   useEffect(() => {
-    const onDocMouseDown = (e: MouseEvent) => {
+    const onPointerDown = (e: PointerEvent) => {
       const el = rootRef.current;
       if (!el) return;
-      if (!el.contains(e.target as Node)) onClose();
+
+      // Use composedPath so clicks on SVG inside portals are handled correctly
+      const path = e.composedPath?.() ?? [];
+      const clickedInside = path.some((n) => n === el);
+      if (!clickedInside) onClose();
     };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
+
+    // capture:true to beat ReactFlow’s internal handlers
+    window.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () =>
+      window.removeEventListener('pointerdown', onPointerDown, {
+        capture: true,
+      } as any);
   }, [onClose]);
 
-  /** Prevent clipping off-screen (approximate bounding). */
+  // Prevent clipping off-screen
   const { safeTop, safeLeft } = useMemo(() => {
     const MARGIN = 8;
-    const MENU_W = 240; // minWidth 220 + padding/border
-    const MENU_H = 320; // rough height
-
+    const MENU_W = 240;
+    const MENU_H = 320;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-
     const left = Math.min(
       Math.max(MARGIN, position.left),
       vw - MENU_W - MARGIN,
     );
     const top = Math.min(Math.max(MARGIN, position.top), vh - MENU_H - MARGIN);
-
     return { safeTop: top, safeLeft: left };
   }, [position.left, position.top]);
 
@@ -197,6 +193,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         e.preventDefault();
         onClose();
       }}
+      // Keep clicks inside from bubbling up to ReactFlow
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       role="menu"
