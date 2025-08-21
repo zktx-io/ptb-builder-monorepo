@@ -86,25 +86,27 @@ export function PTBHandleIO({
 
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
-    const src = c.source ?? undefined;
-    const tgt = c.target ?? undefined;
-    if (!src || !tgt) return false;
 
-    if (port.direction === 'in') {
-      const targetBusy = edges?.some(
-        (e) => e.target === c.target && e.targetHandle === c.targetHandle,
-      );
-      if (targetBusy) return false;
-      const srcT = findPortType(c.source, c.sourceHandle as any);
-      const dstT = findPortType(c.target, c.targetHandle as any);
-      if (srcT && dstT) return isTypeCompatible(srcT, dstT);
-      return true;
-    }
+    // must have concrete ends
+    if (!c.source || !c.target || !c.sourceHandle || !c.targetHandle)
+      return false;
 
+    // 1) ALWAYS enforce single target-handle rule (regardless of drag direction)
+    const targetBusy = edges?.some(
+      (e) =>
+        e.type === 'ptb-io' &&
+        e.target === c.target &&
+        e.targetHandle === c.targetHandle,
+    );
+    if (targetBusy) return false;
+
+    // 2) Resolve types on both ends
     const srcT = findPortType(c.source, c.sourceHandle as any);
     const dstT = findPortType(c.target, c.targetHandle as any);
-    if (srcT && dstT) return isTypeCompatible(srcT, dstT);
-    return true;
+    if (!srcT || !dstT) return false;
+
+    // 3) Final compatibility check
+    return isTypeCompatible(srcT, dstT);
   };
 
   const isLeft = position === Position.Left;
