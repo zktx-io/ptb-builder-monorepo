@@ -1,3 +1,4 @@
+// src/ui/nodes/handles/PTBHandleFlow.tsx
 import React from 'react';
 
 import {
@@ -8,25 +9,14 @@ import {
   Position,
 } from '@xyflow/react';
 
-/** Strip optional ":type" suffix from a handle id. */
-const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
+import { hasConcreteEnds, isFlowDirectionOK, isSameNode } from './handleUtils';
 
-/**
- * Module-scoped validator so its reference is stable across renders.
- * No hook needed; avoids re-creating the function each render.
- */
+/** Stable, module-scoped validator */
 const isFlowConnectionValid: IsValidConnection = (edgeOrConn) => {
   const c = edgeOrConn as Connection;
-  const sh = base((c as any).sourceHandle);
-  const th = base((c as any).targetHandle);
-  const src = c.source ?? undefined;
-  const tgt = c.target ?? undefined;
-
-  if (!src || !tgt) return false;
-  if (src === tgt) return false;
-
-  // Flow must connect next -> prev
-  return sh === 'next' && th === 'prev';
+  if (!hasConcreteEnds(c)) return false;
+  if (isSameNode(c)) return false;
+  return isFlowDirectionOK(c);
 };
 
 export function PTBHandleFlow({
@@ -37,7 +27,6 @@ export function PTBHandleFlow({
 }: Omit<HandleProps, 'type' | 'position' | 'id'> & {
   type: 'source' | 'target';
 }) {
-  // These are trivial computations; memoization is unnecessary.
   const id = type === 'source' ? 'next' : 'prev';
   const position = type === 'source' ? Position.Right : Position.Left;
 
@@ -51,7 +40,6 @@ export function PTBHandleFlow({
         .filter(Boolean)
         .join(' ')}
       style={{
-        // Small inline style object; recreating each render is fine.
         width: 18,
         height: 10,
         borderRadius: 0,
@@ -64,12 +52,7 @@ export function PTBHandleFlow({
     >
       <span
         className="text-base text-gray-600 dark:text-gray-400"
-        style={{
-          // Decorative label; doesn't intercept pointer events.
-          position: 'absolute',
-          fontSize: '8px',
-          pointerEvents: 'none',
-        }}
+        style={{ position: 'absolute', fontSize: '8px', pointerEvents: 'none' }}
       >
         {type === 'source' ? 'SRC' : 'TGT'}
       </span>

@@ -10,6 +10,11 @@ import {
   useStore,
 } from '@xyflow/react';
 
+import {
+  findPortTypeFromStore,
+  hasConcreteEnds,
+  isIOTargetBusy,
+} from './handleUtils';
 import { buildHandleId } from '../../ptb/graph/helpers';
 import {
   cardinalityOf,
@@ -19,9 +24,7 @@ import {
   isTypeCompatible,
 } from '../../ptb/graph/typecheck';
 import { serializePTBType } from '../../ptb/graph/types';
-import type { Port, PTBType } from '../../ptb/graph/types';
-
-const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
+import type { Port } from '../../ptb/graph/types';
 
 type PTBHandleIOProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
   port: Port;
@@ -69,43 +72,21 @@ export function PTBHandleIO({
       ? `--ptb-io-${category}-stroke`
       : undefined;
 
-  const findNode = (id: string | null | undefined) =>
-    id ? nodes.find((n) => n.id === id) : undefined;
-
-  const findPortType = (
-    nodeId: string | null | undefined,
-    handleIdStr: string | null | undefined,
-  ): PTBType | undefined => {
-    const node = findNode(nodeId);
-    const hid = base(handleIdStr);
-    const ptbNode = node?.data?.ptbNode;
-    if (!ptbNode?.ports) return undefined;
-    const p: Port | undefined = ptbNode.ports.find((pp: Port) => pp.id === hid);
-    return p?.dataType;
-  };
-
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
 
-    // must have concrete ends
-    if (!c.source || !c.target || !c.sourceHandle || !c.targetHandle)
-      return false;
+    // 0) require concrete ends
+    if (!hasConcreteEnds(c)) return false;
 
-    // 1) ALWAYS enforce single target-handle rule (regardless of drag direction)
-    const targetBusy = edges?.some(
-      (e) =>
-        e.type === 'ptb-io' &&
-        e.target === c.target &&
-        e.targetHandle === c.targetHandle,
-    );
-    if (targetBusy) return false;
+    // 1) single-target-handle rule
+    if (isIOTargetBusy(edges, c)) return false;
 
-    // 2) Resolve types on both ends
-    const srcT = findPortType(c.source, c.sourceHandle as any);
-    const dstT = findPortType(c.target, c.targetHandle as any);
+    // 2) both end types must resolve
+    const srcT = findPortTypeFromStore(nodes, c.source!, c.sourceHandle as any);
+    const dstT = findPortTypeFromStore(nodes, c.target!, c.targetHandle as any);
     if (!srcT || !dstT) return false;
 
-    // 3) Final compatibility check
+    // 3) final compatibility
     return isTypeCompatible(srcT, dstT);
   };
 
@@ -123,8 +104,8 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        `ptb-handle--${shape}`, // single | array | vector
-        `ptb-handle--${category}`, // number | string | object | ...
+        `ptb-handle--${shape}`,
+        `ptb-handle--${category}`,
         className,
       ]
         .filter(Boolean)
@@ -162,6 +143,8 @@ export function PTBHandleIO({
             fontSize: 11,
             lineHeight: 1,
             whiteSpace: 'nowrap',
+            marginLeft: isLeft ? labelGap : undefined,
+            marginRight: !isLeft ? labelGap : undefined,
           }}
           data-ptb-handle-label={port.id}
         >
