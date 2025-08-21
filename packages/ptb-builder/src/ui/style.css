@@ -4,6 +4,9 @@
 
 /* ============================================================
    PTB THEME: CSS VARIABLES
+   - Borders are opaque (no alpha).
+   - Backgrounds keep alpha to show layering.
+   - Brightness order: normal < hover < active.
    ============================================================ */
 
 /* Light (default theme) */
@@ -13,121 +16,170 @@
   --ptb-flow-width: 2.75;
   --ptb-flow-dash: 5 5;
 
-  /* IO edge colors by category */
+  /* IO edge colors by category (normal) */
   --ptb-io-address-stroke: #f59e0b; /* amber-500 */
   --ptb-io-address-width: 2.5;
-  --ptb-io-number-stroke: #ef4444;  /* red-500 */
+  --ptb-io-number-stroke:  #ef4444; /* red-500 */
   --ptb-io-number-width: 2.5;
-  --ptb-io-bool-stroke: #8b5cf6;    /* violet-500 */
+  --ptb-io-bool-stroke:    #8b5cf6; /* violet-500 */
   --ptb-io-bool-width: 2.5;
-  --ptb-io-string-stroke: #10b981;  /* emerald-500 */
+  --ptb-io-string-stroke:  #10b981; /* emerald-500 */
   --ptb-io-string-width: 2.5;
-  --ptb-io-object-stroke: #3b82f6;  /* blue-500 */
+  --ptb-io-object-stroke:  #3b82f6; /* blue-500 */
   --ptb-io-object-width: 2.5;
   --ptb-io-unknown-stroke: #737373; /* gray-500 */
   --ptb-io-unknown-width: 2;
   --ptb-io-unknown-dash: 4 4;
 
-  /* Node surfaces (border + background) */
-  --ptb-node-command-border: #9ca3af;
-  --ptb-node-command-bg: rgba(209, 213, 219, 0.6);
-  --ptb-node-address-border: #fde68a;
-  --ptb-node-address-bg: rgba(253, 230, 138, 0.6);
-  --ptb-node-number-border: #fca5a5;
-  --ptb-node-number-bg: rgba(252, 165, 165, 0.6);
-  --ptb-node-bool-border: #c4b5fd;
-  --ptb-node-bool-bg: rgba(196, 181, 253, 0.6);
-  --ptb-node-string-border: #86efac;
-  --ptb-node-string-bg: rgba(134, 239, 172, 0.6);
-  --ptb-node-object-border: #93c5fd;
-  --ptb-node-object-bg: rgba(147, 197, 253, 0.6);
-  --ptb-node-unknown-border: #a3a3a3;
-  --ptb-node-unknown-bg: rgba(163, 163, 163, 0.6);
+  /* IO edge colors (selected/active = brighter) */
+  --ptb-io-address-stroke-active: #fbbf24; /* amber-400 */
+  --ptb-io-number-stroke-active:  #f87171; /* red-400 */
+  --ptb-io-bool-stroke-active:    #a78bfa; /* violet-400 */
+  --ptb-io-string-stroke-active:  #34d399; /* emerald-400 */
+  --ptb-io-object-stroke-active:  #60a5fa; /* blue-400 */
+  --ptb-io-unknown-stroke-active: #a3a3a3; /* gray-400 */
 
-  /* Hover / Active states */
-  --ptb-node-command-border-hover: #6b7280;
-  --ptb-node-command-bg-hover: rgba(209, 213, 219, 0.75);
-  --ptb-node-command-border-active: #4b5563;
-  --ptb-node-command-bg-active: rgba(209, 213, 219, 0.9);
+  /* =======================
+     Node surfaces (border/bg)
+     Normal = darkest
+     Hover  = brighter
+     Active = brightest
+     Borders are opaque; BG uses alpha.
+     ======================= */
 
-  --ptb-node-address-border-hover: #f59e0b;
-  --ptb-node-address-bg-hover: rgba(253, 230, 138, 0.75);
-  --ptb-node-address-border-active: #d97706;
-  --ptb-node-address-bg-active: rgba(253, 230, 138, 0.9);
+  /* Command (gray) */
+  --ptb-node-command-border:        #4b5563; /* gray-600 (normal) */
+  --ptb-node-command-bg:            rgba(209,213,219,0.60); /* gray-300 */
+  --ptb-node-command-border-hover:  #6b7280; /* gray-500 */
+  --ptb-node-command-bg-hover:      rgba(209,213,219,0.75);
+  --ptb-node-command-border-active: #9ca3af; /* gray-400 */
+  --ptb-node-command-bg-active:     rgba(209,213,219,0.90);
 
-  --ptb-node-number-border-hover: #ef4444;
-  --ptb-node-number-bg-hover: rgba(252, 165, 165, 0.75);
-  --ptb-node-number-border-active: #dc2626;
-  --ptb-node-number-bg-active: rgba(252, 165, 165, 0.9);
+  /* Address (amber) */
+  --ptb-node-address-border:        #b45309; /* amber-700 */
+  --ptb-node-address-bg:            rgba(253,230,138,0.60); /* amber-200 */
+  --ptb-node-address-border-hover:  #f59e0b; /* amber-500 */
+  --ptb-node-address-bg-hover:      rgba(253,230,138,0.75);
+  --ptb-node-address-border-active: #fbbf24; /* amber-400 */
+  --ptb-node-address-bg-active:     rgba(253,230,138,0.90);
 
-  --ptb-node-bool-border-hover: #8b5cf6;
-  --ptb-node-bool-bg-hover: rgba(196, 181, 253, 0.75);
-  --ptb-node-bool-border-active: #7c3aed;
-  --ptb-node-bool-bg-active: rgba(196, 181, 253, 0.9);
+  /* Number (red) */
+  --ptb-node-number-border:         #b91c1c; /* red-700 */
+  --ptb-node-number-bg:             rgba(252,165,165,0.60); /* red-300 */
+  --ptb-node-number-border-hover:   #ef4444; /* red-500 */
+  --ptb-node-number-bg-hover:       rgba(252,165,165,0.75);
+  --ptb-node-number-border-active:  #f87171; /* red-400 */
+  --ptb-node-number-bg-active:      rgba(252,165,165,0.90);
 
-  --ptb-node-string-border-hover: #10b981;
-  --ptb-node-string-bg-hover: rgba(134, 239, 172, 0.75);
-  --ptb-node-string-border-active: #059669;
-  --ptb-node-string-bg-active: rgba(134, 239, 172, 0.9);
+  /* Bool (violet) */
+  --ptb-node-bool-border:           #6d28d9; /* violet-700 */
+  --ptb-node-bool-bg:               rgba(196,181,253,0.60); /* violet-300 */
+  --ptb-node-bool-border-hover:     #8b5cf6; /* violet-500 */
+  --ptb-node-bool-bg-hover:         rgba(196,181,253,0.75);
+  --ptb-node-bool-border-active:    #a78bfa; /* violet-400 */
+  --ptb-node-bool-bg-active:        rgba(196,181,253,0.90);
 
-  --ptb-node-object-border-hover: #3b82f6;
-  --ptb-node-object-bg-hover: rgba(147, 197, 253, 0.75);
-  --ptb-node-object-border-active: #2563eb;
-  --ptb-node-object-bg-active: rgba(147, 197, 253, 0.9);
+  /* String (emerald) */
+  --ptb-node-string-border:         #047857; /* emerald-700 */
+  --ptb-node-string-bg:             rgba(134,239,172,0.60); /* emerald-300 */
+  --ptb-node-string-border-hover:   #10b981; /* emerald-500 */
+  --ptb-node-string-bg-hover:       rgba(134,239,172,0.75);
+  --ptb-node-string-border-active:  #34d399; /* emerald-400 */
+  --ptb-node-string-bg-active:      rgba(134,239,172,0.90);
 
-  --ptb-node-unknown-border-hover: #737373;
-  --ptb-node-unknown-bg-hover: rgba(163, 163, 163, 0.75);
-  --ptb-node-unknown-border-active: #525252;
-  --ptb-node-unknown-bg-active: rgba(163, 163, 163, 0.9);
+  /* Object (blue) */
+  --ptb-node-object-border:         #1d4ed8; /* blue-700 */
+  --ptb-node-object-bg:             rgba(147,197,253,0.60); /* blue-300 */
+  --ptb-node-object-border-hover:   #3b82f6; /* blue-500 */
+  --ptb-node-object-bg-hover:       rgba(147,197,253,0.75);
+  --ptb-node-object-border-active:  #60a5fa; /* blue-400 */
+  --ptb-node-object-bg-active:      rgba(147,197,253,0.90);
+
+  /* Unknown (gray neutral) */
+  --ptb-node-unknown-border:        #525252; /* gray-600 */
+  --ptb-node-unknown-bg:            rgba(163,163,163,0.60); /* gray-400 */
+  --ptb-node-unknown-border-hover:  #737373; /* gray-500 */
+  --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.75);
+  --ptb-node-unknown-border-active: #a3a3a3; /* gray-400 */
+  --ptb-node-unknown-bg-active:     rgba(163,163,163,0.90);
 }
 
-/* Dark theme overrides */
+/* Dark theme (opaque borders, alpha BGs) */
 .dark {
-  --ptb-flow-stroke: #374151;
+  --ptb-flow-stroke: #374151; /* gray-700 */
   --ptb-io-unknown-stroke: #a3a3a3;
 
-  --ptb-node-command-border: #374151;
-  --ptb-node-command-bg: rgba(31, 41, 55, 0.6);
-  --ptb-node-address-border: #f59e0b66;
-  --ptb-node-address-bg: #f59e0b33;
-  --ptb-node-number-border: #ef444466;
-  --ptb-node-number-bg: #ef444433;
-  --ptb-node-bool-border: #8b5cf666;
-  --ptb-node-bool-bg: #8b5cf633;
-  --ptb-node-string-border: #10b98166;
-  --ptb-node-string-bg: #10b98133;
-  --ptb-node-object-border: #3b82f666;
-  --ptb-node-object-bg: #3b82f633;
+  /* IO edge colors (normal, tuned for dark background) */
+  --ptb-io-address-stroke: #d97706; /* amber-600 */
+  --ptb-io-number-stroke:  #dc2626; /* red-600 */
+  --ptb-io-bool-stroke:    #7c3aed; /* violet-600 */
+  --ptb-io-string-stroke:  #059669; /* emerald-600 */
+  --ptb-io-object-stroke:  #2563eb; /* blue-600 */
+  --ptb-io-unknown-stroke: #737373; /* gray-500 */
 
-  /* Dark hover/active */
-  --ptb-node-command-border-hover: #6b7280;
-  --ptb-node-command-bg-hover: rgba(31, 41, 55, 0.75);
-  --ptb-node-command-border-active: #9ca3af;
-  --ptb-node-command-bg-active: rgba(31, 41, 55, 0.95);
-  --ptb-node-address-border-hover: #f59e0b99;
-  --ptb-node-address-bg-hover: #f59e0b55;
-  --ptb-node-address-border-active: #f59e0bcc;
-  --ptb-node-address-bg-active: #f59e0b77;
-  --ptb-node-number-border-hover: #ef444499;
-  --ptb-node-number-bg-hover: #ef444455;
-  --ptb-node-number-border-active: #ef4444cc;
-  --ptb-node-number-bg-active: #ef444477;
-  --ptb-node-bool-border-hover: #8b5cf699;
-  --ptb-node-bool-bg-hover: #8b5cf655;
-  --ptb-node-bool-border-active: #8b5cf6cc;
-  --ptb-node-bool-bg-active: #8b5cf677;
-  --ptb-node-string-border-hover: #10b98199;
-  --ptb-node-string-bg-hover: #10b98155;
-  --ptb-node-string-border-active: #10b981cc;
-  --ptb-node-string-bg-active: #10b98177;
-  --ptb-node-object-border-hover: #3b82f699;
-  --ptb-node-object-bg-hover: #3b82f655;
-  --ptb-node-object-border-active: #3b82f6cc;
-  --ptb-node-object-bg-active: #3b82f677;
-  --ptb-node-unknown-border-hover: #a3a3a3;
-  --ptb-node-unknown-bg-hover: #a3a3a355;
-  --ptb-node-unknown-border-active: #d4d4d4;
-  --ptb-node-unknown-bg-active: #a3a3a377;
+  /* IO edge colors (selected/active = brighter, tuned for dark) */
+  --ptb-io-address-stroke-active: #f59e0b; /* amber-500 */
+  --ptb-io-number-stroke-active:  #ef4444; /* red-500 */
+  --ptb-io-bool-stroke-active:    #8b5cf6; /* violet-500 */
+  --ptb-io-string-stroke-active:  #10b981; /* emerald-500 */
+  --ptb-io-object-stroke-active:  #3b82f6; /* blue-500 */
+  --ptb-io-unknown-stroke-active: #d4d4d4; /* gray-300 */
+
+  /* Command */
+  --ptb-node-command-border:        #1f2937; /* gray-800 */
+  --ptb-node-command-bg:            rgba(31,41,55,0.60);
+  --ptb-node-command-border-hover:  #374151; /* gray-700 */
+  --ptb-node-command-bg-hover:      rgba(31,41,55,0.75);
+  --ptb-node-command-border-active: #9ca3af; /* gray-400 */
+  --ptb-node-command-bg-active:     rgba(31,41,55,0.95);
+
+  /* Address */
+  --ptb-node-address-border:        #92400e; /* amber-800 */
+  --ptb-node-address-bg:            rgba(245,158,11,0.22);
+  --ptb-node-address-border-hover:  #f59e0b; /* amber-500 */
+  --ptb-node-address-bg-hover:      rgba(245,158,11,0.35);
+  --ptb-node-address-border-active: #fbbf24; /* amber-400 */
+  --ptb-node-address-bg-active:     rgba(245,158,11,0.48);
+
+  /* Number */
+  --ptb-node-number-border:         #7f1d1d; /* red-900 */
+  --ptb-node-number-bg:             rgba(248,113,113,0.22);
+  --ptb-node-number-border-hover:   #ef4444; /* red-500 */
+  --ptb-node-number-bg-hover:       rgba(248,113,113,0.35);
+  --ptb-node-number-border-active:  #f87171; /* red-400 */
+  --ptb-node-number-bg-active:      rgba(248,113,113,0.48);
+
+  /* Bool */
+  --ptb-node-bool-border:           #5b21b6; /* violet-800 */
+  --ptb-node-bool-bg:               rgba(167,139,250,0.22);
+  --ptb-node-bool-border-hover:     #8b5cf6; /* violet-500 */
+  --ptb-node-bool-bg-hover:         rgba(167,139,250,0.35);
+  --ptb-node-bool-border-active:    #a78bfa; /* violet-400 */
+  --ptb-node-bool-bg-active:        rgba(167,139,250,0.48);
+
+  /* String */
+  --ptb-node-string-border:         #065f46; /* emerald-800 */
+  --ptb-node-string-bg:             rgba(16,185,129,0.22);
+  --ptb-node-string-border-hover:   #10b981; /* emerald-500 */
+  --ptb-node-string-bg-hover:       rgba(16,185,129,0.35);
+  --ptb-node-string-border-active:  #34d399; /* emerald-400 */
+  --ptb-node-string-bg-active:      rgba(16,185,129,0.48);
+
+  /* Object */
+  --ptb-node-object-border:         #1e3a8a; /* blue-900 */
+  --ptb-node-object-bg:             rgba(59,130,246,0.22);
+  --ptb-node-object-border-hover:   #3b82f6; /* blue-500 */
+  --ptb-node-object-bg-hover:       rgba(59,130,246,0.35);
+  --ptb-node-object-border-active:  #60a5fa; /* blue-400 */
+  --ptb-node-object-bg-active:      rgba(59,130,246,0.48);
+
+  /* Unknown */
+  --ptb-node-unknown-border:        #404040; /* gray-700 */
+  --ptb-node-unknown-bg:            rgba(163,163,163,0.22);
+  --ptb-node-unknown-border-hover:  #737373; /* gray-500 */
+  --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.35);
+  --ptb-node-unknown-border-active: #d4d4d4; /* gray-300 */
+  --ptb-node-unknown-bg-active:     rgba(163,163,163,0.48);
 }
 
 /* ============================================================
@@ -147,25 +199,67 @@
   will-change: stroke-dashoffset;
 }
 
-/* Animate flow edges if parent has .ptb-flow-active */
-.ptb-flow-active .ptb-flow-edge {
-  animation: ptb-flow-dash 1.8s linear infinite;
+.ptb-flow-active .ptb-flow-edge { animation: ptb-flow-dash 1.8s linear infinite; }
+.ptb-flow-edge.is-selected { filter: drop-shadow(0 0 2px rgba(0,0,0,0.25)); }
+
+/* IO edge: solid, no dash/animation. 
+   We set XYFlow edge stroke variables here so XYFlow's selected rule uses our colors. */
+.ptb-io-edge {
+  stroke-dasharray: none !important;
+  animation: none !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 1;
+
+  /* Safe defaults (in case category didn’t set them) */
+  --xy-edge-stroke: var(--ptb-io-unknown-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
 }
 
-/* Selected edge glow */
-.ptb-flow-edge.is-selected {
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.25));
+/* Category → set stroke variables and width */
+.ptb-io-edge--address {
+  --xy-edge-stroke: var(--ptb-io-address-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-address-stroke-active);
+  stroke-width: var(--ptb-io-address-width);
+}
+.ptb-io-edge--number  {
+  --xy-edge-stroke: var(--ptb-io-number-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-number-stroke-active);
+  stroke-width: var(--ptb-io-number-width);
+}
+.ptb-io-edge--bool    {
+  --xy-edge-stroke: var(--ptb-io-bool-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-bool-stroke-active);
+  stroke-width: var(--ptb-io-bool-width);
+}
+.ptb-io-edge--string  {
+  --xy-edge-stroke: var(--ptb-io-string-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-string-stroke-active);
+  stroke-width: var(--ptb-io-string-width);
+}
+.ptb-io-edge--object  {
+  --xy-edge-stroke: var(--ptb-io-object-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-object-stroke-active);
+  stroke-width: var(--ptb-io-object-width);
+}
+.ptb-io-edge--unknown {
+  --xy-edge-stroke: var(--ptb-io-unknown-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
+  stroke-width: var(--ptb-io-unknown-width);
+  stroke-dasharray: var(--ptb-io-unknown-dash);
 }
 
-/* IO edge categories */
-.ptb-io-edge--address { stroke: var(--ptb-io-address-stroke); stroke-width: var(--ptb-io-address-width); }
-.ptb-io-edge--number  { stroke: var(--ptb-io-number-stroke);  stroke-width: var(--ptb-io-number-width); }
-.ptb-io-edge--bool    { stroke: var(--ptb-io-bool-stroke);    stroke-width: var(--ptb-io-bool-width); }
-.ptb-io-edge--string  { stroke: var(--ptb-io-string-stroke);  stroke-width: var(--ptb-io-string-width); }
-.ptb-io-edge--object  { stroke: var(--ptb-io-object-stroke);  stroke-width: var(--ptb-io-object-width); }
-.ptb-io-edge--unknown { stroke: var(--ptb-io-unknown-stroke); stroke-width: var(--ptb-io-unknown-width); stroke-dasharray: var(--ptb-io-unknown-dash); }
+/* Ensure base state uses our variable even on older XYFlow builds */
+.react-flow__edge .react-flow__edge-path.ptb-io-edge {
+  stroke: var(--xy-edge-stroke);
+}
 
-/* Make thin edges clickable */
+/* Hover brighten (falls back to selected if no hover var is provided) */
+.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge {
+  stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected));
+}
+
+/* Keep pointer affordance and hit-test behavior */
 .react-flow__edge, .react-flow__edge-path { cursor: pointer; }
 .react-flow__edge-path { pointer-events: stroke; }
 
@@ -174,14 +268,14 @@
    ============================================================ */
 
 .ptb-node-shell {
-  position: relative; 
+  position: relative;
   border-width: 2px;
   z-index: 0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
   will-change: border-color, background-color;
 }
 
-/* Active ring on selection/drag */
+/* Remove default shadow; keep ring */
 .react-flow__node.dragging .ptb-node-shell,
 .react-flow__node.selected .ptb-node-shell { box-shadow: none; }
 
@@ -196,7 +290,7 @@
   z-index: 0;
 }
 
-/* Assign ring color per node type */
+/* Active ring color per type */
 .ptb-node--command { --ptb-active-ring: var(--ptb-node-command-border-active); }
 .ptb-node--address { --ptb-active-ring: var(--ptb-node-address-border-active); }
 .ptb-node--number  { --ptb-active-ring: var(--ptb-node-number-border-active); }
@@ -205,7 +299,7 @@
 .ptb-node--object  { --ptb-active-ring: var(--ptb-node-object-border-active); }
 .ptb-node--unknown { --ptb-active-ring: var(--ptb-node-unknown-border-active); }
 
-/* Base surfaces per type */
+/* Base (Normal) surfaces per type */
 .ptb-node--command .ptb-node-shell { border-color: var(--ptb-node-command-border); background: var(--ptb-node-command-bg); }
 .ptb-node--address .ptb-node-shell { border-color: var(--ptb-node-address-border); background: var(--ptb-node-address-bg); }
 .ptb-node--number  .ptb-node-shell { border-color: var(--ptb-node-number-border);  background: var(--ptb-node-number-bg); }
@@ -214,34 +308,45 @@
 .ptb-node--object  .ptb-node-shell { border-color: var(--ptb-node-object-border);  background: var(--ptb-node-object-bg); }
 .ptb-node--unknown .ptb-node-shell { border-color: var(--ptb-node-unknown-border); background: var(--ptb-node-unknown-bg); }
 
-/* Hover effect overrides */
+/* Hover (brighter) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-node-shell { border-color: var(--ptb-node-command-border-hover); background: var(--ptb-node-command-bg-hover); }
 .react-flow__node:has(.ptb-node--address):hover .ptb-node-shell { border-color: var(--ptb-node-address-border-hover); background: var(--ptb-node-address-bg-hover); }
-.react-flow__node:has(.ptb-node--number):hover .ptb-node-shell  { border-color: var(--ptb-node-number-border-hover);  background: var(--ptb-node-number-bg-hover); }
-.react-flow__node:has(.ptb-node--bool):hover .ptb-node-shell    { border-color: var(--ptb-node-bool-border-hover);    background: var(--ptb-node-bool-bg-hover); }
-.react-flow__node:has(.ptb-node--string):hover .ptb-node-shell  { border-color: var(--ptb-node-string-border-hover);  background: var(--ptb-node-string-bg-hover); }
-.react-flow__node:has(.ptb-node--object):hover .ptb-node-shell  { border-color: var(--ptb-node-object-border-hover);  background: var(--ptb-node-object-bg-hover); }
+.react-flow__node:has(.ptb-node--number):hover  .ptb-node-shell { border-color: var(--ptb-node-number-border-hover);  background: var(--ptb-node-number-bg-hover); }
+.react-flow__node:has(.ptb-node--bool):hover    .ptb-node-shell { border-color: var(--ptb-node-bool-border-hover);    background: var(--ptb-node-bool-bg-hover); }
+.react-flow__node:has(.ptb-node--string):hover  .ptb-node-shell { border-color: var(--ptb-node-string-border-hover);  background: var(--ptb-node-string-bg-hover); }
+.react-flow__node:has(.ptb-node--object):hover  .ptb-node-shell { border-color: var(--ptb-node-object-border-hover);  background: var(--ptb-node-object-bg-hover); }
 .react-flow__node:has(.ptb-node--unknown):hover .ptb-node-shell { border-color: var(--ptb-node-unknown-border-hover); background: var(--ptb-node-unknown-bg-hover); }
+
+/* Selected/Active (brightest) */
+.react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell { border-color: var(--ptb-node-command-border-active); background: var(--ptb-node-command-bg-active); }
+.react-flow__node.selected:has(.ptb-node--address) .ptb-node-shell { border-color: var(--ptb-node-address-border-active); background: var(--ptb-node-address-bg-active); }
+.react-flow__node.selected:has(.ptb-node--number)  .ptb-node-shell { border-color: var(--ptb-node-number-border-active);  background: var(--ptb-node-number-bg-active); }
+.react-flow__node.selected:has(.ptb-node--bool)    .ptb-node-shell { border-color: var(--ptb-node-bool-border-active);    background: var(--ptb-node-bool-bg-active); }
+.react-flow__node.selected:has(.ptb-node--string)  .ptb-node-shell { border-color: var(--ptb-node-string-border-active);  background: var(--ptb-node-string-bg-active); }
+.react-flow__node.selected:has(.ptb-node--object)  .ptb-node-shell { border-color: var(--ptb-node-object-border-active);  background: var(--ptb-node-object-bg-active); }
+.react-flow__node.selected:has(.ptb-node--unknown) .ptb-node-shell { border-color: var(--ptb-node-unknown-border-active); background: var(--ptb-node-unknown-bg-active); }
 
 /* ============================================================
    HANDLE STYLES
+   - Handles mirror node border color (normal/hover/active).
+   - Use currentColor so outline and fill match the node border.
    ============================================================ */
 
 .ptb-handle {
   width: 12px;
   height: 12px;
-  border: 2px solid transparent;
-  background: #ccc;
+  border: 2px solid currentColor;   /* outline = currentColor */
+  background-color: currentColor;   /* fill    = currentColor */
   box-sizing: border-box;
   box-shadow: 0 0 0 1px rgba(0,0,0,.15);
   z-index: 2;
   pointer-events: all;
+  color: inherit;                   /* color is inherited from node state */
 }
 
-/* Flow handle slightly larger */
 .ptb-handle--flow { width: 14px; height: 14px; }
 
-/* Cardinality shapes */
+/* Shapes */
 .ptb-handle--single { border-radius: 9999px; } /* circle */
 .ptb-handle--array  { border-radius: 4px; }    /* rounded square */
 .ptb-handle--vector {
@@ -250,11 +355,9 @@
   border-radius: 2px;
   transform-origin: center center;
 }
-
-/* Flow vector handles larger */
 .ptb-handle--vector.ptb-handle--flow { width: 16px; height: 16px; }
 
-/* Side-specific transforms for vector (diamond) */
+/* Vector alignment for left/right */
 .react-flow__handle-right.ptb-handle--vector {
   transform: translate(calc(50% + 1px), -50%) rotate(45deg);
 }
@@ -268,20 +371,38 @@
   transform: translate(calc(-50% - 1px), -50%) rotate(45deg);
 }
 
-/* IO handle colors */
-.ptb-handle--address { background: var(--ptb-io-address-stroke); }
-.ptb-handle--number  { background: var(--ptb-io-number-stroke);  }
-.ptb-handle--bool    { background: var(--ptb-io-bool-stroke);    }
-.ptb-handle--string  { background: var(--ptb-io-string-stroke);  }
-.ptb-handle--object  { background: var(--ptb-io-object-stroke);  }
-.ptb-handle--unknown { background: var(--ptb-io-unknown-stroke); }
+/* Handle color sync with node border (Normal / Hover / Active) */
+.react-flow__node:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border); }
+.react-flow__node:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border); }
+.react-flow__node:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border);  }
+.react-flow__node:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border);    }
+.react-flow__node:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border);  }
+.react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border);  }
+.react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
 
-/* Flow handle color = command border */
-.react-flow__node:has(.ptb-node--command) .ptb-handle--flow {
-  background:   var(--ptb-node-command-border);
-  border-color: var(--ptb-node-command-border);
-}
+/* Hover */
+.react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
+.react-flow__node:has(.ptb-node--address):hover .ptb-handle--io { color: var(--ptb-node-address-border-hover); }
+.react-flow__node:has(.ptb-node--number):hover  .ptb-handle--io { color: var(--ptb-node-number-border-hover);  }
+.react-flow__node:has(.ptb-node--bool):hover    .ptb-handle--io { color: var(--ptb-node-bool-border-hover);    }
+.react-flow__node:has(.ptb-node--string):hover  .ptb-handle--io { color: var(--ptb-node-string-border-hover);  }
+.react-flow__node:has(.ptb-node--object):hover  .ptb-handle--io { color: var(--ptb-node-object-border-hover);  }
+.react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
 
-/* Hover affordance */
+/* Selected */
+.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
+.react-flow__node.selected:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border-active); }
+.react-flow__node.selected:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border-active);  }
+.react-flow__node.selected:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border-active);    }
+.react-flow__node.selected:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border-active);  }
+.react-flow__node.selected:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border-active);  }
+.react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border-active); }
+
+/* Flow handles (command nodes) also follow states */
+.react-flow__node:has(.ptb-node--command) .ptb-handle--flow { color: var(--ptb-node-command-border); }
+.react-flow__node:has(.ptb-node--command):hover .ptb-handle--flow { color: var(--ptb-node-command-border-hover); }
+.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--flow { color: var(--ptb-node-command-border-active); }
+
+/* Hover affordance on handles */
 .react-flow__handle:hover,
 .ptb-handle:hover { filter: brightness(1.05); }
