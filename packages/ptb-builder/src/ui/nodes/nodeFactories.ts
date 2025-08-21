@@ -1,4 +1,9 @@
 // src/editor/nodeFactories.ts
+// Factory for PTB nodes (Start/End/Variables/Commands).
+// - Display command names (e.g., "SplitCoins") are normalized to canonical CommandKind (e.g., "splitCoins").
+// - Command ports are always materialized from a single source of truth (registry).
+
+import { materializeCommandPorts } from './cmds/BaseCommand/registry';
 import type {
   CommandKind,
   PTBNode,
@@ -10,17 +15,40 @@ import type {
 let seq = 0;
 const nid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 
-// --- PTBType helpers ---
-const scalar = (name: PTBScalar): PTBType => ({ kind: 'scalar', name });
-const vector = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
-const object = (
-  name: 'object' | 'coin' | 'objectRef',
-  typeArgs?: string[],
-): PTBType => ({ kind: 'object', name, typeArgs });
+/* ----------------------------- PTBType helpers ----------------------------- */
+// Short aliases to keep call sites concise.
+const S = (name: PTBScalar): PTBType => ({ kind: 'scalar', name }); // scalar
+const V = (elem: PTBType): PTBType => ({ kind: 'vector', elem }); // vector
+const O = (typeTag?: string): PTBType => ({ kind: 'object', typeTag }); // object (new schema)
 
-// --- Node factories ---
+/* -------------------- Display → canonical command mapping ------------------- */
+// Single map to avoid repeating union types in many places.
+const DISPLAY_TO_KIND = {
+  MakeMoveVec: 'makeMoveVec',
+  MergeCoins: 'mergeCoins',
+  SplitCoins: 'splitCoins',
+  MoveCall: 'moveCall',
+  Publish: 'publish',
+  TransferObjects: 'transferObjects',
+  Upgrade: 'publish', // If "Upgrade" is intended to alias "publish"
+} as const;
+
+// Literal type of display command names derived from the map keys.
+type DisplayCommand = keyof typeof DISPLAY_TO_KIND;
+
+// Type guard for runtime checks (defensive).
+function isDisplayCommand(x: unknown): x is DisplayCommand {
+  return typeof x === 'string' && x in DISPLAY_TO_KIND;
+}
+
+// Normalize any incoming "kind" to the canonical CommandKind.
+function normalizeCommandKind(kind: CommandKind | DisplayCommand): CommandKind {
+  return isDisplayCommand(kind) ? DISPLAY_TO_KIND[kind] : kind;
+}
+
+/* ------------------------------- Node factory ------------------------------ */
 export const NodeFactories = {
-  // Start node
+  /* Start node */
   start(): PTBNode {
     return {
       id: nid('start'),
@@ -31,7 +59,7 @@ export const NodeFactories = {
     };
   },
 
-  // End node
+  /* End node */
   end(): PTBNode {
     return {
       id: nid('end'),
@@ -42,51 +70,24 @@ export const NodeFactories = {
     };
   },
 
-  // Commands
-  command(
-    kind:
-      | CommandKind
-      | 'MakeMoveVec'
-      | 'MergeCoins'
-      | 'SplitCoins'
-      | 'MoveCall'
-      | 'Publish'
-      | 'TransferObjects'
-      | 'Upgrade',
-  ): PTBNode {
-    const mapped: CommandKind =
-      kind === 'MakeMoveVec'
-        ? 'makeMoveVec'
-        : kind === 'MergeCoins'
-          ? 'mergeCoins'
-          : kind === 'SplitCoins'
-            ? 'splitCoins'
-            : kind === 'MoveCall'
-              ? 'moveCall'
-              : kind === 'Publish'
-                ? 'publish'
-                : kind === 'TransferObjects'
-                  ? 'transferObjects'
-                  : kind === 'Upgrade'
-                    ? 'publish'
-                    : (kind as CommandKind);
-
+  /* Command node (ports come from registry = SSOT) */
+  command(kind: CommandKind | DisplayCommand): PTBNode {
+    const mapped = normalizeCommandKind(kind);
     return {
       id: nid(`cmd-${mapped}`),
       kind: 'Command',
-      label: mapped,
-      command: mapped,
-      ports: [
-        { id: 'prev', role: 'flow', direction: 'in' },
-        { id: 'next', role: 'flow', direction: 'out' },
-      ],
+      label: mapped, // UI label; can be prettified elsewhere if desired
+      command: mapped, // canonical key used across domain
+      ports: materializeCommandPorts(mapped), // ← Ports from registry (single source of truth)
       position: { x: 0, y: 0 },
     };
   },
 
+  /* ---------------------------- Variable nodes ---------------------------- */
+
   // Address
   address(): VariableNode {
-    const t = scalar('address');
+    const t = S('address');
     return {
       id: nid('addr'),
       kind: 'Variable',
@@ -98,7 +99,7 @@ export const NodeFactories = {
     };
   },
   addressArray(): VariableNode {
-    const t = vector(scalar('address'));
+    const t = V(S('address'));
     return {
       id: nid('addr-arr'),
       kind: 'Variable',
@@ -110,7 +111,7 @@ export const NodeFactories = {
     };
   },
   addressVector(): VariableNode {
-    const t = vector(scalar('address'));
+    const t = V(S('address'));
     return {
       id: nid('addr-vec'),
       kind: 'Variable',
@@ -122,7 +123,7 @@ export const NodeFactories = {
     };
   },
   addressWallet(): VariableNode {
-    const t = scalar('address');
+    const t = S('address');
     return {
       id: nid('wallet'),
       kind: 'Variable',
@@ -136,7 +137,7 @@ export const NodeFactories = {
 
   // Bool
   bool(): VariableNode {
-    const t = scalar('bool');
+    const t = S('bool');
     return {
       id: nid('bool'),
       kind: 'Variable',
@@ -148,7 +149,7 @@ export const NodeFactories = {
     };
   },
   boolArray(): VariableNode {
-    const t = vector(scalar('bool'));
+    const t = V(S('bool'));
     return {
       id: nid('bool-arr'),
       kind: 'Variable',
@@ -160,7 +161,7 @@ export const NodeFactories = {
     };
   },
   boolVector(): VariableNode {
-    const t = vector(scalar('bool'));
+    const t = V(S('bool'));
     return {
       id: nid('bool-vec'),
       kind: 'Variable',
@@ -174,7 +175,7 @@ export const NodeFactories = {
 
   // Number
   number(): VariableNode {
-    const t = scalar('number');
+    const t = S('number');
     return {
       id: nid('var-number'),
       kind: 'Variable',
@@ -186,7 +187,7 @@ export const NodeFactories = {
     };
   },
   numberArray(): VariableNode {
-    const t = vector(scalar('number'));
+    const t = V(S('number'));
     return {
       id: nid('var-number[]'),
       kind: 'Variable',
@@ -198,7 +199,7 @@ export const NodeFactories = {
     };
   },
   numberVector(): VariableNode {
-    const t = vector(scalar('number'));
+    const t = V(S('number'));
     return {
       id: nid('var-number-vec'),
       kind: 'Variable',
@@ -212,7 +213,7 @@ export const NodeFactories = {
 
   // String
   string(): VariableNode {
-    const t = scalar('string');
+    const t = S('string');
     return {
       id: nid('str'),
       kind: 'Variable',
@@ -224,7 +225,7 @@ export const NodeFactories = {
     };
   },
   stringArray(): VariableNode {
-    const t = vector(scalar('string'));
+    const t = V(S('string'));
     return {
       id: nid('str-arr'),
       kind: 'Variable',
@@ -236,7 +237,7 @@ export const NodeFactories = {
     };
   },
   stringVector(): VariableNode {
-    const t = vector(scalar('string'));
+    const t = V(S('string'));
     return {
       id: nid('str-vec'),
       kind: 'Variable',
@@ -248,7 +249,7 @@ export const NodeFactories = {
     };
   },
   string0x2suiSui(): VariableNode {
-    const t = scalar('string');
+    const t = S('string');
     return {
       id: nid('sui-str'),
       kind: 'Variable',
@@ -261,9 +262,9 @@ export const NodeFactories = {
     };
   },
 
-  // Object
+  // Object (new schema uses typeTag; leave undefined for generic object)
   object(): VariableNode {
-    const t = object('object');
+    const t = O(); // generic object (no concrete typeTag)
     return {
       id: nid('obj'),
       kind: 'Variable',
@@ -275,7 +276,7 @@ export const NodeFactories = {
     };
   },
   objectArray(): VariableNode {
-    const t = vector(object('object'));
+    const t = V(O());
     return {
       id: nid('obj-arr'),
       kind: 'Variable',
@@ -287,7 +288,7 @@ export const NodeFactories = {
     };
   },
   objectVector(): VariableNode {
-    const t = vector(object('object'));
+    const t = V(O());
     return {
       id: nid('obj-vec'),
       kind: 'Variable',
@@ -299,9 +300,9 @@ export const NodeFactories = {
     };
   },
 
-  // Object helpers
+  // Object helpers (all generic objects unless you want to provide concrete type tags)
   objectClock(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('clock'),
       kind: 'Variable',
@@ -313,7 +314,7 @@ export const NodeFactories = {
     };
   },
   objectGas(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('gas'),
       kind: 'Variable',
@@ -325,7 +326,7 @@ export const NodeFactories = {
     };
   },
   objectCoinWithBalance(): VariableNode {
-    const t = object('coin');
+    const t = O(); // if you know the concrete typeTag, set it here
     return {
       id: nid('coin-bal'),
       kind: 'Variable',
@@ -337,7 +338,7 @@ export const NodeFactories = {
     };
   },
   objectDenyList(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('deny'),
       kind: 'Variable',
@@ -349,7 +350,7 @@ export const NodeFactories = {
     };
   },
   objectOption(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('opt'),
       kind: 'Variable',
@@ -361,7 +362,7 @@ export const NodeFactories = {
     };
   },
   objectRandom(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('rand'),
       kind: 'Variable',
@@ -373,7 +374,7 @@ export const NodeFactories = {
     };
   },
   objectSystem(): VariableNode {
-    const t = object('object');
+    const t = O();
     return {
       id: nid('sys'),
       kind: 'Variable',

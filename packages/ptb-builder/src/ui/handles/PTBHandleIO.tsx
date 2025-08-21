@@ -1,4 +1,5 @@
-import React from 'react';
+// src/ui/nodes/handles/PTBHandleIO.tsx
+import React, { useMemo } from 'react';
 
 import {
   type Connection,
@@ -9,6 +10,7 @@ import {
   useStore,
 } from '@xyflow/react';
 
+import { buildHandleId } from '../../ptb/graph/helpers';
 import {
   cardinalityOf,
   cardinalityOfSerialized,
@@ -19,7 +21,7 @@ import {
 import { serializePTBType } from '../../ptb/graph/types';
 import type { Port, PTBType } from '../../ptb/graph/types';
 
-/** Drop optional ":type" suffix to recover port id only. */
+// Normalize: drop optional ":type" suffix to recover port id only
 const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
 
 export function PTBHandleIO({
@@ -29,40 +31,54 @@ export function PTBHandleIO({
   style,
   ...rest
 }: Omit<HandleProps, 'type' | 'position' | 'id'> & {
-  /** Port must be role: 'io' */
   port: Port;
   position: Position;
 }) {
-  // Access RF store for live validation preview
   const nodes = useStore(
     (s: any) => (s.getNodes ? s.getNodes() : s.nodes) as any[],
   );
   const edges = useStore((s: any) => s.edges as any[]);
 
-  // Prefer a serialized type hint if provided by the port (e.g., "address[]"),
-  // otherwise fall back to the structured PTBType serialization.
-  const serializedHint: string | undefined =
-    (port as any).typeStr ??
-    (port.dataType ? serializePTBType(port.dataType) : undefined);
+  // Handle id includes serialized type suffix
+  const handleId = useMemo(() => buildHandleId(port), [port]);
 
-  // Shape: try serialized-first (can detect [] = array), else structured (vector/single)
-  const shape =
-    cardinalityOfSerialized(serializedHint) || cardinalityOf(port.dataType);
+  // Serialized type hint: explicit string, else structured PTBType
+  const serializedHint = useMemo(
+    () =>
+      (port as any).typeStr ??
+      (port.dataType ? serializePTBType(port.dataType) : undefined),
+    [port],
+  );
 
-  // Color category: also prefer serialized (keeps edge/node color logic consistent)
-  const category =
-    ioCategoryOfSerialized(serializedHint) || ioCategoryOf(port.dataType);
+  // Shape: single | vector | array
+  const shape = useMemo(
+    () =>
+      cardinalityOfSerialized(serializedHint) || cardinalityOf(port.dataType),
+    [serializedHint, port],
+  );
 
-  // Helpers that accept nullable ids from RF and normalize them
+  // Category: number | string | bool | address | object | unknown
+  const category = useMemo(
+    () => ioCategoryOfSerialized(serializedHint) || ioCategoryOf(port.dataType),
+    [serializedHint, port],
+  );
+
+  // Force color injection via CSS var
+  const colorVar =
+    category && category !== 'unknown'
+      ? `--ptb-io-${category}-stroke`
+      : undefined;
+
+  // ---- Helpers ----
   const findNode = (id: string | null | undefined) =>
     id ? nodes.find((n) => n.id === id) : undefined;
 
   const findPortType = (
     nodeId: string | null | undefined,
-    handleId: string | null | undefined,
+    handleIdStr: string | null | undefined,
   ): PTBType | undefined => {
     const node = findNode(nodeId);
-    const hid = base(handleId);
+    const hid = base(handleIdStr);
     const ptbNode = node?.data?.ptbNode;
     if (!ptbNode?.ports) return undefined;
     const p: Port | undefined = ptbNode.ports.find((pp: Port) => pp.id === hid);
@@ -71,28 +87,25 @@ export function PTBHandleIO({
 
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
-
     const src = c.source ?? undefined;
     const tgt = c.target ?? undefined;
     if (!src || !tgt) return false;
 
     if (port.direction === 'in') {
-      // target handle accepts only 1 incoming edge
+      // Target handles accept only one incoming edge
       const targetBusy = edges?.some(
         (e) => e.target === c.target && e.targetHandle === c.targetHandle,
       );
       if (targetBusy) return false;
 
-      // live type preview
-      const srcT = findPortType(c.source, c.sourceHandle);
-      const dstT = findPortType(c.target, c.targetHandle);
+      const srcT = findPortType(c.source, c.sourceHandle as any);
+      const dstT = findPortType(c.target, c.targetHandle as any);
       if (srcT && dstT) return isTypeCompatible(srcT, dstT);
       return true;
     }
 
-    // source can fan-out; still preview types if available
-    const srcT = findPortType(c.source, c.sourceHandle);
-    const dstT = findPortType(c.target, c.targetHandle);
+    const srcT = findPortType(c.source, c.sourceHandle as any);
+    const dstT = findPortType(c.target, c.targetHandle as any);
     if (srcT && dstT) return isTypeCompatible(srcT, dstT);
     return true;
   };
@@ -100,22 +113,27 @@ export function PTBHandleIO({
   return (
     <Handle
       {...rest}
-      id={port.id}
+      id={handleId}
       type={port.direction === 'in' ? 'target' : 'source'}
       position={position}
       className={[
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        // attach exactly one shape class
-        `ptb-handle--${shape}`, // 'single' | 'vector' | 'array'
-        // attach color category class
-        `ptb-handle--${category}`, // 'number' | 'string' | ...
+        `ptb-handle--${shape}`,
+        `ptb-handle--${category}`,
         className,
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ width: 12, height: 12, ...style }}
+      style={{
+        width: 12,
+        height: 12,
+        ...(style || {}),
+        ...(colorVar
+          ? { background: `var(${colorVar})`, borderColor: `var(${colorVar})` }
+          : {}),
+      }}
       isValidConnection={isValidConnection}
     />
   );

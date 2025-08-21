@@ -8,8 +8,23 @@ export const findNode = (g: PTBGraph, id: string) =>
 export const findPort = (node: PTBNode, portId: string) =>
   node.ports.find((p) => p.id === portId);
 
-/** Build handle id string with type hint, e.g. "in_coin:object<...>" */
-export const buildHandleId = (port: Port): string => {
-  const typeStr = port.dataType ? serializePTBType(port.dataType) : '';
-  return `${port.id}${typeStr ? `:${typeStr}` : ''}`;
-};
+/**
+ * Build a React Flow handle id with an inline serialized type hint.
+ * Result examples:
+ *   - "in_coin:object<0x2::coin::Coin<0x2::sui::SUI>>"
+ *   - "in_amounts:vector<number>"
+ *   - "out_vec:vector<object>"
+ * For non-IO handles (flow: prev/next), returns plain id without suffix.
+ */
+export function buildHandleId(port: Port): string {
+  // Only IO ports carry a type suffix
+  if (port.role !== 'io') return port.id;
+
+  const raw =
+    (port as any).typeStr ??
+    (port.dataType ? serializePTBType(port.dataType) : undefined);
+
+  const typeStr = typeof raw === 'string' ? raw.trim() : undefined;
+
+  return typeStr ? `${port.id}:${typeStr}` : port.id;
+}

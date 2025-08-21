@@ -4,21 +4,20 @@
 export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
 
 /** -------- Scalars (simplified for UI) --------
- * In the UI we only expose a unified 'number' type.
+ * UI exposes a unified 'number' scalar; on-chain precise widths use 'move_numeric'.
  */
 export type PTBScalar = 'bool' | 'string' | 'address' | 'number';
 
-/** -------- Objects (simplified) -------- */
-export type PTBObjectKind = 'object' | 'coin' | 'objectRef';
-
 /** -------- Type Algebraic Data Type (ADT) --------
- * - scalar('number'): the unified UI number
- * - move_numeric: precise numeric type required by MoveCall ports
+ * - scalar('number'): unified UI number
+ * - move_numeric: precise numeric type (u64, etc.) required by MoveCall ports
+ * - object: generic on-chain object with an optional 'typeTag'
+ *   e.g. { kind: 'object', typeTag: '0x2::coin::Coin<0x2::sui::SUI>' }
  */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
-  | { kind: 'object'; name: PTBObjectKind; typeArgs?: string[] }
+  | { kind: 'object'; typeTag?: string }
   | { kind: 'vector'; elem: PTBType }
   | { kind: 'tuple'; elems: PTBType[] }
   | { kind: 'unknown' };
@@ -27,7 +26,7 @@ export type PTBType =
 export type PortDirection = 'in' | 'out';
 export type PortRole = 'flow' | 'io';
 export interface Port {
-  id: string; // e.g. "prev", "next", "in_coin", "out_0"
+  id: string; // e.g. "prev", "next", "in_obj", "out_0"
   direction: PortDirection;
   role: PortRole;
   dataType?: PTBType; // optional type annotation for validation
@@ -48,7 +47,8 @@ export type CommandKind =
   | 'transferObjects'
   | 'moveCall'
   | 'makeMoveVec'
-  | 'publish';
+  | 'publish'
+  | 'upgrade';
 
 export interface StartNode extends NodeBase {
   kind: 'Start';
@@ -66,7 +66,7 @@ export interface CommandNode extends NodeBase {
 
 export interface VariableNode extends NodeBase {
   kind: 'Variable';
-  varType: PTBType; // UI always uses unified scalar('number')
+  varType: PTBType; // UI uses unified scalar('number'); vectors/objects allowed
   name: string;
   value?: unknown;
 }
@@ -105,7 +105,9 @@ export interface PTBGraph {
   edges: PTBEdge[];
 }
 
-/** -------- Serialization helpers -------- */
+/** -------- Serialization helpers --------
+ * Produces a compact string representation for UI hints / debugging.
+ */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
     case 'scalar':
@@ -115,14 +117,15 @@ export function serializePTBType(t: PTBType): string {
     case 'vector':
       return `vector<${serializePTBType(t.elem)}>`;
     case 'object': {
-      const args = t.typeArgs?.length ? `<${t.typeArgs.join(',')}>` : '';
-      return `${t.name}${args}`;
+      // If a concrete typeTag exists, show it as object<...>; otherwise plain 'object'
+      return t.typeTag ? `object<${t.typeTag}>` : 'object';
     }
     case 'tuple':
       return `(${t.elems.map(serializePTBType).join(',')})`;
     case 'unknown':
       return 'unknown';
     default: {
+      // Exhaustiveness guard
       const _exhaustive: never = t;
       return String(_exhaustive);
     }

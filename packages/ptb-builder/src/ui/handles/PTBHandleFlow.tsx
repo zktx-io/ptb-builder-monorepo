@@ -11,6 +11,24 @@ import {
 /** Strip optional ":type" suffix from a handle id. */
 const base = (h: string | null | undefined) => String(h ?? '').split(':')[0];
 
+/**
+ * Module-scoped validator so its reference is stable across renders.
+ * No hook needed; avoids re-creating the function each render.
+ */
+const isFlowConnectionValid: IsValidConnection = (edgeOrConn) => {
+  const c = edgeOrConn as Connection;
+  const sh = base((c as any).sourceHandle);
+  const th = base((c as any).targetHandle);
+  const src = c.source ?? undefined;
+  const tgt = c.target ?? undefined;
+
+  if (!src || !tgt) return false;
+  if (src === tgt) return false;
+
+  // Flow must connect next -> prev
+  return sh === 'next' && th === 'prev';
+};
+
 export function PTBHandleFlow({
   type, // 'source' | 'target'
   className,
@@ -19,22 +37,9 @@ export function PTBHandleFlow({
 }: Omit<HandleProps, 'type' | 'position' | 'id'> & {
   type: 'source' | 'target';
 }) {
+  // These are trivial computations; memoization is unnecessary.
   const id = type === 'source' ? 'next' : 'prev';
   const position = type === 'source' ? Position.Right : Position.Left;
-
-  const isValidConnection: IsValidConnection = (edgeOrConn) => {
-    const c = edgeOrConn as Connection;
-    const sh = base((c as any).sourceHandle);
-    const th = base((c as any).targetHandle);
-    const src = c.source ?? undefined;
-    const tgt = c.target ?? undefined;
-
-    if (!src || !tgt) return false;
-    if (src === tgt) return false;
-
-    // Flow must connect next -> prev
-    return sh === 'next' && th === 'prev';
-  };
 
   return (
     <Handle
@@ -46,6 +51,7 @@ export function PTBHandleFlow({
         .filter(Boolean)
         .join(' ')}
       style={{
+        // Small inline style object; recreating each render is fine.
         width: 18,
         height: 10,
         borderRadius: 0,
@@ -54,12 +60,12 @@ export function PTBHandleFlow({
         alignItems: 'center',
         ...style,
       }}
-      isValidConnection={isValidConnection}
+      isValidConnection={isFlowConnectionValid}
     >
       <span
         className="text-base text-gray-600 dark:text-gray-400"
         style={{
-          content: '',
+          // Decorative label; doesn't intercept pointer events.
           position: 'absolute',
           fontSize: '8px',
           pointerEvents: 'none',

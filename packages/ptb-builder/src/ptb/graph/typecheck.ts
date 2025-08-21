@@ -44,17 +44,15 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
   if (!t) return 'unknown';
   switch (t.kind) {
     case 'scalar':
-      if (t.name === 'number') return 'number';
-      if (t.name === 'string') return 'string';
-      if (t.name === 'bool') return 'bool';
-      if (t.name === 'address') return 'address';
-      return 'unknown';
+      // UI scalar('number' | 'string' | 'bool' | 'address')
+      return t.name === 'number' ? 'number' : t.name;
     case 'move_numeric':
+      // precise on-chain numerics map to "number" in UI
       return 'number';
     case 'object':
       return 'object';
     case 'vector':
-      // Vector color follows its element type.
+      // vectors inherit the element's category
       return ioCategoryOf(t.elem);
     case 'tuple':
     case 'unknown':
@@ -87,16 +85,19 @@ function isSameType(a: PTBType, b: PTBType): boolean {
   switch (a.kind) {
     case 'scalar':
       return (b as any).name === a.name;
+
     case 'move_numeric':
       return (b as any).width === a.width;
+
     case 'vector':
       return isSameType(a.elem, (b as any).elem);
+
     case 'object': {
+      // With the new object shape, equality is based on the typeTag string.
       const bo = b as Extract<PTBType, { kind: 'object' }>;
-      const ax = JSON.stringify(a.typeArgs ?? []);
-      const bx = JSON.stringify(bo.typeArgs ?? []);
-      return a.name === bo.name && ax === bx;
+      return (a.typeTag ?? '') === (bo.typeTag ?? '');
     }
+
     case 'tuple': {
       const bt = b as Extract<PTBType, { kind: 'tuple' }>;
       return (
@@ -104,6 +105,7 @@ function isSameType(a: PTBType, b: PTBType): boolean {
         a.elems.every((t, i) => isSameType(t, bt.elems[i]))
       );
     }
+
     case 'unknown':
       return true;
   }
@@ -156,7 +158,7 @@ export function inferCastTarget(
 /* ---------------------------------------------------------------------
  * Serialized-type helpers (for handleId strings)
  *  - We need these for edges/handles that carry serialized types like:
- *      "u64", "vector<number>", "object<T>", "number[]", "vector<vector<u8>>"
+ *      "u64", "vector<number>", "object<0x2::sui::SUI>", "number[]"
  * -------------------------------------------------------------------*/
 
 /** Return the base (inner-most) type name in lowercase, unwrapping:
@@ -171,36 +173,38 @@ function baseOfSerializedType(s?: string): string | undefined {
   if (!s) return undefined;
   let t = s.trim();
 
-  // unwrap nested vector<...> and trailing [] repeatedly
+  // unwrap nested vector<...> and trailing [] iteratively
+  // e.g., "vector<vector<u8>>" -> "u8", "address[]" -> "address"
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const lower = t.toLowerCase();
     if (lower.startsWith('vector<') && lower.endsWith('>')) {
-      t = t.slice(7, -1).trim(); // vector< X > -> X
+      t = t.slice(7, -1).trim(); // drop "vector<" and ">"
       continue;
     }
     if (lower.endsWith('[]')) {
-      t = t.slice(0, -2).trim(); // X[] -> X
+      t = t.slice(0, -2).trim(); // drop trailing "[]"
       continue;
     }
     break;
   }
-
   return t.toLowerCase();
 }
 
-/** IO category from a serialized type string (kept consistent with ioCategoryOf). */
+/** IO category from a serialized type string (kept consistent with ioCategoryOf).
+ *  Note: we must check the OUTER token first, otherwise "object<0x2::...>"
+ *  would unwrap to "0x2::..." and be misclassified as "unknown".
+ */
 export function ioCategoryOfSerialized(s?: string): IOCategory {
   const base = baseOfSerializedType(s);
   if (!base) return 'unknown';
 
-  if (base.startsWith('object') || base.startsWith('coin')) return 'object';
   if (base === 'address') return 'address';
   if (base === 'string') return 'string';
   if (base === 'bool') return 'bool';
-  if (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'].includes(base))
-    return 'number';
   if (base === 'number') return 'number';
+  if (/^u(8|16|32|64|128|256)$/.test(base)) return 'number'; // move_numeric widths
+  if (base.startsWith('object')) return 'object'; // "object" or "object<...>"
 
   return 'unknown';
 }
