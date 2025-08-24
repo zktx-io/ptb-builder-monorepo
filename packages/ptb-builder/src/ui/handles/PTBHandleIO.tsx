@@ -17,13 +17,12 @@ import {
 } from './handleUtils';
 import { buildHandleId } from '../../ptb/graph/helpers';
 import {
-  cardinalityOf,
-  cardinalityOfSerialized,
   ioCategoryOf,
   ioCategoryOfSerialized,
   isTypeCompatible,
+  uiCardinalityOfSerialized,
 } from '../../ptb/graph/typecheck';
-import { serializePTBType } from '../../ptb/graph/types';
+import { serializePTBType, uiCardinalityOf } from '../../ptb/graph/types';
 import type { Port } from '../../ptb/graph/types';
 
 type PTBHandleIOProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
@@ -42,13 +41,17 @@ export function PTBHandleIO({
   labelGap = 8,
   ...rest
 }: PTBHandleIOProps) {
+  // Store selectors (compatible with RF v11/v12 shapes)
   const nodes = useStore(
-    (s: any) => (s.getNodes ? s.getNodes() : s.nodes) as any[],
+    (s) =>
+      ('getNodes' in s ? (s as any).getNodes() : (s as any).nodes) as any[],
   );
-  const edges = useStore((s: any) => s.edges as any[]);
+  const edges = useStore((s) => ((s as any).edges as any[]) || []);
 
+  // Build handle id, optionally suffixed with serialized type (for edge coloring)
   const handleId = useMemo(() => buildHandleId(port), [port]);
 
+  // Prefer explicit typeStr; otherwise serialize structured type
   const serializedHint = useMemo(
     () =>
       (port as any).typeStr ??
@@ -56,15 +59,18 @@ export function PTBHandleIO({
     [port],
   );
 
-  const shape = useMemo(
+  // UI cardinality: 'single' | 'multi'
+  const cardinality = useMemo(
     () =>
-      cardinalityOfSerialized(serializedHint) || cardinalityOf(port.dataType),
-    [serializedHint, port],
+      uiCardinalityOfSerialized(serializedHint) ||
+      uiCardinalityOf(port.dataType),
+    [serializedHint, port.dataType],
   );
 
+  // IO category for color grouping
   const category = useMemo(
     () => ioCategoryOfSerialized(serializedHint) || ioCategoryOf(port.dataType),
-    [serializedHint, port],
+    [serializedHint, port.dataType],
   );
 
   const colorVar =
@@ -72,16 +78,17 @@ export function PTBHandleIO({
       ? `--ptb-io-${category}-stroke`
       : undefined;
 
+  // Connection validator (direction-agnostic; checks roles/types via store)
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
 
     // 0) require concrete ends
     if (!hasConcreteEnds(c)) return false;
 
-    // 1) single-target-handle rule
+    // 1) single-target-handle rule for IO edges
     if (isIOTargetBusy(edges, c)) return false;
 
-    // 2) both end types must resolve
+    // 2) resolve both end types
     const srcT = findPortTypeFromStore(nodes, c.source!, c.sourceHandle as any);
     const dstT = findPortTypeFromStore(nodes, c.target!, c.targetHandle as any);
     if (!srcT || !dstT) return false;
@@ -91,8 +98,7 @@ export function PTBHandleIO({
   };
 
   const isLeft = position === Position.Left;
-  const isVector = shape === 'vector';
-  const isArray = shape === 'array';
+  const isMulti = cardinality === 'multi';
 
   return (
     <Handle
@@ -104,8 +110,8 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        `ptb-handle--${shape}`,
-        `ptb-handle--${category}`,
+        `ptb-handle--${cardinality}`, // single | multi
+        `ptb-handle--${category}`, // color group
         className,
       ]
         .filter(Boolean)
@@ -118,8 +124,8 @@ export function PTBHandleIO({
         ...(colorVar
           ? {
               color: `var(${colorVar})`,
-              ...(isVector || isArray
-                ? {}
+              ...(isMulti
+                ? {} // multi: diamond glyph paints the fill
                 : {
                     background: `var(${colorVar})`,
                     borderColor: `var(${colorVar})`,
@@ -129,10 +135,7 @@ export function PTBHandleIO({
       }}
       isValidConnection={isValidConnection}
     >
-      {isVector && (
-        <span className="ptb-handle-glyph ptb-handle-glyph--vector" />
-      )}
-      {isArray && <span className="ptb-handle-glyph ptb-handle-glyph--array" />}
+      {isMulti && <span className="ptb-handle-glyph ptb-handle-glyph--multi" />}
       {label ? (
         <div
           className={`ptb-handle-label absolute ${isLeft ? 'ptb-handle-label--left' : 'ptb-handle-label--right'}`}

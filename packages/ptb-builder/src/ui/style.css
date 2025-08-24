@@ -98,6 +98,16 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.75);
   --ptb-node-unknown-border-active: #a3a3a3; /* gray-400 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.90);
+
+  /* =======================
+     Switch (track/knob)
+     - Keep off color darker than command node bg for clear contrast in light mode
+     ======================= */
+  --ptb-switch-track-off: #c7cbd1;      /* slightly darker than node bg */
+  --ptb-switch-track-on:  #2563eb;      /* blue-600 */
+  --ptb-switch-knob:      #ffffff;      /* knob (light) */
+  --ptb-switch-label-off: rgba(17,24,39,1);     /* gray-900 */
+  --ptb-switch-label-on:  rgba(255,255,255,0.95);
 }
 
 /* Dark theme (opaque borders, alpha BGs) */
@@ -176,6 +186,13 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.35);
   --ptb-node-unknown-border-active: #d4d4d4; /* gray-300 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.48);
+
+  /* Switch (dark) */
+  --ptb-switch-track-off: #4b5563; /* gray-600 */
+  --ptb-switch-track-on:  #3b82f6; /* blue-500 */
+  --ptb-switch-knob:      #e7e5e4; /* stone-100-ish */
+  --ptb-switch-label-off: rgba(229,231,235,1); /* gray-200 */
+  --ptb-switch-label-on:  rgba(255,255,255,0.95);
 }
 
 /* ============================================================
@@ -220,7 +237,7 @@
 /* Ensure base state uses our variable even on older XYFlow builds */
 .react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke); }
 
-/* Hover brighten (fallbacks to selected if no hover var is provided) */
+/* Hover brighten (falls back to selected if no hover var is provided) */
 .react-flow__edge:hover .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected)); }
 
 /* Keep pointer affordance and hit-test behavior */
@@ -292,8 +309,8 @@
 
 /* ============================================================
    HANDLE & LABEL STYLES (CLEAN)
-   - Parent never rotates; only vector glyph rotates to diamond.
-   - Labels are always horizontal and overflow outside 12x12 box.
+   - Parent never rotates; only the glyph rotates for multi (diamond).
+   - Labels are always horizontal and overflow outside the 12x12 box.
    ============================================================ */
 
 /* Base handle */
@@ -308,7 +325,6 @@
   pointer-events: all;
   overflow: visible;                 /* allow glyph/label overflow */
   z-index: 10;
-  
 }
 
 /* Flow handle slightly bigger (optional) */
@@ -316,13 +332,12 @@
 
 /* Shape variants (parent never rotates) */
 .ptb-handle--single { border-radius: 9999px; }  /* circle */
-.ptb-handle--array  { border-radius: 4px; }     /* rounded square */
 
-/* Vector parent is transparent; glyph draws the diamond */
-.ptb-handle--vector {
+/* Multi parent is transparent; glyph draws the diamond */
+.ptb-handle--multi {
   background-color: transparent;
   border-color: transparent;
-  border-radius: 2px;               /* nicer corners for diamond */
+  border-radius: 2px;               /* smoother corners for diamond */
 }
 
 /* Glyph layer inside handle (rotatable) */
@@ -331,7 +346,8 @@
   inset: 0;
   pointer-events: none;              /* never block pointer */
 }
-.ptb-handle-glyph--vector {
+
+.ptb-handle-glyph--multi {
   width: 100%;
   height: 100%;
   background-color: currentColor;
@@ -339,8 +355,9 @@
   transform: rotate(45deg);
   transform-origin: center center;
 }
-/* Bigger diamond when combined with flow */
-.ptb-handle--flow .ptb-handle-glyph--vector {
+
+/* Larger diamond when combined with flow (optional) */
+.ptb-handle--flow .ptb-handle-glyph--multi {
   width: 100%;
   height: 100%;
 }
@@ -349,7 +366,7 @@
 .ptb-handle-label {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);   /* no rotation ever */
+  transform: translateY(-50%);   /* keep horizontal */
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
@@ -394,3 +411,48 @@
 /* Subtle hover affordance on the handle icon itself */
 .react-flow__handle:hover,
 .ptb-handle:hover { filter: brightness(1.05); }
+
+/* === Context-menu variable markers (match IO colors) === */
+.ptb-marker {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: currentColor;      /* fill from currentColor */
+  border-radius: 9999px;         /* single = round */
+  vertical-align: middle;
+  /* safe default color (unknown) */
+  color: var(--ptb-io-unknown-stroke);
+}
+
+/* multi = diamond: override the round shape and rotate */
+.ptb-marker.ptb-marker--multi {
+  border-radius: 2px !important; /* override the round base */
+  transform: rotate(45deg);
+  transform-origin: center center;
+}
+
+/* category → color (inherit from IO edge vars so colors match handles/edges) */
+.ptb-marker--address { color: var(--ptb-io-address-stroke); }
+.ptb-marker--number  { color: var(--ptb-io-number-stroke);  }
+.ptb-marker--bool    { color: var(--ptb-io-bool-stroke);    }
+.ptb-marker--string  { color: var(--ptb-io-string-stroke);  }
+.ptb-marker--object  { color: var(--ptb-io-object-stroke);  }
+
+/* ============================================================
+   COMPACT SWITCH (CommandExpandSwitch)
+   - Uses theme variables so it stays distinct from node surfaces in light mode
+   ============================================================ */
+
+.ptb-switch {
+  background-color: var(--ptb-switch-track-off);
+}
+.ptb-switch.is-checked {
+  background-color: var(--ptb-switch-track-on);
+}
+.ptb-switch__knob {
+  background-color: var(--ptb-switch-knob);
+}
+
+/* Optional: label colors via vars (if needed for overrides) */
+.ptb-switch__label--off { color: var(--ptb-switch-label-off); }
+.ptb-switch__label--on  { color: var(--ptb-switch-label-on);  }

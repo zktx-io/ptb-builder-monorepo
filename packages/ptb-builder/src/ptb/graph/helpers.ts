@@ -1,4 +1,3 @@
-// helpers.ts
 import type { Port, PTBGraph, PTBNode } from './types';
 import { serializePTBType } from './types';
 
@@ -17,14 +16,14 @@ export const findPort = (node: PTBNode, portId: string) =>
  * For non-IO handles (flow: prev/next), returns plain id without suffix.
  */
 export function buildHandleId(port: Port): string {
-  // Only IO ports carry a type suffix
   if (port.role !== 'io') return port.id;
 
   const raw =
     (port as any).typeStr ??
     (port.dataType ? serializePTBType(port.dataType) : undefined);
 
-  const typeStr = typeof raw === 'string' ? raw.trim() : undefined;
+  const typeStr =
+    typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : undefined;
 
   return typeStr ? `${port.id}:${typeStr}` : port.id;
 }

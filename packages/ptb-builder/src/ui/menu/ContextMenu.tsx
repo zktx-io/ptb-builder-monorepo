@@ -1,4 +1,3 @@
-// src/editor/ContextMenu.tsx
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewport } from '@xyflow/react';
@@ -71,19 +70,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Close on outside click: use CAPTURE + pointerdown and composedPath
+  // Close on outside click (capture)
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const el = rootRef.current;
       if (!el) return;
-
-      // Use composedPath so clicks on SVG inside portals are handled correctly
-      const path = e.composedPath?.() ?? [];
-      const clickedInside = path.some((n) => n === el);
+      const path = (e as any).composedPath?.() ?? [];
+      const clickedInside = path.some((n: any) => n === el);
       if (!clickedInside) onClose();
     };
-
-    // capture:true to beat ReactFlow’s internal handlers
     window.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () =>
       window.removeEventListener('pointerdown', onPointerDown, {
@@ -193,7 +188,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         e.preventDefault();
         onClose();
       }}
-      // Keep clicks inside from bubbling up to ReactFlow
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       role="menu"

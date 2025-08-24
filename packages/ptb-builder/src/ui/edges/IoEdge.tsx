@@ -1,12 +1,9 @@
-// IO edge renderer that colors the path by IO category.
-// - Handle parsing is done via src/ui/edges/utils.ts
-// - Category decision is centralized in ptb/graph/typecheck.ts (ioCategoryOfSerialized)
-
-import React from 'react';
+import React, { useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
 import { typeOf } from './utils';
+import type { RFEdgeData } from '../../adapters/ptbAdapter';
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
 
 function IoEdgeImpl(props: EdgeProps) {
@@ -21,28 +18,37 @@ function IoEdgeImpl(props: EdgeProps) {
     selected,
   } = props;
 
-  const [d] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-  });
+  const [d] = useMemo(
+    () =>
+      getBezierPath({
+        sourceX,
+        sourceY,
+        targetX,
+        targetY,
+        sourcePosition,
+        targetPosition,
+      }),
+    [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition],
+  );
 
   // v11 (sourceHandle/targetHandle) and v12 (sourceHandleId/targetHandleId)
-  const srcH =
+  const srcH: string | undefined =
     (props as any).sourceHandleId ??
-    ((props as any).sourceHandle as string | null | undefined);
-  const tgtH =
-    (props as any).targetHandleId ??
-    ((props as any).targetHandle as string | null | undefined);
+    // v11 fallback
+    (props as any).sourceHandle ??
+    undefined;
 
-  // Prefer source handle's type; fall back to target; finally edge.data.dataType
-  const serializedType =
-    typeOf(srcH) ??
-    typeOf(tgtH) ??
-    ((props.data as any)?.dataType as string | undefined);
+  const tgtH: string | undefined =
+    (props as any).targetHandleId ??
+    // v11 fallback
+    (props as any).targetHandle ??
+    undefined;
+
+  // Narrow edge data to our payload shape
+  const edgeData = props.data as RFEdgeData | undefined;
+
+  // Prefer source handle's type; then target; then edge.data.dataType
+  const serializedType = typeOf(srcH) ?? typeOf(tgtH) ?? edgeData?.dataType;
 
   const cat = ioCategoryOfSerialized(serializedType);
 

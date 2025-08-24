@@ -10,8 +10,9 @@ import {
 } from '@xyflow/react';
 
 import { hasConcreteEnds, isFlowDirectionOK, isSameNode } from './handleUtils';
+import { FLOW_NEXT, FLOW_PREV } from '../../ptb/portTemplates';
 
-/** Stable, module-scoped validator */
+/** Stable, module-scoped validator for flow edges (next -> prev only). */
 const isFlowConnectionValid: IsValidConnection = (edgeOrConn) => {
   const c = edgeOrConn as Connection;
   if (!hasConcreteEnds(c)) return false;
@@ -27,12 +28,13 @@ export function PTBHandleFlow({
 }: Omit<HandleProps, 'type' | 'position' | 'id'> & {
   type: 'source' | 'target';
 }) {
-  const id = type === 'source' ? 'next' : 'prev';
+  const id = type === 'source' ? FLOW_NEXT : FLOW_PREV;
   const position = type === 'source' ? Position.Right : Position.Left;
 
   return (
     <Handle
       {...rest}
+      aria-label={type === 'source' ? 'flow source' : 'flow target'}
       type={type}
       id={id}
       position={position}

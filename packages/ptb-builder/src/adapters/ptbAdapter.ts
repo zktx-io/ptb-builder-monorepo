@@ -5,6 +5,7 @@ import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 import { buildHandleId } from '../ptb/graph/helpers';
 import {
+  type NumericWidth,
   PTBEdge,
   PTBGraph,
   PTBNode,
@@ -20,10 +21,18 @@ export interface RFNodeData extends Record<string, unknown> {
   ptbNode?: PTBNode;
 }
 
+/** Strongly-typed payload we put on RF edges. */
+export interface RFEdgeData extends Record<string, unknown> {
+  /** Serialized type hint (e.g., "vector<object<...>>") */
+  dataType?: string;
+  /** Optional cast metadata for number → move_numeric */
+  cast?: { to: NumericWidth };
+}
+
 /** Convert PTBGraph → React Flow representation (pure mapping, no recalculation) */
 export function ptbToRF(graph: PTBGraph): {
   nodes: RFNode<RFNodeData>[];
-  edges: RFEdge[];
+  edges: RFEdge<RFEdgeData>[];
 } {
   const nodes: RFNode<RFNodeData>[] = graph.nodes.map((n) => ({
     id: n.id,
@@ -32,7 +41,7 @@ export function ptbToRF(graph: PTBGraph): {
     data: { label: n.label, ptbNode: n },
   }));
 
-  const edges: RFEdge[] = graph.edges.map((e) => {
+  const edges: RFEdge<RFEdgeData>[] = graph.edges.map((e) => {
     const sh = buildHandleIdForRF(graph, e.source, e.sourcePort);
     const th = buildHandleIdForRF(graph, e.target, e.targetPort);
 
@@ -57,9 +66,11 @@ export function ptbToRF(graph: PTBGraph): {
       targetHandleId: th,
       type: mapPTBEdgeToRFType(e),
       data: {
-        dataType: serialized, // IoEdge will use this if handle ids are not present during selection
+        dataType: serialized,
+        // keep passthrough if present on PTB edge (used by codegen/UI badges)
         cast: (e as any).cast,
       },
+      // keep optional UI label if present (edge renderer may show it)
       label: (e as any).label,
     };
   });
@@ -74,7 +85,7 @@ export function ptbNodeToRF(node: PTBNode): RFNode<RFNodeData> {
 }
 
 /** Convert a single PTB edge → React Flow edge */
-export function ptbEdgeToRF(edge: PTBEdge): RFEdge {
+export function ptbEdgeToRF(edge: PTBEdge): RFEdge<RFEdgeData> {
   const { edges } = ptbToRF({ nodes: [], edges: [edge] } as PTBGraph);
   return edges[0];
 }
@@ -86,7 +97,7 @@ export function ptbEdgeToRF(edge: PTBEdge): RFEdge {
  */
 export function rfToPTB(
   rfNodes: RFNode<RFNodeData>[],
-  rfEdges: RFEdge[],
+  rfEdges: RFEdge<RFEdgeData>[],
   prev?: PTBGraph,
 ): PTBGraph {
   const nodes: PTBNode[] = rfNodes.map((rn) => {
@@ -128,7 +139,7 @@ export function rfToPTB(
   const edges: PTBEdge[] = rfEdges.map((re) => {
     const s = parseHandleId((re as any).sourceHandleId ?? re.sourceHandle);
     const t = parseHandleId((re as any).targetHandleId ?? re.targetHandle);
-    const cast = (re as any).data?.cast as PTBEdge['cast'] | undefined;
+    const cast = (re.data as RFEdgeData | undefined)?.cast;
 
     return {
       id: re.id,
@@ -156,8 +167,6 @@ function mapPTBNodeToRFType(n: PTBNode): string {
       return 'ptb-var';
     case 'Command':
       return 'ptb-cmd';
-    case 'Utility':
-      return 'ptb-util';
   }
   const _exhaustive: never = n;
   return String(_exhaustive);
@@ -167,8 +176,7 @@ function mapRFTypeToPTBKind(rfType: string): PTBNode['kind'] {
   if (rfType === 'ptb-start') return 'Start';
   if (rfType === 'ptb-end') return 'End';
   if (rfType === 'ptb-var') return 'Variable';
-  if (rfType === 'ptb-cmd') return 'Command';
-  return 'Utility';
+  return 'Command';
 }
 
 function mapPTBEdgeToRFType(e: PTBEdge): string {

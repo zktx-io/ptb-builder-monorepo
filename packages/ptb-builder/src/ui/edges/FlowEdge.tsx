@@ -1,26 +1,39 @@
 // src/ui/edges/FlowEdge.tsx
-import React from 'react';
+import React, { useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
-function FlowEdgeImpl({
-  id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  selected,
-}: EdgeProps) {
-  const [d] = getBezierPath({
+/**
+ * Flow edge renderer (tuned):
+ * - Memoize path to avoid unnecessary recompute on unrelated renders.
+ * - Keep interactionWidth large for easy selection.
+ * - Use CSS classes for visual states (selected/hover).
+ * - Add small a11y/data attrs for debugging and testing.
+ */
+function FlowEdgeImpl(props: EdgeProps) {
+  const {
+    id,
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
-  });
+    selected,
+  } = props;
+
+  const [d] = useMemo(
+    () =>
+      getBezierPath({
+        sourceX,
+        sourceY,
+        targetX,
+        targetY,
+        sourcePosition,
+        targetPosition,
+      }),
+    [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition],
+  );
 
   return (
     <BaseEdge
@@ -30,9 +43,11 @@ function FlowEdgeImpl({
       interactionWidth={24}
       style={{
         fill: 'none',
-        vectorEffect: 'non-scaling-stroke',
+        vectorEffect: 'non-scaling-stroke', // keep stroke width consistent on zoom
         cursor: 'pointer',
       }}
+      aria-label="flow-edge"
+      data-edge-id={id}
     />
   );
 }

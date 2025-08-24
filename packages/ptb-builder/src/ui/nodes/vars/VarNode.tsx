@@ -3,12 +3,10 @@ import React from 'react';
 
 import { type Node, type NodeProps, Position } from '@xyflow/react';
 
-import {
-  ioCategoryWithCardinality,
-  isVector,
-} from '../../../ptb/graph/typecheck';
-import type { PTBNode, VariableNode } from '../../../ptb/graph/types';
+import { ioShapeOf, isVector } from '../../../ptb/graph/typecheck';
+import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
 import { serializePTBType } from '../../../ptb/graph/types';
+import { VAR_OUT } from '../../../ptb/portTemplates';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
 
 export type VarData = {
@@ -19,8 +17,9 @@ export type VarRFNode = Node<VarData, 'ptb-var'>;
 
 export function VarNode({ data }: NodeProps<VarRFNode>) {
   const v = data?.ptbNode as VariableNode | undefined;
-  const { category } = ioCategoryWithCardinality(v?.varType);
+  const { category } = ioShapeOf(v?.varType); // <- uses single/multi model
 
+  // Prefer serialized hint so handles can show correct single/multi purely from string
   let typeStrHint: string | undefined;
   if (v?.varType && isVector(v.varType)) {
     const elemStr = serializePTBType(v.varType.elem);
@@ -31,6 +30,14 @@ export function VarNode({ data }: NodeProps<VarRFNode>) {
     typeStrHint = serializePTBType(v.varType);
   }
 
+  const outPort: Port = {
+    id: VAR_OUT,
+    role: 'io',
+    direction: 'out',
+    dataType: v?.varType,
+    ...(typeStrHint ? { typeStr: typeStrHint } : {}),
+  };
+
   return (
     <div className={`ptb-node--${category}`}>
       <div className="ptb-node-shell rounded-lg w-[200px] py-2 px-2 border-2 shadow">
@@ -38,18 +45,7 @@ export function VarNode({ data }: NodeProps<VarRFNode>) {
           {data?.label ?? v?.label ?? 'variable'}
         </p>
 
-        <PTBHandleIO
-          port={
-            {
-              id: 'out_0',
-              role: 'io',
-              direction: 'out',
-              dataType: v?.varType,
-              ...(typeStrHint ? { typeStr: typeStrHint } : {}),
-            } as any
-          }
-          position={Position.Right}
-        />
+        <PTBHandleIO port={outPort} position={Position.Right} />
       </div>
     </div>
   );

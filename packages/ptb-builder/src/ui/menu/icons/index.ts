@@ -1,7 +1,4 @@
 export { IconSui } from './IconSui';
-export { IconCircle } from './IconCircle';
-export { IconSquare } from './IconSquare';
-export { IconTriangle } from './IconTriangle';
 export { IconGas } from './IconGas';
 export { IconClock } from './IconClock';
 export { IconBan } from './IconBan';
@@ -11,7 +8,6 @@ export { IconSuccess } from './IconSuccess';
 export { IconFailure } from './IconFailure';
 export { IconAbort } from './IconAbort';
 export { IconWallet } from './IconWallet';
-
 export { IconTransfer } from './IconTransfer';
 export { IconBrackets } from './IconBrackets';
 export { IconMerge } from './IconMerge';

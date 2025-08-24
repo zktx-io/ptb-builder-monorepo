@@ -1,4 +1,4 @@
-// PtbProvider.tsx
+// src/PtbProvider.tsx
 import React, {
   createContext,
   useCallback,
@@ -12,10 +12,16 @@ import React, {
 import type { Transaction } from '@mysten/sui/transactions';
 
 import { consoleToast, type ToastAdapter } from '../adapters/toast';
-import type { PTBGraph } from '../ptb/graph/types';
-import { ValidationResult } from '../ptb/graph/validation';
+import type {
+  CommandNode,
+  Port,
+  PTBEdge,
+  PTBGraph,
+  PTBNode,
+} from '../ptb/graph/types';
 import { seedDefaultGraph } from '../ptb/seedGraph';
 import type { Network, Theme } from '../types';
+import { materializeCommandPorts } from './nodes/cmds/BaseCommand/registry';
 
 export type Adapters = {
   clipboard?: { copy(text: string): Promise<void> };
@@ -28,31 +34,33 @@ export type Adapters = {
 export type Features = { codegen?: boolean; parse?: boolean; exec?: boolean };
 
 export type PtbContextValue = {
-  // persisted PTBGraph snapshot (read-only for consumers)
   snapshot: PTBGraph;
-  // persist (debounced by provider)
   saveSnapshot: (g: PTBGraph) => void;
-  // replace snapshot immediately (e.g., open file)
   loadSnapshot: (g: PTBGraph) => void;
 
   network: Network;
   readOnly: boolean;
   features?: Features;
   adapters?: Adapters;
-  validation?: ValidationResult;
   busy: boolean;
 
   theme: Theme;
   setTheme: (t: Theme) => void;
+
+  /**
+   * Patch UI params of a single command node, then re-materialize its ports
+   * and prune dangling IO edges referencing removed ports on that node.
+   */
+  onPatchUI: (nodeId: string, patch: Record<string, unknown>) => void;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
 
 export type PtbProviderProps = {
   children: React.ReactNode;
-  initialGraph?: PTBGraph; // used once at mount
-  onChange?: (g: PTBGraph) => void; // external persistence callback
-  onChangeDebounceMs?: number; // debounce for onChange (default 400ms)
+  initialGraph?: PTBGraph;
+  onChange?: (g: PTBGraph) => void;
+  onChangeDebounceMs?: number;
   network?: Network;
   lockNetwork?: boolean;
   readOnly?: boolean;
@@ -62,6 +70,28 @@ export type PtbProviderProps = {
 };
 
 const DEFAULT_DEBOUNCE = 400;
+
+/** Build a Set of current port ids for quick membership checks */
+function portIdSet(ports: Port[] | undefined): Set<string> {
+  const s = new Set<string>();
+  if (Array.isArray(ports)) for (const p of ports) s.add(p.id);
+  return s;
+}
+
+/** Prune IO edges that reference removed ports on a specific node (flow edges are untouched) */
+function pruneDanglingIoEdgesForNode(
+  g: PTBGraph,
+  nodeId: string,
+  keepPorts: Set<string>,
+): PTBGraph {
+  const edges = g.edges.filter((e) => {
+    if (e.kind === 'flow') return true; // flow edges unaffected by IO port changes
+    if (e.source === nodeId && !keepPorts.has(e.sourcePort)) return false;
+    if (e.target === nodeId && !keepPorts.has(e.targetPort)) return false;
+    return true;
+  });
+  return { ...g, edges };
+}
 
 export function PtbProvider({
   children,
@@ -78,12 +108,11 @@ export function PtbProvider({
   const [busy] = useState(false);
   const [theme, setTheme] = useState<Theme>(themeProp);
 
-  // snapshot: the persisted/persistable PTBGraph
   const [snapshot, setSnapshot] = useState<PTBGraph>(() =>
     initialGraph?.nodes?.length ? initialGraph : seedDefaultGraph(),
   );
 
-  // Apply dark class early to avoid FOUC
+  /** Apply theme to the document root */
   useLayoutEffect(() => {
     const root = document.documentElement;
     theme === 'dark'
@@ -91,9 +120,10 @@ export function PtbProvider({
       : root.classList.remove('dark');
   }, [theme]);
 
-  // Toast and adapters
   const toastImpl: ToastAdapter = adapters?.toast ?? consoleToast;
   const exec = adapters?.executeTx;
+
+  /** Execute transaction via injected adapter (if any) */
   const executeTx = useCallback(
     async (tx?: Transaction) => {
       if (!exec) {
@@ -124,7 +154,7 @@ export function PtbProvider({
     [adapters?.clipboard, executeTx, toastImpl],
   );
 
-  // Debounced external notify (for onChange)
+  // Debounced onChange plumbing
   const onChangeRef = useRef(onChange);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastGraphRef = useRef<PTBGraph | undefined>(undefined);
@@ -142,7 +172,7 @@ export function PtbProvider({
 
   const scheduleNotify = useCallback(
     (g: PTBGraph) => {
-      if (!onChangeRef.current) return; // no external callback
+      if (!onChangeRef.current) return;
       lastGraphRef.current = g;
       if (timerRef.current !== undefined) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
@@ -155,16 +185,14 @@ export function PtbProvider({
     [onChangeDebounceMs],
   );
 
-  // Public API: saveSnapshot (updates snapshot and debounced notify)
   const saveSnapshot = useCallback(
     (g: PTBGraph) => {
-      setSnapshot(g); // update provider state
-      scheduleNotify(g); // debounce external persistence
+      setSnapshot(g);
+      scheduleNotify(g);
     },
     [scheduleNotify],
   );
 
-  // Public API: loadSnapshot (replace immediately, cancel pending debounce)
   const loadSnapshot = useCallback((g: PTBGraph) => {
     if (timerRef.current !== undefined) {
       clearTimeout(timerRef.current);
@@ -172,8 +200,41 @@ export function PtbProvider({
     }
     lastGraphRef.current = undefined;
     setSnapshot(g);
-    // Do not call onChange here automatically; caller can decide to persist.
   }, []);
+
+  /** Node-scoped UI patcher: merge UI, re-materialize ports, prune dangling edges */
+  const onPatchUI = useCallback(
+    (nodeId: string, patch: Record<string, unknown>) => {
+      setSnapshot((prev) => {
+        // Shallow clone the graph and entries to keep immutability
+        const next: PTBGraph = {
+          nodes: prev.nodes.map((n) => ({ ...n }) as PTBNode),
+          edges: prev.edges.map((e) => ({ ...e }) as PTBEdge),
+        };
+
+        const node = next.nodes.find((n) => n.id === nodeId) as
+          | CommandNode
+          | undefined;
+        if (!node || node.kind !== 'Command') return prev;
+
+        // Merge UI params into node.params.ui
+        const prevUI = (node.params?.ui ?? {}) as Record<string, unknown>;
+        node.params = { ...(node.params ?? {}), ui: { ...prevUI, ...patch } };
+
+        // Re-materialize this node's ports based on registry's SSOT
+        node.ports = materializeCommandPorts(node);
+
+        // Prune dangling IO edges for this node only
+        const keep = portIdSet(node.ports);
+        const pruned = pruneDanglingIoEdgesForNode(next, nodeId, keep);
+
+        // Debounced external notify and return new graph
+        scheduleNotify(pruned);
+        return pruned;
+      });
+    },
+    [scheduleNotify],
+  );
 
   const ctx: PtbContextValue = useMemo(
     () => ({
@@ -184,10 +245,10 @@ export function PtbProvider({
       readOnly: !!readOnly || !!lockNetwork,
       features,
       adapters: adaptersSnapshot,
-      validation: undefined,
       busy,
       theme,
       setTheme,
+      onPatchUI, // expose node-scoped UI patcher
     }),
     [
       snapshot,
@@ -200,10 +261,11 @@ export function PtbProvider({
       adaptersSnapshot,
       busy,
       theme,
+      onPatchUI,
     ],
   );
 
-  // Cleanup debounce on unmount
+  // Ensure pending debounced onChange is flushed on unmount
   React.useEffect(() => () => flushNotify(), [flushNotify]);
 
   return <PtbContext.Provider value={ctx}>{children}</PtbContext.Provider>;

@@ -30,21 +30,24 @@ import { usePtb } from './PtbProvider';
 import {
   ptbNodeToRF,
   ptbToRF,
+  type RFEdgeData,
   type RFNodeData,
   rfToPTB,
 } from '../adapters/ptbAdapter';
+import { baseHandleId } from './handles/handleUtils';
 import { hasStartToEnd } from './utils/flowPath';
 import {
   inferCastTarget,
   isTypeCompatible,
   isUnknownType,
 } from '../ptb/graph/typecheck';
-import type { PTBNode } from '../ptb/graph/types';
+import type { Port, PTBNode } from '../ptb/graph/types';
+import { materializeCommandPorts } from './nodes/cmds/BaseCommand/registry';
 
 const DEBOUNCE_MS = 250;
 
 /** Normalize RF handle -> PTB port id (drop optional ":type" suffix). */
-const portIdOf = (h?: string | null) => String(h ?? '').split(':')[0];
+const portIdOf = (h?: string | null) => baseHandleId(h);
 
 /** DFS to detect whether adding (source -> target) would create a cycle. */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
@@ -91,19 +94,145 @@ function filterHandleConflictsForIO(edges: RFEdge[], conn: Connection) {
   );
 }
 
+/** Build nodeId -> set of *base* port ids (no ':type' suffix). */
+function buildHandleIndex(
+  nodes: RFNode<RFNodeData>[],
+): Map<string, Set<string>> {
+  const idx = new Map<string, Set<string>>();
+  for (const n of nodes) {
+    const ptbNode: any = (n.data as any)?.ptbNode;
+    const ports = Array.isArray(ptbNode?.ports)
+      ? (ptbNode.ports as Port[])
+      : [];
+    const set = new Set<string>();
+    for (const p of ports) set.add(p.id); // base id
+    idx.set(n.id, set);
+  }
+  return idx;
+}
+
+/** Keep only edges whose source/target handles still exist on their nodes. */
+function pruneDanglingEdges(
+  nodes: RFNode<RFNodeData>[],
+  edges: RFEdge<RFEdgeData>[],
+): RFEdge<RFEdgeData>[] {
+  const idx = buildHandleIndex(nodes);
+  return edges.filter((e) => {
+    const srcSet = idx.get(e.source);
+    const tgtSet = idx.get(e.target);
+    if (!srcSet || !tgtSet) return false;
+
+    const sId = portIdOf(e.sourceHandle); // normalize (drop optional suffix)
+    const tId = portIdOf(e.targetHandle);
+
+    // keep iff BOTH handles are present and valid
+    return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
+  });
+}
+
 export function PTBFlow() {
   const { snapshot, saveSnapshot, readOnly, theme, setTheme } = usePtb();
 
   /** Global flow animation flag: true iff there exists a Start → End path. */
   const [flowActive, setFlowActive] = useState(false);
 
+  /** onPatchUI: update a command node's UI, rebuild ports, resync RF, prune edges. */
+  const onPatchUI = useCallback(
+    (nodeId: string, patch: Record<string, unknown>) => {
+      setRF((prev) => {
+        // 1) Rebuild a PTB graph from current RF.
+        const currentPTB = rfToPTB(
+          prev.rfNodes,
+          prev.rfEdges,
+          baseGraphRef.current,
+        );
+
+        // 2) Merge UI patch onto target node.
+        const node = currentPTB.nodes.find((n) => n.id === nodeId);
+        if (!node || node.kind !== 'Command') return prev;
+
+        const ui = ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
+        const nextUI = { ...ui, ...patch };
+
+        // Optional normalization: when switching modes, reset counts, etc.
+        if ('amountsExpanded' in patch) {
+          if (patch.amountsExpanded) {
+            // on: keep existing amountsCount or default 2
+            if (typeof (node.params as any)?.ui?.amountsCount !== 'number') {
+              (nextUI as any).amountsCount = 2;
+            }
+          } else {
+            // off: vector mode, count not needed
+            delete (nextUI as any).amountsCount;
+          }
+        }
+        if ('sourcesExpanded' in patch) {
+          if (patch.sourcesExpanded) {
+            if (typeof (node.params as any)?.ui?.sourcesCount !== 'number') {
+              (nextUI as any).sourcesCount = 2;
+            }
+          } else {
+            delete (nextUI as any).sourcesCount;
+          }
+        }
+        if ('objectsExpanded' in patch) {
+          if (patch.objectsExpanded) {
+            if (typeof (node.params as any)?.ui?.objectsCount !== 'number') {
+              (nextUI as any).objectsCount = 2;
+            }
+          } else {
+            delete (nextUI as any).objectsCount;
+          }
+        }
+        if ('elemsExpanded' in patch) {
+          if (patch.elemsExpanded) {
+            if (typeof (node.params as any)?.ui?.elemsCount !== 'number') {
+              (nextUI as any).elemsCount = 2;
+            }
+          } else {
+            delete (nextUI as any).elemsCount;
+          }
+        }
+
+        node.params = { ...(node.params ?? {}), ui: nextUI };
+
+        // 3) Re-materialize ports based on updated UI policy.
+        node.ports = materializeCommandPorts(node as any);
+
+        // 4) Convert back to RF.
+        const { nodes: freshRFNodes, edges: freshRFEdges } =
+          ptbToRF(currentPTB);
+
+        // 5) Re-inject onPatchUI & prune dangling edges.
+        const injected = withOnPatchUI(freshRFNodes, onPatchUI);
+        const pruned = pruneDanglingEdges(injected, freshRFEdges);
+
+        setFlowActive(hasStartToEnd(injected, pruned));
+        return { rfNodes: injected, rfEdges: pruned };
+      });
+    },
+    [],
+  );
+
+  /** Inject onPatchUI into every RF node's data. */
+  const withOnPatchUI = useCallback(
+    (nodes: RFNode<RFNodeData>[], fn: typeof onPatchUI) =>
+      nodes.map((n) => ({
+        ...n,
+        data: { ...(n.data || {}), onPatchUI: fn },
+      })),
+    [],
+  );
+
   /** RF state is the canvas source of truth. */
   const [{ rfNodes, rfEdges }, setRF] = useState<{
     rfNodes: RFNode<RFNodeData>[];
-    rfEdges: RFEdge[];
+    rfEdges: RFEdge<RFEdgeData>[];
   }>(() => {
     const { nodes, edges } = ptbToRF(snapshot);
-    return { rfNodes: nodes, rfEdges: edges };
+    const injected = withOnPatchUI(nodes, onPatchUI);
+    const pruned = pruneDanglingEdges(injected, edges);
+    return { rfNodes: injected, rfEdges: pruned };
   });
 
   /** Keep last PTB snapshot to avoid spurious resync. */
@@ -113,10 +242,23 @@ export function PTBFlow() {
   useEffect(() => {
     if (snapshot === baseGraphRef.current) return;
     const { nodes, edges } = ptbToRF(snapshot);
-    setRF({ rfNodes: nodes, rfEdges: edges });
-    setFlowActive(hasStartToEnd(nodes, edges));
+    const injected = withOnPatchUI(nodes, onPatchUI);
+    const pruned = pruneDanglingEdges(injected, edges);
+    setRF({ rfNodes: injected, rfEdges: pruned });
+    setFlowActive(hasStartToEnd(injected, pruned));
     baseGraphRef.current = snapshot;
-  }, [snapshot]);
+  }, [snapshot, onPatchUI, withOnPatchUI]);
+
+  /** As a safety net, whenever rfNodes change, re-prune edges. */
+  useEffect(() => {
+    setRF((prev) => {
+      const pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
+      if (pruned.length === prev.rfEdges.length) return prev;
+      setFlowActive(hasStartToEnd(rfNodes, pruned));
+      return { ...prev, rfEdges: pruned };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rfNodes]);
 
   /** Context menu UI state. */
   const [menu, setMenu] = useState<{
@@ -154,9 +296,8 @@ export function PTBFlow() {
     [],
   );
 
-  /** Helper: is the given RF node (by id) protected (Start/End)? */
+  /** Helper: get RF node kind. */
   function getRFKind(n?: RFNode<RFNodeData>): PTBNode['kind'] | undefined {
-    // data is often unknown in RF types; narrow via any
     const data = (n as any)?.data;
     const kind = data?.ptbNode?.kind as PTBNode['kind'] | undefined;
     return kind;
@@ -172,10 +313,17 @@ export function PTBFlow() {
   );
 
   /** Local RF mutations (add/delete). */
-  const addNode = useCallback((node: PTBNode) => {
-    const rfNode = ptbNodeToRF(node);
-    setRF((prev) => ({ ...prev, rfNodes: [...prev.rfNodes, rfNode] }));
-  }, []);
+  const addNode = useCallback(
+    (node: PTBNode) => {
+      const rfNode = ptbNodeToRF(node);
+      setRF((prev) => {
+        const nodes = withOnPatchUI([...prev.rfNodes, rfNode], onPatchUI);
+        const edges = pruneDanglingEdges(nodes, prev.rfEdges);
+        return { rfNodes: nodes, rfEdges: edges };
+      });
+    },
+    [onPatchUI, withOnPatchUI],
+  );
 
   const deleteNode = useCallback(
     (id: string) => {
@@ -212,34 +360,30 @@ export function PTBFlow() {
           if (!id) return true;
           return !isProtectedNode(id, prev.rfNodes);
         });
-        return { ...prev, rfNodes: applyNodeChanges(filtered, prev.rfNodes) };
+
+        const nextNodesRaw = applyNodeChanges(filtered, prev.rfNodes);
+        const nextNodes = withOnPatchUI(nextNodesRaw, onPatchUI);
+        const nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
+        recomputeFlowActive(nextNodes, nextEdges);
+        return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
-    [isProtectedNode],
+    [isProtectedNode, recomputeFlowActive, onPatchUI, withOnPatchUI],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       setRF((prev) => {
         const nextEdges = applyEdgeChanges(changes, prev.rfEdges);
-        recomputeFlowActive(prev.rfNodes, nextEdges);
-        return { ...prev, rfEdges: nextEdges };
+        const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
+        recomputeFlowActive(prev.rfNodes, pruned);
+        return { ...prev, rfEdges: pruned };
       });
     },
     [recomputeFlowActive],
   );
 
-  /** Connection rules:
-   * Flow:
-   *  - 1:1 per handle (both source and target handle).
-   *  - No self/graph loops.
-   * IO:
-   *  - role === 'io' on both ends with out→in direction.
-   *  - Source fan-out allowed (1 -> N).
-   *  - Target handle single (1 edge).
-   *  - Types must be compatible (unified number policy via isTypeCompatible).
-   *  - If number → move_numeric, attach cast metadata for codegen.
-   */
+  /** Connection rules (flow and IO) */
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!conn.source || !conn.target) return;
@@ -258,16 +402,15 @@ export function PTBFlow() {
       setRF((prev) => {
         // FLOW EDGE
         if (sp.role === 'flow' || tp.role === 'flow') {
-          // Enforce flow handle directions if modeled as ports
           if (!(sp.direction === 'out' && tp.direction === 'in')) return prev;
 
           const filtered = filterHandleConflictsForFlow(prev.rfEdges, conn);
           if (!filtered) return prev; // must have concrete handles
 
-          // Prevent cycle
+          if (conn.source === conn.target) return prev;
           if (createsLoop(filtered, conn.source!, conn.target!)) return prev;
 
-          const newEdge: RFEdge = {
+          const newEdge: RFEdge<RFEdgeData> = {
             id: `e-${Date.now()}`,
             type: 'ptb-flow',
             source: conn.source!,
@@ -276,18 +419,17 @@ export function PTBFlow() {
             targetHandle: conn.targetHandle ?? undefined,
           };
 
-          const nextEdges = [...filtered, newEdge];
+          const nextEdges = pruneDanglingEdges(prev.rfNodes, [
+            ...filtered,
+            newEdge,
+          ]);
           setFlowActive(hasStartToEnd(prev.rfNodes, nextEdges));
           return { ...prev, rfEdges: nextEdges };
         }
 
         // IO EDGE
         if (sp.role !== 'io' || tp.role !== 'io') return prev;
-
-        // Direction must be out -> in
         if (!(sp.direction === 'out' && tp.direction === 'in')) return prev;
-
-        // Type checks (unknown types are not allowed to connect)
         if (isUnknownType(sp.dataType) || isUnknownType(tp.dataType))
           return prev;
         if (!isTypeCompatible(sp.dataType, tp.dataType)) return prev;
@@ -295,10 +437,9 @@ export function PTBFlow() {
         const filtered = filterHandleConflictsForIO(prev.rfEdges, conn);
         if (!filtered) return prev;
 
-        // Infer cast metadata for number -> move_numeric (and vectors thereof)
         const cast = inferCastTarget(sp.dataType, tp.dataType) || undefined;
 
-        const newEdge: RFEdge = {
+        const newEdge: RFEdge<RFEdgeData> = {
           id: `e-${Date.now()}`,
           type: 'ptb-io',
           source: conn.source!,
@@ -309,8 +450,11 @@ export function PTBFlow() {
           label: cast ? `as ${cast.to}` : undefined, // optional UX badge
         };
 
-        // Source fan-out allowed
-        return { ...prev, rfEdges: [...filtered, newEdge] };
+        const nextEdges = pruneDanglingEdges(prev.rfNodes, [
+          ...filtered,
+          newEdge,
+        ]);
+        return { ...prev, rfEdges: nextEdges };
       });
     },
     [snapshot.nodes],
@@ -423,3 +567,5 @@ export function PTBFlow() {
     </div>
   );
 }
+
+export default PTBFlow;
