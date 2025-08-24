@@ -136,6 +136,16 @@ export const CanvasVar = [
         icon: <span className="ptb-marker ptb-marker--object" />,
       },
       {
+        name: 'random',
+        action: 'var/helper/random',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
+      {
+        name: 'system',
+        action: 'var/helper/system',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
+      {
         name: 'coinWithBalance',
         action: 'var/helper/coinWithBalance',
         icon: <span className="ptb-marker ptb-marker--object" />,
@@ -149,23 +159,6 @@ export const CanvasVar = [
         name: 'option',
         action: 'var/helper/option',
         icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'random',
-        action: 'var/helper/random',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'system',
-        action: 'var/helper/system',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'objects (multi)',
-        action: 'var/object/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--object" />
-        ),
       },
     ],
   },
