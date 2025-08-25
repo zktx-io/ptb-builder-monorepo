@@ -172,7 +172,9 @@ export function VarNode({ data }: NodeProps<VarRFNode>) {
 
   return (
     <div className={`ptb-node--${category}`}>
-      <div className="ptb-node-shell rounded-lg w-[240px] py-2 px-2 border-2 shadow relative">
+      <div
+        className={`ptb-node-shell rounded-lg w-[${isHelper ? '140px' : '180px'}] py-2 px-2 border-2 shadow relative`}
+      >
         {/* Header with icon (left-aligned) */}
         <p className="flex items-center gap-1 text-sm text-gray-800 dark:text-gray-200">
           {iconOfVar(v, data?.label)}
