@@ -1,7 +1,6 @@
 import React from 'react';
 
 import {
-  Binary,
   BookA,
   Box,
   Calculator,
@@ -11,6 +10,7 @@ import {
   Fuel,
   Hash,
   MessageCircleQuestionIcon,
+  Power,
   Wallet,
 } from 'lucide-react';
 
@@ -33,7 +33,7 @@ function iconOfType(t?: PTBType): React.ReactNode {
       return <Calculator size={14} />;
     case 'scalar':
       if (t.name === 'address') return <Hash size={14} />;
-      if (t.name === 'bool') return <Binary size={14} />;
+      if (t.name === 'bool') return <Power size={14} />;
       if (t.name === 'number') return <Calculator size={14} />;
       if (t.name === 'string') return <BookA size={14} />;
       return <MessageCircleQuestionIcon size={14} />;
@@ -56,7 +56,7 @@ export function iconOfVar(
   if (name === 'clock') return <Clock size={14} />;
   if (name === 'system') return <Cog size={14} />;
   if (name === 'random') return <Dices size={14} />;
-  if (name === 'sui' || lbl === '0x2::sui::SUI') return <IconSui />;
+  if (name === 'sui' || lbl === '0x2::sui::SUI') return <IconSui size={14} />;
 
   // fallback to type
   return iconOfType(v?.varType);
