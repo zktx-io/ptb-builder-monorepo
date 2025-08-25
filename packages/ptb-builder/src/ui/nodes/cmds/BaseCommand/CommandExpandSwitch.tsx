@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 
 import clsx from 'clsx';
 
-import { expandedKeyOf } from './registry';
+import { expandedKeyOf } from '../registry';
 
 export type PatchUIPayload = (
   nodeId: string,

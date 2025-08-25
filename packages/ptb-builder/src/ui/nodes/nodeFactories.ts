@@ -5,7 +5,7 @@
 // - Command ports are always materialized from a single source of truth (registry).
 // - Default UI params are injected HERE (single choke point).
 
-import { materializeCommandPorts } from './cmds/BaseCommand/registry';
+import { materializeCommandPorts } from './cmds/registry';
 import type {
   CommandKind,
   CommandNode,

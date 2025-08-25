@@ -12,6 +12,7 @@ import React, {
 import {
   getFullnodeUrl,
   SuiClient,
+  type SuiMoveNormalizedModules,
   type SuiObjectData,
   type SuiObjectResponse,
 } from '@mysten/sui/client';
@@ -25,9 +26,11 @@ import type {
   PTBGraph,
   PTBNode,
 } from '../ptb/graph/types';
+import { toPTBModuleData } from '../ptb/move/normalize';
+import { PTBModuleData } from '../ptb/move/types';
 import { seedDefaultGraph } from '../ptb/seedGraph';
 import type { Network, Theme } from '../types';
-import { materializeCommandPorts } from './nodes/cmds/BaseCommand/registry';
+import { materializeCommandPorts } from './nodes/cmds/registry';
 
 export type Adapters = {
   clipboard?: { copy(text: string): Promise<void> };
@@ -79,6 +82,22 @@ export type PtbContextValue = {
     objectId: string,
     opts?: { forceRefresh?: boolean },
   ) => Promise<SuiObjectData | undefined>;
+
+  /**
+   * Move package modules cache and loaders (per-network, in-memory).
+   * - Raw modules by package id (as returned by Sui).
+   * - getPackageModules: fetch + cache (TxContext untouched).
+   * - getPackageModulesView: convenience view for UI (TxContext stripped, names flattened).
+   */
+  modules: Record<string, SuiMoveNormalizedModules>;
+  getPackageModules: (
+    packageId: string,
+    opts?: { forceRefresh?: boolean },
+  ) => Promise<SuiMoveNormalizedModules | undefined>;
+  getPackageModulesView: (
+    packageId: string,
+    opts?: { forceRefresh?: boolean },
+  ) => Promise<PTBModuleData | undefined>;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -102,6 +121,10 @@ export type PtbProviderProps = {
   /** Optional initial on-chain metas and change callback (app-level persistence) */
   initialObjectMetas?: Record<string, SuiObjectData>;
   onChangeObjectMetas?: (m: Record<string, SuiObjectData>) => void;
+
+  /** Optional initial package modules and change callback (for persistence to PTB modulesEmbed) */
+  initialModules?: Record<string, SuiMoveNormalizedModules>;
+  onChangeModules?: (m: Record<string, SuiMoveNormalizedModules>) => void;
 };
 
 const DEFAULT_DEBOUNCE = 400;
@@ -149,6 +172,8 @@ export function PtbProvider({
   theme: themeProp = 'dark',
   initialObjectMetas,
   onChangeObjectMetas,
+  initialModules,
+  onChangeModules,
 }: PtbProviderProps) {
   /** Busy toggle (reserved for async jobs like run/parse/etc.) */
   const [busy] = useState(false);
@@ -170,6 +195,11 @@ export function PtbProvider({
   const [objectMetas, setObjectMetas] = useState<Record<string, SuiObjectData>>(
     () => initialObjectMetas ?? {},
   );
+
+  /** Move package modules cache (in-memory). Persistable via onChangeModules */
+  const [modules, setModules] = useState<
+    Record<string, SuiMoveNormalizedModules>
+  >(() => initialModules ?? {});
 
   /** SuiClient lifecycle (per-network single instance) */
   const clientRef = useRef<SuiClient | undefined>(undefined);
@@ -320,10 +350,7 @@ export function PtbProvider({
         });
 
         const meta = toSuiObjectData(resp);
-        if (!meta) {
-          console.warn('[PtbProvider] getObjectData: empty/meta error for', id);
-          return undefined;
-        }
+        if (!meta) return undefined;
 
         setObjectMetas((prev) => {
           const next = { ...prev, [id]: meta };
@@ -331,12 +358,67 @@ export function PtbProvider({
           return next;
         });
         return meta;
-      } catch (e) {
-        console.error('[PtbProvider] getObjectData error:', e);
+      } catch {
         return undefined;
       }
     },
     [objectMetas, onChangeObjectMetas],
+  );
+
+  /** Fetch and cache Move package modules by package id (per-network). */
+  const getPackageModules = useCallback<PtbContextValue['getPackageModules']>(
+    async (packageId, opts) => {
+      const id = packageId?.trim();
+      if (!id || !id.startsWith('0x')) {
+        adaptersSnapshot.toast?.({
+          message: 'Invalid package id. It should start with 0x…',
+          variant: 'warning',
+        });
+        return undefined;
+      }
+
+      if (!opts?.forceRefresh && modules[id]) {
+        return modules[id];
+      }
+
+      const client = clientRef.current;
+      if (!client) return undefined;
+
+      try {
+        const res = await client.getNormalizedMoveModulesByPackage({
+          package: id,
+        });
+
+        setModules((prev) => {
+          const next = { ...prev, [id]: res };
+          onChangeModules?.(next);
+          return next;
+        });
+
+        return res;
+      } catch (e: any) {
+        adaptersSnapshot.toast?.({
+          message: e?.message || 'Failed to load package modules',
+          variant: 'error',
+        });
+        return undefined;
+      }
+    },
+    [modules, clientRef, adaptersSnapshot, onChangeModules],
+  );
+
+  /** Convenience: return a PTB-friendly view (TxContext stripped + name lists). */
+  const getPackageModulesView = useCallback<
+    PtbContextValue['getPackageModulesView']
+  >(
+    async (packageId, opts) => {
+      const mods =
+        (await getPackageModules(packageId, opts)) ??
+        modules[packageId?.trim() || ''];
+      if (!mods) return undefined;
+      return toPTBModuleData(mods);
+    },
+    [getPackageModules, modules],
   );
 
   const ctx: PtbContextValue = useMemo(
@@ -352,8 +434,13 @@ export function PtbProvider({
       theme,
       setTheme,
       onPatchUI, // node-scoped UI patcher
+
       objectMetas,
       getObjectData,
+
+      modules,
+      getPackageModules,
+      getPackageModulesView,
     }),
     [
       snapshot,
@@ -369,6 +456,9 @@ export function PtbProvider({
       onPatchUI,
       objectMetas,
       getObjectData,
+      modules,
+      getPackageModules,
+      getPackageModulesView,
     ],
   );
 

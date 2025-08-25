@@ -4,14 +4,14 @@ import React, { useMemo } from 'react';
 
 import type { Node, NodeProps, Position } from '@xyflow/react';
 import { Position as RFPos } from '@xyflow/react';
-import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import { CommandExpandSwitch } from './CommandExpandSwitch';
-import { canExpandCommand, expandedKeyOf } from './registry';
 import type { Port, PTBNode } from '../../../../ptb/graph/types';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
+import { iconOfCommand } from '../../icons';
+import { canExpandCommand, expandedKeyOf } from '../registry';
 export type BaseCmdData = {
   label?: string;
   ptbNode?: PTBNode;
@@ -29,25 +29,7 @@ function labelOf(p: Port): string {
 }
 const ioTopForIndex = (idx: number) => TITLE_TO_IO_GAP + idx * ROW_SPACING;
 
-function iconOfCommand(kind?: string) {
-  const cls = 'w-4 h-4 align-middle';
-  switch (kind) {
-    case 'splitCoins':
-      return <Split className={cls} />;
-    case 'mergeCoins':
-      return <Merge className={cls} />;
-    case 'transferObjects':
-      return <Download className={cls} />;
-    case 'makeMoveVec':
-      return <Brackets className={cls} />;
-    case 'moveCall':
-      return <FunctionSquare className={cls} />;
-    default:
-      return <></>;
-  }
-}
-
-export function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
+function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
   const node = data?.ptbNode as PTBNode | undefined;
 
   // Ports from registry (preserve order)
@@ -99,11 +81,9 @@ export function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-2 mb-1">
-          <div className="flex items-center gap-1 text-gray-800 dark:text-gray-200 select-none">
+          <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfCommand(cmdKind)}
-            <p className="text-sm leading-4">
-              {data?.label ?? (node as any)?.label ?? 'Command'}
-            </p>
+            {data?.label ?? (node as any)?.label ?? 'Command'}
           </div>
 
           <CommandExpandSwitch

@@ -3,14 +3,19 @@ import React from 'react';
 import {
   BookA,
   Box,
+  Brackets,
   Calculator,
   Clock,
   Cog,
   Dices,
+  Download,
   Fuel,
+  FunctionSquare,
   Hash,
+  Merge,
   MessageCircleQuestionIcon,
   Power,
+  Split,
   Wallet,
 } from 'lucide-react';
 
@@ -60,4 +65,22 @@ export function iconOfVar(
 
   // fallback to type
   return iconOfType(v?.varType);
+}
+
+/** Resolve an icon for a command node based on its kind */
+export function iconOfCommand(kind?: string) {
+  switch (kind) {
+    case 'splitCoins':
+      return <Split size={14} />;
+    case 'mergeCoins':
+      return <Merge size={14} />;
+    case 'transferObjects':
+      return <Download size={14} />;
+    case 'makeMoveVec':
+      return <Brackets size={14} />;
+    case 'moveCall':
+      return <FunctionSquare size={14} />;
+    default:
+      return <></>;
+  }
 }

@@ -42,7 +42,7 @@ import {
   isUnknownType,
 } from '../ptb/graph/typecheck';
 import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
-import { materializeCommandPorts } from './nodes/cmds/BaseCommand/registry';
+import { materializeCommandPorts } from './nodes/cmds/registry';
 
 const DEBOUNCE_MS = 250;
 

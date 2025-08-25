@@ -6,7 +6,7 @@ import React, { useMemo } from 'react';
 
 import clsx from 'clsx';
 
-import { canExpandCommand, countKeyOf, expandedKeyOf } from './registry';
+import { canExpandCommand, countKeyOf, expandedKeyOf } from '../registry';
 
 export type PatchUIPayload = (
   nodeId: string,

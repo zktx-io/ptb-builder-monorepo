@@ -1,5 +1,5 @@
 // src/ui/nodes/cmds/BaseCommand/commandRegistry.ts
-import { isNestedVector, isVector } from '../../../../ptb/graph/typecheck';
+import { isNestedVector, isVector } from '../../../ptb/graph/typecheck';
 import type {
   CommandKind,
   CommandNode,
@@ -7,8 +7,8 @@ import type {
   Port,
   PTBScalar,
   PTBType,
-} from '../../../../ptb/graph/types';
-import { ioIn, ioOut, PORTS } from '../../../../ptb/portTemplates';
+} from '../../../ptb/graph/types';
+import { ioIn, ioOut, PORTS } from '../../../ptb/portTemplates';
 
 /** ---- PTBType helpers (UI-level) ---- */
 const S = (name: PTBScalar): PTBType => ({ kind: 'scalar', name });
@@ -193,8 +193,9 @@ const Registry: Record<CommandKind, CmdSpec> = {
     },
   },
 
-  /** Placeholders */
-  moveCall: { label: 'MoveCall', ports: () => [...PORTS.commandBase()] },
+  moveCall: { label: 'MoveCall', ports: () => [...PORTS.commandMoveCall()] },
+
+  /** TODO */
   publish: { label: 'Publish', ports: () => [...PORTS.commandBase()] },
   upgrade: { label: 'Upgrade', ports: () => [...PORTS.commandBase()] },
 };

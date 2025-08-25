@@ -41,7 +41,7 @@ import {
 } from '../../../ptb/graph/typecheck';
 import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
-import { iconOfVar } from '../icons/varIcons';
+import { iconOfVar } from '../icons';
 import { MiniStepper } from './inputs/MiniStepper';
 
 const DEBOUNCE_MS = 250;
@@ -89,7 +89,7 @@ function useDebouncedCallback<T extends any[]>(
   );
 }
 
-export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
+function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
   const v = data?.ptbNode as VariableNode | undefined;
   const nodeId = v?.id;
   const varType = v?.varType;
@@ -293,7 +293,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
       >
         {/* Header: icon (left) + vector stepper (right) */}
         <div className="flex items-center justify-between">
-          <p className="flex items-center gap-1 text-sm text-gray-800 dark:text-gray-200">
+          <p className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfVar(v, data?.label)}
             {title}
           </p>

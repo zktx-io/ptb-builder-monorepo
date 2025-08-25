@@ -38,7 +38,7 @@ export function PTBHandleIO({
   className,
   style,
   label,
-  labelGap = 8,
+  labelGap = 1,
   ...rest
 }: PTBHandleIOProps) {
   const nodes = useStore(
@@ -130,14 +130,8 @@ export function PTBHandleIO({
       )}
       {label ? (
         <div
-          className={`ptb-handle-label absolute ${isLeft ? 'ptb-handle-label--left' : 'ptb-handle-label--right'}`}
+          className={`ptb-handle-label absolute ${isLeft ? 'ptb-handle-label--left' : 'ptb-handle-label--right'} text-xxxs`}
           style={{
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-            fontSize: 11,
-            lineHeight: 1,
-            whiteSpace: 'nowrap',
             marginLeft: isLeft ? labelGap : undefined,
             marginRight: !isLeft ? labelGap : undefined,
           }}

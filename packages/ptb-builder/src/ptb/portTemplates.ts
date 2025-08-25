@@ -82,23 +82,7 @@ export const PORTS = {
     return [flowIn(FLOW_PREV), flowOut(FLOW_NEXT)];
   },
 
-  /** Variable out: single out port with optional type */
-  variableOut(opts?: PTBType | PortOptions): Port[] {
-    return [
-      ioOut(VAR_OUT, {
-        dataType: UNKNOWN,
-        ...normalizeOptions(opts),
-      }),
-    ];
-  },
-
-  /** Variable in: single in port with optional type */
-  variableIn(opts?: PTBType | PortOptions): Port[] {
-    return [
-      ioIn(VAR_IN, {
-        dataType: UNKNOWN,
-        ...normalizeOptions(opts),
-      }),
-    ];
+  commandMoveCall(): Port[] {
+    return [flowIn(FLOW_PREV), flowOut(FLOW_NEXT)];
   },
 } as const;

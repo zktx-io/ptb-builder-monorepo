@@ -165,8 +165,10 @@ function mapPTBNodeToRFType(n: PTBNode): string {
       return 'ptb-end';
     case 'Variable':
       return 'ptb-var';
-    case 'Command':
-      return 'ptb-cmd';
+    case 'Command': {
+      const cmd = (n as any)?.command;
+      return cmd === 'moveCall' ? 'ptb-mvc' : 'ptb-cmd';
+    }
   }
   const _exhaustive: never = n;
   return String(_exhaustive);
@@ -176,6 +178,7 @@ function mapRFTypeToPTBKind(rfType: string): PTBNode['kind'] {
   if (rfType === 'ptb-start') return 'Start';
   if (rfType === 'ptb-end') return 'End';
   if (rfType === 'ptb-var') return 'Variable';
+  if (rfType === 'ptb-mvc') return 'Command';
   return 'Command';
 }
 
