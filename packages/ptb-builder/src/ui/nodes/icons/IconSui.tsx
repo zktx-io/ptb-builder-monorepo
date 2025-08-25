@@ -1,15 +1,16 @@
 import React from 'react';
 
 export const IconSui = ({
-  className = 'w-6 h-6 text-gray-800 dark:text-white',
+  size = 16,
+  className,
   ...props
-}: React.SVGProps<SVGSVGElement>) => (
+}: React.SVGProps<SVGSVGElement> & { size?: number }) => (
   <svg
     className={className}
     aria-hidden="true"
     xmlns="http://www.w3.org/2000/svg"
-    width="300"
-    height="384"
+    width={size}
+    height={size}
     fill="none"
     viewBox="0 0 300 384"
     {...props}
