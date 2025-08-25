@@ -369,7 +369,6 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 11px;
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
