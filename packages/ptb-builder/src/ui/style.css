@@ -101,7 +101,6 @@
 
   /* =======================
      Switch (track/knob)
-     - Keep off color darker than command node bg for clear contrast in light mode
      ======================= */
   --ptb-switch-track-off: #c7cbd1;      /* slightly darker than node bg */
   --ptb-switch-track-on:  #2563eb;      /* blue-600 */
@@ -313,60 +312,63 @@
    - Labels are always horizontal and overflow outside the 12x12 box.
    ============================================================ */
 
-/* Base handle */
+/* Base handle: no outline, no shadow; color inherits from node state */
 .ptb-handle {
   width: 12px;
   height: 12px;
-  border: 2px solid currentColor;   /* outline = currentColor */
-  background-color: currentColor;   /* fill    = currentColor */
+  border: 0;                       /* remove outline */
+  background-color: currentColor;  /* fill uses currentColor */
   box-sizing: border-box;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.15);
+  box-shadow: none;                 /* remove glow/border shadow */
   color: inherit;
   pointer-events: all;
-  overflow: visible;                 /* allow glyph/label overflow */
+  overflow: visible;                /* allow glyph/label overflow */
   z-index: 10;
+  transition: filter .12s ease;
+}
+
+/* Keyboard accessibility ring only */
+.ptb-handle:focus-visible {
+  outline: 2px solid var(--ptb-active-ring);
+  outline-offset: 2px;
 }
 
 /* Flow handle slightly bigger (optional) */
 .ptb-handle--flow { width: 14px; height: 14px; }
 
-/* Shape variants (parent never rotates) */
-.ptb-handle--single { border-radius: 9999px; }  /* circle */
+/* Single = circle */
+.ptb-handle--single { border-radius: 9999px; }
 
-/* Multi parent is transparent; glyph draws the diamond */
+/* Multi parent transparent; diamond is drawn by glyph */
 .ptb-handle--multi {
   background-color: transparent;
   border-color: transparent;
-  border-radius: 2px;               /* smoother corners for diamond */
+  border-radius: 2px;
 }
 
-/* Glyph layer inside handle (rotatable) */
+/* Glyph layer (rotates for diamond) */
 .ptb-handle-glyph {
   position: absolute;
   inset: 0;
-  pointer-events: none;              /* never block pointer */
+  pointer-events: none;
 }
-
 .ptb-handle-glyph--multi {
   width: 100%;
   height: 100%;
-  background-color: currentColor;
+  background-color: transparent;
   border-radius: 2px;
   transform: rotate(45deg);
   transform-origin: center center;
 }
 
-/* Larger diamond when combined with flow (optional) */
-.ptb-handle--flow .ptb-handle-glyph--multi {
-  width: 100%;
-  height: 100%;
-}
+/* Ensure handle color always tracks node color (even if other rules compete) */
+.ptb-handle--io { color: inherit !important; }
 
-/* ------- Labels (rendered inside <Handle>) ------- */
+/* ------- Labels rendered inside <Handle> ------- */
 .ptb-handle-label {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);   /* keep horizontal */
+  transform: translateY(-50%);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
@@ -386,7 +388,7 @@
 .react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
 
-/* Hover / Selected */
+/* Hover / Selected mapping */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
 .react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
 
@@ -417,21 +419,20 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  background: currentColor;      /* fill from currentColor */
-  border-radius: 9999px;         /* single = round */
+  background: currentColor;   /* fill from currentColor */
+  border-radius: 9999px;      /* single = round */
   vertical-align: middle;
-  /* safe default color (unknown) */
-  color: var(--ptb-io-unknown-stroke);
+  color: var(--ptb-io-unknown-stroke); /* safe default */
 }
 
-/* multi = diamond: override the round shape and rotate */
+/* multi = diamond */
 .ptb-marker.ptb-marker--multi {
-  border-radius: 2px !important; /* override the round base */
+  border-radius: 2px !important;
   transform: rotate(45deg);
   transform-origin: center center;
 }
 
-/* category → color (inherit from IO edge vars so colors match handles/edges) */
+/* category → color (use same vars as edges/handles) */
 .ptb-marker--address { color: var(--ptb-io-address-stroke); }
 .ptb-marker--number  { color: var(--ptb-io-number-stroke);  }
 .ptb-marker--bool    { color: var(--ptb-io-bool-stroke);    }
@@ -453,6 +454,6 @@
   background-color: var(--ptb-switch-knob);
 }
 
-/* Optional: label colors via vars (if needed for overrides) */
+/* Optional switch label colors */
 .ptb-switch__label--off { color: var(--ptb-switch-label-off); }
 .ptb-switch__label--on  { color: var(--ptb-switch-label-on);  }
