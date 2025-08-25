@@ -41,7 +41,7 @@ import {
   isTypeCompatible,
   isUnknownType,
 } from '../ptb/graph/typecheck';
-import type { Port, PTBNode } from '../ptb/graph/types';
+import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
 import { materializeCommandPorts } from './nodes/cmds/BaseCommand/registry';
 
 const DEBOUNCE_MS = 250;
@@ -130,13 +130,42 @@ function pruneDanglingEdges(
   });
 }
 
+/** Resolve a PTB port's type given PTB nodes and an RF edge endpoint. */
+function resolvePortType(
+  ptbNodes: PTBNode[],
+  nodeId: string,
+  handle?: string | null,
+): PTBType | undefined {
+  const pid = portIdOf(handle);
+  if (!pid) return undefined;
+  const n = ptbNodes.find((x) => x.id === nodeId);
+  if (!n) return undefined;
+  const p = (n.ports || []).find((pp) => pp.id === pid);
+  return p?.dataType;
+}
+
+/** Drop IO edges that became type-incompatible after a node mutation. */
+function pruneIncompatibleIOEdges(
+  ptbNodes: PTBNode[],
+  edges: RFEdge<RFEdgeData>[],
+): RFEdge<RFEdgeData>[] {
+  return edges.filter((e) => {
+    if (e.type !== 'ptb-io') return true;
+    const sT = resolvePortType(ptbNodes, e.source, e.sourceHandle);
+    const tT = resolvePortType(ptbNodes, e.target, e.targetHandle);
+    if (!sT || !tT) return false; // missing types → drop
+    if (isUnknownType(sT) || isUnknownType(tT)) return false;
+    return isTypeCompatible(sT, tT);
+  });
+}
+
 export function PTBFlow() {
   const { snapshot, saveSnapshot, readOnly, theme, setTheme } = usePtb();
 
   /** Global flow animation flag: true iff there exists a Start → End path. */
   const [flowActive, setFlowActive] = useState(false);
 
-  /** onPatchUI: update a command node's UI, rebuild ports, resync RF, prune edges. */
+  /** Inject onPatchUI into Command nodes and keep ports consistent with UI. */
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
       setRF((prev) => {
@@ -147,22 +176,20 @@ export function PTBFlow() {
           baseGraphRef.current,
         );
 
-        // 2) Merge UI patch onto target node.
+        // 2) Merge UI patch onto target Command node.
         const node = currentPTB.nodes.find((n) => n.id === nodeId);
         if (!node || node.kind !== 'Command') return prev;
 
         const ui = ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
         const nextUI = { ...ui, ...patch };
 
-        // Optional normalization: when switching modes, reset counts, etc.
+        // Normalize expand toggles → default counts.
         if ('amountsExpanded' in patch) {
           if (patch.amountsExpanded) {
-            // on: keep existing amountsCount or default 2
             if (typeof (node.params as any)?.ui?.amountsCount !== 'number') {
               (nextUI as any).amountsCount = 2;
             }
           } else {
-            // off: vector mode, count not needed
             delete (nextUI as any).amountsCount;
           }
         }
@@ -203,23 +230,92 @@ export function PTBFlow() {
         const { nodes: freshRFNodes, edges: freshRFEdges } =
           ptbToRF(currentPTB);
 
-        // 5) Re-inject onPatchUI & prune dangling edges.
-        const injected = withOnPatchUI(freshRFNodes, onPatchUI);
-        const pruned = pruneDanglingEdges(injected, freshRFEdges);
+        // 5) Inject callbacks & prune edges (dangling + type-incompatible).
+        const injected = withCallbacks(
+          freshRFNodes,
+          onPatchUI,
+          onPatchVar,
+          onLoadTypeTag,
+        );
+        let pruned = pruneDanglingEdges(injected, freshRFEdges);
+        pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
         setFlowActive(hasStartToEnd(injected, pruned));
         return { rfNodes: injected, rfEdges: pruned };
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
-  /** Inject onPatchUI into every RF node's data. */
-  const withOnPatchUI = useCallback(
-    (nodes: RFNode<RFNodeData>[], fn: typeof onPatchUI) =>
+  /** Patch a Variable node (value and/or varType). Source of truth = RF -> PTB -> RF. */
+  const onPatchVar = useCallback(
+    (nodeId: string, patch: Partial<VariableNode>) => {
+      setRF((prev) => {
+        // 1) Rebuild PTB graph from current RF.
+        const currentPTB = rfToPTB(
+          prev.rfNodes,
+          prev.rfEdges,
+          baseGraphRef.current,
+        );
+
+        // 2) Find the Variable node and apply the patch.
+        const node = currentPTB.nodes.find((n) => n.id === nodeId);
+        if (!node || node.kind !== 'Variable') return prev;
+
+        const v = node as VariableNode;
+        if ('value' in patch) (v as any).value = (patch as any).value;
+        if ('varType' in patch && patch.varType !== undefined) {
+          v.varType = patch.varType; // type: PTBType
+        }
+
+        // 3) Rebuild RF from PTB after mutation.
+        const { nodes: freshRFNodes, edges: freshRFEdges } =
+          ptbToRF(currentPTB);
+
+        // 4) Inject callbacks & prune edges:
+        //    - dangling (handles no longer exist)
+        //    - type-incompatible (type changed by varType update)
+        const injected = withCallbacks(
+          freshRFNodes,
+          onPatchUI,
+          onPatchVar,
+          onLoadTypeTag,
+        );
+        let pruned = pruneDanglingEdges(injected, freshRFEdges);
+        pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+
+        setFlowActive(hasStartToEnd(injected, pruned));
+        return { rfNodes: injected, rfEdges: pruned };
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  /** Optional type loader for object.typeTag — UI shows button always; disabled if missing. */
+  const onLoadTypeTag = useCallback((typeTag: string) => {
+    // Bridge stub: consumer app should override via Provider/adapters if needed.
+    // Keep it here so the button is always rendered but can be disabled when not injected.
+    // Intentionally no-op.
+  }, []);
+
+  /** Inject both command UI and variable callbacks into RF node data. */
+  const withCallbacks = useCallback(
+    (
+      nodes: RFNode<RFNodeData>[],
+      patchUI: typeof onPatchUI,
+      patchVar: typeof onPatchVar,
+      loadType: (typeTag: string) => void,
+    ) =>
       nodes.map((n) => ({
         ...n,
-        data: { ...(n.data || {}), onPatchUI: fn },
+        data: {
+          ...(n.data || {}),
+          onPatchUI: patchUI,
+          onPatchVar: patchVar,
+          onLoadTypeTag: loadType,
+        },
       })),
     [],
   );
@@ -230,7 +326,7 @@ export function PTBFlow() {
     rfEdges: RFEdge<RFEdgeData>[];
   }>(() => {
     const { nodes, edges } = ptbToRF(snapshot);
-    const injected = withOnPatchUI(nodes, onPatchUI);
+    const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
     const pruned = pruneDanglingEdges(injected, edges);
     return { rfNodes: injected, rfEdges: pruned };
   });
@@ -242,17 +338,20 @@ export function PTBFlow() {
   useEffect(() => {
     if (snapshot === baseGraphRef.current) return;
     const { nodes, edges } = ptbToRF(snapshot);
-    const injected = withOnPatchUI(nodes, onPatchUI);
-    const pruned = pruneDanglingEdges(injected, edges);
+    const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
+    let pruned = pruneDanglingEdges(injected, edges);
+    pruned = pruneIncompatibleIOEdges(snapshot.nodes, pruned);
     setRF({ rfNodes: injected, rfEdges: pruned });
     setFlowActive(hasStartToEnd(injected, pruned));
     baseGraphRef.current = snapshot;
-  }, [snapshot, onPatchUI, withOnPatchUI]);
+  }, [snapshot, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks]);
 
   /** As a safety net, whenever rfNodes change, re-prune edges. */
   useEffect(() => {
     setRF((prev) => {
-      const pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
+      let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
+      // Note: type-incompatibility requires PTB types; use latest baseGraphRef.
+      pruned = pruneIncompatibleIOEdges(baseGraphRef.current.nodes, pruned);
       if (pruned.length === prev.rfEdges.length) return prev;
       setFlowActive(hasStartToEnd(rfNodes, pruned));
       return { ...prev, rfEdges: pruned };
@@ -317,12 +416,17 @@ export function PTBFlow() {
     (node: PTBNode) => {
       const rfNode = ptbNodeToRF(node);
       setRF((prev) => {
-        const nodes = withOnPatchUI([...prev.rfNodes, rfNode], onPatchUI);
+        const nodes = withCallbacks(
+          [...prev.rfNodes, rfNode],
+          onPatchUI,
+          onPatchVar,
+          onLoadTypeTag,
+        );
         const edges = pruneDanglingEdges(nodes, prev.rfEdges);
         return { rfNodes: nodes, rfEdges: edges };
       });
     },
-    [onPatchUI, withOnPatchUI],
+    [onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks],
   );
 
   const deleteNode = useCallback(
@@ -362,13 +466,29 @@ export function PTBFlow() {
         });
 
         const nextNodesRaw = applyNodeChanges(filtered, prev.rfNodes);
-        const nextNodes = withOnPatchUI(nextNodesRaw, onPatchUI);
-        const nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
+        const nextNodes = withCallbacks(
+          nextNodesRaw,
+          onPatchUI,
+          onPatchVar,
+          onLoadTypeTag,
+        );
+        let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
+        nextEdges = pruneIncompatibleIOEdges(
+          baseGraphRef.current.nodes,
+          nextEdges,
+        );
         recomputeFlowActive(nextNodes, nextEdges);
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
-    [isProtectedNode, recomputeFlowActive, onPatchUI, withOnPatchUI],
+    [
+      isProtectedNode,
+      recomputeFlowActive,
+      onPatchUI,
+      onPatchVar,
+      onLoadTypeTag,
+      withCallbacks,
+    ],
   );
 
   const onEdgesChange = useCallback(
