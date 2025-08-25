@@ -1,12 +1,18 @@
 // src/ui/nodes/vars/VarNode.tsx
-// Variable node with inline editors (except helper/constant vars).
-// - Scalars: address/string/number → <input> (debounced), bool → SelectBool
-// - Object: object id <input> (debounced), typeTag <input> (debounced) + "Load" button
-// - Vectors (1-D): N editors; item count stepper in the header (right-aligned)
-//     • vector<bool> → SelectBool per item (immediate patch)
-//     • vector<others> → <input> per item (debounced patch)
-// - Helpers (sender/wallet, gas, clock, system, random, sui[=0x2::sui::SUI]): label only, no editor
-// - If no onPatchVar is provided, all editors and the stepper are disabled (read-only)
+// Variable node with inline editors (lean version).
+// - Scalars (string/number/address): single <TextInput> using onChange+debounce
+// - Scalar<bool>: SelectBool (unified; no text input)
+// - Object: single <TextInput> (onChange+debounce)
+//   • After debounce: patch { value }, fetch on-chain meta via getObjectData(objectId)
+//   • If response has a Move object type → patch { varType: { kind:'object', typeTag } }
+//   • On failure or non-Move object → patch { varType: { kind:'object' } } and show toast error
+//   • Read-only type field shows current typeTag (if any); no inline error text
+// - Vectors (1-D):
+//   • vector<bool> → SelectBool per item (patch deferred via rAF to avoid cross-render warning)
+//   • vector<others> → <TextInput> per item (onChange+debounce)
+//   • Stepper (+/-) updates length immediately and requests RF bounds recompute
+// - Helpers (sender/wallet, gas, clock, system, random, sui[=0x2::sui::SUI]): label only (no editor)
+// - All editors are read-only when onPatchVar is missing
 // - No nulls: use undefined
 
 import React, {
@@ -24,6 +30,7 @@ import {
   useUpdateNodeInternals,
 } from '@xyflow/react';
 
+import { usePtb } from '../../PtbProvider';
 import SelectBool from './inputs/SelectBool';
 import TextInput from './inputs/TextInput';
 import { buildOutPort, placeholderFor } from './utils';
@@ -38,16 +45,18 @@ import { iconOfVar } from '../icons/varIcons';
 import { MiniStepper } from './inputs/MiniStepper';
 
 const DEBOUNCE_MS = 250;
+// Use a slightly longer debounce for object fetches to avoid excessive RPCs while typing fast
+const OBJECT_DEBOUNCE_MS = 400;
 
 export type VarData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
-  onLoadTypeTag?: (typeTag: string) => void;
+  onLoadTypeTag?: (typeTag: string) => void; // kept for compatibility; unused here
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
 
-/** Small hook: returns a stable debounced-callback (cleans up on unmount). */
+/** Stable debounced-callback (cleans up on unmount). */
 function useDebouncedCallback<T extends any[]>(
   fn: (...args: T) => void,
   delay = DEBOUNCE_MS,
@@ -82,17 +91,18 @@ function useDebouncedCallback<T extends any[]>(
 
 export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
   const v = data?.ptbNode as VariableNode | undefined;
-  const nodeId = v?.id; // PTB node id (for graph patch)
+  const nodeId = v?.id;
   const varType = v?.varType;
 
   const updateNodeInternals = useUpdateNodeInternals();
+  const { getObjectData, adapters } = usePtb();
 
-  // Editors/stepper are enabled only when onPatchVar exists.
+  // Editors enabled only when onPatchVar exists.
   const canEdit = Boolean(nodeId && data?.onPatchVar);
 
   const { category } = ioShapeOf(varType);
 
-  /** Detect helpers/constants: show label only. */
+  /** Detect helpers/constants: label only. */
   const helperNames = useMemo(
     () => new Set(['sender', 'gas', 'clock', 'system', 'random']),
     [],
@@ -106,10 +116,10 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     (v?.name ?? '').trim().toLowerCase() === 'sui';
   const isHelper = isHelperByName || isSuiConst;
 
-  /** Local buffers for controlled inputs. */
-  const [scalarBuf, setScalarBuf] = useState(''); // for scalar text inputs (non-bool)
-  const [typeTagBuf, setTypeTagBuf] = useState(''); // for object.typeTag
-  const [vecItems, setVecItems] = useState<string[]>(['']); // for vector inputs (min=1)
+  /** Local UI state. */
+  const [scalarBuf, setScalarBuf] = useState(''); // scalar text & object id
+  const [vecItems, setVecItems] = useState<string[]>(['']); // min=1
+  const [objTypeLoading, setObjTypeLoading] = useState(false);
 
   /** Shallow-equal helper for arrays of strings. */
   const arrShallowEqual = useCallback((a: string[], b: string[]) => {
@@ -119,7 +129,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     return true;
   }, []);
 
-  /** Sync local buffers from graph when props change, but avoid stomping identical state. */
+  /** Sync local buffers from graph on prop changes (avoid stomping equal state). */
   useEffect(() => {
     if (!isVectorType(varType)) {
       const next =
@@ -130,12 +140,6 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
       const next =
         Array.isArray(raw) && raw.length > 0 ? raw.map(String) : [''];
       setVecItems((prev) => (arrShallowEqual(prev, next) ? prev : next));
-    }
-    if (varType?.kind === 'object') {
-      const nextTT = varType.typeTag ?? '';
-      setTypeTagBuf((prev) => (prev === nextTT ? prev : nextTT));
-    } else if (typeTagBuf !== '') {
-      setTypeTagBuf('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, v, varType, arrShallowEqual]);
@@ -151,7 +155,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     }
   }, [canEdit, isHelper, varType, data, nodeId, v]);
 
-  /** Patch helper (graph-level). */
+  /** Graph patcher helper. */
   const patchVar = useCallback(
     (patch: Partial<VariableNode>) => {
       if (canEdit && nodeId && data?.onPatchVar) data.onPatchVar(nodeId, patch);
@@ -159,7 +163,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     [canEdit, nodeId, data],
   );
 
-  /** Debounced patchers for text-based inputs (scalar & vector text & typeTag). */
+  /** Debounced patchers for text-based inputs. */
   const debouncedPatchScalar = useDebouncedCallback((val: string) => {
     if (!canEdit) return;
     patchVar({ value: val });
@@ -170,15 +174,54 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     patchVar({ value: vals });
   });
 
-  const debouncedPatchTypeTag = useDebouncedCallback((typeTag: string) => {
+  /** Debounced object handler: patch value, fetch meta, then patch varType. */
+  const reqSeqRef = useRef(0);
+  const debouncedHandleObject = useDebouncedCallback(async (idRaw: string) => {
     if (!canEdit) return;
-    const trimmed = (typeTag.trim() || undefined) as string | undefined;
-    patchVar({
-      varType: trimmed
-        ? { kind: 'object', typeTag: trimmed }
-        : { kind: 'object' },
-    });
-  });
+    const id = idRaw.trim();
+    // Always patch the latest value (to keep graph in sync while typing)
+    patchVar({ value: idRaw });
+
+    // Empty value → clear typeTag and stop
+    if (!id) {
+      patchVar({ varType: { kind: 'object' } });
+      setObjTypeLoading(false);
+      return;
+    }
+
+    const seq = ++reqSeqRef.current; // guard against out-of-order responses
+    try {
+      setObjTypeLoading(true);
+      const resp = await getObjectData(id, { forceRefresh: true });
+
+      // Ignore stale response
+      if (seq !== reqSeqRef.current) return;
+
+      const moveType =
+        resp?.content?.dataType === 'moveObject'
+          ? (resp.content as any)?.type
+          : undefined;
+
+      if (moveType) {
+        patchVar({ varType: { kind: 'object', typeTag: moveType } });
+      } else {
+        patchVar({ varType: { kind: 'object' } });
+        adapters?.toast?.({
+          message: 'Object not found or not a Move object.',
+          variant: 'error',
+        });
+      }
+    } catch (e: any) {
+      if (seq !== reqSeqRef.current) return;
+      patchVar({ varType: { kind: 'object' } });
+      adapters?.toast?.({
+        message: e?.message || 'Failed to fetch object metadata.',
+        variant: 'error',
+      });
+    } finally {
+      if (seq === reqSeqRef.current) setObjTypeLoading(false);
+    }
+  }, OBJECT_DEBOUNCE_MS);
 
   /** Out port (with optional human-friendly typeStr). */
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
@@ -186,7 +229,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
   /** Show editor area? */
   const hasEditor = useMemo(() => !isHelper, [isHelper]);
 
-  /** Stepper (+/-) — apply immediately to graph and request layout recompute. */
+  /** Stepper (+/-) — apply immediately and request RF bounds recompute. */
   const stepVec = useCallback(
     (delta: number) => {
       if (!canEdit || !isVectorType(varType)) return;
@@ -199,9 +242,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                 ...Array.from({ length: nextLen - prev.length }, () => ''),
               ]
             : prev.slice(0, nextLen);
-        // Immediately patch length change (user intent)
         patchVar({ value: next });
-        // Ensure React Flow recomputes the node's bounds
         requestAnimationFrame(() => updateNodeInternals(rfNodeId));
         return next;
       });
@@ -209,7 +250,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     [canEdit, varType, patchVar, rfNodeId, updateNodeInternals],
   );
 
-  /** Also recompute layout when height-affecting state toggles. */
+  /** Recompute bounds when height-affecting state toggles. */
   useEffect(() => {
     if (!rfNodeId) return;
     requestAnimationFrame(() => updateNodeInternals(rfNodeId));
@@ -226,11 +267,11 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
   const elemT = vectorElem(varType);
   const vecPlaceholder = placeholderFor(elemT);
 
-  /** On-chain type loader: always visible; disabled if missing handler. */
-  const hasLoader = typeof data?.onLoadTypeTag === 'function';
-  const loadTypeDisabled = !typeTagBuf.trim() || !canEdit || !hasLoader;
+  /** Read-only typeTag (copyable) for object variables. */
+  const objectTypeTag =
+    varType?.kind === 'object' ? (varType as any)?.typeTag : undefined;
 
-  /** Helper: robust parse → boolean | undefined from string/boolean. */
+  /** Helper: parse → boolean | undefined from string/boolean. */
   const parseBool = (x: unknown): boolean | undefined => {
     if (typeof x === 'boolean') return x;
     if (typeof x === 'string') {
@@ -246,7 +287,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
       <div
         className={[
           'ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative',
-          isHelper ? 'w-[140px]' : hasEditor ? 'w-[220px]' : 'w-[180px]',
+          isHelper ? 'w-[140px]' : hasEditor ? 'w-[240px]' : 'w-[180px]',
           'min-w-[140px]',
         ].join(' ')}
       >
@@ -277,7 +318,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                   const isBoolElem =
                     elemT?.kind === 'scalar' && elemT.name === 'bool';
 
-                  // Vector<bool>: SelectBool per item (immediate patch)
+                  // vector<bool>: SelectBool (defer patch via rAF)
                   if (isBoolElem) {
                     const b = parseBool(val);
                     return (
@@ -287,13 +328,13 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                         onChange={(newVal) => {
                           setVecItems((prev) => {
                             const next = prev.slice();
-                            next[i] = newVal as unknown as any;
-                            if (canEdit) {
-                              patchVar({ value: next }); // immediate
-                              requestAnimationFrame(() =>
-                                updateNodeInternals(rfNodeId),
-                              );
-                            }
+                            next[i] = newVal as boolean | undefined as any;
+                            requestAnimationFrame(() =>
+                              patchVar({ value: next }),
+                            );
+                            requestAnimationFrame(() =>
+                              updateNodeInternals(rfNodeId),
+                            );
                             return next;
                           });
                         }}
@@ -302,7 +343,7 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                     );
                   }
 
-                  // Vector<other scalars/strings/numbers>: TextInput (debounced patch)
+                  // vector<others>: TextInput (debounced)
                   return (
                     <TextInput
                       key={`vec-${i}`}
@@ -315,7 +356,6 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                           copy[i] = vv;
                           if (canEdit) {
                             debouncedPatchVector(copy);
-                            // height might change with line wraps
                             requestAnimationFrame(() =>
                               updateNodeInternals(rfNodeId),
                             );
@@ -323,102 +363,56 @@ export function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                           return copy;
                         });
                       }}
-                      onBlur={() => {
-                        // Final sync on blur (ensures latest value lands)
-                        if (canEdit) patchVar({ value: vecItems });
-                      }}
                       disabled={!canEdit}
                     />
                   );
                 })}
               </div>
             ) : varType?.kind === 'scalar' && varType.name === 'bool' ? (
-              // ===== Scalar<bool>: SelectBool (unified) =====
+              // ===== Scalar<bool>: SelectBool =====
               <SelectBool
                 value={(v as any)?.value as boolean | undefined}
-                onChange={(val) => canEdit && patchVar({ value: val })}
-                disabled={!canEdit}
-              />
-            ) : varType?.kind === 'object' ? (
-              // ===== Object editor =====
-              <>
-                {/* object id (value) — debounced */}
-                <div className="mb-1">
-                  <TextInput
-                    value={
-                      (v as any)?.value == undefined
-                        ? ''
-                        : String((v as any)?.value)
-                    }
-                    placeholder={placeholderFor(varType)}
-                    onChange={(e) => {
-                      const s = e.target.value;
-                      setScalarBuf(s);
-                      if (canEdit) debouncedPatchScalar(s);
-                    }}
-                    onBlur={() => canEdit && patchVar({ value: scalarBuf })}
-                    disabled={!canEdit}
-                  />
-                </div>
-
-                {/* typeTag + Load button (debounced) */}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <TextInput
-                      value={typeTagBuf}
-                      onChange={(e) => {
-                        const s = e.target.value;
-                        setTypeTagBuf(s);
-                        if (canEdit) debouncedPatchTypeTag(s);
-                      }}
-                      onBlur={() => {
-                        if (!canEdit) return;
-                        const trimmed = (typeTagBuf.trim() || undefined) as
-                          | string
-                          | undefined;
-                        patchVar({
-                          varType: trimmed
-                            ? { kind: 'object', typeTag: trimmed }
-                            : { kind: 'object' },
-                        });
-                      }}
-                      placeholder="typeTag (optional)"
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <div className="shrink-0">
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 
-                                 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 
-                                 disabled:opacity-50"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => data?.onLoadTypeTag?.(typeTagBuf.trim())}
-                      disabled={loadTypeDisabled}
-                      title={
-                        hasLoader
-                          ? 'Load on-chain type metadata'
-                          : 'No loader available'
-                      }
-                    >
-                      Load
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              // ===== Scalar (non-bool): TextInput (debounced) =====
-              <TextInput
-                value={scalarBuf}
-                onChange={(e) => {
-                  const s = e.target.value;
-                  setScalarBuf(s);
-                  if (canEdit) debouncedPatchScalar(s);
+                onChange={(val) => {
+                  if (!canEdit) return;
+                  requestAnimationFrame(() => patchVar({ value: val }));
                 }}
-                onBlur={() => canEdit && patchVar({ value: scalarBuf })}
-                placeholder={placeholderFor(varType)}
                 disabled={!canEdit}
               />
+            ) : (
+              // ===== Unified TextInput for scalar & object =====
+              <>
+                <TextInput
+                  value={scalarBuf}
+                  placeholder={placeholderFor(varType)}
+                  onChange={(e) => {
+                    const s = e.target.value;
+                    setScalarBuf(s);
+                    if (!canEdit) return;
+
+                    if (varType?.kind === 'object') {
+                      // Debounced: patch value, fetch meta, patch varType
+                      debouncedHandleObject(s);
+                    } else {
+                      // Debounced: patch scalar value only
+                      debouncedPatchScalar(s);
+                    }
+                  }}
+                  disabled={!canEdit}
+                />
+
+                {/* Object: read-only type field (no inline error) */}
+                {varType?.kind === 'object' && (
+                  <TextInput
+                    value={objectTypeTag || ''}
+                    placeholder={
+                      objTypeLoading ? 'Loading type…' : 'type (read-only)'
+                    }
+                    readOnly
+                    aria-readonly="true"
+                    onChange={() => {}}
+                  />
+                )}
+              </>
             )}
           </div>
         )}

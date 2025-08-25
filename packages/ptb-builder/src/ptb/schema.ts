@@ -1,7 +1,10 @@
 // Persisted .ptb JSON schema (storage/load).
 // Keep this file UI-agnostic and stable across UI changes.
 
-import type { SuiMoveNormalizedModules } from '@mysten/sui/client';
+import type {
+  SuiMoveNormalizedModules,
+  SuiObjectData,
+} from '@mysten/sui/client';
 
 import { Network } from '../types';
 import type { PTBGraph } from './graph/types';
@@ -26,6 +29,8 @@ export interface PTBScheme {
 
   /** Optional embedded modules */
   modulesEmbed?: Record<string, SuiMoveNormalizedModules>;
+
+  objectsEmbed?: Record<string, SuiObjectData>;
 }
 
 export function isPTBScheme(x: unknown): x is PTBScheme {
