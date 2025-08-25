@@ -1,4 +1,5 @@
 // src/ui/nodes/cmds/BaseCommand/commandRegistry.ts
+import { isNestedVector, isVector } from '../../../../ptb/graph/typecheck';
 import type {
   CommandKind,
   CommandNode,
@@ -18,16 +19,6 @@ const M = (width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256'): PTBType => ({
   kind: 'move_numeric',
   width,
 });
-
-/** Type predicates */
-export function isVector(
-  t?: PTBType,
-): t is Extract<PTBType, { kind: 'vector' }> {
-  return Boolean(t && t.kind === 'vector');
-}
-export function isNestedVector(t?: PTBType): boolean {
-  return isVector(t) && isVector(t.elem);
-}
 
 /** Safely read UI params from a node (falls back to empty object). */
 function uiOf(node?: CommandNode): CommandUIParams {

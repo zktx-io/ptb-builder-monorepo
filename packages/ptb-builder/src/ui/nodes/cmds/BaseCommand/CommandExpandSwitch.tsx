@@ -1,10 +1,6 @@
-// src/ui/nodes/cmds/BaseCommand/CommandExpandSwitch.tsx
 // Compact, command-specific expand switch (vector <-> expanded).
-// - Single-file component: includes an internal Switch UI (no external reuse).
-// - Maps CommandKind → UI key
-// - Extra-small footprint; inside labels are side-aligned: "V" (left) / "E" (right)
-// - Knob uses symmetric margins (left/right pad) to avoid edge hugging
-// - Accessible (role="switch", keyboard Space/Enter)
+// - Always renders if the command supports expansion; disabled when patcher is missing.
+// - Inside labels: "V" (left) / "E" (right)
 
 import React, { useCallback } from 'react';
 
@@ -17,14 +13,12 @@ export type PatchUIPayload = (
   patch: Record<string, unknown>,
 ) => void;
 
-/** Only xxs size is used (very compact). */
 type SwitchSize = 'xxs';
-
 type SizeMetrics = {
-  track: string; // track width/height
-  knob: string; // knob width/height
-  font: string; // font size for inside labels
-  pad: string; // equal L/R knob pad
+  track: string;
+  knob: string;
+  font: string;
+  pad: string;
   labelPadLeftCls: string;
   labelPadRightCls: string;
 };
@@ -98,7 +92,6 @@ function MiniSwitch({
         className,
       )}
     >
-      {/* Inside-track labels */}
       <span
         className={clsx(
           'pointer-events-none select-none absolute inset-y-0 left-0 flex items-center',
@@ -126,19 +119,19 @@ function MiniSwitch({
         {labels.on}
       </span>
 
-      {/* Knob with symmetric margins */}
       <span
         className={clsx(
           'absolute top-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-stone-100 shadow transition-[left,right]',
-          m.knob,
+          SIZE_MAP[size].knob,
         )}
-        style={checked ? { right: m.pad } : { left: m.pad }}
+        style={
+          checked ? { right: SIZE_MAP[size].pad } : { left: SIZE_MAP[size].pad }
+        }
       />
     </button>
   );
 }
 
-/** Command-specific expand switch (decides which UI key to toggle) */
 export function CommandExpandSwitch({
   cmdKind,
   ui,
@@ -158,24 +151,25 @@ export function CommandExpandSwitch({
   disabled?: boolean;
   className?: string;
 }) {
-  if (!cmdKind || !nodeId || !onPatchUI) return <></>;
-
-  // Map CommandKind → UI toggle key
+  if (!cmdKind) return <></>;
   const expKey = expandedKeyOf(cmdKind);
   if (!expKey) return <></>;
 
   const checked = Boolean(ui?.[expKey]);
+  const canToggle = Boolean(nodeId && onPatchUI);
 
-  // Toggle handler delegates to provider-injected onPatchUI
-  const toggle = (v: boolean) => onPatchUI(nodeId, { [expKey]: v });
+  const handleChange = (v: boolean) => {
+    if (!canToggle) return;
+    onPatchUI!(nodeId!, { [expKey]: v });
+  };
 
   return (
     <MiniSwitch
       checked={checked}
-      onChange={toggle}
+      onChange={handleChange}
       size={size}
       labels={labels}
-      disabled={disabled}
+      disabled={disabled || !canToggle}
       className={className}
       data-testid="cmd-expand-switch"
     />

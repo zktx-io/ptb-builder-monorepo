@@ -1,13 +1,6 @@
 import React from 'react';
 
-import {
-  IconBrackets,
-  IconMerge,
-  IconMoveCall,
-  IconSplit,
-  IconTransfer,
-} from './icons';
-
+import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
 /**
  * Menu model for the canvas context menu.
  * - UI cardinality is unified as 'single' | 'multi'.
@@ -15,21 +8,26 @@ import {
  * - Command actions use canonical CommandKind keys.
  */
 export const CanvasCmd = [
-  { name: 'SplitCoins', action: 'cmd/splitCoins', icon: <IconSplit /> },
-  { name: 'MergeCoins', action: 'cmd/mergeCoins', icon: <IconMerge /> },
+  { name: 'SplitCoins', action: 'cmd/splitCoins', icon: <Split /> },
+  { name: 'MergeCoins', action: 'cmd/mergeCoins', icon: <Merge /> },
   {
     name: 'TransferObjects',
     action: 'cmd/transferObjects',
-    icon: <IconTransfer />,
+    icon: <Download />,
   },
-  { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <IconBrackets /> },
-  { name: 'MoveCall', action: 'cmd/moveCall', icon: <IconMoveCall /> },
+  { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <Brackets /> },
+  { name: 'MoveCall', action: 'cmd/moveCall', icon: <FunctionSquare /> },
 ];
 
 export const CanvasVar = [
   {
     label: 'Address',
     items: [
+      {
+        name: 'my wallet',
+        action: 'var/address/wallet',
+        icon: <span className="ptb-marker ptb-marker--address" />,
+      },
       {
         name: 'address',
         action: 'var/address/single',
@@ -42,16 +40,31 @@ export const CanvasVar = [
           <span className="ptb-marker ptb-marker--multi ptb-marker--address" />
         ),
       },
-      {
-        name: 'my wallet',
-        action: 'var/address/wallet',
-        icon: <span className="ptb-marker ptb-marker--address" />,
-      },
     ],
   },
   {
     label: 'Object',
     items: [
+      {
+        name: 'gas',
+        action: 'var/helper/gas',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
+      {
+        name: 'clock',
+        action: 'var/helper/clock',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
+      {
+        name: 'random',
+        action: 'var/helper/random',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
+      {
+        name: 'system',
+        action: 'var/helper/system',
+        icon: <span className="ptb-marker ptb-marker--object" />,
+      },
       {
         name: 'object',
         action: 'var/object/single',
@@ -125,26 +138,6 @@ export const CanvasVar = [
   {
     label: 'Helpers',
     items: [
-      {
-        name: 'gas',
-        action: 'var/helper/gas',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'clock',
-        action: 'var/helper/clock',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'random',
-        action: 'var/helper/random',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'system',
-        action: 'var/helper/system',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
       {
         name: 'coinWithBalance',
         action: 'var/helper/coinWithBalance',

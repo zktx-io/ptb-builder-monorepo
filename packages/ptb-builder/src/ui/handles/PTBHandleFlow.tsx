@@ -51,14 +51,7 @@ export function PTBHandleFlow({
         ...style,
       }}
       isValidConnection={isFlowConnectionValid}
-    >
-      <span
-        className="text-base text-gray-600 dark:text-gray-400"
-        style={{ position: 'absolute', fontSize: '8px', pointerEvents: 'none' }}
-      >
-        {type === 'source' ? 'SRC' : 'TGT'}
-      </span>
-    </Handle>
+    />
   );
 }
 

@@ -13,9 +13,19 @@ export const isMoveNumeric = (
 ): t is Extract<PTBType, { kind: 'move_numeric' }> =>
   !!t && t.kind === 'move_numeric';
 
-export const isVector = (
+export function isVector(
   t?: PTBType,
-): t is Extract<PTBType, { kind: 'vector' }> => !!t && t.kind === 'vector';
+): t is Extract<PTBType, { kind: 'vector' }> {
+  return Boolean(t && t.kind === 'vector');
+}
+
+export function vectorElem(t?: PTBType): PTBType | undefined {
+  return isVector(t) ? t.elem : undefined;
+}
+
+export function isNestedVector(t?: PTBType): boolean {
+  return isVector(t) && isVector(t.elem);
+}
 
 export const isObject = (
   t?: PTBType,

@@ -1,6 +1,6 @@
 // Ultra-compact count stepper (＋ / − only, no number readout).
-// - Renders ONLY when: command supports expansion AND is expanded.
-// - Nested vectors → not render (cannot expand).
+// - Renders when: command supports expansion AND is expanded (even if patcher missing → disabled)
+// - Nested vectors → not render (cannot expand)
 
 import React, { useMemo } from 'react';
 
@@ -46,24 +46,26 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
     () => canExpandCommand(cmdKind, ui as any),
     [cmdKind, ui],
   );
-
   const isExpanded = Boolean(expKey && ui?.[expKey]);
 
   // Only render if expanded AND allowed
-  if (!nodeId || !onPatchUI || !expKey || !isExpanded || !allowed) return <></>;
+  if (!expKey || !isExpanded || !allowed) return <></>;
 
   const countKey = countKeyOf(cmdKind);
   if (!countKey) return <></>;
 
+  const canPatch = Boolean(nodeId && onPatchUI);
   const count = clampInt(ui?.[countKey], min, max);
+
   const step = (delta: number) => {
-    if (disabled) return;
+    if (!canPatch) return;
     const next = clampInt(count + delta, min, max);
-    if (next !== count) onPatchUI(nodeId, { [countKey]: next });
+    if (next !== count) onPatchUI!(nodeId!, { [countKey]: next });
   };
 
-  const decDisabled = disabled || count <= min;
-  const incDisabled = disabled || (typeof max === 'number' && count >= max);
+  const decDisabled = disabled || !canPatch || count <= min;
+  const incDisabled =
+    disabled || !canPatch || (typeof max === 'number' && count >= max);
 
   const wrapCls = clsx('inline-flex items-center', className);
   const btnBase =

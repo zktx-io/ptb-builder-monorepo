@@ -54,6 +54,7 @@
     "@mysten/sui": "^1.37.2",
     "@xyflow/react": "^12.8.2",
     "elkjs": "^0.9.3",
+    "lucide-react": "^0.541.0",
     "prismjs": "^1.29.0",
     "re-resizable": "^6.10.3"
   }
