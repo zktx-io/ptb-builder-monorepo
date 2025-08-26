@@ -1,15 +1,31 @@
-// UI for MoveCall command (compact, BaseCommand-aligned):
+// src/ui/nodes/cmds/MoveCallCommand.tsx
+// Compact UI for the MoveCall command:
 // 1) Package ID input + Load (locks after success)
 // 2) Module select (from loaded modules)
 // 3) Function select (from selected module; disabled when none)
-// State is persisted in node.params.ui: { pkgId, pkgLocked, module, func, _nameModules_, _moduleFunctions_ }
+//
+// State is persisted in node.params.ui:
+// {
+//   pkgId, pkgLocked,
+//   module, func,
+//   _nameModules_,
+//   _moduleFunctions_,
+//   _fnSigs_: { [module]: { [func]: { ins: PTBType[]; outs: PTBType[] } } },
+//   _fnIns: PTBType[],
+//   _fnOuts: PTBType[]
+// }
+//
+// Ports are materialized by the registry (single source of truth) after onPatchUI.
+// This component only computes/patches UI state from loaded package metadata.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import type { Node, NodeProps, Position } from '@xyflow/react';
 import { Position as RFPos } from '@xyflow/react';
 
-import type { CommandNode, Port, PTBNode } from '../../../../ptb/graph/types';
+import type { CommandNode, PTBNode } from '../../../../ptb/graph/types';
+import type { PTBType } from '../../../../ptb/graph/types';
+import { toPTBTypeFromMove } from '../../../../ptb/move/toPTBType';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -34,36 +50,49 @@ export type MoveCallData = {
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
 
+/** Fixed extra gap so IO handles start below the controls (pkg/module/func rows). */
+const MVC_CONTROL_ROWS = 3; // package + module + function rows
+const MVC_EXTRA_GAP = 24; // small padding under controls
+const MVC_IO_OFFSET = MVC_CONTROL_ROWS * ROW_SPACING + MVC_EXTRA_GAP;
+
+/** Compute min-height including the fixed controls offset so the shell never clips. */
+function minHeightWithOffset(inCount: number, outCount: number) {
+  const rowCount = Math.max(inCount, outCount);
+  return (
+    TITLE_TO_IO_GAP +
+    MVC_IO_OFFSET +
+    (rowCount > 0 ? rowCount * ROW_SPACING : 0) +
+    BOTTOM_PADDING
+  );
+}
+
 function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
   const ui = ((node?.params?.ui ?? {}) as any) || {};
 
   const { adapters, getPackageModulesView } = usePtb();
 
+  // Local buffer for the package id input (avoid graph writes while typing).
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(ui.pkgId ?? '');
   const [loading, setLoading] = useState(false);
 
-  // Ports (already materialized by registry)
-  const ports: Port[] = useMemo(
-    () => (Array.isArray((node as any)?.ports) ? (node as any).ports : []),
-    [node],
-  );
+  // Ports (already materialized by registry; we only render them).
   const { inIO, outIO } = useCommandPorts(node);
 
+  // Lists from UI (populated after load).
   const moduleNames: string[] = Array.isArray(ui._nameModules_)
     ? ui._nameModules_
     : [];
   const fnNames: string[] =
-    (ui.module && Array.isArray(ui._moduleFunctions_?.[ui.module])
-      ? ui._moduleFunctions_[ui.module]
-      : []) || [];
+    (ui.module &&
+      Array.isArray(ui._moduleFunctions_?.[ui.module]) &&
+      ui._moduleFunctions_[ui.module]) ||
+    [];
 
-  const rowCount = Math.max(inIO.length, outIO.length);
-  const minHeight =
-    TITLE_TO_IO_GAP +
-    (rowCount > 0 ? rowCount * ROW_SPACING : 0) +
-    BOTTOM_PADDING;
+  // Min-height accounts for IO rows plus the fixed controls offset.
+  const minHeight = minHeightWithOffset(inIO.length, outIO.length);
 
+  // Patch helper → merge into node.params.ui (provider will re-materialize ports & prune edges).
   const patchUI = useCallback(
     (patch: Record<string, unknown>) => {
       if (!node?.id || !data?.onPatchUI) return;
@@ -72,10 +101,13 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
     [data, node?.id],
   );
 
+  // Keep the local pkg input buffer in sync when external UI state changes.
   useEffect(() => {
     setPkgIdBuf(ui.pkgId ?? '');
   }, [ui.pkgId]);
 
+  // Load package → store modules, functions, and normalized fn signatures (ins/outs),
+  // choose defaults, and lock the package id.
   const loadPackage = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
     if (!pkg || !node?.id) return;
@@ -92,20 +124,43 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       }
 
       const moduleToFuncs: Record<string, string[]> = {};
+      const sigs: Record<
+        string,
+        Record<string, { ins: PTBType[]; outs: PTBType[] }>
+      > = {};
+
       for (const m of view._nameModules_) {
-        moduleToFuncs[m] = view.modules[m]?._nameFunctions_ ?? [];
+        const mod = view.modules[m];
+        const names = mod?._nameFunctions_ ?? [];
+        moduleToFuncs[m] = names;
+
+        sigs[m] = {};
+        for (const fn of names) {
+          const f = mod.exposedFunctions[fn];
+          const ins = (f.parameters ?? []).map(toPTBTypeFromMove);
+          const outs = (f.return ?? []).map(toPTBTypeFromMove); // NOTE: mysten uses `return` (singular)
+          sigs[m][fn] = { ins, outs };
+        }
       }
 
       const nextModule = view._nameModules_[0] ?? '';
       const nextFunc = nextModule ? (moduleToFuncs[nextModule][0] ?? '') : '';
+
+      const initialIns =
+        nextModule && nextFunc ? (sigs[nextModule][nextFunc]?.ins ?? []) : [];
+      const initialOuts =
+        nextModule && nextFunc ? (sigs[nextModule][nextFunc]?.outs ?? []) : [];
 
       patchUI({
         pkgId: pkg,
         pkgLocked: true,
         _nameModules_: view._nameModules_,
         _moduleFunctions_: moduleToFuncs,
+        _fnSigs_: sigs,
         module: nextModule || undefined,
         func: nextFunc || undefined,
+        _fnIns: initialIns,
+        _fnOuts: initialOuts,
       });
 
       adapters?.toast?.({ message: 'Package loaded', variant: 'success' });
@@ -117,23 +172,35 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
     } finally {
       setLoading(false);
     }
-  }, [pkgIdBuf, node?.id, getPackageModulesView, patchUI, adapters]);
+  }, [adapters, getPackageModulesView, node?.id, patchUI, pkgIdBuf]);
 
+  // Module change → pick first function of the module and update signatures.
   const onChangeModule = useCallback(
     (mod: string) => {
+      const nextFunc = mod ? (ui._moduleFunctions_?.[mod]?.[0] ?? '') : '';
+      const sig = mod && nextFunc ? ui._fnSigs_?.[mod]?.[nextFunc] : undefined;
       patchUI({
         module: mod || undefined,
-        func: mod ? (ui._moduleFunctions_?.[mod]?.[0] ?? undefined) : undefined,
+        func: nextFunc || undefined,
+        _fnIns: sig?.ins ?? [],
+        _fnOuts: sig?.outs ?? [],
       });
     },
-    [patchUI, ui._moduleFunctions_],
+    [patchUI, ui._fnSigs_, ui._moduleFunctions_],
   );
 
+  // Function change → update signatures.
   const onChangeFunc = useCallback(
     (fn: string) => {
-      patchUI({ func: fn || undefined });
+      const mod = ui.module as string | undefined;
+      const sig = mod && fn ? ui._fnSigs_?.[mod]?.[fn] : undefined;
+      patchUI({
+        func: fn || undefined,
+        _fnIns: sig?.ins ?? [],
+        _fnOuts: sig?.outs ?? [],
+      });
     },
-    [patchUI],
+    [patchUI, ui._fnSigs_, ui.module],
   );
 
   return (
@@ -142,19 +209,20 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
         className="ptb-node-shell rounded-lg w-[200px] px-2 py-2 border-2 shadow relative"
         style={{ minHeight }}
       >
-        {/* Header (match BaseCommand styling) */}
+        {/* Header (aligned with BaseCommand look & feel) */}
         <div className="flex items-center justify-between px-2 mb-1">
           <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200 select-none">
             {iconOfCommand('moveCall')}
             {data?.label ?? (node as any)?.label ?? 'Move Call'}
           </div>
+          {/* No expand switch: MoveCall UI is always compact */}
         </div>
 
-        {/* Flow handles */}
+        {/* Flow handles (fixed near the title area) */}
         <PTBHandleFlow type="target" style={{ top: FLOW_TOP }} />
         <PTBHandleFlow type="source" style={{ top: FLOW_TOP }} />
 
-        {/* Controls */}
+        {/* Controls (package / module / function) */}
         <div className="px-2 py-1 space-y-1">
           {/* Package row */}
           <div className="flex items-center gap-1">
@@ -167,7 +235,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
             <button
               type="button"
               className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => e.preventDefault()} // avoid RF drag on mousedown
               onClick={loadPackage}
               disabled={ui.pkgLocked || !pkgIdBuf.trim() || loading}
               title={
@@ -197,13 +265,13 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
           />
         </div>
 
-        {/* IO handles */}
+        {/* IO handles (start below the controls by a fixed offset) */}
         {inIO.map((port, idx) => (
           <PTBHandleIO
             key={port.id}
             port={port}
             position={RFPos.Left as Position}
-            style={{ top: ioTopForIndex(idx) }}
+            style={{ top: ioTopForIndex(idx, MVC_IO_OFFSET) }}
             label={labelOf(port)}
           />
         ))}
@@ -212,7 +280,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
             key={port.id}
             port={port}
             position={RFPos.Right as Position}
-            style={{ top: ioTopForIndex(idx) }}
+            style={{ top: ioTopForIndex(idx, MVC_IO_OFFSET) }}
             label={labelOf(port)}
           />
         ))}

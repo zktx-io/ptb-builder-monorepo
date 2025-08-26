@@ -11,8 +11,8 @@ export function labelOf(p: Port): string {
   return (p as any).label ?? p.id ?? '';
 }
 
-export const ioTopForIndex = (idx: number) =>
-  TITLE_TO_IO_GAP + idx * ROW_SPACING;
+export const ioTopForIndex = (idx: number, offset?: number) =>
+  TITLE_TO_IO_GAP + (offset ?? 0) + idx * ROW_SPACING;
 
 export function splitIO(ports: Port[]) {
   const inIO = ports.filter((p) => p.role === 'io' && p.direction === 'in');
@@ -20,14 +20,11 @@ export function splitIO(ports: Port[]) {
   return { inIO, outIO };
 }
 
-export function minHeightFor(
-  inCount: number,
-  outCount: number,
-  shiftRight = 0,
-) {
-  const rowCount = Math.max(inCount, outCount + shiftRight);
+export function minHeightFor(inCount: number, outCount: number, extraGap = 0) {
+  const rowCount = Math.max(inCount, outCount);
   return (
     TITLE_TO_IO_GAP +
+    extraGap +
     (rowCount > 0 ? rowCount * ROW_SPACING : 0) +
     BOTTOM_PADDING
   );

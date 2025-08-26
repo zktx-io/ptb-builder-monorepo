@@ -183,7 +183,33 @@ const Registry: Record<CommandKind, CmdSpec> = {
     },
   },
 
-  moveCall: { label: 'MoveCall', ports: () => [...PORTS.commandMoveCall()] },
+  moveCall: {
+    label: 'MoveCall',
+    ports: (node) => {
+      const ui = uiOf(node) as any;
+
+      // UI-side stores normalized PTBType arrays for selected function
+      const ins: PTBType[] = Array.isArray(ui._fnIns) ? ui._fnIns : [];
+      const outs: PTBType[] = Array.isArray(ui._fnOuts) ? ui._fnOuts : [];
+
+      // Label args/results in stable order
+      const inPorts =
+        ins.length > 0
+          ? ins.map((t, i) =>
+              ioIn(`in_arg_${i}`, { dataType: t, label: `arg[${i}]` }),
+            )
+          : [];
+
+      const outPorts =
+        outs.length > 0
+          ? outs.map((t, i) =>
+              ioOut(`out_res_${i}`, { dataType: t, label: `res[${i}]` }),
+            )
+          : [];
+
+      return [...PORTS.commandBase(), ...inPorts, ...outPorts];
+    },
+  },
 
   /** TODO */
   publish: { label: 'Publish', ports: () => [...PORTS.commandBase()] },
