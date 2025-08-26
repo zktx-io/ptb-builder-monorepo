@@ -73,12 +73,8 @@ const MVC_IO_OFFSET = MVC_CONTROL_ROWS * ROW_SPACING + MVC_EXTRA_GAP;
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
   const rowCount = Math.max(inCount, outCount);
-  return (
-    TITLE_TO_IO_GAP +
-    MVC_IO_OFFSET +
-    (rowCount > 0 ? rowCount * ROW_SPACING : 0) +
-    BOTTOM_PADDING
-  );
+  const gaps = Math.max(0, rowCount - 1);
+  return TITLE_TO_IO_GAP + MVC_IO_OFFSET + gaps * ROW_SPACING + BOTTOM_PADDING;
 }
 
 function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {

@@ -61,10 +61,8 @@ function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
       : 0;
 
   const rowCount = Math.max(inIO.length, outIO.length + shiftRight);
-  const minHeight =
-    TITLE_TO_IO_GAP +
-    (rowCount > 0 ? rowCount * ROW_SPACING : 0) +
-    BOTTOM_PADDING;
+  const gaps = Math.max(0, rowCount - 1);
+  const minHeight = TITLE_TO_IO_GAP + gaps * ROW_SPACING + BOTTOM_PADDING;
 
   return (
     <div className="ptb-node--command">
