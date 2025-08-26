@@ -31,9 +31,6 @@ export function PTBHandleFlow({
   const id = type === 'source' ? FLOW_NEXT : FLOW_PREV;
   const position = type === 'source' ? Position.Right : Position.Left;
 
-  // Use theme variable for flow color (light/dark auto)
-  const flowColorVar = '--ptb-flow-stroke';
-
   return (
     <Handle
       {...rest}
@@ -44,18 +41,7 @@ export function PTBHandleFlow({
       className={['ptb-handle', 'ptb-handle--flow', className]
         .filter(Boolean)
         .join(' ')}
-      style={{
-        width: 10,
-        height: 10,
-        borderRadius: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: `var(${flowColorVar})`,
-        background: `var(${flowColorVar})`,
-        borderColor: `var(${flowColorVar})`,
-        ...style,
-      }}
+      style={style}
       isValidConnection={isFlowConnectionValid}
     />
   );

@@ -44,11 +44,11 @@
      ======================= */
 
   /* Command (gray) */
-  --ptb-node-command-border:        #4b5563; /* gray-600 */
+  --ptb-node-command-border:        #9ca3af; /* gray-400 */
   --ptb-node-command-bg:            rgba(209,213,219,0.60); /* gray-300 */
   --ptb-node-command-border-hover:  #6b7280; /* gray-500 */
   --ptb-node-command-bg-hover:      rgba(209,213,219,0.75);
-  --ptb-node-command-border-active: #9ca3af; /* gray-400 */
+  --ptb-node-command-border-active: #6b7280; /* gray-500 */
   --ptb-node-command-bg-active:     rgba(209,213,219,0.90);
 
   /* Address (amber) */
@@ -131,9 +131,9 @@
   --ptb-io-unknown-stroke-active: #d4d4d4; /* gray-300 */
 
   /* Command */
-  --ptb-node-command-border:        #1f2937; /* gray-800 */
+  --ptb-node-command-border:        #374151; /* gray-700 */
   --ptb-node-command-bg:            rgba(31,41,55,0.60);
-  --ptb-node-command-border-hover:  #374151; /* gray-700 */
+  --ptb-node-command-border-hover:  #9ca3af; /* gray-400 */
   --ptb-node-command-bg-hover:      rgba(31,41,55,0.75);
   --ptb-node-command-border-active: #9ca3af; /* gray-400 */
   --ptb-node-command-bg-active:     rgba(31,41,55,0.95);
@@ -333,8 +333,35 @@
   outline-offset: 2px;
 }
 
-/* Flow handle slightly bigger (optional) */
-.ptb-handle--flow { width: 14px; height: 14px; }
+/* Flow handle: size + shape + theme-driven color */
+.ptb-handle--flow {
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ptb-flow-stroke);
+  background: var(--ptb-flow-stroke);
+  border-color: var(--ptb-flow-stroke);
+}
+
+/* --- Flow handle → follow Command node border color (normal/hover/selected) --- */
+.react-flow__node:has(.ptb-node--command) .ptb-handle--flow {
+  color: var(--ptb-node-command-border);
+  background: var(--ptb-node-command-border);
+  border-color: var(--ptb-node-command-border);
+}
+.react-flow__node:has(.ptb-node--command):hover .ptb-handle--flow {
+  color: var(--ptb-node-command-border-hover);
+  background: var(--ptb-node-command-border-hover);
+  border-color: var(--ptb-node-command-border-hover);
+}
+.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--flow {
+  color: var(--ptb-node-command-border-active);
+  background: var(--ptb-node-command-border-active);
+  border-color: var(--ptb-node-command-border-active);
+}
 
 /* Single = circle */
 .ptb-handle--single { border-radius: 9999px; }
@@ -387,7 +414,7 @@
 .react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
 
-/* Hover / Selected mapping */
+/* Hover / Selected mapping (IO handles only) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
 .react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
 
