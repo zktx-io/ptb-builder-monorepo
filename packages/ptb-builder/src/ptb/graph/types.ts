@@ -1,15 +1,22 @@
-/** -------- Numeric widths (Move-precise) -------- */
+// src/ptb/graph/types.ts
+
+/** ------------------------------------------------------------------
+ * Numeric widths (Move-precise)
+ * ----------------------------------------------------------------- */
 export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
 
-/** -------- Scalars (UI simplified) --------
- * UI exposes a unified 'number'; on-chain precise widths use 'move_numeric'.
- */
+/** ------------------------------------------------------------------
+ * Scalars (UI simplified)
+ * - UI exposes a unified 'number'; on-chain precise widths use 'move_numeric'.
+ * ----------------------------------------------------------------- */
 export type PTBScalar = 'bool' | 'string' | 'address' | 'number';
 
-/** -------- ADT for PTB types --------
- * - New: 'typeparam' represents a Move type parameter (e.g., T0, T1).
+/** ------------------------------------------------------------------
+ * ADT for PTB types
+ * - New: 'typeparam' represents a Move type parameter (e.g., "T0", "T1").
  *   The 'name' should be the canonical identifier like "T0", "T1", etc.
- */
+ *   In UI, this behaves like a scalar (single cardinality).
+ * ----------------------------------------------------------------- */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
@@ -19,7 +26,11 @@ export type PTBType =
   | { kind: 'typeparam'; name: string }
   | { kind: 'unknown' };
 
-/** -------- Ports -------- */
+/** ------------------------------------------------------------------
+ * Ports
+ * - role 'io' is shared for both value-arguments and type-arguments.
+ *   Distinguish by inspecting dataType.kind === 'typeparam' downstream.
+ * ----------------------------------------------------------------- */
 export type PortDirection = 'in' | 'out';
 export type PortRole = 'flow' | 'io';
 
@@ -27,14 +38,17 @@ export interface Port {
   id: string;
   direction: PortDirection;
   role: PortRole;
+  /** Structured type carried by the handle (IO only) */
   dataType?: PTBType;
-  /** Optional pre-serialized type hint for UI badges; overrides serializePTBType(t) if present */
+  /** Optional pre-serialized type hint (overrides serializePTBType for UI badges) */
   typeStr?: string;
   /** Optional handle label shown next to the port */
   label?: string;
 }
 
-/** -------- Nodes -------- */
+/** ------------------------------------------------------------------
+ * Nodes
+ * ----------------------------------------------------------------- */
 export interface NodeBase {
   id: string;
   kind: 'Start' | 'End' | 'Command' | 'Variable';
@@ -55,7 +69,9 @@ export type CommandKind =
 /** UI cardinality for handles/ports */
 export type UICardinality = 'single' | 'multi';
 
-/** -------- Command UI params (policy-applied) -------- */
+/** ------------------------------------------------------------------
+ * Command UI params (policy-applied)
+ * ----------------------------------------------------------------- */
 export interface CommandUIParams {
   /** SplitCoins: amounts are always multi; expanded controls vector vs. N singles. */
   amountsExpanded?: boolean;
@@ -89,6 +105,7 @@ export interface CommandNode extends NodeBase {
     runtime?: Record<string, unknown>;
     ui?: CommandUIParams;
   };
+  /** Optional: named outputs produced by the command (for codegen/labels) */
   outputs?: string[];
 }
 
@@ -101,7 +118,9 @@ export interface VariableNode extends NodeBase {
 
 export type PTBNode = StartNode | EndNode | CommandNode | VariableNode;
 
-/** -------- Edges -------- */
+/** ------------------------------------------------------------------
+ * Edges
+ * ----------------------------------------------------------------- */
 export type EdgeKind = 'flow' | 'io';
 export interface PTBEdge {
   id: string;
@@ -111,19 +130,23 @@ export interface PTBEdge {
   target: string;
   targetPort: string;
   dataType?: PTBType;
-  /** number → move_numeric */
+  /** number → move_numeric (UI-driven cast hint for codegen) */
   cast?: { to: NumericWidth };
 }
 
-/** -------- Graph -------- */
+/** ------------------------------------------------------------------
+ * Graph
+ * ----------------------------------------------------------------- */
 export interface PTBGraph {
   nodes: PTBNode[];
   edges: PTBEdge[];
 }
 
-/** -------- Serialization helpers --------
- * Returned string is used for UI badges / debug. For 'typeparam', we emit its name (e.g., "T0").
- */
+/** ------------------------------------------------------------------
+ * Serialization helpers
+ * - Returned string is used for UI badges / debug.
+ * - For 'typeparam', we emit its name (e.g., "T0").
+ * ----------------------------------------------------------------- */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
     case 'scalar':
@@ -137,7 +160,7 @@ export function serializePTBType(t: PTBType): string {
     case 'tuple':
       return `(${t.elems.map(serializePTBType).join(',')})`;
     case 'typeparam':
-      return t.name; // e.g., "T0", "T1"
+      return t.name; // e.g., "T0"
     case 'unknown':
       return 'unknown';
     default: {
@@ -147,7 +170,10 @@ export function serializePTBType(t: PTBType): string {
   }
 }
 
-/** -------- UI helpers -------- */
+/** ------------------------------------------------------------------
+ * UI helpers
+ * - 'typeparam' behaves like a scalar from a cardinality perspective.
+ * ----------------------------------------------------------------- */
 export function uiCardinalityOf(t?: PTBType): UICardinality {
   if (!t) return 'single';
   switch (t.kind) {
@@ -157,7 +183,6 @@ export function uiCardinalityOf(t?: PTBType): UICardinality {
       if (t.elems.length === 0) return 'single';
       if (t.elems.length === 1) return uiCardinalityOf(t.elems[0]);
       return 'multi';
-    // 'typeparam' behaves like a scalar in cardinality
     default:
       return 'single';
   }

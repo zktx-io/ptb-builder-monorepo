@@ -1,4 +1,13 @@
 // src/ui/nodes/cmds/BaseCommand/registry.ts
+// Single source of truth for command port materialization.
+// - Ports for each CommandKind are computed here from node.params.ui (policy applied).
+// - For MoveCall, **type-parameter inputs come first**, followed by value-parameter inputs,
+//   and then results on the right.
+// - Important: Type-parameter handles accept **string** inputs only for user clarity,
+//   but display their generic name (e.g. "T0") via `typeStr`. This keeps:
+//     • wiring constraints: only string variables connect
+//     • UX: handles look like generics (T0, T1, ...)
+
 import { isNestedVector } from '../../../ptb/graph/typecheck';
 import { M, O, S, V } from '../../../ptb/graph/typeHelpers';
 import type {
@@ -8,6 +17,7 @@ import type {
   Port,
   PTBType,
 } from '../../../ptb/graph/types';
+import { serializePTBType } from '../../../ptb/graph/types';
 import { ioIn, ioOut, PORTS } from '../../../ptb/portTemplates';
 
 /** Safely read UI params from a node (falls back to empty object). */
@@ -189,19 +199,29 @@ const Registry: Record<CommandKind, CmdSpec> = {
     ports: (node) => {
       const ui = uiOf(node) as any;
 
-      // Normalized PTBType arrays provided by MoveCallCommand UI
+      // Arrays normalized by MoveCall UI:
+      //  - _fnTParams: PTBType[] (usually 'typeparam' with names "T0","T1"...)
+      //  - _fnIns:     PTBType[] (value params)
+      //  - _fnOuts:    PTBType[] (return types)
       const tps: PTBType[] = Array.isArray(ui._fnTParams) ? ui._fnTParams : [];
       const ins: PTBType[] = Array.isArray(ui._fnIns) ? ui._fnIns : [];
       const outs: PTBType[] = Array.isArray(ui._fnOuts) ? ui._fnOuts : [];
 
-      // Input ordering: type parameters first (typ[i]), then value parameters (arg[i])
+      // TYPE PARAMETER PORTS:
+      // Accept only string inputs (enforced by dataType = scalar('string')),
+      // but display the generic name (e.g., "T0") via typeStr for UI badges.
       const tpPorts =
         tps.length > 0
           ? tps.map((t, i) =>
-              ioIn(`in_typ_${i}`, { dataType: t, label: `typ[${i}]` }),
+              ioIn(`in_typ_${i}`, {
+                dataType: S('string'),
+                typeStr: serializePTBType(t), // shows "T0"/"T1" etc.
+                label: `typ[${i}]`,
+              }),
             )
           : [];
 
+      // VALUE ARGUMENT PORTS
       const inPorts =
         ins.length > 0
           ? ins.map((t, i) =>
@@ -209,7 +229,7 @@ const Registry: Record<CommandKind, CmdSpec> = {
             )
           : [];
 
-      // Outputs: results on the right (res[i])
+      // RESULT PORTS
       const outPorts =
         outs.length > 0
           ? outs.map((t, i) =>

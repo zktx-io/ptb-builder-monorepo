@@ -47,31 +47,35 @@ export function PTBHandleIO({
   );
   const edges = useStore((s) => ((s as any).edges as any[]) || []);
 
+  // Build a stable RF handle id (may include an inline ":type" suffix for IO).
   const handleId = useMemo(() => buildHandleId(port), [port]);
 
+  // Serialized hint is for badges/debug only; do NOT use it for color/category primarily.
   const serializedHint = useMemo(
     () =>
-      (port as any).typeStr ??
+      port.typeStr ??
       (port.dataType ? serializePTBType(port.dataType) : undefined),
-    [port],
+    [port.typeStr, port.dataType],
   );
 
+  // Cardinality MUST be derived from structured PTBType first; fall back to serialized hint.
   const cardinality = useMemo(
     () =>
-      uiCardinalityOfSerialized(serializedHint) ||
-      uiCardinalityOf(port.dataType),
+      uiCardinalityOf(port.dataType) ||
+      uiCardinalityOfSerialized(serializedHint),
     [serializedHint, port.dataType],
   );
 
-  const category =
-    useMemo(
-      () =>
-        ioCategoryOfSerialized(serializedHint) ||
-        ioCategoryOf(port.dataType) ||
-        'unknown',
-      [serializedHint, port.dataType],
-    ) || 'unknown';
+  // Color/category MUST be derived from structured PTBType first; fallback only if missing.
+  const category = useMemo(
+    () =>
+      ioCategoryOf(port.dataType) ||
+      ioCategoryOfSerialized(serializedHint) ||
+      'unknown',
+    [serializedHint, port.dataType],
+  );
 
+  // Validate connection using structured types from the store (no string-based checks).
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
     if (!hasConcreteEnds(c)) return false;

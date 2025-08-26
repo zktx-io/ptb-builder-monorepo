@@ -180,18 +180,17 @@ function baseOfSerializedType(s?: string): string | undefined {
 }
 
 /* Category from serialized string (mirrors ioCategoryOf) */
+const isSerializedTypeParam = (s?: string) => !!s && /^t\d+$/i.test(s.trim());
 export function ioCategoryOfSerialized(s?: string): IOCategory {
   const base = baseOfSerializedType(s);
   if (!base) return 'unknown';
-
+  if (isSerializedTypeParam(base)) return 'unknown';
   if (base === 'address') return 'address';
   if (base === 'string') return 'string';
   if (base === 'bool') return 'bool';
   if (base === 'number') return 'number';
   if (/^u(8|16|32|64|128|256)$/.test(base)) return 'number';
   if (base.startsWith('object')) return 'object';
-
-  // Note: typeparams would serialize to "T0"/"T1" etc., treated as unknown for coloring.
   return 'unknown';
 }
 
