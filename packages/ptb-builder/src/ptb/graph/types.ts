@@ -6,13 +6,17 @@ export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
  */
 export type PTBScalar = 'bool' | 'string' | 'address' | 'number';
 
-/** -------- ADT for PTB types -------- */
+/** -------- ADT for PTB types --------
+ * - New: 'typeparam' represents a Move type parameter (e.g., T0, T1).
+ *   The 'name' should be the canonical identifier like "T0", "T1", etc.
+ */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
   | { kind: 'object'; typeTag?: string }
   | { kind: 'vector'; elem: PTBType }
   | { kind: 'tuple'; elems: PTBType[] }
+  | { kind: 'typeparam'; name: string }
   | { kind: 'unknown' };
 
 /** -------- Ports -------- */
@@ -24,7 +28,9 @@ export interface Port {
   direction: PortDirection;
   role: PortRole;
   dataType?: PTBType;
-  typeStr?: string; // serialized type hint
+  /** Optional pre-serialized type hint for UI badges; overrides serializePTBType(t) if present */
+  typeStr?: string;
+  /** Optional handle label shown next to the port */
   label?: string;
 }
 
@@ -105,7 +111,8 @@ export interface PTBEdge {
   target: string;
   targetPort: string;
   dataType?: PTBType;
-  cast?: { to: NumericWidth }; // number → move_numeric
+  /** number → move_numeric */
+  cast?: { to: NumericWidth };
 }
 
 /** -------- Graph -------- */
@@ -114,7 +121,9 @@ export interface PTBGraph {
   edges: PTBEdge[];
 }
 
-/** -------- Serialization helpers -------- */
+/** -------- Serialization helpers --------
+ * Returned string is used for UI badges / debug. For 'typeparam', we emit its name (e.g., "T0").
+ */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
     case 'scalar':
@@ -127,6 +136,8 @@ export function serializePTBType(t: PTBType): string {
       return t.typeTag ? `object<${t.typeTag}>` : 'object';
     case 'tuple':
       return `(${t.elems.map(serializePTBType).join(',')})`;
+    case 'typeparam':
+      return t.name; // e.g., "T0", "T1"
     case 'unknown':
       return 'unknown';
     default: {
@@ -146,6 +157,7 @@ export function uiCardinalityOf(t?: PTBType): UICardinality {
       if (t.elems.length === 0) return 'single';
       if (t.elems.length === 1) return uiCardinalityOf(t.elems[0]);
       return 'multi';
+    // 'typeparam' behaves like a scalar in cardinality
     default:
       return 'single';
   }

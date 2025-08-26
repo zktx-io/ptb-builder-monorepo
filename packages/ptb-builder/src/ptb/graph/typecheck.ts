@@ -35,10 +35,16 @@ export const isTuple = (
   t?: PTBType,
 ): t is Extract<PTBType, { kind: 'tuple' }> => !!t && t.kind === 'tuple';
 
+export const isTypeParam = (
+  t?: PTBType,
+): t is Extract<PTBType, { kind: 'typeparam' }> =>
+  !!t && t.kind === 'typeparam';
+
 export const isUnknownType = (t?: PTBType) => !t || t.kind === 'unknown';
 
 /* ---------------------------------------------------------------------
  * IO category (color group for UI)
+ *   Note: we treat 'typeparam' as 'unknown' for coloring.
  * -------------------------------------------------------------------*/
 export type IOCategory =
   | 'address'
@@ -60,6 +66,7 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
     case 'vector':
       return ioCategoryOf(t.elem);
     case 'tuple':
+    case 'typeparam':
     case 'unknown':
     default:
       return 'unknown';
@@ -68,6 +75,7 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
 
 /* ---------------------------------------------------------------------
  * Structural equality (fallback compatibility)
+ *   - 'typeparam' is equal iff names match (e.g., T0 === T0).
  * -------------------------------------------------------------------*/
 function isSameType(a: PTBType, b: PTBType): boolean {
   if (a.kind !== b.kind) return false;
@@ -90,6 +98,10 @@ function isSameType(a: PTBType, b: PTBType): boolean {
         a.elems.every((t, i) => isSameType(t, bt.elems[i]))
       );
     }
+    case 'typeparam': {
+      // Generic placeholders considered equal if their names are equal (T0 === T0).
+      return (b as any).name === a.name;
+    }
     case 'unknown':
       return true;
   }
@@ -97,10 +109,17 @@ function isSameType(a: PTBType, b: PTBType): boolean {
 
 /* ---------------------------------------------------------------------
  * Compatibility policy
+ *   - unknown is compatible with anything (UI-friendly).
+ *   - number → move_numeric is compatible.
+ *   - V<number> → V<move_numeric> via inner rule.
+ *   - Any side being 'typeparam' is considered compatible (generic placeholder).
  * -------------------------------------------------------------------*/
 export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
   if (!src || !dst) return true;
   if (isUnknownType(src) || isUnknownType(dst)) return true;
+
+  // Generic placeholders are permissive in UI wiring.
+  if (isTypeParam(src) || isTypeParam(dst)) return true;
 
   // number → move_numeric
   if (isScalar(src) && src.name === 'number' && isMoveNumeric(dst)) return true;
@@ -119,6 +138,8 @@ export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
 
 /* ---------------------------------------------------------------------
  * Cast inference (number → move_numeric)
+ *   - For vectors, bubble inner cast width up.
+ *   - 'typeparam' does not imply a concrete width; no cast suggested.
  * -------------------------------------------------------------------*/
 export function inferCastTarget(
   src?: PTBType,
@@ -170,6 +191,7 @@ export function ioCategoryOfSerialized(s?: string): IOCategory {
   if (/^u(8|16|32|64|128|256)$/.test(base)) return 'number';
   if (base.startsWith('object')) return 'object';
 
+  // Note: typeparams would serialize to "T0"/"T1" etc., treated as unknown for coloring.
   return 'unknown';
 }
 

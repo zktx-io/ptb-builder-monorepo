@@ -10,7 +10,8 @@
 //   module, func,
 //   _nameModules_,
 //   _moduleFunctions_,
-//   _fnSigs_: { [module]: { [func]: { ins: PTBType[]; outs: PTBType[] } } },
+//   _fnSigs_: { [module]: { [func]: { tparams: PTBType[]; ins: PTBType[]; outs: PTBType[] } } },
+//   _fnTParams: PTBType[],   // <-- ordered list of type params (T0, T1, ...)
 //   _fnIns: PTBType[],
 //   _fnOuts: PTBType[]
 // }
@@ -41,6 +42,20 @@ import {
   TITLE_TO_IO_GAP,
   useCommandPorts,
 } from '../shared';
+
+// --- local helpers: build PTB typeparam list (T0, T1, ...) from any shape ---
+function buildTypeParams(anyTp: unknown): PTBType[] {
+  // SuiMoveNormalizedFunction.typeParameters can be a number or array (impl-agnostic)
+  const count = Array.isArray(anyTp)
+    ? anyTp.length
+    : typeof anyTp === 'number'
+      ? anyTp
+      : 0;
+  return Array.from({ length: count }, (_, i) => ({
+    kind: 'typeparam',
+    name: `T${i}`,
+  }));
+}
 
 export type MoveCallData = {
   label?: string;
@@ -106,7 +121,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
     setPkgIdBuf(ui.pkgId ?? '');
   }, [ui.pkgId]);
 
-  // Load package → store modules, functions, and normalized fn signatures (ins/outs),
+  // Load package → store modules, functions, and normalized fn signatures (tparams/ins/outs),
   // choose defaults, and lock the package id.
   const loadPackage = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
@@ -126,7 +141,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       const moduleToFuncs: Record<string, string[]> = {};
       const sigs: Record<
         string,
-        Record<string, { ins: PTBType[]; outs: PTBType[] }>
+        Record<string, { tparams: PTBType[]; ins: PTBType[]; outs: PTBType[] }>
       > = {};
 
       for (const m of view._nameModules_) {
@@ -137,15 +152,20 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
         sigs[m] = {};
         for (const fn of names) {
           const f = mod.exposedFunctions[fn];
+          const tparams = buildTypeParams((f as any).typeParameters);
           const ins = (f.parameters ?? []).map(toPTBTypeFromMove);
-          const outs = (f.return ?? []).map(toPTBTypeFromMove); // NOTE: mysten uses `return` (singular)
-          sigs[m][fn] = { ins, outs };
+          const outs = (f.return ?? []).map(toPTBTypeFromMove); // NOTE: mysten uses `return`
+          sigs[m][fn] = { tparams, ins, outs };
         }
       }
 
       const nextModule = view._nameModules_[0] ?? '';
       const nextFunc = nextModule ? (moduleToFuncs[nextModule][0] ?? '') : '';
 
+      const initialTps =
+        nextModule && nextFunc
+          ? (sigs[nextModule][nextFunc]?.tparams ?? [])
+          : [];
       const initialIns =
         nextModule && nextFunc ? (sigs[nextModule][nextFunc]?.ins ?? []) : [];
       const initialOuts =
@@ -159,6 +179,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
         _fnSigs_: sigs,
         module: nextModule || undefined,
         func: nextFunc || undefined,
+        _fnTParams: initialTps,
         _fnIns: initialIns,
         _fnOuts: initialOuts,
       });
@@ -182,6 +203,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       patchUI({
         module: mod || undefined,
         func: nextFunc || undefined,
+        _fnTParams: sig?.tparams ?? [],
         _fnIns: sig?.ins ?? [],
         _fnOuts: sig?.outs ?? [],
       });
@@ -196,6 +218,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       const sig = mod && fn ? ui._fnSigs_?.[mod]?.[fn] : undefined;
       patchUI({
         func: fn || undefined,
+        _fnTParams: sig?.tparams ?? [],
         _fnIns: sig?.ins ?? [],
         _fnOuts: sig?.outs ?? [],
       });
@@ -265,7 +288,10 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
           />
         </div>
 
-        {/* IO handles (start below the controls by a fixed offset) */}
+        {/* IO handles (start below the controls by a fixed offset)
+            NOTE: The actual materialization order (type params first, then parameters, then returns)
+            must be handled in the registry when reading ui._fnTParams/_fnIns/_fnOuts.
+            This component only renders whatever ports exist on the node. */}
         {inIO.map((port, idx) => (
           <PTBHandleIO
             key={port.id}

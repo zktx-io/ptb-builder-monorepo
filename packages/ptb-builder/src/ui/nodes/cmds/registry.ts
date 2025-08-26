@@ -1,4 +1,4 @@
-// src/ui/nodes/cmds/BaseCommand/commandRegistry.ts
+// src/ui/nodes/cmds/BaseCommand/registry.ts
 import { isNestedVector } from '../../../ptb/graph/typecheck';
 import { M, O, S, V } from '../../../ptb/graph/typeHelpers';
 import type {
@@ -183,16 +183,25 @@ const Registry: Record<CommandKind, CmdSpec> = {
     },
   },
 
+  /** MoveCall (type parameters first, then value parameters; returns on the right) */
   moveCall: {
     label: 'MoveCall',
     ports: (node) => {
       const ui = uiOf(node) as any;
 
-      // UI-side stores normalized PTBType arrays for selected function
+      // Normalized PTBType arrays provided by MoveCallCommand UI
+      const tps: PTBType[] = Array.isArray(ui._fnTParams) ? ui._fnTParams : [];
       const ins: PTBType[] = Array.isArray(ui._fnIns) ? ui._fnIns : [];
       const outs: PTBType[] = Array.isArray(ui._fnOuts) ? ui._fnOuts : [];
 
-      // Label args/results in stable order
+      // Input ordering: type parameters first (typ[i]), then value parameters (arg[i])
+      const tpPorts =
+        tps.length > 0
+          ? tps.map((t, i) =>
+              ioIn(`in_typ_${i}`, { dataType: t, label: `typ[${i}]` }),
+            )
+          : [];
+
       const inPorts =
         ins.length > 0
           ? ins.map((t, i) =>
@@ -200,6 +209,7 @@ const Registry: Record<CommandKind, CmdSpec> = {
             )
           : [];
 
+      // Outputs: results on the right (res[i])
       const outPorts =
         outs.length > 0
           ? outs.map((t, i) =>
@@ -207,7 +217,7 @@ const Registry: Record<CommandKind, CmdSpec> = {
             )
           : [];
 
-      return [...PORTS.commandBase(), ...inPorts, ...outPorts];
+      return [...PORTS.commandBase(), ...tpPorts, ...inPorts, ...outPorts];
     },
   },
 

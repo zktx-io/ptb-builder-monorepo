@@ -1,16 +1,16 @@
-// Map SuiMoveNormalizedType to PTBType (best-effort; generics -> unknown).
-// - Unwrap &Reference / &mut Reference
-// - Vector<T> -> { kind: 'vector', elem: ... }
-// - Struct -> object with typeTag when fully concrete (no type params);
-//            otherwise fall back to { kind: 'object' } (unknown object).
-// - Primitives -> move_numeric / scalar
-
 import type { SuiMoveNormalizedType } from '@mysten/sui/client';
 
 import type { PTBType } from '../graph/types';
 
+/** Narrow helper */
 function has<K extends string>(x: any, k: K): x is Record<K, unknown> {
   return x && typeof x === 'object' && k in x;
+}
+
+/** Optional: turn TypeParameter index (number) into a stable name */
+function typeParamNameFromIndex(i: number): string {
+  // T0, T1, ... (stable, readable)
+  return `T${i}`;
 }
 
 export function toPTBTypeFromMove(t: SuiMoveNormalizedType): PTBType {
@@ -34,8 +34,11 @@ export function toPTBTypeFromMove(t: SuiMoveNormalizedType): PTBType {
     return { kind: 'vector', elem: toPTBTypeFromMove((t as any).Vector) };
   }
 
-  // Type parameter → unknown (for now)
-  if (has(t, 'TypeParameter')) return { kind: 'unknown' };
+  // Type parameter (index:number) -> PTB typeparam with a readable name
+  if (has(t, 'TypeParameter')) {
+    const idx = (t as any).TypeParameter as number;
+    return { kind: 'typeparam', name: typeParamNameFromIndex(idx) };
+  }
 
   // Struct { address, module, name, typeArguments }
   if (has(t, 'Struct')) {
@@ -47,7 +50,9 @@ export function toPTBTypeFromMove(t: SuiMoveNormalizedType): PTBType {
     };
     const args = s.typeArguments ?? [];
 
-    // If struct has generic args, keep as generic object (unknown concrete tag).
+    // If struct has any type args, we cannot build a concrete tag in current PTBType,
+    // because PTBType.object doesn't encode generic arguments.
+    // Represent as a generic object (unknown concrete tag).
     if (args.length > 0) return { kind: 'object' };
 
     // Concrete (no type args) → carry full type tag

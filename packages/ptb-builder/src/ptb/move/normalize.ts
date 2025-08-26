@@ -29,16 +29,25 @@ export function deleteTxContext(
 
 export function toPTBModuleData(data: SuiMoveNormalizedModules): PTBModuleData {
   const out: PTBModuleData = { _nameModules_: [], modules: {} };
+
   for (const [
     moduleName,
     moduleData,
   ] of Object.entries<SuiMoveNormalizedModule>(data)) {
     const names = Object.keys(moduleData.exposedFunctions);
     const funcs: Record<string, SuiMoveNormalizedFunction> = {};
+
     for (const fname of names) {
       const f = moduleData.exposedFunctions[fname];
-      funcs[fname] = { ...f, parameters: deleteTxContext(f.parameters) };
+      funcs[fname] = {
+        ...f,
+        // TxContext is not relevant for PTB, so strip it out
+        parameters: deleteTxContext(f.parameters),
+        // typeParameters are kept untouched so PTB can create handles for them
+        typeParameters: f.typeParameters,
+      };
     }
+
     out._nameModules_.push(moduleName);
     out.modules[moduleName] = {
       ...moduleData,
@@ -46,5 +55,6 @@ export function toPTBModuleData(data: SuiMoveNormalizedModules): PTBModuleData {
       _nameFunctions_: names,
     };
   }
+
   return out;
 }

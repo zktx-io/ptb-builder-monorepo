@@ -25,5 +25,11 @@ export const moveNumeric = (width: NumericWidth): PTBType => ({
   width,
 });
 
+/** Type parameter (e.g., T, T0, U1) */
+export const typeParam = (name = 'T'): PTBType => ({
+  kind: 'typeparam',
+  name, // now `string`
+});
+
 /** Unknown */
 export const unknown = (): PTBType => ({ kind: 'unknown' });
