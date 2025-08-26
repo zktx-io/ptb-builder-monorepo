@@ -16,6 +16,15 @@ import { usePtb } from '../../../PtbProvider';
 import { iconOfCommand } from '../../icons';
 import { SmallSelect } from '../../vars/inputs/SmallSelect';
 import TextInput from '../../vars/inputs/TextInput';
+import {
+  BOTTOM_PADDING,
+  FLOW_TOP,
+  ioTopForIndex,
+  labelOf,
+  ROW_SPACING,
+  TITLE_TO_IO_GAP,
+  useCommandPorts,
+} from '../shared';
 
 export type MoveCallData = {
   label?: string;
@@ -24,16 +33,6 @@ export type MoveCallData = {
 };
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
-
-const FLOW_TOP = 16;
-const TITLE_TO_IO_GAP = 40;
-const ROW_SPACING = 24;
-const BOTTOM_PADDING = 16;
-
-function labelOf(p: Port): string {
-  return (p as any).label ?? p.id ?? '';
-}
-const ioTopForIndex = (idx: number) => TITLE_TO_IO_GAP + idx * ROW_SPACING;
 
 function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
@@ -49,14 +48,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
     () => (Array.isArray((node as any)?.ports) ? (node as any).ports : []),
     [node],
   );
-  const inIO = useMemo(
-    () => ports.filter((p) => p.role === 'io' && p.direction === 'in'),
-    [ports],
-  );
-  const outIO = useMemo(
-    () => ports.filter((p) => p.role === 'io' && p.direction === 'out'),
-    [ports],
-  );
+  const { inIO, outIO } = useCommandPorts(node);
 
   const moduleNames: string[] = Array.isArray(ui._nameModules_)
     ? ui._nameModules_
