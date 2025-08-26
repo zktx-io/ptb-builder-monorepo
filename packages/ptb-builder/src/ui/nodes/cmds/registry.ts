@@ -1,24 +1,14 @@
 // src/ui/nodes/cmds/BaseCommand/commandRegistry.ts
-import { isNestedVector, isVector } from '../../../ptb/graph/typecheck';
+import { isNestedVector } from '../../../ptb/graph/typecheck';
+import { M, O, S, V } from '../../../ptb/graph/typeHelpers';
 import type {
   CommandKind,
   CommandNode,
   CommandUIParams,
   Port,
-  PTBScalar,
   PTBType,
 } from '../../../ptb/graph/types';
 import { ioIn, ioOut, PORTS } from '../../../ptb/portTemplates';
-
-/** ---- PTBType helpers (UI-level) ---- */
-const S = (name: PTBScalar): PTBType => ({ kind: 'scalar', name });
-const V = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
-const O = (typeTag?: string): PTBType =>
-  typeTag ? { kind: 'object', typeTag } : { kind: 'object' };
-const M = (width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256'): PTBType => ({
-  kind: 'move_numeric',
-  width,
-});
 
 /** Safely read UI params from a node (falls back to empty object). */
 function uiOf(node?: CommandNode): CommandUIParams {
