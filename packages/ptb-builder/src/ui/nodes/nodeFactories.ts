@@ -6,12 +6,12 @@
 // - Default UI params are injected HERE (single choke point).
 
 import { materializeCommandPorts } from './cmds/registry';
+import { O, S, V } from '../../ptb/graph/typeHelpers';
 import type {
   CommandKind,
   CommandNode,
   Port,
   PTBNode,
-  PTBScalar,
   PTBType,
   VariableNode,
 } from '../../ptb/graph/types';
@@ -19,11 +19,6 @@ import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../../ptb/portTemplates';
 
 let seq = 0;
 const nid = (p: string) => `${p}-${Date.now()}-${seq++}`;
-
-/* ----------------------------- PTBType helpers ----------------------------- */
-const S = (name: PTBScalar): PTBType => ({ kind: 'scalar', name });
-const V = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
-const O = (typeTag?: string): PTBType => ({ kind: 'object', typeTag });
 
 /* ------------------------ Small helpers (reduce dup) ------------------------ */
 function outPort(dataType: PTBType): Port {
