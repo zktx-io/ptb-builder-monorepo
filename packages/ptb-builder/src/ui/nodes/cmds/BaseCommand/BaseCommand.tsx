@@ -12,22 +12,22 @@ import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { iconOfCommand } from '../../icons';
 import { canExpandCommand, expandedKeyOf } from '../registry';
-export type BaseCmdData = {
+import {
+  BOTTOM_PADDING,
+  FLOW_TOP,
+  ioTopForIndex,
+  labelOf,
+  ROW_SPACING,
+  TITLE_TO_IO_GAP,
+  useCommandPorts,
+} from '../shared';
+
+type BaseCmdData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchUI?: (nodeId: string, patch: Record<string, unknown>) => void;
 };
 export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
-
-const FLOW_TOP = 16;
-const ROW_SPACING = 24;
-const TITLE_TO_IO_GAP = 40;
-const BOTTOM_PADDING = 16;
-
-function labelOf(p: Port): string {
-  return (p as any).label ?? p.id ?? '';
-}
-const ioTopForIndex = (idx: number) => TITLE_TO_IO_GAP + idx * ROW_SPACING;
 
 function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
   const node = data?.ptbNode as PTBNode | undefined;
@@ -38,14 +38,7 @@ function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
     return Array.isArray(raw) ? (raw as Port[]) : [];
   }, [node]);
 
-  const inIO = useMemo(
-    () => ports.filter((p) => p.role === 'io' && p.direction === 'in'),
-    [ports],
-  );
-  const outIO = useMemo(
-    () => ports.filter((p) => p.role === 'io' && p.direction === 'out'),
-    [ports],
-  );
+  const { inIO, outIO } = useCommandPorts(node);
 
   // Command metadata
   const cmdNode =
