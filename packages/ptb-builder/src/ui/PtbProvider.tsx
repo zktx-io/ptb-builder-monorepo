@@ -1,4 +1,3 @@
-// src/ui/PtbProvider.tsx
 import React, {
   createContext,
   useCallback,
@@ -28,9 +27,12 @@ import type {
 } from '../ptb/graph/types';
 import { toPTBModuleData } from '../ptb/move/normalize';
 import { PTBModuleData } from '../ptb/move/types';
+import { buildDoc, type PTBDoc } from '../ptb/ptbDoc';
 import { seedDefaultGraph } from '../ptb/seedGraph';
 import type { Network, Theme } from '../types';
 import { materializeCommandPorts } from './nodes/cmds/registry';
+
+// ===== Adapters & Features ====================================================
 
 export type Adapters = {
   clipboard?: { copy(text: string): Promise<void> };
@@ -42,53 +44,39 @@ export type Adapters = {
 
 export type Features = { codegen?: boolean; parse?: boolean; exec?: boolean };
 
+// ===== Context ===============================================================
+
 export type PtbContextValue = {
-  /** Current PTB graph snapshot (source of truth for the canvas) */
+  /** Current PTB graph snapshot (canvas source of truth) */
   snapshot: PTBGraph;
   /** Save a new PTB graph snapshot; triggers debounced onChange */
   saveSnapshot: (g: PTBGraph) => void;
-  /** Load a PTB graph snapshot (immediate, no debounce) */
+  /** Replace current graph immediately (no debounce) */
   loadSnapshot: (g: PTBGraph) => void;
 
-  /** Selected network and read-only guard */
+  /** Active network (fixed by last loadFromDoc) */
   network: Network;
+
+  /** Read-only guard */
   readOnly: boolean;
   features?: Features;
   adapters?: Adapters;
   busy: boolean;
 
-  /** UI theme */
+  /** Theme */
   theme: Theme;
   setTheme: (t: Theme) => void;
 
-  /**
-   * Patch a single command node's UI params, then re-materialize its ports
-   * and prune dangling IO edges referencing removed ports on that node.
-   */
+  /** Command UI patcher → re-materialize + prune */
   onPatchUI: (nodeId: string, patch: Record<string, unknown>) => void;
 
-  /**
-   * On-chain object meta store (in-memory, persisted by the app if desired).
-   * Not included in PTB graph; consumers can serialize alongside the PTB file.
-   */
+  /** Chain caches (per active network; overwritten on doc load) */
   objectMetas: Record<string, SuiObjectData>;
-
-  /**
-   * Fetch and cache on-chain object meta (owner/type/display/version).
-   * - Respects { forceRefresh } to bypass cache.
-   * - Stores into objectMetas and triggers optional onChangeObjectMetas callback.
-   */
   getObjectData: (
     objectId: string,
     opts?: { forceRefresh?: boolean },
   ) => Promise<SuiObjectData | undefined>;
 
-  /**
-   * Move package modules cache and loaders (per-network, in-memory).
-   * - Raw modules by package id (as returned by Sui).
-   * - getPackageModules: fetch + cache (TxContext untouched).
-   * - getPackageModulesView: convenience view for UI (TxContext stripped, names flattened).
-   */
   modules: Record<string, SuiMoveNormalizedModules>;
   getPackageModules: (
     packageId: string,
@@ -98,52 +86,59 @@ export type PtbContextValue = {
     packageId: string,
     opts?: { forceRefresh?: boolean },
   ) => Promise<PTBModuleData | undefined>;
+
+  /** Load a persisted PTB document (fix network, preload embeds, replace graph). */
+  loadFromDoc: (doc: PTBDoc) => void;
+
+  /** Build a PTB document from current state (include embeds optional). */
+  saveToDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
 
+// ===== Provider Props ========================================================
+
 export type PtbProviderProps = {
   children: React.ReactNode;
-  initialGraph?: PTBGraph;
+
+  /** Graph-diff autosave callback (lightweight) */
   onChange?: (g: PTBGraph) => void;
   onChangeDebounceMs?: number;
 
-  /** Network control */
-  network?: Network;
-  lockNetwork?: boolean;
+  /**
+   * Optional Doc-level autosave callback (heavier than onChange).
+   * If provided, provider will emit PTBDoc on a separate debounce.
+   */
+  onDocChange?: (doc: PTBDoc) => void;
+  onDocDebounceMs?: number; // default 1000ms
+  /** When emitting onDocChange, include embeds or not (default: false). */
+  autosaveDocIncludeEmbeds?: boolean;
 
   /** UI / permissions / adapters */
   readOnly?: boolean;
   adapters?: Adapters;
   features?: Features;
   theme?: Theme;
-
-  /** Optional initial on-chain metas and change callback (app-level persistence) */
-  initialObjectMetas?: Record<string, SuiObjectData>;
-  onChangeObjectMetas?: (m: Record<string, SuiObjectData>) => void;
-
-  /** Optional initial package modules and change callback (for persistence to PTB modulesEmbed) */
-  initialModules?: Record<string, SuiMoveNormalizedModules>;
-  onChangeModules?: (m: Record<string, SuiMoveNormalizedModules>) => void;
 };
 
-const DEFAULT_DEBOUNCE = 400;
+const DEFAULT_GRAPH_DEBOUNCE = 400;
+const DEFAULT_DOC_DEBOUNCE = 1000;
 
-/** Build a Set of current port ids for quick membership checks */
+// ===== Utils: ports & pruning ===============================================
+
 function portIdSet(ports: Port[] | undefined): Set<string> {
   const s = new Set<string>();
   if (Array.isArray(ports)) for (const p of ports) s.add(p.id);
   return s;
 }
 
-/** Prune IO edges that reference removed ports on a specific node (flow edges are untouched) */
 function pruneDanglingIoEdgesForNode(
   g: PTBGraph,
   nodeId: string,
   keepPorts: Set<string>,
 ): PTBGraph {
   const edges = g.edges.filter((e) => {
-    if (e.kind === 'flow') return true; // flow edges unaffected by IO port changes
+    if (e.kind === 'flow') return true;
     if (e.source === nodeId && !keepPorts.has(e.sourcePort)) return false;
     if (e.target === nodeId && !keepPorts.has(e.targetPort)) return false;
     return true;
@@ -151,7 +146,6 @@ function pruneDanglingIoEdgesForNode(
   return { ...g, edges };
 }
 
-/** Convert SuiObjectResponse -> SuiObjectData (null on error) */
 function toSuiObjectData(resp: SuiObjectResponse): SuiObjectData | undefined {
   if ((resp as any)?.error) return undefined;
   const d = resp.data;
@@ -159,25 +153,25 @@ function toSuiObjectData(resp: SuiObjectResponse): SuiObjectData | undefined {
   return d;
 }
 
+// ===== Provider ==============================================================
+
 export function PtbProvider({
   children,
-  initialGraph,
   onChange,
-  onChangeDebounceMs = DEFAULT_DEBOUNCE,
-  network = 'devnet',
-  lockNetwork,
+  onChangeDebounceMs = DEFAULT_GRAPH_DEBOUNCE,
+  onDocChange,
+  onDocDebounceMs = DEFAULT_DOC_DEBOUNCE,
+  autosaveDocIncludeEmbeds = false,
+
   readOnly = false,
   adapters,
   features,
   theme: themeProp = 'dark',
-  initialObjectMetas,
-  onChangeObjectMetas,
-  initialModules,
-  onChangeModules,
 }: PtbProviderProps) {
-  /** Busy toggle (reserved for async jobs like run/parse/etc.) */
+  /** Busy indicator for async jobs (parse/tx load, etc.) */
   const [busy] = useState(false);
-  /** Theme state + apply to <html> */
+
+  /** Theme state */
   const [theme, setTheme] = useState<Theme>(themeProp);
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -186,32 +180,30 @@ export function PtbProvider({
       : root.classList.remove('dark');
   }, [theme]);
 
-  /** Graph snapshot (source of truth for canvas) */
-  const [snapshot, setSnapshot] = useState<PTBGraph>(() =>
-    initialGraph?.nodes?.length ? initialGraph : seedDefaultGraph(),
-  );
+  /** Active network — defaults to 'devnet' until a doc is loaded */
+  const [activeNetwork, setActiveNetwork] = useState<Network>('devnet');
 
-  /** On-chain object meta store (in-memory). Persist by using onChangeObjectMetas */
-  const [objectMetas, setObjectMetas] = useState<Record<string, SuiObjectData>>(
-    () => initialObjectMetas ?? {},
-  );
-
-  /** Move package modules cache (in-memory). Persistable via onChangeModules */
-  const [modules, setModules] = useState<
-    Record<string, SuiMoveNormalizedModules>
-  >(() => initialModules ?? {});
-
-  /** SuiClient lifecycle (per-network single instance) */
+  /** SuiClient bound to activeNetwork */
   const clientRef = useRef<SuiClient | undefined>(undefined);
   useLayoutEffect(() => {
-    clientRef.current = new SuiClient({ url: getFullnodeUrl(network) });
-  }, [network]);
+    clientRef.current = new SuiClient({ url: getFullnodeUrl(activeNetwork) });
+  }, [activeNetwork]);
 
-  /** Adapters wiring */
+  /** Graph snapshot (source of truth for canvas) */
+  const [snapshot, setSnapshot] = useState<PTBGraph>({ nodes: [], edges: [] });
+
+  /** Chain caches (overwrite on doc load) */
+  const [objectMetas, setObjectMetas] = useState<Record<string, SuiObjectData>>(
+    () => ({}),
+  );
+  const [modules, setModules] = useState<
+    Record<string, SuiMoveNormalizedModules>
+  >(() => ({}));
+
+  /** Toast/Adapters */
   const toastImpl: ToastAdapter = adapters?.toast ?? consoleToast;
   const exec = adapters?.executeTx;
 
-  /** Execute transaction via injected adapter (if any) */
   const executeTx = useCallback(
     async (tx?: Transaction) => {
       if (!exec) {
@@ -242,31 +234,35 @@ export function PtbProvider({
     [adapters?.clipboard, executeTx, toastImpl],
   );
 
-  // Debounced onChange plumbing for the graph
+  // ===== Debounced onChange (graph) ==========================================
+
   const onChangeRef = useRef(onChange);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const graphTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const lastGraphRef = useRef<PTBGraph | undefined>(undefined);
   onChangeRef.current = onChange;
 
-  const flushNotify = useCallback(() => {
-    if (timerRef.current !== undefined) {
-      clearTimeout(timerRef.current);
-      timerRef.current = undefined;
+  const flushGraphNotify = useCallback(() => {
+    if (graphTimerRef.current !== undefined) {
+      clearTimeout(graphTimerRef.current);
+      graphTimerRef.current = undefined;
     }
     const payload = lastGraphRef.current;
     if (payload && onChangeRef.current) onChangeRef.current(payload);
     lastGraphRef.current = undefined;
   }, []);
 
-  const scheduleNotify = useCallback(
+  const scheduleGraphNotify = useCallback(
     (g: PTBGraph) => {
       if (!onChangeRef.current) return;
       lastGraphRef.current = g;
-      if (timerRef.current !== undefined) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
+      if (graphTimerRef.current !== undefined)
+        clearTimeout(graphTimerRef.current);
+      graphTimerRef.current = setTimeout(() => {
         const payload = lastGraphRef.current;
         if (payload && onChangeRef.current) onChangeRef.current(payload);
-        timerRef.current = undefined;
+        graphTimerRef.current = undefined;
         lastGraphRef.current = undefined;
       }, onChangeDebounceMs);
     },
@@ -276,25 +272,81 @@ export function PtbProvider({
   const saveSnapshot = useCallback(
     (g: PTBGraph) => {
       setSnapshot(g);
-      scheduleNotify(g);
+      scheduleGraphNotify(g);
     },
-    [scheduleNotify],
+    [scheduleGraphNotify],
   );
 
   const loadSnapshot = useCallback((g: PTBGraph) => {
-    if (timerRef.current !== undefined) {
-      clearTimeout(timerRef.current);
-      timerRef.current = undefined;
+    if (graphTimerRef.current !== undefined) {
+      clearTimeout(graphTimerRef.current);
+      graphTimerRef.current = undefined;
     }
     lastGraphRef.current = undefined;
     setSnapshot(g);
   }, []);
 
-  /** Node-scoped UI patcher: merge UI, re-materialize ports, prune dangling edges */
+  // ===== Debounced onDocChange (doc) =========================================
+
+  const onDocChangeRef = useRef(onDocChange);
+  const docTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  onDocChangeRef.current = onDocChange;
+
+  const flushDocNotify = useCallback(() => {
+    if (docTimerRef.current !== undefined) {
+      clearTimeout(docTimerRef.current);
+      docTimerRef.current = undefined;
+    }
+    if (!onDocChangeRef.current) return;
+    const doc = buildDoc({
+      network: activeNetwork,
+      graph: snapshot,
+      includeEmbeds: autosaveDocIncludeEmbeds,
+      modules: autosaveDocIncludeEmbeds ? modules : undefined,
+      objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
+    });
+    onDocChangeRef.current?.(doc);
+  }, [activeNetwork, snapshot, autosaveDocIncludeEmbeds, modules, objectMetas]);
+
+  const scheduleDocNotify = useCallback(() => {
+    if (!onDocChangeRef.current) return;
+    if (docTimerRef.current !== undefined) clearTimeout(docTimerRef.current);
+    docTimerRef.current = setTimeout(() => {
+      if (!onDocChangeRef.current) return;
+      const doc = buildDoc({
+        network: activeNetwork,
+        graph: snapshot,
+        includeEmbeds: autosaveDocIncludeEmbeds,
+        modules: autosaveDocIncludeEmbeds ? modules : undefined,
+        objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
+      });
+      onDocChangeRef.current?.(doc);
+      docTimerRef.current = undefined;
+    }, onDocDebounceMs);
+  }, [
+    activeNetwork,
+    snapshot,
+    autosaveDocIncludeEmbeds,
+    modules,
+    objectMetas,
+    onDocDebounceMs,
+  ]);
+
+  // Trigger doc autosave when relevant states change (if onDocChange is provided)
+  React.useEffect(() => {
+    scheduleDocNotify();
+  }, [snapshot, scheduleDocNotify]);
+  React.useEffect(() => {
+    scheduleDocNotify();
+  }, [modules, objectMetas, activeNetwork, scheduleDocNotify]);
+
+  // ===== Node-scoped UI patcher ==============================================
+
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
       setSnapshot((prev) => {
-        // Shallow clone the graph and entries to keep immutability
         const next: PTBGraph = {
           nodes: prev.nodes.map((n) => ({ ...n }) as PTBNode),
           edges: prev.edges.map((e) => ({ ...e }) as PTBEdge),
@@ -305,32 +357,28 @@ export function PtbProvider({
           | undefined;
         if (!node || node.kind !== 'Command') return prev;
 
-        // Merge UI params into node.params.ui
         const prevUI = (node.params?.ui ?? {}) as Record<string, unknown>;
         node.params = { ...(node.params ?? {}), ui: { ...prevUI, ...patch } };
 
-        // Re-materialize this node's ports based on registry's SSOT
         node.ports = materializeCommandPorts(node);
-
-        // Prune dangling IO edges for this node only
         const keep = portIdSet(node.ports);
         const pruned = pruneDanglingIoEdgesForNode(next, nodeId, keep);
 
-        // Debounced external notify and return new graph
-        scheduleNotify(pruned);
+        scheduleGraphNotify(pruned);
+        scheduleDocNotify();
         return pruned;
       });
     },
-    [scheduleNotify],
+    [scheduleGraphNotify, scheduleDocNotify],
   );
 
-  /** Fetch and cache on-chain object meta (simple API, small surface) */
+  // ===== Chain data helpers ===================================================
+
   const getObjectData = useCallback<PtbContextValue['getObjectData']>(
     async (objectId, opts) => {
       const id = objectId?.trim();
       if (!id) return undefined;
 
-      // Serve from cache unless forced
       if (!opts?.forceRefresh && objectMetas[id]) {
         return objectMetas[id];
       }
@@ -354,18 +402,18 @@ export function PtbProvider({
 
         setObjectMetas((prev) => {
           const next = { ...prev, [id]: meta };
-          onChangeObjectMetas?.(next);
           return next;
         });
+        // embeds changed → doc autosave (if hooked)
+        scheduleDocNotify();
         return meta;
       } catch {
         return undefined;
       }
     },
-    [objectMetas, onChangeObjectMetas],
+    [objectMetas, scheduleDocNotify],
   );
 
-  /** Fetch and cache Move package modules by package id (per-network). */
   const getPackageModules = useCallback<PtbContextValue['getPackageModules']>(
     async (packageId, opts) => {
       const id = packageId?.trim();
@@ -391,10 +439,10 @@ export function PtbProvider({
 
         setModules((prev) => {
           const next = { ...prev, [id]: res };
-          onChangeModules?.(next);
           return next;
         });
-
+        // embeds changed → doc autosave (if hooked)
+        scheduleDocNotify();
         return res;
       } catch (e: any) {
         adaptersSnapshot.toast?.({
@@ -404,10 +452,9 @@ export function PtbProvider({
         return undefined;
       }
     },
-    [modules, clientRef, adaptersSnapshot, onChangeModules],
+    [modules, clientRef, adaptersSnapshot, scheduleDocNotify],
   );
 
-  /** Convenience: return a PTB-friendly view (TxContext stripped + name lists). */
   const getPackageModulesView = useCallback<
     PtbContextValue['getPackageModulesView']
   >(
@@ -421,19 +468,78 @@ export function PtbProvider({
     [getPackageModules, modules],
   );
 
+  // ===== Document load/save ===================================================
+
+  const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
+    (doc) => {
+      // 1) Fix active network
+      setActiveNetwork(doc.network);
+
+      // 2) Preload embeds (overwrite caches)
+      setModules(doc.modulesEmbed ?? {});
+      setObjectMetas(doc.objectsEmbed ?? {});
+
+      // 3) Replace graph (seed if empty/invalid)
+      const g = doc.graph;
+      const valid =
+        g && Array.isArray(g.nodes) && Array.isArray(g.edges) && g.nodes.length;
+      const base = valid ? g : seedDefaultGraph();
+
+      // stop pending graph/doc notifies
+      if (graphTimerRef.current !== undefined) {
+        clearTimeout(graphTimerRef.current);
+        graphTimerRef.current = undefined;
+      }
+      if (docTimerRef.current !== undefined) {
+        clearTimeout(docTimerRef.current);
+        docTimerRef.current = undefined;
+      }
+
+      lastGraphRef.current = undefined;
+      setSnapshot(base);
+
+      // kick both notifiers
+      scheduleGraphNotify(base);
+      scheduleDocNotify();
+    },
+    [scheduleGraphNotify, scheduleDocNotify],
+  );
+
+  const saveToDoc = useCallback<PtbContextValue['saveToDoc']>(
+    (opts) => {
+      const includeEmbeds = !!opts?.includeEmbeds;
+      const sender = opts?.sender;
+      return buildDoc({
+        network: activeNetwork,
+        graph: snapshot,
+        sender,
+        includeEmbeds,
+        modules: includeEmbeds ? modules : undefined,
+        objects: includeEmbeds ? objectMetas : undefined,
+      });
+    },
+    [activeNetwork, snapshot, modules, objectMetas],
+  );
+
+  // ===== Context value =======================================================
+
   const ctx: PtbContextValue = useMemo(
     () => ({
       snapshot,
       saveSnapshot,
       loadSnapshot,
-      network,
-      readOnly: !!readOnly || !!lockNetwork,
+
+      network: activeNetwork,
+      readOnly: !!readOnly,
+
       features,
       adapters: adaptersSnapshot,
       busy,
+
       theme,
       setTheme,
-      onPatchUI, // node-scoped UI patcher
+
+      onPatchUI,
 
       objectMetas,
       getObjectData,
@@ -441,14 +547,16 @@ export function PtbProvider({
       modules,
       getPackageModules,
       getPackageModulesView,
+
+      loadFromDoc,
+      saveToDoc,
     }),
     [
       snapshot,
       saveSnapshot,
       loadSnapshot,
-      network,
+      activeNetwork,
       readOnly,
-      lockNetwork,
       features,
       adaptersSnapshot,
       busy,
@@ -459,14 +567,19 @@ export function PtbProvider({
       modules,
       getPackageModules,
       getPackageModulesView,
+      loadFromDoc,
+      saveToDoc,
     ],
   );
 
-  // Ensure pending debounced onChange is flushed on unmount
-  React.useEffect(() => () => flushNotify(), [flushNotify]);
+  // Flush pending debounced notifies on unmount
+  React.useEffect(() => () => flushGraphNotify(), [flushGraphNotify]);
+  React.useEffect(() => () => flushDocNotify(), [flushDocNotify]);
 
   return <PtbContext.Provider value={ctx}>{children}</PtbContext.Provider>;
 }
+
+// ===== Hook ==================================================================
 
 export function usePtb() {
   const ctx = useContext(PtbContext);
