@@ -14,6 +14,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel, // in-canvas overlay container
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
@@ -23,6 +24,7 @@ import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 
+import { CodePip, EMPTY_CODE } from './CodePip';
 import { EdgeTypes } from './edges';
 import { ContextMenu } from './menu/ContextMenu';
 import { NodeTypes } from './nodes';
@@ -36,6 +38,7 @@ import {
 } from '../adapters/ptbAdapter';
 import { baseHandleId } from './handles/handleUtils';
 import { hasStartToEnd } from './utils/flowPath';
+import { generateTsSdkCode } from '../codegen/generateTsSdk';
 import {
   inferCastTarget,
   isTypeCompatible,
@@ -49,7 +52,7 @@ const DEBOUNCE_MS = 250;
 /** Normalize RF handle -> PTB port id (drop optional ":type" suffix). */
 const portIdOf = (h?: string | null) => baseHandleId(h);
 
-/** DFS to detect whether adding (source -> target) would create a cycle. */
+/** DFS loop check for flow edges. */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
   const seen = new Set<string>();
   const stack = [target];
@@ -63,14 +66,13 @@ function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
   return false;
 }
 
-/** Remove any ptb-flow edges that use the same source/target handle (flow is 1:1 per handle). */
+/** Enforce 1:1 flow per handle (source/target). */
 function filterHandleConflictsForFlow(edges: RFEdge[], conn: Connection) {
   const src = conn.source!;
   const tgt = conn.target!;
   const sHandle = conn.sourceHandle ?? undefined;
   const tHandle = conn.targetHandle ?? undefined;
-  if (!sHandle || !tHandle) return undefined; // must bind to concrete handles
-
+  if (!sHandle || !tHandle) return undefined;
   return edges.filter(
     (e) =>
       !(
@@ -81,20 +83,18 @@ function filterHandleConflictsForFlow(edges: RFEdge[], conn: Connection) {
   );
 }
 
-/** Ensure IO target handle is single (1 edge), but allow source fan-out (1 -> N). */
+/** IO target is single; allow source fan-out. */
 function filterHandleConflictsForIO(edges: RFEdge[], conn: Connection) {
   const tgt = conn.target!;
   const tHandle = conn.targetHandle ?? undefined;
-  if (!tHandle) return undefined; // IO target must be an actual handle
-
-  // Replace any existing IO edge that already uses this exact target handle.
+  if (!tHandle) return undefined;
   return edges.filter(
     (e) =>
       !(e.type === 'ptb-io' && e.target === tgt && e.targetHandle === tHandle),
   );
 }
 
-/** Build nodeId -> set of *base* port ids (no ':type' suffix). */
+/** nodeId -> set(basePortId) index. */
 function buildHandleIndex(
   nodes: RFNode<RFNodeData>[],
 ): Map<string, Set<string>> {
@@ -105,13 +105,13 @@ function buildHandleIndex(
       ? (ptbNode.ports as Port[])
       : [];
     const set = new Set<string>();
-    for (const p of ports) set.add(p.id); // base id
+    for (const p of ports) set.add(p.id);
     idx.set(n.id, set);
   }
   return idx;
 }
 
-/** Keep only edges whose source/target handles still exist on their nodes. */
+/** Drop edges whose handles no longer exist. */
 function pruneDanglingEdges(
   nodes: RFNode<RFNodeData>[],
   edges: RFEdge<RFEdgeData>[],
@@ -121,16 +121,13 @@ function pruneDanglingEdges(
     const srcSet = idx.get(e.source);
     const tgtSet = idx.get(e.target);
     if (!srcSet || !tgtSet) return false;
-
-    const sId = portIdOf(e.sourceHandle); // normalize (drop optional suffix)
+    const sId = portIdOf(e.sourceHandle);
     const tId = portIdOf(e.targetHandle);
-
-    // keep iff BOTH handles are present and valid
     return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
   });
 }
 
-/** Resolve a PTB port's type given PTB nodes and an RF edge endpoint. */
+/** Resolve PTB type for an RF endpoint. */
 function resolvePortType(
   ptbNodes: PTBNode[],
   nodeId: string,
@@ -144,7 +141,7 @@ function resolvePortType(
   return p?.dataType;
 }
 
-/** Drop IO edges that became type-incompatible after a node mutation. */
+/** Drop IO edges that became type-incompatible. */
 function pruneIncompatibleIOEdges(
   ptbNodes: PTBNode[],
   edges: RFEdge<RFEdgeData>[],
@@ -153,84 +150,75 @@ function pruneIncompatibleIOEdges(
     if (e.type !== 'ptb-io') return true;
     const sT = resolvePortType(ptbNodes, e.source, e.sourceHandle);
     const tT = resolvePortType(ptbNodes, e.target, e.targetHandle);
-    if (!sT || !tT) return false; // missing types → drop
+    if (!sT || !tT) return false;
     if (isUnknownType(sT) || isUnknownType(tT)) return false;
     return isTypeCompatible(sT, tT);
   });
 }
 
 export function PTBFlow() {
-  const { snapshot, saveSnapshot, readOnly, theme, setTheme } = usePtb();
+  const { snapshot, saveSnapshot, readOnly, theme, setTheme, network } =
+    usePtb();
 
-  /** Global flow animation flag: true iff there exists a Start → End path. */
+  /** Generated source (updated on connect / node change). */
+  const [code, setCode] = useState<string>(EMPTY_CODE(network));
+
+  /** Global flow animation flag: true iff Start → End path exists. */
   const [flowActive, setFlowActive] = useState(false);
 
-  /** Inject onPatchUI into Command nodes and keep ports consistent with UI. */
+  /** Inject UI patcher into Command nodes and keep ports consistent with UI. */
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
       setRF((prev) => {
-        // 1) Rebuild a PTB graph from current RF.
+        // 1) Rebuild PTB from RF.
         const currentPTB = rfToPTB(
           prev.rfNodes,
           prev.rfEdges,
           baseGraphRef.current,
         );
 
-        // 2) Merge UI patch onto target Command node.
+        // 2) Merge UI patch and normalize counts for expanded groups.
         const node = currentPTB.nodes.find((n) => n.id === nodeId);
         if (!node || node.kind !== 'Command') return prev;
 
         const ui = ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
         const nextUI = { ...ui, ...patch };
 
-        // Normalize expand toggles → default counts.
         if ('amountsExpanded' in patch) {
           if (patch.amountsExpanded) {
             if (typeof (node.params as any)?.ui?.amountsCount !== 'number') {
               (nextUI as any).amountsCount = 2;
             }
-          } else {
-            delete (nextUI as any).amountsCount;
-          }
+          } else delete (nextUI as any).amountsCount;
         }
         if ('sourcesExpanded' in patch) {
           if (patch.sourcesExpanded) {
             if (typeof (node.params as any)?.ui?.sourcesCount !== 'number') {
               (nextUI as any).sourcesCount = 2;
             }
-          } else {
-            delete (nextUI as any).sourcesCount;
-          }
+          } else delete (nextUI as any).sourcesCount;
         }
         if ('objectsExpanded' in patch) {
           if (patch.objectsExpanded) {
             if (typeof (node.params as any)?.ui?.objectsCount !== 'number') {
               (nextUI as any).objectsCount = 2;
             }
-          } else {
-            delete (nextUI as any).objectsCount;
-          }
+          } else delete (nextUI as any).objectsCount;
         }
         if ('elemsExpanded' in patch) {
           if (patch.elemsExpanded) {
             if (typeof (node.params as any)?.ui?.elemsCount !== 'number') {
               (nextUI as any).elemsCount = 2;
             }
-          } else {
-            delete (nextUI as any).elemsCount;
-          }
+          } else delete (nextUI as any).elemsCount;
         }
 
         node.params = { ...(node.params ?? {}), ui: nextUI };
 
-        // 3) Re-materialize ports based on updated UI policy.
+        // 3) Re-materialize ports and prune edges.
         node.ports = materializeCommandPorts(node as any);
-
-        // 4) Convert back to RF.
         const { nodes: freshRFNodes, edges: freshRFEdges } =
           ptbToRF(currentPTB);
-
-        // 5) Inject callbacks & prune edges (dangling + type-incompatible).
         const injected = withCallbacks(
           freshRFNodes,
           onPatchUI,
@@ -248,34 +236,26 @@ export function PTBFlow() {
     [],
   );
 
-  /** Patch a Variable node (value and/or varType). Source of truth = RF -> PTB -> RF. */
+  /** Patch a Variable node (value and/or varType). */
   const onPatchVar = useCallback(
     (nodeId: string, patch: Partial<VariableNode>) => {
       setRF((prev) => {
-        // 1) Rebuild PTB graph from current RF.
         const currentPTB = rfToPTB(
           prev.rfNodes,
           prev.rfEdges,
           baseGraphRef.current,
         );
-
-        // 2) Find the Variable node and apply the patch.
         const node = currentPTB.nodes.find((n) => n.id === nodeId);
         if (!node || node.kind !== 'Variable') return prev;
 
         const v = node as VariableNode;
         if ('value' in patch) (v as any).value = (patch as any).value;
         if ('varType' in patch && patch.varType !== undefined) {
-          v.varType = patch.varType; // type: PTBType
+          v.varType = patch.varType;
         }
 
-        // 3) Rebuild RF from PTB after mutation.
         const { nodes: freshRFNodes, edges: freshRFEdges } =
           ptbToRF(currentPTB);
-
-        // 4) Inject callbacks & prune edges:
-        //    - dangling (handles no longer exist)
-        //    - type-incompatible (type changed by varType update)
         const injected = withCallbacks(
           freshRFNodes,
           onPatchUI,
@@ -293,14 +273,10 @@ export function PTBFlow() {
     [],
   );
 
-  /** Optional type loader for object.typeTag — UI shows button always; disabled if missing. */
-  const onLoadTypeTag = useCallback((typeTag: string) => {
-    // Bridge stub: consumer app should override via Provider/adapters if needed.
-    // Keep it here so the button is always rendered but can be disabled when not injected.
-    // Intentionally no-op.
-  }, []);
+  /** Optional type loader for object.typeTag — no-op stub. */
+  const onLoadTypeTag = useCallback((_typeTag: string) => {}, []);
 
-  /** Inject both command UI and variable callbacks into RF node data. */
+  /** Inject callbacks into RF node data. */
   const withCallbacks = useCallback(
     (
       nodes: RFNode<RFNodeData>[],
@@ -346,11 +322,10 @@ export function PTBFlow() {
     baseGraphRef.current = snapshot;
   }, [snapshot, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks]);
 
-  /** As a safety net, whenever rfNodes change, re-prune edges. */
+  /** Safety net: whenever rfNodes change, re-prune edges. */
   useEffect(() => {
     setRF((prev) => {
       let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
-      // Note: type-incompatibility requires PTB types; use latest baseGraphRef.
       pruned = pruneIncompatibleIOEdges(baseGraphRef.current.nodes, pruned);
       if (pruned.length === prev.rfEdges.length) return prev;
       setFlowActive(hasStartToEnd(rfNodes, pruned));
@@ -381,13 +356,13 @@ export function PTBFlow() {
       const rfNode = rfNodes.find((n) => n.id === id);
       const kind =
         getRFKind(rfNode) ?? snapshot.nodes.find((n) => n.id === id)?.kind;
-      if (kind === 'Start' || kind === 'End') return; // do not open
+      if (kind === 'Start' || kind === 'End') return;
     }
 
     setMenu({ open: true, type, x: e.clientX, y: e.clientY, id });
   };
 
-  /** Recompute the global flow-active flag from RF state. */
+  /** Recompute flow-active flag from RF state. */
   const recomputeFlowActive = useCallback(
     (nodes: RFNode[], edges: RFEdge[]) => {
       setFlowActive(hasStartToEnd(nodes, edges));
@@ -401,15 +376,6 @@ export function PTBFlow() {
     const kind = data?.ptbNode?.kind as PTBNode['kind'] | undefined;
     return kind;
   }
-
-  const isProtectedNode = useCallback(
-    (id: string, rfList: RFNode<RFNodeData>[]) => {
-      const rf = rfList.find((n) => n.id === id);
-      const kind = getRFKind(rf);
-      return kind === 'Start' || kind === 'End';
-    },
-    [],
-  );
 
   /** Local RF mutations (add/delete). */
   const addNode = useCallback(
@@ -457,12 +423,15 @@ export function PTBFlow() {
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setRF((prev) => {
-        // Drop remove changes for Start/End (keyboard Delete, bulk)
+        // Prevent deleting Start/End via bulk/remove
         const filtered = changes.filter((ch) => {
           if (ch.type !== 'remove') return true;
           const id = (ch as any).id as string | undefined;
           if (!id) return true;
-          return !isProtectedNode(id, prev.rfNodes);
+          return (
+            getRFKind(prev.rfNodes.find((n) => n.id === id)) !== 'Start' &&
+            getRFKind(prev.rfNodes.find((n) => n.id === id)) !== 'End'
+          );
         });
 
         const nextNodesRaw = applyNodeChanges(filtered, prev.rfNodes);
@@ -481,14 +450,7 @@ export function PTBFlow() {
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
-    [
-      isProtectedNode,
-      recomputeFlowActive,
-      onPatchUI,
-      onPatchVar,
-      onLoadTypeTag,
-      withCallbacks,
-    ],
+    [recomputeFlowActive, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks],
   );
 
   const onEdgesChange = useCallback(
@@ -503,12 +465,12 @@ export function PTBFlow() {
     [recomputeFlowActive],
   );
 
-  /** Connection rules (flow and IO) */
+  /** Connection rules (flow & IO). */
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!conn.source || !conn.target) return;
 
-      // Find PTB ports for validation
+      // Lookup PTB ports
       const findPort = (nodeId: string, handle?: string | null) => {
         const pid = portIdOf(handle);
         const node = snapshot.nodes.find((n) => n.id === nodeId);
@@ -525,8 +487,7 @@ export function PTBFlow() {
           if (!(sp.direction === 'out' && tp.direction === 'in')) return prev;
 
           const filtered = filterHandleConflictsForFlow(prev.rfEdges, conn);
-          if (!filtered) return prev; // must have concrete handles
-
+          if (!filtered) return prev;
           if (conn.source === conn.target) return prev;
           if (createsLoop(filtered, conn.source!, conn.target!)) return prev;
 
@@ -566,8 +527,8 @@ export function PTBFlow() {
           target: conn.target!,
           sourceHandle: conn.sourceHandle ?? undefined,
           targetHandle: conn.targetHandle ?? undefined,
-          data: cast ? { cast } : undefined, // stored for adapters/codegen
-          label: cast ? `as ${cast.to}` : undefined, // optional UX badge
+          data: cast ? { cast } : undefined,
+          label: cast ? `as ${cast.to}` : undefined,
         };
 
         const nextEdges = pruneDanglingEdges(prev.rfNodes, [
@@ -602,6 +563,17 @@ export function PTBFlow() {
     };
   }, [rfNodes, rfEdges, saveSnapshot]);
 
+  /** Recompute code whenever RF or network changes. */
+  useEffect(() => {
+    try {
+      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
+      const src = generateTsSdkCode(ptb, network);
+      setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(network));
+    } catch {
+      setCode(EMPTY_CODE(network));
+    }
+  }, [rfNodes, rfEdges, network]);
+
   /** Theme-dependent grid colors. */
   const { fineColor, accentColor } = useMemo(
     () => ({
@@ -621,18 +593,6 @@ export function PTBFlow() {
       }}
       className={flowActive ? 'ptb-flow-active' : undefined}
     >
-      {/* Quick theme switcher */}
-      <div style={{ position: 'absolute', right: 12, top: 12, zIndex: 10 }}>
-        <select
-          value={theme}
-          onChange={(e) => setTheme(e.target.value as 'light' | 'dark')}
-          style={{ fontSize: 12 }}
-        >
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-        </select>
-      </div>
-
       <ReactFlow
         colorMode={theme}
         nodes={rfNodes}
@@ -670,6 +630,24 @@ export function PTBFlow() {
 
         <MiniMap />
         <Controls className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+
+        {/* CodePip lives INSIDE ReactFlow via Panel, so grid/handles render correctly */}
+        <Panel position="top-right" style={{ pointerEvents: 'none' }}>
+          <div style={{ pointerEvents: 'auto' }}>
+            <CodePip
+              code={code}
+              language="typescript"
+              title="ts-sdk preview"
+              theme={theme}
+              onThemeChange={setTheme}
+              // defaultCollapsed={false} // optional
+              emptyText={EMPTY_CODE(network)}
+              // onExecute={...}          // hook later when tx build+run is ready
+              // executing={...}
+              // canExecute={...}
+            />
+          </div>
+        </Panel>
       </ReactFlow>
 
       {/* Context menu */}
