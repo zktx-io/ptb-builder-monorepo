@@ -1,19 +1,7 @@
 // src/ui/nodes/vars/VarNode.tsx
-// Variable node with inline editors (lean version).
-// - Scalars (string/number/address): single <TextInput> using onChange+debounce
-// - Scalar<bool>: SelectBool (unified; no text input)
-// - Object: single <TextInput> (onChange+debounce)
-//   • After debounce: patch { value }, fetch on-chain meta via getObjectData(objectId)
-//   • If response has a Move object type → patch { varType: { kind:'object', typeTag } }
-//   • On failure or non-Move object → patch { varType: { kind:'object' } } and show toast error
-//   • Read-only type field shows current typeTag (if any); no inline error text
-// - Vectors (1-D):
-//   • vector<bool> → SelectBool per item (patch deferred via rAF to avoid cross-render warning)
-//   • vector<others> → <TextInput> per item (onChange+debounce)
-//   • Stepper (+/-) updates length immediately and requests RF bounds recompute
-// - Helpers (sender/wallet, gas, clock, system, random, sui[=0x2::sui::SUI]): label only (no editor)
-// - All editors are read-only when onPatchVar is missing
-// - No nulls: use undefined
+// Variable node with inline editors (safe updates).
+// All graph patches are deferred (microtask / rAF) to avoid
+// "Cannot update a component while rendering a different component" warnings.
 
 import React, {
   useCallback,
@@ -45,18 +33,17 @@ import { iconOfVar } from '../icons';
 import { MiniStepper } from './inputs/MiniStepper';
 
 const DEBOUNCE_MS = 250;
-// Use a slightly longer debounce for object fetches to avoid excessive RPCs while typing fast
 const OBJECT_DEBOUNCE_MS = 400;
 
 export type VarData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
-  onLoadTypeTag?: (typeTag: string) => void; // kept for compatibility; unused here
+  onLoadTypeTag?: (typeTag: string) => void;
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
 
-/** Stable debounced-callback (cleans up on unmount). */
+/** Debounced-callback helper (cleans up on unmount). */
 function useDebouncedCallback<T extends any[]>(
   fn: (...args: T) => void,
   delay = DEBOUNCE_MS,
@@ -81,12 +68,20 @@ function useDebouncedCallback<T extends any[]>(
         timerRef.current = undefined;
       }
       timerRef.current = window.setTimeout(() => {
-        fnRef.current(...args);
+        // run outside render stack
+        Promise.resolve().then(() => fnRef.current(...args));
         timerRef.current = undefined;
       }, delay);
     },
     [delay],
   );
+}
+
+/** Post a function to the microtask queue (always after current render). */
+function defer(fn: () => void) {
+  // queueMicrotask is ideal; fallback to resolved Promise
+  if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+  else Promise.resolve().then(fn);
 }
 
 function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
@@ -102,7 +97,7 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
 
   const { category } = ioShapeOf(varType);
 
-  /** Detect helpers/constants: label only. */
+  // Helpers/constants are label-only.
   const helperNames = useMemo(
     () => new Set(['sender', 'gas', 'clock', 'system', 'random']),
     [],
@@ -116,12 +111,27 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     (v?.name ?? '').trim().toLowerCase() === 'sui';
   const isHelper = isHelperByName || isSuiConst;
 
-  /** Local UI state. */
+  // Local UI state.
   const [scalarBuf, setScalarBuf] = useState(''); // scalar text & object id
   const [vecItems, setVecItems] = useState<string[]>(['']); // min=1
   const [objTypeLoading, setObjTypeLoading] = useState(false);
 
-  /** Shallow-equal helper for arrays of strings. */
+  // Graph patcher (always deferred)
+  const patchVar = useCallback(
+    (patch: Partial<VariableNode>) => {
+      if (!canEdit || !nodeId || !data?.onPatchVar) return;
+      defer(() => data.onPatchVar!(nodeId, patch));
+    },
+    [canEdit, nodeId, data],
+  );
+
+  // Update internals (always deferred to rAF)
+  const requestInternals = useCallback(() => {
+    if (!rfNodeId) return;
+    requestAnimationFrame(() => updateNodeInternals(rfNodeId));
+  }, [rfNodeId, updateNodeInternals]);
+
+  // Shallow-equal helper for arrays of strings.
   const arrShallowEqual = useCallback((a: string[], b: string[]) => {
     if (a === b) return true;
     if (a.length !== b.length) return false;
@@ -129,7 +139,7 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     return true;
   }, []);
 
-  /** Sync local buffers from graph on prop changes (avoid stomping equal state). */
+  // Sync local buffers from graph on prop changes.
   useEffect(() => {
     if (!isVectorType(varType)) {
       const next =
@@ -144,57 +154,46 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, v, varType, arrShallowEqual]);
 
-  /** Default bool=true once (only when editable & not helper). */
+  // Default scalar<bool>=true once (only editable & not helper).
   useEffect(() => {
     if (!canEdit || isHelper) return;
     if (varType?.kind === 'scalar' && varType.name === 'bool') {
       const val = (v as any)?.value as boolean | undefined;
-      if (typeof val === 'undefined' && data?.onPatchVar && nodeId) {
-        data.onPatchVar(nodeId, { value: true });
+      if (typeof val === 'undefined') {
+        patchVar({ value: true });
       }
     }
-  }, [canEdit, isHelper, varType, data, nodeId, v]);
+  }, [canEdit, isHelper, varType, v, patchVar]);
 
-  /** Graph patcher helper. */
-  const patchVar = useCallback(
-    (patch: Partial<VariableNode>) => {
-      if (canEdit && nodeId && data?.onPatchVar) data.onPatchVar(nodeId, patch);
-    },
-    [canEdit, nodeId, data],
-  );
-
-  /** Debounced patchers for text-based inputs. */
+  // Debounced patchers for text-based inputs.
   const debouncedPatchScalar = useDebouncedCallback((val: string) => {
-    if (!canEdit) return;
     patchVar({ value: val });
   });
 
   const debouncedPatchVector = useDebouncedCallback((vals: string[]) => {
-    if (!canEdit) return;
     patchVar({ value: vals });
   });
 
-  /** Debounced object handler: patch value, fetch meta, then patch varType. */
+  // Debounced object handler: patch value, fetch meta, then patch varType.
   const reqSeqRef = useRef(0);
   const debouncedHandleObject = useDebouncedCallback(async (idRaw: string) => {
     if (!canEdit) return;
+
     const id = idRaw.trim();
-    // Always patch the latest value (to keep graph in sync while typing)
+    // Keep graph in sync while typing (deferred)
     patchVar({ value: idRaw });
 
-    // Empty value → clear typeTag and stop
+    // Empty → clear typeTag and stop
     if (!id) {
       patchVar({ varType: { kind: 'object' } });
       setObjTypeLoading(false);
       return;
     }
 
-    const seq = ++reqSeqRef.current; // guard against out-of-order responses
+    const seq = ++reqSeqRef.current;
     try {
       setObjTypeLoading(true);
       const resp = await getObjectData(id, { forceRefresh: true });
-
-      // Ignore stale response
       if (seq !== reqSeqRef.current) return;
 
       const moveType =
@@ -223,13 +222,12 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     }
   }, OBJECT_DEBOUNCE_MS);
 
-  /** Out port (with optional human-friendly typeStr). */
+  // Out port (with optional human-friendly typeStr).
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
 
-  /** Show editor area? */
   const hasEditor = useMemo(() => !isHelper, [isHelper]);
 
-  /** Stepper (+/-) — apply immediately and request RF bounds recompute. */
+  // Stepper (+/-)
   const stepVec = useCallback(
     (delta: number) => {
       if (!canEdit || !isVectorType(varType)) return;
@@ -242,36 +240,28 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                 ...Array.from({ length: nextLen - prev.length }, () => ''),
               ]
             : prev.slice(0, nextLen);
+        // Defer graph patch + internals recompute
         patchVar({ value: next });
-        requestAnimationFrame(() => updateNodeInternals(rfNodeId));
+        requestInternals();
         return next;
       });
     },
-    [canEdit, varType, patchVar, rfNodeId, updateNodeInternals],
+    [canEdit, varType, patchVar, requestInternals],
   );
 
-  /** Recompute bounds when height-affecting state toggles. */
+  // Recompute bounds when height-affecting state toggles.
   useEffect(() => {
-    if (!rfNodeId) return;
-    requestAnimationFrame(() => updateNodeInternals(rfNodeId));
-  }, [
-    rfNodeId,
-    vecItems.length,
-    hasEditor,
-    varType?.kind,
-    updateNodeInternals,
-  ]);
+    requestInternals();
+  }, [rfNodeId, vecItems.length, hasEditor, varType?.kind, requestInternals]);
 
-  /** Header/title/icon + placeholders. */
   const title = (data?.label ?? v?.label ?? 'variable').trim();
   const elemT = vectorElem(varType);
   const vecPlaceholder = placeholderFor(elemT);
 
-  /** Read-only typeTag (copyable) for object variables. */
   const objectTypeTag =
     varType?.kind === 'object' ? (varType as any)?.typeTag : undefined;
 
-  /** Helper: parse → boolean | undefined from string/boolean. */
+  // Parse → boolean | undefined (no auto-writeback here)
   const parseBool = (x: unknown): boolean | undefined => {
     if (typeof x === 'boolean') return x;
     if (typeof x === 'string') {
@@ -318,8 +308,8 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                   const isBoolElem =
                     elemT?.kind === 'scalar' && elemT.name === 'bool';
 
-                  // vector<bool>: SelectBool (defer patch via rAF)
                   if (isBoolElem) {
+                    // Controlled without auto-writeback on mount
                     const b = parseBool(val);
                     return (
                       <SelectBool
@@ -329,12 +319,9 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                           setVecItems((prev) => {
                             const next = prev.slice();
                             next[i] = newVal as boolean | undefined as any;
-                            requestAnimationFrame(() =>
-                              patchVar({ value: next }),
-                            );
-                            requestAnimationFrame(() =>
-                              updateNodeInternals(rfNodeId),
-                            );
+                            // patch & internals after state commit
+                            defer(() => patchVar({ value: next }));
+                            requestInternals();
                             return next;
                           });
                         }}
@@ -356,9 +343,7 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                           copy[i] = vv;
                           if (canEdit) {
                             debouncedPatchVector(copy);
-                            requestAnimationFrame(() =>
-                              updateNodeInternals(rfNodeId),
-                            );
+                            requestInternals();
                           }
                           return copy;
                         });
@@ -369,12 +354,12 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                 })}
               </div>
             ) : varType?.kind === 'scalar' && varType.name === 'bool' ? (
-              // ===== Scalar<bool>: SelectBool =====
+              // ===== Scalar<bool>: SelectBool (no auto default write) =====
               <SelectBool
                 value={(v as any)?.value as boolean | undefined}
                 onChange={(val) => {
                   if (!canEdit) return;
-                  requestAnimationFrame(() => patchVar({ value: val }));
+                  patchVar({ value: val });
                 }}
                 disabled={!canEdit}
               />
@@ -390,10 +375,8 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
                     if (!canEdit) return;
 
                     if (varType?.kind === 'object') {
-                      // Debounced: patch value, fetch meta, patch varType
                       debouncedHandleObject(s);
                     } else {
-                      // Debounced: patch scalar value only
                       debouncedPatchScalar(s);
                     }
                   }}
