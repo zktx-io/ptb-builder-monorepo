@@ -38,6 +38,7 @@ import { materializeCommandPorts } from './nodes/cmds/registry';
 export type Adapters = {
   clipboard?: { copy(text: string): Promise<void> };
   executeTx?: (
+    chain: `${string}:${string}`,
     tx: Transaction | undefined,
   ) => Promise<{ digest?: string; error?: string }>;
   toast?: ToastAdapter;
@@ -218,13 +219,16 @@ export function PtbProvider({
   const exec = adapters?.executeTx;
 
   const executeTx = useCallback(
-    async (tx?: Transaction): Promise<{ digest?: string; error?: string }> => {
+    async (
+      chain: `${string}:${string}`,
+      tx?: Transaction,
+    ): Promise<{ digest?: string; error?: string }> => {
       if (!exec) {
         // no toast here
         return { error: 'executeTx adapter not provided' };
       }
       try {
-        const res = await exec(tx);
+        const res = await exec(chain, tx);
         // no toast here either; just return
         return res ?? {};
       } catch (e: any) {
@@ -275,7 +279,7 @@ export function PtbProvider({
       }
 
       // Execute
-      const res = await executeTx(tx);
+      const res = await executeTx(`sui:${activeNetwork}`, tx);
       if (res?.digest) {
         toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
       } else if (res?.error) {
@@ -284,7 +288,7 @@ export function PtbProvider({
       }
       return res ?? {};
     },
-    [executeTx, toastImpl],
+    [activeNetwork, executeTx, toastImpl],
   );
 
   const adaptersSnapshot = useMemo(
