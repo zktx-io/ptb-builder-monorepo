@@ -51,8 +51,11 @@ function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
   const isExpanded = expKey ? Boolean(ui?.[expKey]) : false;
   const allowed = canExpandCommand(cmdKind, ui as any);
 
-  // Stepper only when expanded & allowed
-  const showStepper = isExpanded && allowed && !!cmdKind;
+  // Stepper visibility:
+  // - splitCoins: ALWAYS show stepper (outputs are always N single coins by policy)
+  // - others: show only when expansion is both allowed and enabled
+  const showStepper =
+    cmdKind === 'splitCoins' ? true : isExpanded && allowed && !!cmdKind;
 
   // Right column shifts for Split/MakeMoveVec (when stepper visible)
   const shiftRight =

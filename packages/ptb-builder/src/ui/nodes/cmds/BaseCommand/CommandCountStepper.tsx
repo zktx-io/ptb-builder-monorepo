@@ -1,6 +1,7 @@
 // Ultra-compact count stepper (＋ / − only, no number readout).
-// - Renders when: command supports expansion AND is expanded (even if patcher missing → disabled)
-// - Nested vectors → not render (cannot expand)
+// Rendering policy:
+// - splitCoins: always render (outputs are always N singles; no expand toggle).
+// - others: render only when command supports expansion AND is expanded.
 
 import React, { useMemo } from 'react';
 
@@ -41,6 +42,8 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
   className,
   disabled,
 }) => {
+  const forceStepper = cmdKind === 'splitCoins';
+
   const expKey = useMemo(() => expandedKeyOf(cmdKind), [cmdKind]);
   const allowed = useMemo(
     () => canExpandCommand(cmdKind, ui as any),
@@ -48,8 +51,9 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
   );
   const isExpanded = Boolean(expKey && ui?.[expKey]);
 
-  // Only render if expanded AND allowed
-  if (!expKey || !isExpanded || !allowed) return <></>;
+  // splitCoins → always render; others → only when allowed & expanded
+  const shouldRender = forceStepper || (!!cmdKind && allowed && isExpanded);
+  if (!shouldRender) return <></>;
 
   const countKey = countKeyOf(cmdKind);
   if (!countKey) return <></>;
@@ -60,7 +64,15 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
   const step = (delta: number) => {
     if (!canPatch) return;
     const next = clampInt(count + delta, min, max);
-    if (next !== count) onPatchUI!(nodeId!, { [countKey]: next });
+    if (next === count) return;
+
+    // For splitCoins, do NOT touch any expand flag; it has no toggle.
+    const patch: Record<string, unknown> = { [countKey]: next };
+
+    // For other commands, keep expanded true while stepping (quality-of-life)
+    if (!forceStepper && expKey) patch[expKey] = true;
+
+    onPatchUI!(nodeId!, patch);
   };
 
   const decDisabled = disabled || !canPatch || count <= min;

@@ -53,6 +53,59 @@ type CmdSpec = {
   ports: PortsBuilder;
 };
 
+/** Inject UI defaults directly onto the node (single source of truth). */
+function applyDefaultUIInPlace(node?: CommandNode) {
+  if (!node) return;
+  const k = node.command;
+  const raw = ((node.params?.ui ?? {}) as CommandUIParams) || {};
+  const next: CommandUIParams = { ...raw };
+
+  switch (k) {
+    case 'splitCoins': {
+      // Policy:
+      // - Input amounts: single vector<u64>
+      // - Outputs: N * single objects (ALWAYS expanded)
+      // - Toggle disabled (handled by canExpandCommand)
+      next.amountsExpanded = true;
+      if (typeof next.amountsCount !== 'number' || next.amountsCount <= 0) {
+        next.amountsCount = 2;
+      }
+      break;
+    }
+
+    case 'mergeCoins': {
+      // Default to vector input; allow expansion via toggle.
+      if (typeof next.sourcesExpanded !== 'boolean')
+        next.sourcesExpanded = false;
+      if (typeof next.sourcesCount !== 'number' || next.sourcesCount <= 0) {
+        next.sourcesCount = 2;
+      }
+      break;
+    }
+
+    case 'transferObjects': {
+      // Default to vector input; allow expansion via toggle.
+      if (typeof next.objectsExpanded !== 'boolean')
+        next.objectsExpanded = false;
+      if (typeof next.objectsCount !== 'number' || next.objectsCount <= 0) {
+        next.objectsCount = 1;
+      }
+      break;
+    }
+
+    case 'makeMoveVec': {
+      // Default to vector input; allow expansion except when nested vector<T>.
+      if (typeof next.elemsExpanded !== 'boolean') next.elemsExpanded = false;
+      if (typeof next.elemsCount !== 'number' || next.elemsCount <= 0) {
+        next.elemsCount = 2;
+      }
+      break;
+    }
+  }
+
+  node.params = { ...(node.params ?? {}), ui: next };
+}
+
 /** Public helpers used by UI */
 export function expandedKeyOf(
   kind?: string,
@@ -98,7 +151,8 @@ export function canExpandCommand(kind?: string, ui?: CommandUIParams): boolean {
   if (!kind) return false;
   switch (kind) {
     case 'splitCoins':
-      return true; // vector<u64> single-level
+      // Always expanded outputs; toggle disabled.
+      return false;
     case 'mergeCoins':
       return true; // vector<object>
     case 'transferObjects':
@@ -113,7 +167,6 @@ export function canExpandCommand(kind?: string, ui?: CommandUIParams): boolean {
   }
 }
 
-/** ---- Registry (single source of truth for command IO) ---- */
 const Registry: Record<CommandKind, CmdSpec> = {
   /** SplitCoins */
   splitCoins: {
@@ -127,9 +180,12 @@ const Registry: Record<CommandKind, CmdSpec> = {
         label: 'amounts',
       });
 
-      const outs: Port[] = ui.amountsExpanded
-        ? manyOutputs('out_coin', posInt(ui.amountsCount, 1, 2), O())
-        : [ioOut('out_coins', { dataType: V(O()), label: 'coins' })];
+      // Always produce single×N outputs (ignore toggle).
+      const outs: Port[] = manyOutputs(
+        'out_coin',
+        posInt(ui.amountsCount, 1, 2),
+        O(),
+      );
 
       return [...PORTS.commandBase(), coinIn, amountsIn, ...outs];
     },
@@ -265,6 +321,7 @@ export function materializeCommandPorts(
     return getCommandSpec(arg)?.ports(undefined) ?? PORTS.commandBase();
   }
   if (typeof arg === 'object') {
+    applyDefaultUIInPlace(arg as CommandNode);
     const cmd = (arg as Partial<CommandNode>).command;
     if (cmd) {
       return (
