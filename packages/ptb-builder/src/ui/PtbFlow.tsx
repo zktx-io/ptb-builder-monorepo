@@ -38,7 +38,8 @@ import {
 } from '../adapters/ptbAdapter';
 import { baseHandleId } from './handles/handleUtils';
 import { hasStartToEnd } from './utils/flowPath';
-import { generateTsSdkCode } from '../codegen/generateTsSdk';
+import { buildTransactionBlock } from '../codegen/buildTransactionBlock';
+import { generateTsSdkCode } from '../codegen/generateTsSdkCode';
 import {
   inferCastTarget,
   isTypeCompatible,
@@ -157,8 +158,17 @@ function pruneIncompatibleIOEdges(
 }
 
 export function PTBFlow() {
-  const { snapshot, saveSnapshot, readOnly, theme, setTheme, network } =
-    usePtb();
+  const {
+    snapshot,
+    saveSnapshot,
+    readOnly,
+    theme,
+    setTheme,
+    network,
+    adapters,
+    execOpts,
+    runTx,
+  } = usePtb();
 
   /** Generated source (updated on connect / node change). */
   const [code, setCode] = useState<string>(EMPTY_CODE(network));
@@ -185,28 +195,28 @@ export function PTBFlow() {
         const nextUI = { ...ui, ...patch };
 
         if ('amountsExpanded' in patch) {
-          if (patch.amountsExpanded) {
+          if ((patch as any).amountsExpanded) {
             if (typeof (node.params as any)?.ui?.amountsCount !== 'number') {
               (nextUI as any).amountsCount = 2;
             }
           } else delete (nextUI as any).amountsCount;
         }
         if ('sourcesExpanded' in patch) {
-          if (patch.sourcesExpanded) {
+          if ((patch as any).sourcesExpanded) {
             if (typeof (node.params as any)?.ui?.sourcesCount !== 'number') {
               (nextUI as any).sourcesCount = 2;
             }
           } else delete (nextUI as any).sourcesCount;
         }
         if ('objectsExpanded' in patch) {
-          if (patch.objectsExpanded) {
+          if ((patch as any).objectsExpanded) {
             if (typeof (node.params as any)?.ui?.objectsCount !== 'number') {
               (nextUI as any).objectsCount = 2;
             }
           } else delete (nextUI as any).objectsCount;
         }
         if ('elemsExpanded' in patch) {
-          if (patch.elemsExpanded) {
+          if ((patch as any).elemsExpanded) {
             if (typeof (node.params as any)?.ui?.elemsCount !== 'number') {
               (nextUI as any).elemsCount = 2;
             }
@@ -563,16 +573,16 @@ export function PTBFlow() {
     };
   }, [rfNodes, rfEdges, saveSnapshot]);
 
-  /** Recompute code whenever RF or network changes. */
+  /** Recompute code whenever RF, network, or exec options change. */
   useEffect(() => {
     try {
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const src = generateTsSdkCode(ptb, network);
+      const src = generateTsSdkCode(ptb, network, execOpts);
       setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(network));
     } catch {
       setCode(EMPTY_CODE(network));
     }
-  }, [rfNodes, rfEdges, network]);
+  }, [rfNodes, rfEdges, network, execOpts]);
 
   /** Theme-dependent grid colors. */
   const { fineColor, accentColor } = useMemo(
@@ -582,6 +592,20 @@ export function PTBFlow() {
     }),
     [theme],
   );
+
+  const [executing, setExecuting] = useState(false);
+
+  const onExecute = useCallback(async () => {
+    try {
+      setExecuting(true);
+      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
+      const tx = buildTransactionBlock(ptb, network, execOpts);
+      // runTx internally does all toasts (dry-run + execute)
+      await runTx?.(tx);
+    } finally {
+      setExecuting(false);
+    }
+  }, [rfNodes, rfEdges, network, execOpts, runTx]);
 
   return (
     <div
@@ -640,11 +664,11 @@ export function PTBFlow() {
               title="ts-sdk preview"
               theme={theme}
               onThemeChange={setTheme}
-              // defaultCollapsed={false} // optional
               emptyText={EMPTY_CODE(network)}
-              // onExecute={...}          // hook later when tx build+run is ready
-              // executing={...}
-              // canExecute={...}
+              onExecute={onExecute}
+              executing={executing}
+              // You can restrict execute button if no adapter:
+              canExecute={flowActive}
             />
           </div>
         </Panel>

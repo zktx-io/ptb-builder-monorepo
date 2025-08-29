@@ -18,6 +18,7 @@ import {
 import type { Transaction } from '@mysten/sui/transactions';
 
 import { consoleToast, type ToastAdapter } from '../adapters/toast';
+import type { ExecOptions } from '../codegen/types';
 import type {
   CommandNode,
   Port,
@@ -92,6 +93,12 @@ export type PtbContextValue = {
 
   /** Build a PTB document from current state (include embeds optional). */
   saveToDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
+
+  /** Execution options (e.g., myAddress, gasBudget) */
+  execOpts: ExecOptions;
+
+  /** Build+dry-run+execute pipeline (hides SuiClient from public API) */
+  runTx?: (tx?: Transaction) => Promise<{ digest?: string; error?: string }>;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -119,6 +126,9 @@ export type PtbProviderProps = {
   adapters?: Adapters;
   features?: Features;
   theme?: Theme;
+
+  /** Execution options to propagate into codegen / tx builder */
+  execOpts?: ExecOptions;
 };
 
 const DEFAULT_GRAPH_DEBOUNCE = 400;
@@ -167,6 +177,9 @@ export function PtbProvider({
   adapters,
   features,
   theme: themeProp = 'dark',
+
+  /** Execution options are passed in from the app */
+  execOpts: execOptsProp = {},
 }: PtbProviderProps) {
   /** Busy indicator for async jobs (parse/tx load, etc.) */
   const [busy] = useState(false);
@@ -183,7 +196,7 @@ export function PtbProvider({
   /** Active network — defaults to 'devnet' until a doc is loaded */
   const [activeNetwork, setActiveNetwork] = useState<Network>('devnet');
 
-  /** SuiClient bound to activeNetwork */
+  /** SuiClient bound to activeNetwork (INTERNAL ONLY) */
   const clientRef = useRef<SuiClient | undefined>(undefined);
   useLayoutEffect(() => {
     clientRef.current = new SuiClient({ url: getFullnodeUrl(activeNetwork) });
@@ -205,28 +218,73 @@ export function PtbProvider({
   const exec = adapters?.executeTx;
 
   const executeTx = useCallback(
-    async (tx?: Transaction) => {
+    async (tx?: Transaction): Promise<{ digest?: string; error?: string }> => {
       if (!exec) {
-        toastImpl({
-          message: 'executeTx adapter not provided',
-          variant: 'warning',
-        });
+        // no toast here
         return { error: 'executeTx adapter not provided' };
       }
       try {
         const res = await exec(tx);
-        if (res?.digest)
-          toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
-        else if (res?.error)
-          toastImpl({ message: res.error, variant: 'error' });
+        // no toast here either; just return
         return res ?? {};
       } catch (e: any) {
+        // no toast here
         const msg = e?.message || 'Unknown execution error';
-        toastImpl({ message: msg, variant: 'error' });
         return { error: msg };
       }
     },
-    [exec, toastImpl],
+    [exec],
+  );
+
+  /** Build + dry-run + (if ok) execute. Keeps SuiClient private. */
+  const runTx = useCallback(
+    async (tx?: Transaction) => {
+      if (!tx) return { error: 'No transaction to run' };
+      const client = clientRef.current;
+      if (!client) {
+        toastImpl({
+          message: 'SuiClient unavailable (provider not ready).',
+          variant: 'error',
+        });
+        return { error: 'SuiClient unavailable' };
+      }
+
+      // Dry run
+      try {
+        const bytes = await tx.build({ client });
+        const sim = await client.dryRunTransactionBlock({
+          transactionBlock: bytes,
+        });
+        const status = (sim as any)?.effects?.status?.status;
+        const errorMsg =
+          (sim as any)?.effects?.status?.error ||
+          (sim as any)?.checkpointError ||
+          (sim as any)?.error;
+
+        if (status !== 'success') {
+          toastImpl({
+            message: errorMsg || 'Dry run failed',
+            variant: 'error',
+          });
+          return { error: errorMsg || 'Dry run failed' };
+        }
+      } catch (e: any) {
+        const msg = e?.message || 'Dry run error';
+        toastImpl({ message: msg, variant: 'error' });
+        return { error: msg };
+      }
+
+      // Execute
+      const res = await executeTx(tx);
+      if (res?.digest) {
+        toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
+      } else if (res?.error) {
+        // This catches wallet "user rejected" too — toast exactly once here
+        toastImpl({ message: res.error, variant: 'error' });
+      }
+      return res ?? {};
+    },
+    [executeTx, toastImpl],
   );
 
   const adaptersSnapshot = useMemo(
@@ -334,7 +392,6 @@ export function PtbProvider({
     onDocDebounceMs,
   ]);
 
-  // Trigger doc autosave when relevant states change (if onDocChange is provided)
   React.useEffect(() => {
     scheduleDocNotify();
   }, [snapshot, scheduleDocNotify]);
@@ -404,7 +461,6 @@ export function PtbProvider({
           const next = { ...prev, [id]: meta };
           return next;
         });
-        // embeds changed → doc autosave (if hooked)
         scheduleDocNotify();
         return meta;
       } catch {
@@ -441,7 +497,6 @@ export function PtbProvider({
           const next = { ...prev, [id]: res };
           return next;
         });
-        // embeds changed → doc autosave (if hooked)
         scheduleDocNotify();
         return res;
       } catch (e: any) {
@@ -485,7 +540,6 @@ export function PtbProvider({
         g && Array.isArray(g.nodes) && Array.isArray(g.edges) && g.nodes.length;
       const base = valid ? g : seedDefaultGraph();
 
-      // stop pending graph/doc notifies
       if (graphTimerRef.current !== undefined) {
         clearTimeout(graphTimerRef.current);
         graphTimerRef.current = undefined;
@@ -498,7 +552,6 @@ export function PtbProvider({
       lastGraphRef.current = undefined;
       setSnapshot(base);
 
-      // kick both notifiers
       scheduleGraphNotify(base);
       scheduleDocNotify();
     },
@@ -550,6 +603,11 @@ export function PtbProvider({
 
       loadFromDoc,
       saveToDoc,
+
+      execOpts: execOptsProp,
+
+      // Keep client private; expose pipeline instead
+      runTx,
     }),
     [
       snapshot,
@@ -569,6 +627,8 @@ export function PtbProvider({
       getPackageModulesView,
       loadFromDoc,
       saveToDoc,
+      execOptsProp,
+      runTx,
     ],
   );
 
