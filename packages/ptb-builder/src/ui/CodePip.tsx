@@ -33,47 +33,36 @@ export { tx };
 `;
 
 type CodePipProps = {
-  /** Source code to display */
   code: string;
-  /** Syntax language (defaults to 'typescript') */
   language?: 'typescript' | 'javascript';
-  /** Left header title (keep super short, e.g., 'Preview') */
   title?: string;
-  /** Initial width (px or css size, default: 380) */
   defaultWidth?: number | string;
-  /** Max height for scroll area (px or css size, default: 520) */
   maxHeight?: number | string;
 
-  /** Theme control (header select) */
   theme: 'light' | 'dark';
   onThemeChange?: (t: 'light' | 'dark') => void;
 
-  /** Collapsible state (checkbox controls this; checked = visible) */
   defaultCollapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
 
-  /** Placeholder text when code is empty */
   emptyText?: string;
 
-  /** Optional run hook; footer button is shown only if provided */
   onExecute?: () => Promise<void> | void;
   executing?: boolean;
   canExecute?: boolean;
 
-  /** Optional external copy handler; falls back to clipboard API */
   onCopy?: (text: string) => Promise<void> | void;
 };
 
-/** Tiny inline feedback label (no toast) */
+/** Inline transient hint label */
 function useInlineHint(timeoutMs = 1200) {
   const [hint, setHint] = useState<string | undefined>(undefined);
   const timer = useRef<number | undefined>();
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    return () => {
       if (timer.current) window.clearTimeout(timer.current);
-    },
-    [],
-  );
+    };
+  }, []);
   return {
     hint,
     show: (msg: string) => {
@@ -107,6 +96,8 @@ export function CodePip({
 }: CodePipProps) {
   // eslint-disable-next-line no-restricted-syntax
   const preRef = useRef<HTMLPreElement | null>(null);
+  // eslint-disable-next-line no-restricted-syntax
+  const codeRef = useRef<HTMLElement | null>(null); // highlight only this node
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const { hint, show } = useInlineHint();
 
@@ -114,25 +105,30 @@ export function CodePip({
   const normalized = useMemo(() => code ?? '', [code]);
   const visibleCode = normalized.trim().length ? normalized : emptyText;
 
-  // Prism highlight when visible and content changes
+  // Prism: highlight only the <code> node, when visible
   useEffect(() => {
     if (collapsed) return;
-    if (!preRef.current) return;
+    if (!codeRef.current) return;
     try {
-      Prism.highlightAllUnder(preRef.current);
+      Prism.highlightElement(codeRef.current);
     } catch {
-      // never break UI on highlight errors
+      // never crash UI due to highlighting
     }
   }, [visibleCode, language, collapsed]);
 
   const handleCopy = async () => {
     try {
       const text = visibleCode;
+
+      // SSR/legacy guards + custom handler
       if (onCopy) {
         await onCopy(text);
-      } else if (navigator?.clipboard?.writeText) {
+      } else if (
+        typeof navigator !== 'undefined' &&
+        navigator?.clipboard?.writeText
+      ) {
         await navigator.clipboard.writeText(text);
-      } else {
+      } else if (typeof document !== 'undefined') {
         const ta = document.createElement('textarea');
         ta.value = text;
         ta.style.position = 'fixed';
@@ -142,6 +138,7 @@ export function CodePip({
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
+
       show('Copied');
     } catch {
       show('Copy failed');
@@ -169,7 +166,7 @@ export function CodePip({
       defaultSize={{ width: defaultWidth, height: 'auto' }}
       minWidth={280}
       maxWidth={640}
-      enable={{ left: true }} // anchored to the right (nice for top-right panel)
+      enable={{ left: true }}
       style={{
         pointerEvents: 'auto',
         userSelect: 'text',
@@ -180,7 +177,7 @@ export function CodePip({
       }}
       handleClasses={{ left: 'cursor-ew-resize' }}
     >
-      {/* Header (minimal toolbar): left=title, right=[Code □] | theme select */}
+      {/* Header */}
       <div
         className="flex items-center justify-between px-2 py-1 text-xs"
         style={{
@@ -191,14 +188,14 @@ export function CodePip({
       >
         <div className="flex items-center gap-2">
           <span style={{ opacity: 0.85, fontWeight: 600 }}>{title}</span>
-          {hint && (
-            <span
-              className="ml-1"
-              style={{ opacity: 0.65, fontStyle: 'italic' }}
-            >
-              {hint}
-            </span>
-          )}
+          {/* aria-live allows screen readers to announce short feedback */}
+          <span
+            aria-live="polite"
+            className="ml-1"
+            style={{ opacity: 0.65, fontStyle: 'italic' }}
+          >
+            {hint}
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -212,6 +209,7 @@ export function CodePip({
               type="checkbox"
               checked={!collapsed}
               onChange={(e) => handleCheckbox(e.target.checked)}
+              aria-label="Toggle code preview"
             />
           </label>
 
@@ -259,12 +257,19 @@ export function CodePip({
               color: theme === 'dark' ? '#eaeef2' : '#1f2328',
             }}
           >
-            <code className={`language-${language}`}>{visibleCode}</code>
+            <code
+              ref={codeRef}
+              className={`language-${language}`}
+              // key to force Prism to re-parse when language changes
+              key={language}
+            >
+              {visibleCode}
+            </code>
           </pre>
         </div>
       )}
 
-      {/* Footer (actions): Copy + Run */}
+      {/* Footer (actions) */}
       {!collapsed && (
         <div
           className="flex items-center justify-end gap-2 px-2 py-1"
@@ -275,6 +280,7 @@ export function CodePip({
           }}
         >
           <button
+            type="button"
             onClick={handleCopy}
             className="px-2 py-1 rounded"
             title="Copy"
@@ -287,8 +293,11 @@ export function CodePip({
           </button>
           {onExecute && (
             <button
+              type="button"
               onClick={onExecute}
               disabled={!!executing || !canExecute}
+              aria-disabled={!!executing || !canExecute}
+              aria-busy={!!executing}
               className="px-2 py-1 rounded disabled:cursor-not-allowed"
               title="Run"
               style={{
