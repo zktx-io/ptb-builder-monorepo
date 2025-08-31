@@ -1,5 +1,5 @@
-import BaseCommand from './cmds/BaseCommand/BaseCommand';
-import MoveCallCommand from './cmds/MoveCallCommand/MoveCallCommand';
+import { BaseCommand } from './cmds/BaseCommand/BaseCommand';
+import { MoveCallCommand } from './cmds/MoveCallCommand/MoveCallCommand';
 import { EndNode } from './EndNode';
 import { StartNode } from './StartNode';
 import { VarNode } from './vars/VarNode';

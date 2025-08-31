@@ -1,6 +1,7 @@
+// src/ui/nodes/cmds/shared.ts
 import { useMemo } from 'react';
 
-import { Port, PTBNode } from '../../../ptb/graph/types';
+import type { Port, PTBNode } from '../../../ptb/graph/types';
 
 export const FLOW_TOP = 16;
 export const ROW_SPACING = 24;

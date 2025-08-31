@@ -1,4 +1,4 @@
-// src/ui/nodes/cmds/BaseCommand/registry.ts
+// src/ui/nodes/cmds/registry.ts
 // Single source of truth for command port materialization.
 // - Ports for each CommandKind are computed here from node.params.ui (policy applied).
 // - For MoveCall, **type-parameter inputs come first**, followed by value-parameter inputs,

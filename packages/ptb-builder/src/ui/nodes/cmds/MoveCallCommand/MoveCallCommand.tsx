@@ -1,25 +1,13 @@
-// src/ui/nodes/cmds/MoveCallCommand.tsx
+// src/ui/nodes/cmds/MoveCallCommand/MoveCallCommand.tsx
 // Compact UI for the MoveCall command:
 // 1) Package ID input + Load (locks after success)
 // 2) Module select (from loaded modules)
 // 3) Function select (from selected module; disabled when none)
 //
-// State is persisted in node.params.ui:
-// {
-//   pkgId, pkgLocked,
-//   module, func,
-//   _nameModules_,
-//   _moduleFunctions_,
-//   _fnSigs_: { [module]: { [func]: { tparams: PTBType[]; ins: PTBType[]; outs: PTBType[] } } },
-//   _fnTParams: PTBType[],   // <-- ordered list of type params (T0, T1, ...)
-//   _fnIns: PTBType[],
-//   _fnOuts: PTBType[]
-// }
-//
-// Ports are materialized by the registry (single source of truth) after onPatchUI.
+// Ports are materialized by the registry after onPatchUI.
 // This component only computes/patches UI state from loaded package metadata.
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 
 import type { Node, NodeProps, Position } from '@xyflow/react';
 import { Position as RFPos } from '@xyflow/react';
@@ -43,9 +31,8 @@ import {
   useCommandPorts,
 } from '../shared';
 
-// --- local helpers: build PTB typeparam list (T0, T1, ...) from any shape ---
+// Build PTB type-parameter list (T0, T1, ...) from any shape.
 function buildTypeParams(anyTp: unknown): PTBType[] {
-  // SuiMoveNormalizedFunction.typeParameters can be a number or array (impl-agnostic)
   const count = Array.isArray(anyTp)
     ? anyTp.length
     : typeof anyTp === 'number'
@@ -77,7 +64,9 @@ function minHeightWithOffset(inCount: number, outCount: number) {
   return TITLE_TO_IO_GAP + MVC_IO_OFFSET + gaps * ROW_SPACING + BOTTOM_PADDING;
 }
 
-function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
+export const MoveCallCommand = memo(function MoveCallCommand({
+  data,
+}: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
   const ui = ((node?.params?.ui ?? {}) as any) || {};
 
@@ -117,8 +106,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
     setPkgIdBuf(ui.pkgId ?? '');
   }, [ui.pkgId]);
 
-  // Load package → store modules, functions, and normalized fn signatures (tparams/ins/outs),
-  // choose defaults, and lock the package id.
+  // Load package → store modules, functions, and normalized fn signatures.
   const loadPackage = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
     if (!pkg || !node?.id) return;
@@ -150,7 +138,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
           const f = mod.exposedFunctions[fn];
           const tparams = buildTypeParams((f as any).typeParameters);
           const ins = (f.parameters ?? []).map(toPTBTypeFromMove);
-          const outs = (f.return ?? []).map(toPTBTypeFromMove); // NOTE: mysten uses `return`
+          const outs = (f.return ?? []).map(toPTBTypeFromMove);
           sigs[m][fn] = { tparams, ins, outs };
         }
       }
@@ -234,14 +222,13 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
             {iconOfCommand('moveCall')}
             {data?.label ?? (node as any)?.label ?? 'Move Call'}
           </div>
-          {/* No expand switch: MoveCall UI is always compact */}
         </div>
 
-        {/* Flow handles (fixed near the title area) */}
+        {/* Flow handles */}
         <PTBHandleFlow type="target" style={{ top: FLOW_TOP }} />
         <PTBHandleFlow type="source" style={{ top: FLOW_TOP }} />
 
-        {/* Controls (package / module / function) */}
+        {/* Controls */}
         <div className="px-2 py-1 space-y-1">
           {/* Package row */}
           <div className="flex items-center gap-1">
@@ -254,7 +241,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
             <button
               type="button"
               className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
-              onMouseDown={(e) => e.preventDefault()} // avoid RF drag on mousedown
+              onMouseDown={(e) => e.preventDefault()}
               onClick={loadPackage}
               disabled={ui.pkgLocked || !pkgIdBuf.trim() || loading}
               title={
@@ -284,10 +271,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
           />
         </div>
 
-        {/* IO handles (start below the controls by a fixed offset)
-            NOTE: The actual materialization order (type params first, then parameters, then returns)
-            must be handled in the registry when reading ui._fnTParams/_fnIns/_fnOuts.
-            This component only renders whatever ports exist on the node. */}
+        {/* IO handles (start below the controls by a fixed offset) */}
         {inIO.map((port, idx) => (
           <PTBHandleIO
             key={port.id}
@@ -309,6 +293,6 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       </div>
     </div>
   );
-}
+});
 
-export default React.memo(MoveCallCommand);
+export default MoveCallCommand;
