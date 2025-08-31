@@ -1,3 +1,5 @@
+// src/ui/nodes/nodeFactories.ts
+// -----------------------------------------------------------------------------
 // Factory for PTB nodes (Start/End/Variables/Commands).
 // - CommandKind is canonical (camelCase) across the app.
 // - Command ports are always materialized from a single source of truth (registry).
