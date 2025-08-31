@@ -1,12 +1,18 @@
-import React, { useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
-import { typeOf } from './utils';
-import type { RFEdgeData } from '../../ptb/ptbAdapter';
+import { typeOf } from './edgeUtils';
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
+import type { RFEdgeData } from '../../ptb/ptbAdapter';
 
-function IoEdgeImpl(props: EdgeProps) {
+/**
+ * IO edge renderer:
+ * - Uses Bezier path for smooth curves
+ * - Categorizes edge by serialized type for CSS styling
+ * - Memoized to avoid re-render noise
+ */
+export const IoEdge = memo(function IoEdge(props: EdgeProps) {
   const {
     id,
     sourceX,
@@ -33,23 +39,14 @@ function IoEdgeImpl(props: EdgeProps) {
 
   // v11 (sourceHandle/targetHandle) and v12 (sourceHandleId/targetHandleId)
   const srcH: string | undefined =
-    (props as any).sourceHandleId ??
-    // v11 fallback
-    (props as any).sourceHandle ??
-    undefined;
-
+    (props as any).sourceHandleId ?? (props as any).sourceHandle;
   const tgtH: string | undefined =
-    (props as any).targetHandleId ??
-    // v11 fallback
-    (props as any).targetHandle ??
-    undefined;
+    (props as any).targetHandleId ?? (props as any).targetHandle;
 
-  // Narrow edge data to our payload shape
   const edgeData = props.data as RFEdgeData | undefined;
 
-  // Prefer source handle's type; then target; then edge.data.dataType
+  // Prefer source handle’s type; fallback: target handle → edge.data.dataType
   const serializedType = typeOf(srcH) ?? typeOf(tgtH) ?? edgeData?.dataType;
-
   const cat = ioCategoryOfSerialized(serializedType);
 
   return (
@@ -63,9 +60,10 @@ function IoEdgeImpl(props: EdgeProps) {
         vectorEffect: 'non-scaling-stroke',
         cursor: 'pointer',
       }}
+      aria-label="io-edge"
+      data-edge-id={id}
     />
   );
-}
+});
 
-export const IoEdge = React.memo(IoEdgeImpl);
 export default IoEdge;
