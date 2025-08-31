@@ -1,9 +1,9 @@
-// src/ui/nodes/handles/handleUtils.ts
+// src/ui/handles/handleUtils.ts
 import type { Connection } from '@xyflow/react';
 
-import { Port, PTBType } from '../../ptb/graph/types';
+import type { Port, PTBType } from '../../ptb/graph/types';
 
-/** Get handle id from either v12 (…HandleId) or v11 (…Handle) field. */
+/** Read handle id from v12 (...HandleId) or v11 (...Handle). */
 function getSourceHandle(c: Connection): string | null | undefined {
   return (c as any).sourceHandleId ?? (c as any).sourceHandle;
 }
@@ -62,7 +62,7 @@ export function isIOTargetBusy(edges: any[], c: Connection) {
   });
 }
 
-/** Flow: enforce next -> prev only (by handle ids). */
+/** Flow: allow only next -> prev (by handle ids). */
 export function isFlowDirectionOK(c: Connection) {
   const sh = baseHandleId(getSourceHandle(c));
   const th = baseHandleId(getTargetHandle(c));
@@ -71,19 +71,17 @@ export function isFlowDirectionOK(c: Connection) {
 
 /**
  * IO: enforce out -> in and IO role on both ends.
- * This is direction-agnostic with respect to drag origin: we inspect the ports.
+ * Direction-agnostic w.r.t. drag origin; we inspect resolved ports.
  */
 export function isIODirectionOK(nodes: any[], c: Connection): boolean {
   const sp = findPortFromStore(
     nodes,
-    // eslint-disable-next-line no-restricted-syntax
-    c.source ?? null,
+    c.source ?? undefined,
     getSourceHandle(c) as any,
   );
   const tp = findPortFromStore(
     nodes,
-    // eslint-disable-next-line no-restricted-syntax
-    c.target ?? null,
+    c.target ?? undefined,
     getTargetHandle(c) as any,
   );
   if (!sp || !tp) return false;

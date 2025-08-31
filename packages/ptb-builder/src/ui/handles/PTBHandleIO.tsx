@@ -1,4 +1,4 @@
-// src/ui/nodes/handles/PTBHandleIO.tsx
+// src/ui/handles/PTBHandleIO.tsx
 import React, { useMemo } from 'react';
 
 import {
