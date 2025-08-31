@@ -1,7 +1,10 @@
-import React from 'react';
+// src/ui/nodes/vars/inputs/TextInput.tsx
+import React, { memo } from 'react';
 
 /** Tiny styled text input for VarNode editors */
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+export const TextInput = memo(function TextInput(
+  props: React.InputHTMLAttributes<HTMLInputElement>,
+) {
   return (
     <input
       {...props}
@@ -12,6 +15,6 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
       }
     />
   );
-}
+});
 
 export default TextInput;

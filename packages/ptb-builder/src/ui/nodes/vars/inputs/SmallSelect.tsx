@@ -1,5 +1,5 @@
 // src/ui/components/SmallSelect.tsx
-import React from 'react';
+import React, { memo } from 'react';
 
 type SmallSelectProps = Omit<
   React.SelectHTMLAttributes<HTMLSelectElement>,
@@ -12,7 +12,7 @@ type SmallSelectProps = Omit<
 };
 
 /** Tiny styled select for compact node UIs */
-export function SmallSelect({
+export const SmallSelect = memo(function SmallSelect({
   value,
   options = [],
   placeholderOption = 'n/a',
@@ -21,23 +21,35 @@ export function SmallSelect({
   disabled,
   ...rest
 }: SmallSelectProps) {
-  // Ensure the current value is always renderable to avoid React warnings
+  // Normalize options
+  const baseOptions = Array.isArray(options) ? options.filter(Boolean) : [];
+
+  // Ensure the current value is renderable to avoid React warnings
   const hasValue = typeof value === 'string' && value.length > 0;
-  const baseOptions = Array.isArray(options) ? options : [];
-  const needsInject = hasValue && !baseOptions.includes(value!);
+  const needsInject = hasValue && !baseOptions.includes(value as string);
   const renderOptions = needsInject
     ? [value as string, ...baseOptions]
     : baseOptions;
 
-  // Compute a safe controlled value
-  const controlledValue = hasValue
-    ? (value as string)
-    : (renderOptions[0] ?? '');
+  // Deduplicate while preserving order (defensive)
+  const seen = new Set<string>();
+  const optionsUnique = renderOptions.filter((o) => {
+    if (seen.has(o)) return false;
+    seen.add(o);
+    return true;
+  });
+
+  // Compute a safe controlled value (no non-null assertions)
+  const controlledValue = optionsUnique.length
+    ? hasValue
+      ? (value as string)
+      : optionsUnique[0]
+    : '';
 
   return (
     <select
       {...rest}
-      value={renderOptions.length > 0 ? controlledValue : ''}
+      value={optionsUnique.length ? controlledValue : ''}
       onChange={(e) => onChange?.(e.target.value)}
       disabled={disabled}
       className={
@@ -46,12 +58,12 @@ export function SmallSelect({
         (className ?? '')
       }
     >
-      {renderOptions.length === 0 ? (
+      {optionsUnique.length === 0 ? (
         <option value="" disabled>
           {placeholderOption}
         </option>
       ) : (
-        renderOptions.map((opt) => (
+        optionsUnique.map((opt) => (
           <option key={opt} value={opt}>
             {opt}
           </option>
@@ -59,6 +71,6 @@ export function SmallSelect({
       )}
     </select>
   );
-}
+});
 
 export default SmallSelect;

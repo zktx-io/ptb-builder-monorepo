@@ -1,4 +1,4 @@
-// src/ui/nodes/vars/utils.ts
+// src/ui/nodes/vars/varUtils.ts
 // Small helpers used by VarNode and other var-related UIs.
 
 import { isVector } from '../../../ptb/graph/typecheck';

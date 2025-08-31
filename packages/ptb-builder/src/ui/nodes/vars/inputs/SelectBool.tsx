@@ -1,7 +1,8 @@
-import React from 'react';
+// src/ui/nodes/vars/inputs/SelectBool.tsx
+import React, { memo } from 'react';
 
 /** Tiny boolean select (true/false) for VarNode editors */
-export function SelectBool({
+export const SelectBool = memo(function SelectBool({
   value,
   onChange,
   disabled,
@@ -22,6 +23,6 @@ export function SelectBool({
       <option value="false">false</option>
     </select>
   );
-}
+});
 
 export default SelectBool;

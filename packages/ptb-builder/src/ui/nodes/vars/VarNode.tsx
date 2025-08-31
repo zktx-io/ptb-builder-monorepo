@@ -4,6 +4,7 @@
 // "Cannot update a component while rendering a different component" warnings.
 
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -21,7 +22,7 @@ import {
 import { usePtb } from '../../PtbProvider';
 import { SelectBool } from './inputs/SelectBool';
 import { TextInput } from './inputs/TextInput';
-import { buildOutPort, placeholderFor } from './utils';
+import { buildOutPort, placeholderFor } from './varUtils';
 import {
   ioShapeOf,
   isVector as isVectorType,
@@ -84,7 +85,10 @@ function defer(fn: () => void) {
   else Promise.resolve().then(fn);
 }
 
-function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
+export const VarNode = memo(function VarNode({
+  id: rfNodeId,
+  data,
+}: NodeProps<VarRFNode>) {
   const v = data?.ptbNode as VariableNode | undefined;
   const nodeId = v?.id;
   const varType = v?.varType;
@@ -405,6 +409,6 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
       </div>
     </div>
   );
-}
+});
 
-export default React.memo(VarNode);
+export default VarNode;
