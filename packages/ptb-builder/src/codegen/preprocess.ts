@@ -1,8 +1,14 @@
-// PTB Graph → IR
-// Assigns stable symbols per variable and per command output, including splitCoins single×N.
-// The same IR is consumed by codegen and runtime builder.
+// src/codegen/preprocess.ts
+// PTB Graph -> IR
+// Single source of truth for:
+//  - Flow analysis (active subgraph + topological order)
+//  - IO edge indexing (by target/source port)
+//  - Variable/command symbol assignments
+//
+// NOTE: This module exports graph helpers so other codegen stages can reuse
+// them without duplicating logic. There is NO dependency on PTBEdge.dataType;
+// all typing decisions are made from port-level PTBType on the node.
 
-import { isTypeCompatible, isUnknownType } from '../ptb/graph/typecheck';
 import type {
   CommandNode,
   PTBEdge,
@@ -23,8 +29,12 @@ import type {
   IRVar,
 } from './types';
 
-// ---------- flow helpers (same as codegen’s logic) ----------
-function flowAdj(graph: PTBGraph) {
+/* ============================================================================
+ * Graph helpers (exported for reuse by generateTsSdkCode/builders)
+ * ==========================================================================*/
+
+/** Forward/reverse adjacency for flow edges. */
+export function flowAdj(graph: PTBGraph) {
   const fwd = new Map<string, string[]>(),
     rev = new Map<string, string[]>();
   for (const n of graph.nodes) {
@@ -38,6 +48,7 @@ function flowAdj(graph: PTBGraph) {
     }
   return { fwd, rev };
 }
+
 function reach(startIds: string[], adj: Map<string, string[]>) {
   const seen = new Set<string>(),
     q = [...startIds];
@@ -49,7 +60,9 @@ function reach(startIds: string[], adj: Map<string, string[]>) {
   }
   return seen;
 }
-function activeFlowIds(graph: PTBGraph): Set<string> {
+
+/** Nodes that lie on some Start → … → End path. */
+export function activeFlowIds(graph: PTBGraph): Set<string> {
   const starts = graph.nodes.filter((n) => n.kind === 'Start').map((n) => n.id);
   const ends = graph.nodes.filter((n) => n.kind === 'End').map((n) => n.id);
   const { fwd, rev } = flowAdj(graph);
@@ -59,7 +72,9 @@ function activeFlowIds(graph: PTBGraph): Set<string> {
   for (const id of fromStart) if (toEnd.has(id)) active.add(id);
   return active;
 }
-function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
+
+/** Stable topological-like order restricted to active nodes. */
+export function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
   const idToNode = new Map(graph.nodes.map((n) => [n.id, n]));
   const indeg = new Map<string, number>(),
     children = new Map<string, string[]>();
@@ -74,13 +89,17 @@ function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
         indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
       }
     }
+
+  // Prefer Start nodes first among zero-indegree
   const q: string[] = [];
   for (const id of active) {
     const n = idToNode.get(id);
     if ((indeg.get(id) ?? 0) === 0 && n?.kind === 'Start') q.push(id);
   }
+  // Then any other zero-indegree
   for (const id of active)
     if ((indeg.get(id) ?? 0) === 0 && !q.includes(id)) q.push(id);
+
   const out: string[] = [],
     seen = new Set<string>();
   while (q.length) {
@@ -96,8 +115,8 @@ function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
   return out.map((id) => idToNode.get(id)!).filter(Boolean);
 }
 
-// ---------- IO index ----------
-function buildIoIndex(edges: PTBEdge[]) {
+/** Index all IO edges by target/source port. */
+export function buildIoIndex(edges: PTBEdge[]) {
   const io = edges.filter((e) => e.kind === 'io');
   const byTarget = new Map<string, Map<string, PTBEdge[]>>();
   const bySource = new Map<string, Map<string, PTBEdge[]>>();
@@ -112,9 +131,13 @@ function buildIoIndex(edges: PTBEdge[]) {
   return { byTarget, bySource, ioEdges: io };
 }
 
-// ---------- utils ----------
+/* ============================================================================
+ * Small utilities
+ * ==========================================================================*/
+
 const SAFE = (s: string, fb: string) =>
   (s ?? '').trim().replace(/[^A-Za-z0-9_]/g, '_') || fb;
+
 const PLURAL = (base: string) => {
   if (
     /(list|array|vec|ids|coins|addresses|objects|values|amounts)$/i.test(base)
@@ -126,13 +149,6 @@ const PLURAL = (base: string) => {
   if (lower.endsWith('s')) return base;
   return base + 's';
 };
-
-function splitOutArity(cmd: CommandNode): number {
-  const outs = (cmd.ports || []).filter(
-    (p) => p.role === 'io' && p.direction === 'out',
-  );
-  return Math.max(outs.length, 0);
-}
 
 function isMyWalletVariable(v: VariableNode): boolean {
   if (v.varType?.kind !== 'scalar' || v.varType.name !== 'address')
@@ -189,7 +205,6 @@ function initFromVar(v: VariableNode): IRInit {
       return objectInitFromVar(v);
     case 'vector': {
       const items = Array.isArray(val) ? val : [];
-      // element init is best-effort; builder wraps numeric/address at call-sites
       const elem: IRInit[] = items.map((x) => {
         if (t.elem.kind === 'move_numeric')
           return { kind: 'move_numeric', value: x as any };
@@ -217,20 +232,23 @@ function initFromVar(v: VariableNode): IRInit {
   }
 }
 
-// ---------- main ----------
+/* ============================================================================
+ * Main transform: PTBGraph -> IR
+ * ==========================================================================*/
+
 export function preprocessToIR(graph: PTBGraph, network: Network): IR {
   const header: IRHeader = { usedMyAddress: false, usedSuiTypeConst: false };
 
-  // Active subgraph
+  // Active subgraph + order
   const active = activeFlowIds(graph);
   const ordered = orderActive(graph, active);
   const idToNode = new Map(graph.nodes.map((n) => [n.id, n]));
   const { byTarget } = buildIoIndex(graph.edges);
 
-  // Registry: for each OUT port → array of symbols exposed by that port
-  const portSyms = new Map<string, string[]>(); // `${nodeId}:${portId}` -> symbols
+  // OUT port -> symbols registry
+  const portSyms = new Map<string, string[]>(); // `${nodeId}:${portId}` -> string[]
 
-  // Vars to emit
+  // Vars used by active commands
   const irVars: IRVar[] = [];
   const usedVarIds = new Set<string>();
   for (const e of graph.edges) {
@@ -240,7 +258,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
     if (srcNode?.kind === 'Variable') usedVarIds.add(srcNode.id);
   }
 
-  // Emit variables used by active commands and map their OUT port to symbol(s)
+  // Emit variables and map their OUT ports -> symbol(s)
   let varAuto = 1;
   for (const n of graph.nodes) {
     if (!usedVarIds.has(n.id)) continue;
@@ -261,7 +279,6 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
     }
     irVars.push({ name: sym, init });
 
-    // map all OUT io ports to this symbol (vector var still exposes one symbol)
     for (const p of v.ports || []) {
       if (p.role === 'io' && p.direction === 'out') {
         portSyms.set(`${v.id}:${p.id}`, [sym]);
@@ -272,7 +289,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
   const irOps: IROp[] = [];
   let splitSeq = 0;
 
-  // Helper: gather inputs for a node's IN ports as arrays of symbols
+  // Helper: gather inputs per IN port as arrays of symbols
   function collect(node: PTBNode) {
     const byPort = new Map<string, string[]>();
     const ports = (node.ports || []).filter(
@@ -291,7 +308,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
     return byPort;
   }
 
-  // For each active command in flow order
+  // Process active commands in order
   for (const node of ordered) {
     if (node.kind !== 'Command') continue;
     const c = node as CommandNode;
@@ -308,20 +325,17 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
         const coinSyms = inPorts.length
           ? (byPort.get(inPorts[0].id) ?? [])
           : [];
-        const coin = coinSyms[0] ?? 'tx.gas'; // fallback is tx.gas-like, but builder will receive env symbol normally
+        const coin = coinSyms[0] ?? 'tx.gas';
 
-        // amounts: rest inputs (or label==amounts in your schema)
+        // amounts: explicit 'amounts' label or remaining inputs
         const amountsPort = (c.ports || []).find(
           (p) =>
             p.role === 'io' && p.direction === 'in' && p.label === 'amounts',
         )?.id;
         let rawAmounts: string[] = [];
         if (amountsPort) rawAmounts = byPort.get(amountsPort) ?? [];
-        else {
-          // if no explicit label, concatenate remaining ports (except coin)
-          const restPorts = inPorts.slice(1);
-          rawAmounts = restPorts.flatMap((p) => byPort.get(p.id) ?? []);
-        }
+        else
+          rawAmounts = inPorts.slice(1).flatMap((p) => byPort.get(p.id) ?? []);
 
         // output arity by real out IO port count
         const outs = (c.ports || []).filter(
@@ -330,7 +344,6 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
         const arity = Math.max(outs.length, 0);
 
         if (arity > 1) {
-          // single×N: generate stable names cmd_<seq>_<i> unless user named outs
           const names: string[] = outs.map((_, i) => `cmd_${splitSeq}_${i}`);
           const op: IROpSplitCoins = {
             kind: 'splitCoins',
@@ -339,13 +352,8 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
             out: { mode: 'destructure', names } as IROutDestructure,
           };
           irOps.push(op);
-
-          // register port symbols element-by-element
-          outs.forEach((p, i) => {
-            portSyms.set(`${c.id}:${p.id}`, [names[i]]);
-          });
+          outs.forEach((p, i) => portSyms.set(`${c.id}:${p.id}`, [names[i]]));
         } else {
-          // single vector out
           const arrName = 'coins';
           const op: IROpSplitCoins = {
             kind: 'splitCoins',
@@ -354,10 +362,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
             out: { mode: 'vector', name: arrName } as IROutVector,
           };
           irOps.push(op);
-
-          if (outs[0]) {
-            portSyms.set(`${c.id}:${outs[0].id}`, [arrName]);
-          }
+          if (outs[0]) portSyms.set(`${c.id}:${outs[0].id}`, [arrName]);
         }
         break;
       }
@@ -371,45 +376,39 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
           : [];
         const destination = destSyms[0] ?? 'tx.gas';
         const sources = inPorts.slice(1).flatMap((p) => byPort.get(p.id) ?? []);
-
         irOps.push({ kind: 'mergeCoins', destination, sources });
         break;
       }
 
       case 'transferObjects': {
-        // objects + recipient; accept label-based or positional
+        // recipient heuristic: address-typed IN port or explicit label
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
-
-        // Guess recipient: find a scalar<address> input port if labeled or last by shape
         let recipient: string | undefined;
         const objects: string[] = [];
-
         for (const p of inPorts) {
           const t = p.dataType;
           const vals = byPort.get(p.id) ?? [];
+          if (p.label === 'recipient') {
+            if (!recipient && vals.length) recipient = vals[0];
+            continue;
+          }
           if (t?.kind === 'scalar' && t.name === 'address') {
             if (!recipient && vals.length) recipient = vals[0];
           } else {
             objects.push(...vals);
           }
         }
-
         if (!recipient) {
-          // allow fallback to myAddress sentinel; builder will wrap via tx.pure.address(...)
-          recipient = 'myAddress';
+          recipient = 'myAddress'; // sentinel
+          header.usedMyAddress = true;
         }
-
-        // mark header if we used myAddress sentinel
-        if (recipient === 'myAddress') header.usedMyAddress = true;
-
         irOps.push({ kind: 'transferObjects', objects, recipient });
         break;
       }
 
       case 'makeMoveVec': {
-        // collect all inputs as elements
         const elems = (c.ports || [])
           .filter((p) => p.role === 'io' && p.direction === 'in')
           .flatMap((p) => byPort.get(p.id) ?? []);
@@ -430,7 +429,6 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
       }
 
       case 'moveCall': {
-        // Simple pass-through (positional args)
         const target =
           (c.params as any)?.runtime?.target ?? '0x1::module::func';
         const typeArgs: string[] = [];
@@ -457,7 +455,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
       }
 
       default:
-        // unsupported commands are skipped
+        // Skip unsupported commands in IR
         break;
     }
   }

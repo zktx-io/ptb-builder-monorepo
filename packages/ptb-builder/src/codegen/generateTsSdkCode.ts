@@ -1,4 +1,8 @@
 // src/codegen/generateTsSdkCode.ts
+// IR -> TypeScript SDK source string (preview-only)
+// Reuses graph helpers exported by preprocess.ts to avoid duplication.
+// Does NOT rely on PTBEdge.dataType; per-port PTBType is the SSOT.
+
 import type {
   CommandNode,
   PTBEdge,
@@ -8,9 +12,10 @@ import type {
   VariableNode,
 } from '../ptb/graph/types';
 import type { Network } from '../types';
+import { activeFlowIds, buildIoIndex, orderActive } from './preprocess';
 import type { ExecOptions } from './types';
 
-/** Detect splitCoins out arity from node ports (single array vs. N singles) */
+/** Detect splitCoins out arity based on OUT ports (array vs single×N). */
 function splitOutArity(cmd: CommandNode): number {
   const outs = (cmd.ports || []).filter(
     (p) => p.role === 'io' && p.direction === 'out',
@@ -18,7 +23,7 @@ function splitOutArity(cmd: CommandNode): number {
   return Math.max(outs.length, 0);
 }
 
-/** Simple writer with indentation */
+/** Simple writer with indentation. */
 class Writer {
   private lines: string[] = [];
   private indent = 0;
@@ -36,7 +41,7 @@ class Writer {
   }
 }
 
-/** Unique name allocator to avoid duplicate identifiers */
+/** Unique name allocator to avoid duplicate identifiers. */
 class NamePool {
   private used = new Set<string>();
   constructor(reserved: string[] = []) {
@@ -56,7 +61,7 @@ class NamePool {
   }
 }
 
-/** Pluralize a base identifier for vector variables */
+/** Pluralize a base identifier for vector variables. */
 function toPluralName(raw: string): string {
   const base = raw || 'val';
   if (
@@ -72,10 +77,10 @@ function toPluralName(raw: string): string {
   return base + 's';
 }
 
-/** Codegen context flags for header decisions */
+/** Codegen context flags for header decisions. */
 type GenCtx = { usedMyAddress: boolean; usedSuiTypeConst: boolean };
 
-/** Heuristics: detect "My Wallet" variable (address for owner/recipient/etc.) */
+/** Heuristics: detect "My Wallet" variable (address for owner/recipient/etc.). */
 function isMyWalletVariable(v: VariableNode): boolean {
   if (v.varType?.kind !== 'scalar' || v.varType.name !== 'address')
     return false;
@@ -88,7 +93,7 @@ function isMyWalletVariable(v: VariableNode): boolean {
   );
 }
 
-/** Special object mappers: gas/system/clock/random → tx.* helpers */
+/** Special object mappers: gas/system/clock/random → tx.* helpers. */
 function objectExprFromVariable(v: VariableNode): string {
   const name = (v.name || '').toLowerCase();
   const val = (v as any).value as string | undefined;
@@ -104,7 +109,7 @@ function objectExprFromVariable(v: VariableNode): string {
   return `tx.object('${String(val ?? '')}')`;
 }
 
-/** Render VariableNode initializer (never returns undefined) */
+/** Render VariableNode initializer (never returns undefined). */
 function renderVariableInit(v: VariableNode, ctx: GenCtx): string {
   const t = v.varType;
   const val = (v as any).value;
@@ -161,108 +166,13 @@ function renderVariableInit(v: VariableNode, ctx: GenCtx): string {
   }
 }
 
-/** Cast wrapper if edge indicates numeric width */
+/** Apply preview-only cast wrapper if edge indicates numeric width. */
 function applyCastIfAny(expr: string, e?: PTBEdge): string {
   const width = (e as any)?.cast?.to as string | undefined;
   return width ? `tx.pure.${width}(${expr})` : expr;
 }
 
-/** ---- Flow helpers ---- */
-function flowAdj(graph: PTBGraph) {
-  const fwd = new Map<string, string[]>(),
-    rev = new Map<string, string[]>();
-  for (const n of graph.nodes) {
-    fwd.set(n.id, []);
-    rev.set(n.id, []);
-  }
-  for (const e of graph.edges)
-    if (e.kind === 'flow') {
-      fwd.get(e.source)!.push(e.target);
-      rev.get(e.target)!.push(e.source);
-    }
-  return { fwd, rev };
-}
-function reach(startIds: string[], adj: Map<string, string[]>) {
-  const seen = new Set<string>();
-  const q = [...startIds];
-  while (q.length) {
-    const id = q.shift()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    for (const t of adj.get(id) ?? []) if (!seen.has(t)) q.push(t);
-  }
-  return seen;
-}
-function activeFlowIds(graph: PTBGraph): Set<string> {
-  const starts = graph.nodes.filter((n) => n.kind === 'Start').map((n) => n.id);
-  const ends = graph.nodes.filter((n) => n.kind === 'End').map((n) => n.id);
-  const { fwd, rev } = flowAdj(graph);
-  const fromStart = reach(starts, fwd),
-    toEnd = reach(ends, rev);
-  const active = new Set<string>();
-  for (const id of fromStart) if (toEnd.has(id)) active.add(id);
-  return active;
-}
-function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
-  const idToNode = new Map(graph.nodes.map((n) => [n.id, n]));
-  const indeg = new Map<string, number>(),
-    children = new Map<string, string[]>();
-  for (const id of active) {
-    indeg.set(id, 0);
-    children.set(id, []);
-  }
-  for (const e of graph.edges)
-    if (e.kind === 'flow') {
-      if (active.has(e.source) && active.has(e.target)) {
-        children.get(e.source)!.push(e.target);
-        indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
-      }
-    }
-  const q: string[] = [];
-  for (const id of active) {
-    const n = idToNode.get(id);
-    if ((indeg.get(id) ?? 0) === 0 && n?.kind === 'Start') q.push(id);
-  }
-  for (const id of active)
-    if ((indeg.get(id) ?? 0) === 0 && !q.includes(id)) q.push(id);
-  const out: string[] = [],
-    seen = new Set<string>();
-  while (q.length) {
-    const id = q.shift()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-    for (const t of children.get(id) ?? []) {
-      indeg.set(t, (indeg.get(t) ?? 0) - 1);
-      if ((indeg.get(t) ?? 0) === 0) q.push(t);
-    }
-  }
-  return out.map((id) => idToNode.get(id)!).filter(Boolean);
-}
-
-/** IO indexes */
-function buildIoIndex(edges: PTBEdge[]) {
-  const io = edges.filter((e) => e.kind === 'io');
-  const byTarget = new Map<string, Map<string, PTBEdge[]>>();
-  const bySource = new Map<string, Map<string, PTBEdge[]>>();
-  for (const e of io) {
-    if (!byTarget.has(e.target)) byTarget.set(e.target, new Map());
-    if (!bySource.has(e.source)) bySource.set(e.source, new Map());
-    const mt = byTarget.get(e.target)!,
-      ms = bySource.get(e.source)!;
-    mt.set(e.targetPort, [...(mt.get(e.targetPort) ?? []), e]);
-    ms.set(e.sourcePort, [...(ms.get(e.sourcePort) ?? []), e]);
-  }
-  return { byTarget, bySource, ioEdges: io };
-}
-
-/** Sanitizes identifiers and falls back if empty */
-function safeName(s: string | undefined, fallback: string) {
-  const v = (s ?? '').trim().replace(/[^A-Za-z0-9_]/g, '_');
-  return v || fallback;
-}
-
-/** Array-like detection (vector variables, array literals, typical tx-builders) */
+/** Whether an expression is array-like (so it can be used as-is in tx.* calls). */
 function isArrayLikeExpr(e: string, arrayVarNames: Set<string>): boolean {
   const s = e.trim();
   const looksArrayLiteral = s.startsWith('[') && s.endsWith(']');
@@ -277,7 +187,6 @@ function isArrayLikeExpr(e: string, arrayVarNames: Set<string>): boolean {
   );
 }
 
-/** amounts builder for splitCoins: always pass an array argument */
 function amountsExprForSplit(
   raw: string[],
   arrayVarNames: Set<string>,
@@ -285,12 +194,11 @@ function amountsExprForSplit(
   if (raw.length === 0) return '[]';
   if (raw.length === 1) {
     const e = raw[0].trim();
-    if (isArrayLikeExpr(e, arrayVarNames)) return e; // vector variable / array literal
+    if (isArrayLikeExpr(e, arrayVarNames)) return e;
   }
-  return `[${raw.join(', ')}]`; // wrap scalars
+  return `[${raw.join(', ')}]`;
 }
 
-/** Flatten into a single array literal (no spreads at call-sites) */
 function emitArrayArgFlat(exprs: string[], arrayVarNames: Set<string>): string {
   if (exprs.length === 0) return '[]';
   if (exprs.length === 1) {
@@ -300,7 +208,7 @@ function emitArrayArgFlat(exprs: string[], arrayVarNames: Set<string>): string {
   return `[${exprs.join(', ')}]`;
 }
 
-/** Identify transferObjects inputs robustly */
+/** Identify transferObjects inputs robustly (label, address type, or position). */
 function pickTransferInputs(
   cmd: CommandNode,
   byPort: Map<string, string[]>,
@@ -354,10 +262,10 @@ export function generateTsSdkCode(
     if (src?.kind === 'Variable') usedVarIds.add(src.id);
   }
 
-  // Track names that are arrays (vector variables or array-producing command results)
+  // Track names that are arrays (vector variables or array-producing results)
   const arrayVarNames = new Set<string>();
 
-  // Wire expressions and per-port (single-expr) mapping
+  // Wire expressions and per-port mapping
   const portExpr = new Map<string, string>(); // `${nodeId}:${portId}` -> expr
 
   // === Variables (only those actually used) ===
@@ -366,7 +274,7 @@ export function generateTsSdkCode(
     if (!usedVarIds.has(n.id)) continue;
     const v = n as VariableNode;
 
-    let base = safeName(v.name, `val_${varAuto++}`);
+    let base = (v.name || '').trim() || `val_${varAuto++}`;
     if (v.varType?.kind === 'vector') base = toPluralName(base);
     const varName = names.claim(base);
 
@@ -384,9 +292,9 @@ export function generateTsSdkCode(
   if (varAuto > 1) vars.w('');
 
   // === Commands (only those on active flow) ===
-  let splitCmdSeq = 0; // for cmd_<seq>_<i> naming
+  let splitCmdSeq = 0;
 
-  // helper: collect inputs for a node
+  // Collect inputs by IN port
   function collectInputsByPort(node: PTBNode) {
     const byPort = new Map<string, string[]>();
     const ports = (node.ports || []).filter(
@@ -405,7 +313,7 @@ export function generateTsSdkCode(
     return byPort;
   }
 
-  // helper: register outputs for a node
+  // Register OUT port expressions
   function registerOutputs(
     node: PTBNode,
     callExpr: string,
@@ -416,22 +324,20 @@ export function generateTsSdkCode(
     );
 
     if (outs.length > 1) {
-      // single×N: map each OUT port to its element name (no array sharing!)
       const names = (overrideNames ?? []).slice(0, outs.length);
       outs.forEach((p, i) => {
         const key = `${node.id}:${p.id}`;
         const nm = names[i];
-        portExpr.set(key, nm ?? callExpr); // fallback extremely rare
+        portExpr.set(key, nm ?? callExpr);
       });
       return;
     }
 
-    // single out port
     if (!outs[0]) return;
     const key = `${node.id}:${outs[0].id}`;
     if (overrideNames && overrideNames.length > 1) {
       portExpr.set(key, `[${overrideNames.join(', ')}]`);
-      arrayVarNames.add(`[${overrideNames.join(', ')}]` as any); // mark as array-like
+      arrayVarNames.add(`[${overrideNames.join(', ')}]` as any);
     } else if (overrideNames && overrideNames.length === 1) {
       portExpr.set(key, overrideNames[0]);
     } else {
@@ -444,10 +350,9 @@ export function generateTsSdkCode(
     const c = n as CommandNode;
     const byPort = collectInputsByPort(c);
 
-    // Named outputs (if any)
     const declaredOuts =
       c.outputs && c.outputs.length > 0
-        ? c.outputs.map((s) => safeName(s, s))
+        ? c.outputs.map((s) => s.trim()).filter(Boolean)
         : [];
     const uniqueOuts = declaredOuts.map((o) => names.claim(o));
 
@@ -462,7 +367,6 @@ export function generateTsSdkCode(
       case 'splitCoins': {
         splitCmdSeq += 1;
 
-        // Inputs: assume first IN is coin, the rest are amounts (or explicit label)
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
@@ -482,7 +386,6 @@ export function generateTsSdkCode(
 
         const amountsExpr = amountsExprForSplit(rawAmounts, arrayVarNames);
 
-        // Output mode by out ports
         const outArity = splitOutArity(c);
         if (outArity > 1) {
           const elemNames: string[] =
@@ -538,38 +441,14 @@ export function generateTsSdkCode(
       }
 
       case 'transferObjects': {
-        const objectsExprs: string[] = [];
-        let recipientExpr: string | undefined;
-
-        for (const p of c.ports || []) {
-          if (p.role !== 'io' || p.direction !== 'in') continue;
-          const vals = byPort.get(p.id) ?? [];
-          if (p.label === 'objects') {
-            objectsExprs.push(...vals);
-            continue;
-          }
-          if (p.label === 'recipient') {
-            if (!recipientExpr && vals.length) recipientExpr = vals[0];
-            continue;
-          }
-          const t = p.dataType;
-          if (t?.kind === 'scalar' && t.name === 'address') {
-            if (!recipientExpr && vals.length) recipientExpr = vals[0];
-          } else {
-            objectsExprs.push(...vals);
-          }
-        }
-
-        if (!recipientExpr) {
-          // fallback to myAddress (preview-friendly)
-          recipientExpr = 'myAddress';
-          ctx.usedMyAddress = true;
-        }
+        const { objectsExprs, recipientExpr } = pickTransferInputs(c, byPort);
+        const recipient = recipientExpr ?? 'myAddress';
+        if (!recipientExpr) ctx.usedMyAddress = true;
 
         const call = `tx.transferObjects(${emitArrayArgFlat(
           objectsExprs,
           arrayVarNames,
-        )}, ${recipientExpr})`;
+        )}, ${recipient})`;
 
         if (assignPrefix) {
           body.w(`${assignPrefix}${call};`);
@@ -633,6 +512,7 @@ export function generateTsSdkCode(
         const target = runtime.target ?? '/* pkg::module::function */';
         const targs: string[] = [];
         const args: string[] = [];
+
         for (const p of c.ports || []) {
           if (p.role !== 'io' || p.direction !== 'in') continue;
           const incoming = byPort.get(p.id) ?? [];
@@ -678,11 +558,9 @@ export function generateTsSdkCode(
   const out = new Writer();
   out.w(`// Auto-generated from PTB graph (network: ${network})`);
   out.w(`import { Transaction } from '@mysten/sui/transactions';`);
-
   if (ctx.usedSuiTypeConst) out.w(`const SUI = '0x2::sui::SUI';`);
-
   out.w('');
-  // Provided by caller if available
+
   if (opts?.myAddress) {
     out.w(`// Provided by caller`);
     out.w(`const myAddress = '${opts.myAddress}';`);

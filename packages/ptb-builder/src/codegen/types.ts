@@ -1,3 +1,4 @@
+// src/codegen/types.ts
 // Minimal IR + exec options used by both codegen and runtime builder.
 
 import type { PTBType } from '../ptb/graph/types';

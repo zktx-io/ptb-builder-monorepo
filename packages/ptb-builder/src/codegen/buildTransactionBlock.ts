@@ -1,3 +1,4 @@
+// src/codegen/buildTransactionBlock.ts
 // IR → Transaction builder runtime
 // Mirrors codegen semantics; resolves symbols and wraps numeric/address where needed.
 
@@ -17,11 +18,13 @@ function normalizeListArg1(xs: any[]): any[] {
 
 /** tx.pure helpers */
 function asTxArgU64(tx: Transaction, v: any) {
+  // Accept number, bigint, and decimal string
   if (typeof v === 'number' || typeof v === 'bigint')
     return (tx as any).pure.u64(v);
   if (typeof v === 'string' && /^\d+$/.test(v)) return (tx as any).pure.u64(v);
-  return v;
+  return v; // already a tx arg or non-numeric
 }
+
 function asTxArgAddress(tx: Transaction, v: any) {
   if (typeof v === 'string') return (tx as any).pure.address(v);
   return v;
@@ -52,7 +55,7 @@ function fromEnvStrict(env: Map<string, any>, x: any, my?: string): any {
 
   if (!env.has(replaced)) {
     throw new Error(
-      `name '${replaced}'. Upstream op didn't register its outputs; check preprocessToIR for split/destructure naming.`,
+      `Unbound symbol '${replaced}'. Upstream op didn't register its outputs; check preprocessToIR for split/destructure naming.`,
     );
   }
   return env.get(replaced);
@@ -64,13 +67,13 @@ function fromEnvAddress(env: Map<string, any>, x: any, my?: string): any {
   if (typeof replaced !== 'string') return replaced;
   if (env.has(replaced)) return env.get(replaced);
   if (looksLikeAddress(replaced)) return replaced; // treat as address literal
-  // Also allow 'myAddress' if not injected yet (defensive)
-  if (replaced === 'myAddress' && my) return my;
+  if (replaced === 'myAddress' && my) return my; // late injection fallback
   throw new Error(
-    `recipient '${replaced}' is not a bound symbol nor an address literal`,
+    `Recipient '${replaced}' is not a bound symbol nor an address literal`,
   );
 }
 
+/** Evaluate IR initializer to a tx-ready value */
 function evalInit(tx: Transaction, i: IRInit): any {
   switch (i.kind) {
     case 'scalar':
@@ -89,6 +92,7 @@ function evalInit(tx: Transaction, i: IRInit): any {
   }
 }
 
+/** Build a Transaction from IR */
 function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
   const tx = new Transaction();
 
@@ -99,15 +103,16 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
 
   const env = new Map<string, any>();
 
-  // Vars
+  // 1) Materialize variables
   for (const v of ir.vars) {
     let value = evalInit(tx, v.init);
     value = injectMyAddressDeep(value, opts?.myAddress);
+    // Convenience: if user named a var 'sender', respect myAddress override
     if (opts?.myAddress && v.name === 'sender') value = opts.myAddress;
     env.set(v.name, value);
   }
 
-  // Ops
+  // 2) Execute ops, wiring outputs into env
   for (const op of ir.ops as any[]) {
     switch (op.kind) {
       case 'splitCoins': {
@@ -115,6 +120,7 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
         const raw = (op.amounts ?? []).map((a: any) =>
           fromEnvStrict(env, a, opts?.myAddress),
         );
+        // If the single element is an array, keep as-is; otherwise, 1-level flatten is done by tx itself
         const flat = raw.length === 1 && Array.isArray(raw[0]) ? raw[0] : raw;
         const amounts = flat.map((a: any) => asTxArgU64(tx, a));
 
@@ -159,6 +165,8 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
           fromEnvStrict(env, e, opts?.myAddress),
         );
         const elements = normalizeListArg1(raw);
+        // Note: elem type is not required at runtime for ts-sdk helper;
+        // if needed later, pass { type: '...' } per IR.
         const vec = (tx as any).makeMoveVec({ type: undefined, elements });
         if (typeof op.out === 'string') env.set(op.out, vec);
         break;
@@ -177,6 +185,7 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
       }
 
       default:
+        // Unknown op kinds are ignored safely
         break;
     }
   }
@@ -184,9 +193,10 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
   return tx;
 }
 
+/** Public API: PTBGraph → Transaction */
 export function buildTransactionBlock(
   graph: PTBGraph,
-  network: Network,
+  network: Network, // kept for parity with codegen; not used here
   opts?: ExecOptions,
 ): Transaction {
   const ir = preprocessToIR(graph, network);
