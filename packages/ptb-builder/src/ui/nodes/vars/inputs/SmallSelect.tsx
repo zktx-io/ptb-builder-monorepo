@@ -1,4 +1,4 @@
-// src/ui/components/SmallSelect.tsx
+// src/ui/nodes/vars/inputs/SmallSelect.tsx
 import React, { memo } from 'react';
 
 type SmallSelectProps = Omit<
