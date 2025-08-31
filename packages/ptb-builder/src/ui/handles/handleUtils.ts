@@ -2,21 +2,15 @@
 import type { Connection } from '@xyflow/react';
 
 import type { Port, PTBType } from '../../ptb/graph/types';
+import { portIdOf } from '../utils/handleId';
 
 /** Read handle id from v12 (...HandleId) or v11 (...Handle). */
-function getSourceHandle(c: Connection): string | null | undefined {
+function getSourceHandle(c: Connection): string | undefined {
   return (c as any).sourceHandleId ?? (c as any).sourceHandle;
 }
-function getTargetHandle(c: Connection): string | null | undefined {
+function getTargetHandle(c: Connection): string | undefined {
   return (c as any).targetHandleId ?? (c as any).targetHandle;
 }
-
-/** Strip optional ":type" suffix from a handle id (we only need the port id). */
-export const baseHandleId = (h: string | null | undefined) => {
-  const s = String(h ?? '').trim();
-  const i = s.indexOf(':');
-  return i === -1 ? s : s.slice(0, i);
-};
 
 /** Quick guards for connections (must have concrete ends & handles). */
 export const hasConcreteEnds = (c: Connection) =>
@@ -27,8 +21,8 @@ export const isSameNode = (c: Connection) => c.source === c.target;
 /** Resolve a PTB port's type from RF store nodes. */
 export function findPortTypeFromStore(
   nodes: any[],
-  nodeId: string | null | undefined,
-  handleIdStr: string | null | undefined,
+  nodeId: string | undefined,
+  handleIdStr: string | undefined,
 ): PTBType | undefined {
   return findPortFromStore(nodes, nodeId, handleIdStr)?.dataType;
 }
@@ -36,15 +30,15 @@ export function findPortTypeFromStore(
 /** Resolve a PTB Port object from RF store nodes. */
 export function findPortFromStore(
   nodes: any[],
-  nodeId: string | null | undefined,
-  handleIdStr: string | null | undefined,
+  nodeId: string | undefined,
+  handleIdStr: string | undefined,
 ): Port | undefined {
   if (!nodeId || !handleIdStr) return undefined;
   const rfNode = nodes.find((n) => n.id === nodeId);
   const ptbNode = rfNode?.data?.ptbNode;
   if (!ptbNode?.ports) return undefined;
 
-  const hid = baseHandleId(handleIdStr);
+  const hid = portIdOf(handleIdStr);
   return ptbNode.ports.find((pp: Port) => pp.id === hid);
 }
 
@@ -53,7 +47,7 @@ export function isIOTargetBusy(edges: any[], c: Connection) {
   const tgt = c.target;
   const tHandle =
     (c as any).targetHandleId ??
-    ((c as any).targetHandle as string | null | undefined);
+    ((c as any).targetHandle as string | undefined);
   if (!tHandle) return false;
 
   return edges?.some((e: any) => {
@@ -64,8 +58,8 @@ export function isIOTargetBusy(edges: any[], c: Connection) {
 
 /** Flow: allow only next -> prev (by handle ids). */
 export function isFlowDirectionOK(c: Connection) {
-  const sh = baseHandleId(getSourceHandle(c));
-  const th = baseHandleId(getTargetHandle(c));
+  const sh = portIdOf(getSourceHandle(c));
+  const th = portIdOf(getTargetHandle(c));
   return sh === 'next' && th === 'prev';
 }
 

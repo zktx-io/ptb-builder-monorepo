@@ -3,7 +3,7 @@
 // This module ONLY parses handle strings of the form "portId[:serializedType]".
 // All type/category logic is centralized in domain/typecheck.ts.
 
-/** Normalize handle string (null/undefined safe). */
+/** Normalize handle string (undefined safe). */
 function rawHandle(v?: string): string | undefined {
   return v !== undefined ? String(v) : undefined;
 }

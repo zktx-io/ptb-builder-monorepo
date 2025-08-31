@@ -192,7 +192,7 @@ function buildHandleIdForRF(
 }
 
 /** Split only on the first ":" to avoid breaking Move type tags that contain "::" */
-function parseHandleId(handleId?: string | null): {
+function parseHandleId(handleId?: string): {
   portId: string;
   type?: string;
 } {

@@ -54,7 +54,6 @@ import {
   type RFNodeData,
   rfToPTB,
 } from '../ptb/ptbAdapter';
-import { baseHandleId } from './handles/handleUtils';
 import { hasStartToEnd } from './utils/flowPath';
 import { buildTransactionBlock } from '../codegen/buildTransactionBlock';
 import { generateTsSdkCode } from '../codegen/generateTsSdkCode';
@@ -66,11 +65,9 @@ import {
 import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
 import { materializeCommandPorts } from './nodes/cmds/registry';
 import { setIdGenerator } from './nodes/nodeFactories';
+import { portIdOf } from './utils/handleId';
 
 const DEBOUNCE_MS = 250;
-
-/** Normalize RF handle → PTB port id (strip optional ":type" suffix). */
-const portIdOf = (h?: string | null) => baseHandleId(h);
 
 /** DFS loop check for flow edges (prevents cycles). */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
@@ -141,8 +138,8 @@ function pruneDanglingEdges(
     const srcSet = idx.get(e.source);
     const tgtSet = idx.get(e.target);
     if (!srcSet || !tgtSet) return false;
-    const sId = portIdOf(e.sourceHandle);
-    const tId = portIdOf(e.targetHandle);
+    const sId = portIdOf(e.sourceHandle ?? undefined);
+    const tId = portIdOf(e.targetHandle ?? undefined);
     return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
   });
 }
@@ -151,7 +148,7 @@ function pruneDanglingEdges(
 function resolvePortType(
   ptbNodes: PTBNode[],
   nodeId: string,
-  handle?: string | null,
+  handle?: string,
 ): PTBType | undefined {
   const pid = portIdOf(handle);
   if (!pid) return undefined;
@@ -168,8 +165,8 @@ function pruneIncompatibleIOEdges(
 ): RFEdge<RFEdgeData>[] {
   return edges.filter((e) => {
     if (e.type !== 'ptb-io') return true;
-    const sT = resolvePortType(ptbNodes, e.source, e.sourceHandle);
-    const tT = resolvePortType(ptbNodes, e.target, e.targetHandle);
+    const sT = resolvePortType(ptbNodes, e.source, e.sourceHandle ?? undefined);
+    const tT = resolvePortType(ptbNodes, e.target, e.targetHandle ?? undefined);
     if (!sT || !tT) return false;
     if (isUnknownType(sT) || isUnknownType(tT)) return false;
     return isTypeCompatible(sT, tT);
@@ -531,14 +528,14 @@ export function PTBFlow() {
       if (!conn.source || !conn.target) return;
 
       // Find PTB ports to validate roles/directions/types.
-      const findPort = (nodeId: string, handle?: string | null) => {
+      const findPort = (nodeId: string, handle?: string) => {
         const pid = portIdOf(handle);
         const node = baseGraphRef.current.nodes.find((n) => n.id === nodeId);
         return node?.ports.find((p) => p.id === pid);
       };
 
-      const sp = findPort(conn.source, conn.sourceHandle);
-      const tp = findPort(conn.target, conn.targetHandle);
+      const sp = findPort(conn.source, conn.sourceHandle ?? undefined);
+      const tp = findPort(conn.target, conn.targetHandle ?? undefined);
       if (!sp || !tp) return;
 
       setRF((prev) => {

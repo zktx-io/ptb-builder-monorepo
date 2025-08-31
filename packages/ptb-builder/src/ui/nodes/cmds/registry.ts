@@ -312,9 +312,7 @@ export function getCommandSpec(
 }
 
 /** Materialize ports from a command spec. */
-export function materializeCommandPorts(
-  arg?: CommandNode | string | null,
-): Port[] {
+export function materializeCommandPorts(arg?: CommandNode | string): Port[] {
   if (!arg) return PORTS.commandBase();
 
   if (typeof arg === 'string') {

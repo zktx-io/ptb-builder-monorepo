@@ -2,9 +2,9 @@ import React, { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
-import { typeOf } from './edgeUtils';
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
 import type { RFEdgeData } from '../../ptb/ptbAdapter';
+import { typeOf } from '../utils/handleId';
 
 /**
  * IO edge renderer:
