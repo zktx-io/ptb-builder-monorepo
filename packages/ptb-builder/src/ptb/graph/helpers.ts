@@ -1,3 +1,4 @@
+// src/ptb/graph/helpers.ts
 import type { Port, PTBGraph, PTBNode } from './types';
 import { serializePTBType } from './types';
 
@@ -15,11 +16,11 @@ export const findPort = (node: PTBNode, portId: string) =>
  *   - "out_vec:vector<object>"
  *
  * Notes:
- * - For non-IO handles (flow: prev/next), returns plain id without suffix.
- * - We intentionally ignore `port.typeStr` here; it is for UI badges only.
- *   This keeps handle types stable for compatibility and coloring.
- *   (e.g., type-parameter ports display "T0" via `typeStr`, but their handle
- *    type is serialized from `dataType` = "string".)
+ * - For non-IO handles (flow: prev/next), returns the plain id without suffix.
+ * - We intentionally ignore `port.typeStr` here; it's only for UI badges.
+ * - If `dataType.kind === 'typeparam'`, the handle suffix will be that name
+ *   (e.g., "T0"). For coloring/grouping, typenames like "T0" are mapped to
+ *   'unknown' downstream (see ioCategoryOf/ioCategoryOfSerialized).
  */
 export function buildHandleId(port: Port): string {
   if (port.role !== 'io') return port.id;

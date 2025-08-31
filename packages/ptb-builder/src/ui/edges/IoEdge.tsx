@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
 import { typeOf } from './utils';
-import type { RFEdgeData } from '../../adapters/ptbAdapter';
+import type { RFEdgeData } from '../../ptb/ptbAdapter';
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
 
 function IoEdgeImpl(props: EdgeProps) {

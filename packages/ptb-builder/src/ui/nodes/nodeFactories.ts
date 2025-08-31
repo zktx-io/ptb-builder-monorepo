@@ -1,9 +1,10 @@
-// src/editor/nodeFactories.ts
 // Factory for PTB nodes (Start/End/Variables/Commands).
 // - CommandKind is canonical (camelCase) across the app.
-// - UI display names can differ (e.g., "SplitCoins"), but actions must use CommandKind.
 // - Command ports are always materialized from a single source of truth (registry).
 // - Default UI params are injected HERE (single choke point).
+// - IDs: by default we use a local monotonic counter; callers can inject a
+//   doc-scoped generator via setIdGenerator() to guarantee collision-free IDs
+//   across loads/macros.
 
 import { materializeCommandPorts } from './cmds/registry';
 import { O, S, V } from '../../ptb/graph/typeHelpers';
@@ -17,12 +18,35 @@ import type {
 } from '../../ptb/graph/types';
 import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../../ptb/portTemplates';
 
-let seq = 0;
-const nid = (p: string) => `${p}-${Date.now()}-${seq++}`;
+/* ---------------------------- ID generator (DI) ---------------------------- */
+// Default: simple monotonic nonce in this module scope.
+// Apps may inject a doc-scoped generator: setIdGenerator((p) => `${p}-${++n}`)
+let _localNonce = 0;
+let _idGen: (prefix?: string) => string = (prefix = 'id') =>
+  `${prefix}-${++_localNonce}`;
 
-/* ------------------------ Small helpers (reduce dup) ------------------------ */
+/** Replace the ID generator used by factories. */
+export function setIdGenerator(gen: (prefix?: string) => string) {
+  _idGen = typeof gen === 'function' ? gen : _idGen;
+}
+
+/** Convenience: generate the next ID with an optional prefix. */
+export function nextId(prefix?: string) {
+  return _idGen(prefix);
+}
+
+/* --------------------------------- Helpers --------------------------------- */
 function outPort(dataType: PTBType): Port {
   return { id: VAR_OUT, role: 'io', direction: 'out', dataType };
+}
+
+/** Pretty type → label for variables. */
+function labelFromType(t: PTBType): string {
+  const k = (t as any)?.kind;
+  if (k === 'scalar') return (t as any)?.name || 'unknown';
+  if (k === 'object') return 'object';
+  if (k === 'vector') return `vector<${labelFromType((t as any).elem)}>`;
+  return 'unknown';
 }
 
 /* --------------------------- UI defaults injector --------------------------- */
@@ -63,7 +87,7 @@ export const NodeFactories = {
   start(): PTBNode {
     const flowOut: Port = { id: FLOW_NEXT, role: 'flow', direction: 'out' };
     return {
-      id: nid('start'),
+      id: nextId('start'),
       kind: 'Start',
       label: 'Start',
       ports: [flowOut],
@@ -75,7 +99,7 @@ export const NodeFactories = {
   end(): PTBNode {
     const flowIn: Port = { id: FLOW_PREV, role: 'flow', direction: 'in' };
     return {
-      id: nid('end'),
+      id: nextId('end'),
       kind: 'End',
       label: 'End',
       ports: [flowIn],
@@ -96,7 +120,7 @@ export const NodeFactories = {
       position?: { x: number; y: number };
     },
   ): CommandNode {
-    const id = nid(`cmd-${kind}`);
+    const id = nextId(`cmd-${kind}`);
     const label = opts?.label ?? kind;
 
     // Merge defaults + user overrides
@@ -121,13 +145,36 @@ export const NodeFactories = {
     return { ...draftNode, ports };
   },
 
-  // ---------------------------- Variable nodes ----------------------------
+  /* Generic variable node (used by decoder, inspectors, etc.) */
+  variable(
+    varType: PTBType,
+    opts?: {
+      name?: string;
+      label?: string;
+      value?: unknown;
+      position?: { x: number; y: number };
+    },
+  ): VariableNode {
+    const id = nextId('var');
+    const label = opts?.label ?? labelFromType(varType);
+    return {
+      id,
+      kind: 'Variable',
+      label,
+      name: opts?.name ?? 'var',
+      varType,
+      value: opts?.value,
+      ports: [outPort(varType)],
+      position: opts?.position ?? { x: 0, y: 0 },
+    };
+  },
 
-  // Address
+  // ----------------------------- Convenience set -----------------------------
+
   address(): VariableNode {
     const t = S('address');
     return {
-      id: nid('addr'),
+      id: nextId('addr'),
       kind: 'Variable',
       label: 'address',
       name: 'addr',
@@ -139,7 +186,7 @@ export const NodeFactories = {
   addressVector(): VariableNode {
     const t = V(S('address'));
     return {
-      id: nid('addr-vec'),
+      id: nextId('addr-vec'),
       kind: 'Variable',
       label: 'vector<address>',
       name: 'v_address',
@@ -151,7 +198,7 @@ export const NodeFactories = {
   addressWallet(): VariableNode {
     const t = S('address');
     return {
-      id: nid('wallet'),
+      id: nextId('wallet'),
       kind: 'Variable',
       label: 'my wallet',
       name: 'sender',
@@ -165,7 +212,7 @@ export const NodeFactories = {
   bool(): VariableNode {
     const t = S('bool');
     return {
-      id: nid('bool'),
+      id: nextId('bool'),
       kind: 'Variable',
       label: 'bool',
       name: 'flag',
@@ -177,7 +224,7 @@ export const NodeFactories = {
   boolVector(): VariableNode {
     const t = V(S('bool'));
     return {
-      id: nid('bool-vec'),
+      id: nextId('bool-vec'),
       kind: 'Variable',
       label: 'vector<bool>',
       name: 'v_bool',
@@ -191,7 +238,7 @@ export const NodeFactories = {
   number(): VariableNode {
     const t = S('number');
     return {
-      id: nid('var-number'),
+      id: nextId('var-number'),
       kind: 'Variable',
       label: 'number',
       name: 'num',
@@ -203,7 +250,7 @@ export const NodeFactories = {
   numberVector(): VariableNode {
     const t = V(S('number'));
     return {
-      id: nid('var-number-vec'),
+      id: nextId('var-number-vec'),
       kind: 'Variable',
       label: 'vector<number>',
       name: 'nums',
@@ -217,7 +264,7 @@ export const NodeFactories = {
   string(): VariableNode {
     const t = S('string');
     return {
-      id: nid('str'),
+      id: nextId('str'),
       kind: 'Variable',
       label: 'string',
       name: 'text',
@@ -229,7 +276,7 @@ export const NodeFactories = {
   stringVector(): VariableNode {
     const t = V(S('string'));
     return {
-      id: nid('str-vec'),
+      id: nextId('str-vec'),
       kind: 'Variable',
       label: 'vector<string>',
       name: 'v_string',
@@ -241,7 +288,7 @@ export const NodeFactories = {
   string0x2suiSui(): VariableNode {
     const t = S('string');
     return {
-      id: nid('sui-str'),
+      id: nextId('sui-str'),
       kind: 'Variable',
       label: '0x2::sui::SUI',
       name: 'sui',
@@ -256,7 +303,7 @@ export const NodeFactories = {
   object(): VariableNode {
     const t = O();
     return {
-      id: nid('obj'),
+      id: nextId('obj'),
       kind: 'Variable',
       label: 'object',
       name: 'obj',
@@ -268,7 +315,7 @@ export const NodeFactories = {
   objectVector(): VariableNode {
     const t = V(O());
     return {
-      id: nid('obj-vec'),
+      id: nextId('obj-vec'),
       kind: 'Variable',
       label: 'vector<object>',
       name: 'v_object',
@@ -282,7 +329,7 @@ export const NodeFactories = {
   objectClock(): VariableNode {
     const t = O();
     return {
-      id: nid('clock'),
+      id: nextId('clock'),
       kind: 'Variable',
       label: 'clock',
       name: 'clock',
@@ -294,7 +341,7 @@ export const NodeFactories = {
   objectGas(): VariableNode {
     const t = O();
     return {
-      id: nid('gas'),
+      id: nextId('gas'),
       kind: 'Variable',
       label: 'gas',
       name: 'gas',
@@ -306,7 +353,7 @@ export const NodeFactories = {
   objectCoinWithBalance(): VariableNode {
     const t = O();
     return {
-      id: nid('coin-bal'),
+      id: nextId('coin-bal'),
       kind: 'Variable',
       label: 'coinWithBalance',
       name: 'coinWithBalance',
@@ -318,7 +365,7 @@ export const NodeFactories = {
   objectDenyList(): VariableNode {
     const t = O();
     return {
-      id: nid('deny'),
+      id: nextId('deny'),
       kind: 'Variable',
       label: 'denyList',
       name: 'denyList',
@@ -330,7 +377,7 @@ export const NodeFactories = {
   objectOption(): VariableNode {
     const t = O();
     return {
-      id: nid('opt'),
+      id: nextId('opt'),
       kind: 'Variable',
       label: 'option',
       name: 'option',
@@ -342,7 +389,7 @@ export const NodeFactories = {
   objectRandom(): VariableNode {
     const t = O();
     return {
-      id: nid('rand'),
+      id: nextId('rand'),
       kind: 'Variable',
       label: 'random',
       name: 'random',
@@ -354,7 +401,7 @@ export const NodeFactories = {
   objectSystem(): VariableNode {
     const t = O();
     return {
-      id: nid('sys'),
+      id: nextId('sys'),
       kind: 'Variable',
       label: 'system',
       name: 'system',
@@ -365,4 +412,4 @@ export const NodeFactories = {
   },
 };
 
-export { withUIDefaults }; // (optional) if you want to reuse in normalizer/migrations
+export { withUIDefaults, labelFromType };

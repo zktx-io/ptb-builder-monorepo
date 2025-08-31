@@ -1,3 +1,4 @@
+// src/ptb/graph/typecheck.ts
 import type { NumericWidth, PTBType, UICardinality } from './types';
 import { uiCardinalityOf } from './types';
 

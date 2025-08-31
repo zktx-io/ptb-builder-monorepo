@@ -1,3 +1,32 @@
+// PtbProvider.tsx
+// -----------------------------------------------------------------------------
+// Internal provider that owns *persistence* and chain caches.
+// During editing, the React Flow (RF) canvas is the *source of truth*.
+// This provider mirrors the latest RF → PTB snapshot for autosave/export/reload.
+//
+// Model
+// - RF is authoritative while the editor is open.
+// - PTB is a persisted snapshot: loaded once to hydrate RF, then updated
+//   by the canvas through `setGraph(ptb)` (debounced).
+// - We only push PTB back to RF when the *document identity* changes
+//   (open file / load on-chain tx).
+//
+// Derived flags
+// - readOnly by loader:
+//     • loadFromOnChainTx → readOnly = true (viewer)
+//     • loadFromDoc       → readOnly = false (editor)
+//
+// Adapters
+// - Flattened adapters (executeTx, toast).
+// - ctx.toast always available (console fallback).
+//
+// IDs
+// - To avoid timestamp/rand collisions when creating many nodes/edges quickly,
+//   we expose `nextId(prefix?: string)` which returns `${prefix}-${++nonce}`.
+// - On load (doc/chain), we *seed* the nonce by scanning current IDs and
+//   picking the max trailing numeric suffix (e.g., "node-42" → 42).
+// -----------------------------------------------------------------------------
+
 import React, {
   createContext,
   useCallback,
@@ -17,62 +46,30 @@ import {
 } from '@mysten/sui/client';
 import type { Transaction } from '@mysten/sui/transactions';
 
-import { consoleToast, type ToastAdapter } from '../adapters/toast';
 import type { ExecOptions } from '../codegen/types';
-import type {
-  CommandNode,
-  Port,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-} from '../ptb/graph/types';
+import { decodeTx } from '../ptb/decodeTx';
+import type { PTBGraph } from '../ptb/graph/types';
 import { toPTBModuleData } from '../ptb/move/normalize';
 import { PTBModuleData } from '../ptb/move/types';
 import { buildDoc, type PTBDoc } from '../ptb/ptbDoc';
 import { seedDefaultGraph } from '../ptb/seedGraph';
-import type { Network, Theme } from '../types';
-import { materializeCommandPorts } from './nodes/cmds/registry';
+import type { Network, Theme, ToastAdapter } from '../types';
 
-// ===== Adapters & Features ====================================================
-
-export type Adapters = {
-  clipboard?: { copy(text: string): Promise<void> };
-  executeTx?: (
-    chain: `${string}:${string}`,
-    tx: Transaction | undefined,
-  ) => Promise<{ digest?: string; error?: string }>;
-  toast?: ToastAdapter;
-};
-
-export type Features = { codegen?: boolean; parse?: boolean; exec?: boolean };
-
-// ===== Context ===============================================================
+// ===== Context shape ==========================================================
 
 export type PtbContextValue = {
-  /** Current PTB graph snapshot (canvas source of truth) */
-  snapshot: PTBGraph;
-  /** Save a new PTB graph snapshot; triggers debounced onChange */
-  saveSnapshot: (g: PTBGraph) => void;
-  /** Replace current graph immediately (no debounce) */
-  loadSnapshot: (g: PTBGraph) => void;
+  graph: PTBGraph; // last persisted PTB snapshot (RF → PTB)
+  setGraph: (g: PTBGraph) => void; // debounced persist hook
 
-  /** Active network (fixed by last loadFromDoc) */
+  // Runtime flags
   network: Network;
-
-  /** Read-only guard */
   readOnly: boolean;
-  features?: Features;
-  adapters?: Adapters;
-  busy: boolean;
 
-  /** Theme */
+  // UI theme
   theme: Theme;
   setTheme: (t: Theme) => void;
 
-  /** Command UI patcher → re-materialize + prune */
-  onPatchUI: (nodeId: string, patch: Record<string, unknown>) => void;
-
-  /** Chain caches (per active network; overwritten on doc load) */
+  // Chain caches & helpers
   objectMetas: Record<string, SuiObjectData>;
   getObjectData: (
     objectId: string,
@@ -89,82 +86,84 @@ export type PtbContextValue = {
     opts?: { forceRefresh?: boolean },
   ) => Promise<PTBModuleData | undefined>;
 
-  /** Load a persisted PTB document (fix network, preload embeds, replace graph). */
+  // Loaders
+  loadFromOnChainTx: (
+    chain: `${string}:${string}`,
+    txDigest: string,
+  ) => Promise<void>;
   loadFromDoc: (doc: PTBDoc) => void;
 
-  /** Build a PTB document from current state (include embeds optional). */
-  saveToDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
+  // Persistence
+  exportDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
 
-  /** Execution options (e.g., myAddress, gasBudget) */
+  // Monotonic, doc-scoped ID generator
+  nextId: (prefix?: string) => string;
+
+  // Execution
   execOpts: ExecOptions;
-
-  /** Build+dry-run+execute pipeline (hides SuiClient from public API) */
   runTx?: (tx?: Transaction) => Promise<{ digest?: string; error?: string }>;
+
+  // Toast (always available; console fallback if adapter missing)
+  toast: ToastAdapter;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
 
-// ===== Provider Props ========================================================
+// ===== Provider props =========================================================
 
 export type PtbProviderProps = {
   children: React.ReactNode;
-
-  /** Graph-diff autosave callback (lightweight) */
   onChange?: (g: PTBGraph) => void;
   onChangeDebounceMs?: number;
 
-  /**
-   * Optional Doc-level autosave callback (heavier than onChange).
-   * If provided, provider will emit PTBDoc on a separate debounce.
-   */
   onDocChange?: (doc: PTBDoc) => void;
-  onDocDebounceMs?: number; // default 1000ms
-  /** When emitting onDocChange, include embeds or not (default: false). */
+  onDocDebounceMs?: number;
   autosaveDocIncludeEmbeds?: boolean;
 
-  /** UI / permissions / adapters */
-  readOnly?: boolean;
-  adapters?: Adapters;
-  features?: Features;
   theme?: Theme;
-
-  /** Execution options to propagate into codegen / tx builder */
   execOpts?: ExecOptions;
+
+  executeTx?: (
+    chain: `${string}:${string}`,
+    tx: Transaction | undefined,
+  ) => Promise<{ digest?: string; error?: string }>;
+  toast?: ToastAdapter;
 };
 
 const DEFAULT_GRAPH_DEBOUNCE = 400;
 const DEFAULT_DOC_DEBOUNCE = 1000;
 
-// ===== Utils: ports & pruning ===============================================
-
-function portIdSet(ports: Port[] | undefined): Set<string> {
-  const s = new Set<string>();
-  if (Array.isArray(ports)) for (const p of ports) s.add(p.id);
-  return s;
-}
-
-function pruneDanglingIoEdgesForNode(
-  g: PTBGraph,
-  nodeId: string,
-  keepPorts: Set<string>,
-): PTBGraph {
-  const edges = g.edges.filter((e) => {
-    if (e.kind === 'flow') return true;
-    if (e.source === nodeId && !keepPorts.has(e.sourcePort)) return false;
-    if (e.target === nodeId && !keepPorts.has(e.targetPort)) return false;
-    return true;
-  });
-  return { ...g, edges };
-}
+// ===== tiny utils =============================================================
 
 function toSuiObjectData(resp: SuiObjectResponse): SuiObjectData | undefined {
   if ((resp as any)?.error) return undefined;
-  const d = resp.data;
-  if (!d) return undefined;
-  return d;
+  return resp.data ?? undefined;
 }
 
-// ===== Provider ==============================================================
+/** Extract the maximum trailing numeric suffix from IDs like "n-12" / "edge_7". */
+function maxNumericSuffix(ids: Iterable<string>): number {
+  let max = 0;
+  const re = /(\d+)\s*$/;
+  for (const id of ids) {
+    const m = re.exec(id);
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  return max;
+}
+
+/** Seed the nonce by scanning node/edge ids in a PTBGraph. */
+function seedNonceFromGraph(g: PTBGraph | undefined): number {
+  if (!g) return 0;
+  const idBag: string[] = [];
+  for (const n of g.nodes || []) idBag.push(n.id);
+  for (const e of g.edges || []) idBag.push(e.id);
+  return maxNumericSuffix(idBag);
+}
+
+// ===== Provider ===============================================================
 
 export function PtbProvider({
   children,
@@ -174,18 +173,13 @@ export function PtbProvider({
   onDocDebounceMs = DEFAULT_DOC_DEBOUNCE,
   autosaveDocIncludeEmbeds = false,
 
-  readOnly = false,
-  adapters,
-  features,
   theme: themeProp = 'dark',
-
-  /** Execution options are passed in from the app */
   execOpts: execOptsProp = {},
-}: PtbProviderProps) {
-  /** Busy indicator for async jobs (parse/tx load, etc.) */
-  const [busy] = useState(false);
 
-  /** Theme state */
+  executeTx: executeTxProp,
+  toast: toastProp,
+}: PtbProviderProps) {
+  // Theme
   const [theme, setTheme] = useState<Theme>(themeProp);
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -194,19 +188,31 @@ export function PtbProvider({
       : root.classList.remove('dark');
   }, [theme]);
 
-  /** Active network — defaults to 'devnet' until a doc is loaded */
-  const [activeNetwork, setActiveNetwork] = useState<Network>('devnet');
+  // Editor mode (derived)
+  const [readOnly, setReadOnly] = useState<boolean>(false);
 
-  /** SuiClient bound to activeNetwork (INTERNAL ONLY) */
+  // Network & client
+  const [activeNetwork, setActiveNetwork] = useState<Network>('devnet');
   const clientRef = useRef<SuiClient | undefined>(undefined);
   useLayoutEffect(() => {
     clientRef.current = new SuiClient({ url: getFullnodeUrl(activeNetwork) });
   }, [activeNetwork]);
 
-  /** Graph snapshot (source of truth for canvas) */
-  const [snapshot, setSnapshot] = useState<PTBGraph>({ nodes: [], edges: [] });
+  // Persisted PTB snapshot (RF → PTB)
+  const [graph, setGraphState] = useState<PTBGraph>({ nodes: [], edges: [] });
 
-  /** Chain caches (overwrite on doc load) */
+  // Monotonic ID nonce (doc-scoped, seeded from current graph)
+  const [idNonce, setIdNonce] = useState<number>(() =>
+    seedNonceFromGraph(graph),
+  );
+  const nextId = useCallback((prefix = 'id') => {
+    // Use functional update to avoid stale closures
+    let nextVal!: number;
+    setIdNonce((prev) => (nextVal = prev + 1));
+    return `${prefix}-${nextVal}`;
+  }, []);
+
+  // Chain caches
   const [objectMetas, setObjectMetas] = useState<Record<string, SuiObjectData>>(
     () => ({}),
   );
@@ -214,46 +220,53 @@ export function PtbProvider({
     Record<string, SuiMoveNormalizedModules>
   >(() => ({}));
 
-  /** Toast/Adapters */
-  const toastImpl: ToastAdapter = adapters?.toast ?? consoleToast;
-  const exec = adapters?.executeTx;
+  // Toast (no-op / console fallback)
+  const toastImpl: ToastAdapter = useMemo(() => {
+    if (toastProp) return toastProp;
+    return ({ message, variant }) => {
+      const tag =
+        variant === 'error'
+          ? '[ERROR]'
+          : variant === 'success'
+            ? '[SUCCESS]'
+            : variant === 'warning'
+              ? '[WARN]'
+              : '[INFO]';
+      // eslint-disable-next-line no-console
+      console.log(`${tag} ${message}`);
+    };
+  }, [toastProp]);
 
+  // Execute adapter
   const executeTx = useCallback(
     async (
       chain: `${string}:${string}`,
       tx?: Transaction,
     ): Promise<{ digest?: string; error?: string }> => {
-      if (!exec) {
-        // no toast here
-        return { error: 'executeTx adapter not provided' };
-      }
+      if (!executeTxProp) return { error: 'executeTx adapter not provided' };
       try {
-        const res = await exec(chain, tx);
-        // no toast here either; just return
+        const res = await executeTxProp(chain, tx);
         return res ?? {};
       } catch (e: any) {
-        // no toast here
-        const msg = e?.message || 'Unknown execution error';
-        return { error: msg };
+        return { error: e?.message || 'Unknown execution error' };
       }
     },
-    [exec],
+    [executeTxProp],
   );
 
-  /** Build + dry-run + (if ok) execute. Keeps SuiClient private. */
+  // Build + dry-run + execute
   const runTx = useCallback(
     async (tx?: Transaction) => {
       if (!tx) return { error: 'No transaction to run' };
       const client = clientRef.current;
       if (!client) {
         toastImpl({
-          message: 'SuiClient unavailable (provider not ready).',
+          message: 'SuiClient unavailable (not ready).',
           variant: 'error',
         });
         return { error: 'SuiClient unavailable' };
       }
 
-      // Dry run
       try {
         const bytes = await tx.build({ client });
         const sim = await client.dryRunTransactionBlock({
@@ -278,12 +291,10 @@ export function PtbProvider({
         return { error: msg };
       }
 
-      // Execute
       const res = await executeTx(`sui:${activeNetwork}`, tx);
       if (res?.digest) {
         toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
       } else if (res?.error) {
-        // This catches wallet "user rejected" too — toast exactly once here
         toastImpl({ message: res.error, variant: 'error' });
       }
       return res ?? {};
@@ -291,17 +302,10 @@ export function PtbProvider({
     [activeNetwork, executeTx, toastImpl],
   );
 
-  const adaptersSnapshot = useMemo(
-    () => ({ clipboard: adapters?.clipboard, executeTx, toast: toastImpl }),
-    [adapters?.clipboard, executeTx, toastImpl],
-  );
-
-  // ===== Debounced onChange (graph) ==========================================
+  // ---- debounced graph autosave ---------------------------------------------
 
   const onChangeRef = useRef(onChange);
-  const graphTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const graphTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const lastGraphRef = useRef<PTBGraph | undefined>(undefined);
   onChangeRef.current = onChange;
 
@@ -331,29 +335,31 @@ export function PtbProvider({
     [onChangeDebounceMs],
   );
 
-  const saveSnapshot = useCallback(
+  const setGraph = useCallback(
     (g: PTBGraph) => {
-      setSnapshot(g);
+      setGraphState(g);
       scheduleGraphNotify(g);
+      // advance nonce in case external changes introduced larger numeric suffixes
+      setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(g)));
     },
     [scheduleGraphNotify],
   );
 
-  const loadSnapshot = useCallback((g: PTBGraph) => {
+  const replaceGraphImmediate = useCallback((g: PTBGraph) => {
     if (graphTimerRef.current !== undefined) {
       clearTimeout(graphTimerRef.current);
       graphTimerRef.current = undefined;
     }
     lastGraphRef.current = undefined;
-    setSnapshot(g);
+    setGraphState(g);
+    // reset nonce to the max found in the new snapshot
+    setIdNonce(seedNonceFromGraph(g));
   }, []);
 
-  // ===== Debounced onDocChange (doc) =========================================
+  // ---- debounced PTBDoc autosave --------------------------------------------
 
   const onDocChangeRef = useRef(onDocChange);
-  const docTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const docTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   onDocChangeRef.current = onDocChange;
 
   const flushDocNotify = useCallback(() => {
@@ -364,13 +370,13 @@ export function PtbProvider({
     if (!onDocChangeRef.current) return;
     const doc = buildDoc({
       network: activeNetwork,
-      graph: snapshot,
+      graph,
       includeEmbeds: autosaveDocIncludeEmbeds,
       modules: autosaveDocIncludeEmbeds ? modules : undefined,
       objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
     });
     onDocChangeRef.current?.(doc);
-  }, [activeNetwork, snapshot, autosaveDocIncludeEmbeds, modules, objectMetas]);
+  }, [activeNetwork, graph, autosaveDocIncludeEmbeds, modules, objectMetas]);
 
   const scheduleDocNotify = useCallback(() => {
     if (!onDocChangeRef.current) return;
@@ -379,17 +385,17 @@ export function PtbProvider({
       if (!onDocChangeRef.current) return;
       const doc = buildDoc({
         network: activeNetwork,
-        graph: snapshot,
+        graph,
         includeEmbeds: autosaveDocIncludeEmbeds,
         modules: autosaveDocIncludeEmbeds ? modules : undefined,
         objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
       });
       onDocChangeRef.current?.(doc);
       docTimerRef.current = undefined;
-    }, onDocDebounceMs);
+    }, onDocDebounceMs ?? DEFAULT_DOC_DEBOUNCE);
   }, [
     activeNetwork,
-    snapshot,
+    graph,
     autosaveDocIncludeEmbeds,
     modules,
     objectMetas,
@@ -398,51 +404,20 @@ export function PtbProvider({
 
   React.useEffect(() => {
     scheduleDocNotify();
-  }, [snapshot, scheduleDocNotify]);
+  }, [graph, scheduleDocNotify]);
+
   React.useEffect(() => {
     scheduleDocNotify();
   }, [modules, objectMetas, activeNetwork, scheduleDocNotify]);
 
-  // ===== Node-scoped UI patcher ==============================================
-
-  const onPatchUI = useCallback(
-    (nodeId: string, patch: Record<string, unknown>) => {
-      setSnapshot((prev) => {
-        const next: PTBGraph = {
-          nodes: prev.nodes.map((n) => ({ ...n }) as PTBNode),
-          edges: prev.edges.map((e) => ({ ...e }) as PTBEdge),
-        };
-
-        const node = next.nodes.find((n) => n.id === nodeId) as
-          | CommandNode
-          | undefined;
-        if (!node || node.kind !== 'Command') return prev;
-
-        const prevUI = (node.params?.ui ?? {}) as Record<string, unknown>;
-        node.params = { ...(node.params ?? {}), ui: { ...prevUI, ...patch } };
-
-        node.ports = materializeCommandPorts(node);
-        const keep = portIdSet(node.ports);
-        const pruned = pruneDanglingIoEdgesForNode(next, nodeId, keep);
-
-        scheduleGraphNotify(pruned);
-        scheduleDocNotify();
-        return pruned;
-      });
-    },
-    [scheduleGraphNotify, scheduleDocNotify],
-  );
-
-  // ===== Chain data helpers ===================================================
+  // ---- chain helpers ---------------------------------------------------------
 
   const getObjectData = useCallback<PtbContextValue['getObjectData']>(
     async (objectId, opts) => {
       const id = objectId?.trim();
       if (!id) return undefined;
 
-      if (!opts?.forceRefresh && objectMetas[id]) {
-        return objectMetas[id];
-      }
+      if (!opts?.forceRefresh && objectMetas[id]) return objectMetas[id];
 
       const client = clientRef.current;
       if (!client) return undefined;
@@ -461,10 +436,7 @@ export function PtbProvider({
         const meta = toSuiObjectData(resp);
         if (!meta) return undefined;
 
-        setObjectMetas((prev) => {
-          const next = { ...prev, [id]: meta };
-          return next;
-        });
+        setObjectMetas((prev) => ({ ...prev, [id]: meta }));
         scheduleDocNotify();
         return meta;
       } catch {
@@ -478,16 +450,14 @@ export function PtbProvider({
     async (packageId, opts) => {
       const id = packageId?.trim();
       if (!id || !id.startsWith('0x')) {
-        adaptersSnapshot.toast?.({
+        toastImpl({
           message: 'Invalid package id. It should start with 0x…',
           variant: 'warning',
         });
         return undefined;
       }
 
-      if (!opts?.forceRefresh && modules[id]) {
-        return modules[id];
-      }
+      if (!opts?.forceRefresh && modules[id]) return modules[id];
 
       const client = clientRef.current;
       if (!client) return undefined;
@@ -496,22 +466,18 @@ export function PtbProvider({
         const res = await client.getNormalizedMoveModulesByPackage({
           package: id,
         });
-
-        setModules((prev) => {
-          const next = { ...prev, [id]: res };
-          return next;
-        });
+        setModules((prev) => ({ ...prev, [id]: res }));
         scheduleDocNotify();
         return res;
       } catch (e: any) {
-        adaptersSnapshot.toast?.({
+        toastImpl({
           message: e?.message || 'Failed to load package modules',
           variant: 'error',
         });
         return undefined;
       }
     },
-    [modules, clientRef, adaptersSnapshot, scheduleDocNotify],
+    [modules, clientRef, toastImpl, scheduleDocNotify],
   );
 
   const getPackageModulesView = useCallback<
@@ -527,77 +493,156 @@ export function PtbProvider({
     [getPackageModules, modules],
   );
 
-  // ===== Document load/save ===================================================
+  // ---- on-chain loader (viewer) ---------------------------------------------
+
+  function networkFromChain(chain: `${string}:${string}`): Network | undefined {
+    const [, netRaw] = String(chain).split(':');
+    const net = (netRaw || '').toLowerCase();
+    const allowed: Network[] = ['devnet', 'testnet', 'mainnet'];
+    return allowed.includes(net as Network) ? (net as Network) : undefined;
+  }
+
+  const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
+    async (chain, txDigest) => {
+      const digest = (txDigest || '').trim();
+      if (!digest) {
+        toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
+        return;
+      }
+
+      const net = networkFromChain(chain);
+      if (!net) {
+        toastImpl({
+          message: `Unsupported chain "${chain}". Use "sui:devnet|testnet|mainnet".`,
+          variant: 'error',
+        });
+        return;
+      }
+
+      const localClient = new SuiClient({ url: getFullnodeUrl(net) });
+
+      try {
+        const res = await localClient.getTransactionBlock({
+          digest,
+          options: {
+            showInput: true,
+            showEffects: true,
+            showObjectChanges: false,
+            showEvents: false,
+          },
+        });
+
+        const txData: any = res?.transaction?.data;
+        const programmable = txData?.transaction;
+
+        if (!programmable || programmable.kind !== 'ProgrammableTransaction') {
+          toastImpl({
+            message: 'Only ProgrammableTransaction is supported.',
+            variant: 'warning',
+          });
+          return;
+        }
+
+        // Preload modules referenced by MoveCalls (best-effort)
+        const pkgIds: string[] = Array.isArray(programmable?.transactions)
+          ? programmable.transactions
+              .filter((t: any) => t?.MoveCall?.package)
+              .map((t: any) => t.MoveCall.package)
+          : [];
+        const uniquePkgs = Array.from(new Set(pkgIds));
+
+        const modsEmbed: Record<string, SuiMoveNormalizedModules> = {};
+        for (const pkg of uniquePkgs) {
+          try {
+            const m = await localClient.getNormalizedMoveModulesByPackage({
+              package: pkg,
+            });
+            modsEmbed[pkg] = m;
+          } catch {
+            // ignore per-package failures
+          }
+        }
+
+        // Fix network and prime caches
+        setActiveNetwork(net);
+        setModules(modsEmbed);
+        setObjectMetas({});
+
+        // Decode → PTBGraph
+        const { graph: decoded } = decodeTx(programmable);
+
+        // Replace snapshot and set viewer mode
+        replaceGraphImmediate(decoded);
+        setReadOnly(true);
+        scheduleGraphNotify(decoded);
+        scheduleDocNotify();
+      } catch (e: any) {
+        toastImpl({
+          message: e?.message || 'Failed to load transaction from chain.',
+          variant: 'error',
+        });
+      }
+    },
+    [toastImpl, replaceGraphImmediate, scheduleGraphNotify, scheduleDocNotify],
+  );
+
+  // ---- document loader (editor) ---------------------------------------------
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (doc) => {
-      // 1) Fix active network
+      // Fix network
       setActiveNetwork(doc.network);
 
-      // 2) Preload embeds (overwrite caches)
+      // Overwrite caches from embeds
       setModules(doc.modulesEmbed ?? {});
       setObjectMetas(doc.objectsEmbed ?? {});
 
-      // 3) Replace graph (seed if empty/invalid)
+      // Replace graph (seed if invalid/empty)
       const g = doc.graph;
       const valid =
         g && Array.isArray(g.nodes) && Array.isArray(g.edges) && g.nodes.length;
       const base = valid ? g : seedDefaultGraph();
 
-      if (graphTimerRef.current !== undefined) {
-        clearTimeout(graphTimerRef.current);
-        graphTimerRef.current = undefined;
-      }
-      if (docTimerRef.current !== undefined) {
-        clearTimeout(docTimerRef.current);
-        docTimerRef.current = undefined;
-      }
-
-      lastGraphRef.current = undefined;
-      setSnapshot(base);
+      replaceGraphImmediate(base);
+      setReadOnly(false);
 
       scheduleGraphNotify(base);
       scheduleDocNotify();
     },
-    [scheduleGraphNotify, scheduleDocNotify],
+    [replaceGraphImmediate, scheduleGraphNotify, scheduleDocNotify],
   );
 
-  const saveToDoc = useCallback<PtbContextValue['saveToDoc']>(
+  // ---- export doc ------------------------------------------------------------
+
+  const exportDoc = useCallback<PtbContextValue['exportDoc']>(
     (opts) => {
       const includeEmbeds = !!opts?.includeEmbeds;
       const sender = opts?.sender;
       return buildDoc({
         network: activeNetwork,
-        graph: snapshot,
+        graph,
         sender,
         includeEmbeds,
         modules: includeEmbeds ? modules : undefined,
         objects: includeEmbeds ? objectMetas : undefined,
       });
     },
-    [activeNetwork, snapshot, modules, objectMetas],
+    [activeNetwork, graph, modules, objectMetas],
   );
 
-  // ===== Context value =======================================================
+  // ---- context value ---------------------------------------------------------
 
   const ctx: PtbContextValue = useMemo(
     () => ({
-      snapshot,
-      saveSnapshot,
-      loadSnapshot,
+      graph,
+      setGraph,
 
       network: activeNetwork,
       readOnly: !!readOnly,
 
-      features,
-      adapters: adaptersSnapshot,
-      busy,
-
       theme,
       setTheme,
 
-      onPatchUI,
-
       objectMetas,
       getObjectData,
 
@@ -605,38 +650,39 @@ export function PtbProvider({
       getPackageModules,
       getPackageModulesView,
 
+      loadFromOnChainTx,
       loadFromDoc,
-      saveToDoc,
+      exportDoc,
+
+      nextId, // monotonic ID generator
 
       execOpts: execOptsProp,
 
-      // Keep client private; expose pipeline instead
       runTx,
+      toast: toastImpl,
     }),
     [
-      snapshot,
-      saveSnapshot,
-      loadSnapshot,
+      graph,
+      setGraph,
       activeNetwork,
       readOnly,
-      features,
-      adaptersSnapshot,
-      busy,
       theme,
-      onPatchUI,
       objectMetas,
       getObjectData,
       modules,
       getPackageModules,
       getPackageModulesView,
+      loadFromOnChainTx,
       loadFromDoc,
-      saveToDoc,
+      exportDoc,
+      nextId,
       execOptsProp,
       runTx,
+      toastImpl,
     ],
   );
 
-  // Flush pending debounced notifies on unmount
+  // Ensure pending debounced notifies flush on unmount
   React.useEffect(() => () => flushGraphNotify(), [flushGraphNotify]);
   React.useEffect(() => () => flushDocNotify(), [flushDocNotify]);
 

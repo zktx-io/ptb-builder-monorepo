@@ -28,6 +28,9 @@ function normalizeOptions(arg?: PTBType | PortOptions): PortOptions {
 }
 
 /** Flow ports never carry IO typing; keep only label if provided */
+// NOTE:
+// Flow handles must not carry any IO typing. Types/coloring only applies
+// to IO handles. We intentionally drop both `dataType` and `typeStr` here.
 function flowOptsOnlyLabel(opts?: PortOptions): Pick<PortOptions, 'label'> {
   return opts?.label ? { label: opts.label } : {};
 }
@@ -79,10 +82,6 @@ export const PORTS = {
 
   /** Command base: only flow prev/next (IO ports come from registry) */
   commandBase(): Port[] {
-    return [flowIn(FLOW_PREV), flowOut(FLOW_NEXT)];
-  },
-
-  commandMoveCall(): Port[] {
     return [flowIn(FLOW_PREV), flowOut(FLOW_NEXT)];
   },
 } as const;

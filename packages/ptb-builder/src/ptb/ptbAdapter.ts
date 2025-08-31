@@ -1,17 +1,9 @@
-// Adapter between PTBGraph (domain) and React Flow (view).
-// This is the ONLY place that imports React Flow types.
-
+// src/ptb/ptbAdapter.ts
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
-import { buildHandleId } from '../ptb/graph/helpers';
-import {
-  type NumericWidth,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-  serializePTBType,
-} from '../ptb/graph/types';
-import { PORTS } from '../ptb/portTemplates';
+import { buildHandleId } from './graph/helpers';
+import { type NumericWidth, PTBEdge, PTBGraph, PTBNode } from './graph/types';
+import { PORTS } from './portTemplates';
 
 /** Minimal data stored on React Flow node (UI-only). */
 export interface RFNodeData extends Record<string, unknown> {
@@ -50,8 +42,7 @@ export function ptbToRF(graph: PTBGraph): {
       sh && sh.includes(':') ? sh.slice(sh.indexOf(':') + 1) : undefined;
 
     // Fallback to the PTB edge's structured type if handle didn't carry it
-    const serialized =
-      typeFromHandle ?? (e.dataType ? serializePTBType(e.dataType) : undefined);
+    const serialized = typeFromHandle;
 
     return {
       id: e.id,

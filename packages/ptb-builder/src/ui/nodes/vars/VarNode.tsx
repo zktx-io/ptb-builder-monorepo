@@ -19,8 +19,8 @@ import {
 } from '@xyflow/react';
 
 import { usePtb } from '../../PtbProvider';
-import SelectBool from './inputs/SelectBool';
-import TextInput from './inputs/TextInput';
+import { SelectBool } from './inputs/SelectBool';
+import { TextInput } from './inputs/TextInput';
 import { buildOutPort, placeholderFor } from './utils';
 import {
   ioShapeOf,
@@ -90,10 +90,10 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
   const varType = v?.varType;
 
   const updateNodeInternals = useUpdateNodeInternals();
-  const { getObjectData, adapters } = usePtb();
+  const { getObjectData, readOnly, toast } = usePtb();
 
   // Editors enabled only when onPatchVar exists.
-  const canEdit = Boolean(nodeId && data?.onPatchVar);
+  const canEdit = Boolean(nodeId && data?.onPatchVar) && !readOnly;
 
   const { category } = ioShapeOf(varType);
 
@@ -205,7 +205,7 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
         patchVar({ varType: { kind: 'object', typeTag: moveType } });
       } else {
         patchVar({ varType: { kind: 'object' } });
-        adapters?.toast?.({
+        toast?.({
           message: 'Object not found or not a Move object.',
           variant: 'error',
         });
@@ -213,7 +213,7 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
     } catch (e: any) {
       if (seq !== reqSeqRef.current) return;
       patchVar({ varType: { kind: 'object' } });
-      adapters?.toast?.({
+      toast?.({
         message: e?.message || 'Failed to fetch object metadata.',
         variant: 'error',
       });
@@ -290,8 +290,8 @@ function VarNode({ id: rfNodeId, data }: NodeProps<VarRFNode>) {
 
           {!isHelper && isVectorType(varType) && (
             <MiniStepper
-              decDisabled={!canEdit || vecItems.length <= 1}
-              incDisabled={!canEdit}
+              decDisabled={!canEdit || vecItems.length <= 1 || readOnly}
+              incDisabled={!canEdit || readOnly}
               onDec={() => stepVec(-1)}
               onInc={() => stepVec(+1)}
             />

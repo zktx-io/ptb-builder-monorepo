@@ -129,7 +129,6 @@ export interface PTBEdge {
   sourcePort: string;
   target: string;
   targetPort: string;
-  dataType?: PTBType;
   /** number → move_numeric (UI-driven cast hint for codegen) */
   cast?: { to: NumericWidth };
 }

@@ -10,6 +10,7 @@ import { CommandExpandSwitch } from './CommandExpandSwitch';
 import type { Port, PTBNode } from '../../../../ptb/graph/types';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
+import { usePtb } from '../../../PtbProvider';
 import { iconOfCommand } from '../../icons';
 import { canExpandCommand, expandedKeyOf } from '../registry';
 import {
@@ -31,6 +32,7 @@ export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
 
 function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
   const node = data?.ptbNode as PTBNode | undefined;
+  const { readOnly } = usePtb();
 
   // Ports from registry (preserve order)
   const ports: Port[] = useMemo(() => {
@@ -86,7 +88,7 @@ function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
             nodeId={node?.id}
             onPatchUI={data?.onPatchUI}
             labels={{ off: 'V', on: 'E' }}
-            disabled={!allowed}
+            disabled={!allowed || readOnly}
           />
         </div>
 
@@ -103,6 +105,7 @@ function BaseCommand({ data }: NodeProps<BaseCmdRFNode>) {
               ui={ui}
               onPatchUI={data?.onPatchUI}
               min={1}
+              disabled={readOnly}
             />
           </div>
         )}

@@ -81,7 +81,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
   const ui = ((node?.params?.ui ?? {}) as any) || {};
 
-  const { adapters, getPackageModulesView } = usePtb();
+  const { getPackageModulesView, toast } = usePtb();
 
   // Local buffer for the package id input (avoid graph writes while typing).
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(ui.pkgId ?? '');
@@ -127,7 +127,7 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
       setLoading(true);
       const view = await getPackageModulesView(pkg, { forceRefresh: true });
       if (!view) {
-        adapters?.toast?.({
+        toast?.({
           message: 'Failed to load package metadata',
           variant: 'error',
         });
@@ -180,16 +180,16 @@ function MoveCallCommand({ data }: NodeProps<MoveCallRFNode>) {
         _fnOuts: initialOuts,
       });
 
-      adapters?.toast?.({ message: 'Package loaded', variant: 'success' });
+      toast?.({ message: 'Package loaded', variant: 'success' });
     } catch (e: any) {
-      adapters?.toast?.({
+      toast?.({
         message: e?.message || 'Package load failed',
         variant: 'error',
       });
     } finally {
       setLoading(false);
     }
-  }, [adapters, getPackageModulesView, node?.id, patchUI, pkgIdBuf]);
+  }, [toast, getPackageModulesView, node?.id, patchUI, pkgIdBuf]);
 
   // Module change → pick first function of the module and update signatures.
   const onChangeModule = useCallback(

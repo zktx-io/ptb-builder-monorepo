@@ -1,6 +1,4 @@
-// Persisted .ptb JSON document (storage/load).
-// UI-agnostic & stable contract.
-
+// src/ptb/ptbDoc.ts
 import type {
   SuiMoveNormalizedModules,
   SuiObjectData,

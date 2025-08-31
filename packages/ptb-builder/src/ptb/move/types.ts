@@ -1,3 +1,4 @@
+// src/ptb/move/types.ts
 import type { SuiMoveNormalizedModule } from '@mysten/sui/client';
 
 export type PTBModuleData = {
