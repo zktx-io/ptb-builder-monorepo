@@ -27,11 +27,7 @@ import type {
   VariableNode,
 } from '../graph/types';
 import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../portTemplates';
-
-// ---- constants --------------------------------------------------------------
-
-export const START_ID = '@start';
-export const END_ID = '@end';
+import { KNOWN_IDS } from '../seedGraph';
 
 // ---- tiny value table -------------------------------------------------------
 
@@ -262,14 +258,14 @@ export function decodeTx(
   // Start/End
   const start = NodeFactories.start();
   const end = NodeFactories.end();
-  (start as any).id = START_ID;
-  (end as any).id = END_ID;
+  (start as any).id = KNOWN_IDS.START;
+  (end as any).id = KNOWN_IDS.END;
   pushNode(graph, start);
   pushNode(graph, end);
 
   // Seed "gas"
   const gasVar = NodeFactories.objectGas();
-  (gasVar as any).id = 'gas';
+  (gasVar as any).id = KNOWN_IDS.GAS;
   (gasVar as any).name = (gasVar as any).name ?? 'gas';
   (gasVar as any).label = (gasVar as any).label ?? 'SUI';
 
@@ -291,7 +287,7 @@ export function decodeTx(
   });
 
   // Transactions
-  let prevCmdId: string = START_ID;
+  let prevCmdId: string = KNOWN_IDS.START;
 
   (prog.transactions ?? []).forEach((tx: any, idx: number) => {
     // ---- splitCoins ---------------------------------------------------------
@@ -572,7 +568,7 @@ export function decodeTx(
   });
 
   // Tail → End
-  pushFlow(graph, prevCmdId ?? START_ID, END_ID);
+  pushFlow(graph, prevCmdId ?? KNOWN_IDS.START, KNOWN_IDS.END);
 
   return { graph, diags };
 }

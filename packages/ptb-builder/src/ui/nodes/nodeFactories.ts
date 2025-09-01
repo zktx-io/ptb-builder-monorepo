@@ -1,12 +1,25 @@
 // src/ui/nodes/nodeFactories.ts
 // -----------------------------------------------------------------------------
 // Factory for PTB nodes (Start/End/Variables/Commands).
+//
+// Key rules
 // - CommandKind is canonical (camelCase) across the app.
-// - Command ports are always materialized from a single source of truth (registry).
+// - Command ports are materialized from a single source of truth (registry).
 // - Default UI params are injected HERE (single choke point).
-// - IDs: by default we use a local monotonic counter; callers can inject a
-//   doc-scoped generator via setIdGenerator() to guarantee collision-free IDs
-//   across loads/macros.
+//
+// IDs
+// - Regular nodes use createUniqueId(prefix).
+// - Well-known singletons (start/end/gas/system/clock/random/my_wallet)
+//   ALWAYS use fixed IDs from KNOWN_IDS (never randomized).
+//
+// Deduplication
+// - This module does NOT deduplicate nodes. The provider/decoder should check
+//   presence first and avoid creating duplicates.
+//
+// Dependency Injection (ID)
+// - Apps may inject a doc-scoped generator via setIdGenerator() to ensure
+//   collision-free IDs across loads/macros (e.g. `${prefix}-${++nonce}`).
+// -----------------------------------------------------------------------------
 
 import { materializeCommandPorts } from './cmds/registry';
 import { O, S, V } from '../../ptb/graph/typeHelpers';
@@ -19,9 +32,10 @@ import type {
   VariableNode,
 } from '../../ptb/graph/types';
 import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../../ptb/portTemplates';
+import { KNOWN_IDS } from '../../ptb/seedGraph';
 
-/* ---------------------------- ID generator (DI) ---------------------------- */
-// Default: simple monotonic nonce in this module scope.
+/* ----------------------------- ID generator (DI) ---------------------------- */
+// Default: simple monotonic nonce in module scope.
 // Apps may inject a doc-scoped generator: setIdGenerator((p) => `${p}-${++n}`)
 let _localNonce = 0;
 let _idGen: (prefix?: string) => string = (prefix = 'id') =>
@@ -32,8 +46,8 @@ export function setIdGenerator(gen: (prefix?: string) => string) {
   _idGen = typeof gen === 'function' ? gen : _idGen;
 }
 
-/** Convenience: generate the next ID with an optional prefix. */
-export function nextId(prefix?: string) {
+/** Centralized helper to generate unique IDs with an optional prefix. */
+export function createUniqueId(prefix?: string) {
   return _idGen(prefix);
 }
 
@@ -42,7 +56,7 @@ function outPort(dataType: PTBType): Port {
   return { id: VAR_OUT, role: 'io', direction: 'out', dataType };
 }
 
-/** Pretty type → label for variables. */
+/** Pretty type → human label for variables. */
 function labelFromType(t: PTBType): string {
   const k = (t as any)?.kind;
   if (k === 'scalar') return (t as any)?.name || 'unknown';
@@ -85,11 +99,11 @@ function withUIDefaults(
 
 /* -------------------------------- Factories -------------------------------- */
 export const NodeFactories = {
-  /* Start node */
+  /* Start node — fixed ID */
   start(): PTBNode {
     const flowOut: Port = { id: FLOW_NEXT, role: 'flow', direction: 'out' };
     return {
-      id: nextId('start'),
+      id: KNOWN_IDS.START, // fixed, never random
       kind: 'Start',
       label: 'Start',
       ports: [flowOut],
@@ -97,11 +111,11 @@ export const NodeFactories = {
     };
   },
 
-  /* End node */
+  /* End node — fixed ID */
   end(): PTBNode {
     const flowIn: Port = { id: FLOW_PREV, role: 'flow', direction: 'in' };
     return {
-      id: nextId('end'),
+      id: KNOWN_IDS.END, // fixed, never random
       kind: 'End',
       label: 'End',
       ports: [flowIn],
@@ -122,7 +136,7 @@ export const NodeFactories = {
       position?: { x: number; y: number };
     },
   ): CommandNode {
-    const id = nextId(`cmd-${kind}`);
+    const id = createUniqueId(`cmd-${kind}`);
     const label = opts?.label ?? kind;
 
     // Merge defaults + user overrides
@@ -157,7 +171,7 @@ export const NodeFactories = {
       position?: { x: number; y: number };
     },
   ): VariableNode {
-    const id = nextId('var');
+    const id = createUniqueId('var');
     const label = opts?.label ?? labelFromType(varType);
     return {
       id,
@@ -176,7 +190,7 @@ export const NodeFactories = {
   address(): VariableNode {
     const t = S('address');
     return {
-      id: nextId('addr'),
+      id: createUniqueId('addr'),
       kind: 'Variable',
       label: 'address',
       name: 'addr',
@@ -188,7 +202,7 @@ export const NodeFactories = {
   addressVector(): VariableNode {
     const t = V(S('address'));
     return {
-      id: nextId('addr-vec'),
+      id: createUniqueId('addr-vec'),
       kind: 'Variable',
       label: 'vector<address>',
       name: 'v_address',
@@ -197,10 +211,12 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+
+  /** My wallet address — fixed ID */
   addressWallet(): VariableNode {
     const t = S('address');
     return {
-      id: nextId('wallet'),
+      id: KNOWN_IDS.MY_WALLET, // fixed, never random
       kind: 'Variable',
       label: 'my wallet',
       name: 'sender',
@@ -214,7 +230,7 @@ export const NodeFactories = {
   bool(): VariableNode {
     const t = S('bool');
     return {
-      id: nextId('bool'),
+      id: createUniqueId('bool'),
       kind: 'Variable',
       label: 'bool',
       name: 'flag',
@@ -226,7 +242,7 @@ export const NodeFactories = {
   boolVector(): VariableNode {
     const t = V(S('bool'));
     return {
-      id: nextId('bool-vec'),
+      id: createUniqueId('bool-vec'),
       kind: 'Variable',
       label: 'vector<bool>',
       name: 'v_bool',
@@ -240,7 +256,7 @@ export const NodeFactories = {
   number(): VariableNode {
     const t = S('number');
     return {
-      id: nextId('var-number'),
+      id: createUniqueId('var-number'),
       kind: 'Variable',
       label: 'number',
       name: 'num',
@@ -249,10 +265,11 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+
   numberVector(): VariableNode {
     const t = V(S('number'));
     return {
-      id: nextId('var-number-vec'),
+      id: createUniqueId('var-number-vec'),
       kind: 'Variable',
       label: 'vector<number>',
       name: 'nums',
@@ -266,7 +283,7 @@ export const NodeFactories = {
   string(): VariableNode {
     const t = S('string');
     return {
-      id: nextId('str'),
+      id: createUniqueId('str'),
       kind: 'Variable',
       label: 'string',
       name: 'text',
@@ -278,7 +295,7 @@ export const NodeFactories = {
   stringVector(): VariableNode {
     const t = V(S('string'));
     return {
-      id: nextId('str-vec'),
+      id: createUniqueId('str-vec'),
       kind: 'Variable',
       label: 'vector<string>',
       name: 'v_string',
@@ -290,7 +307,7 @@ export const NodeFactories = {
   string0x2suiSui(): VariableNode {
     const t = S('string');
     return {
-      id: nextId('sui-str'),
+      id: createUniqueId('sui-str'),
       kind: 'Variable',
       label: '0x2::sui::SUI',
       name: 'sui',
@@ -305,7 +322,7 @@ export const NodeFactories = {
   object(): VariableNode {
     const t = O();
     return {
-      id: nextId('obj'),
+      id: createUniqueId('obj'),
       kind: 'Variable',
       label: 'object',
       name: 'obj',
@@ -317,7 +334,7 @@ export const NodeFactories = {
   objectVector(): VariableNode {
     const t = V(O());
     return {
-      id: nextId('obj-vec'),
+      id: createUniqueId('obj-vec'),
       kind: 'Variable',
       label: 'vector<object>',
       name: 'v_object',
@@ -327,11 +344,11 @@ export const NodeFactories = {
     };
   },
 
-  // Object helpers
+  /** Clock object — fixed ID */
   objectClock(): VariableNode {
     const t = O();
     return {
-      id: nextId('clock'),
+      id: KNOWN_IDS.CLOCK, // fixed, never random
       kind: 'Variable',
       label: 'clock',
       name: 'clock',
@@ -340,10 +357,11 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+  /** Gas coin object — fixed ID */
   objectGas(): VariableNode {
     const t = O();
     return {
-      id: nextId('gas'),
+      id: KNOWN_IDS.GAS, // fixed, never random
       kind: 'Variable',
       label: 'gas',
       name: 'gas',
@@ -355,7 +373,7 @@ export const NodeFactories = {
   objectCoinWithBalance(): VariableNode {
     const t = O();
     return {
-      id: nextId('coin-bal'),
+      id: createUniqueId('coin-bal'),
       kind: 'Variable',
       label: 'coinWithBalance',
       name: 'coinWithBalance',
@@ -367,7 +385,7 @@ export const NodeFactories = {
   objectDenyList(): VariableNode {
     const t = O();
     return {
-      id: nextId('deny'),
+      id: createUniqueId('deny'),
       kind: 'Variable',
       label: 'denyList',
       name: 'denyList',
@@ -376,10 +394,11 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+
   objectOption(): VariableNode {
     const t = O();
     return {
-      id: nextId('opt'),
+      id: createUniqueId('opt'),
       kind: 'Variable',
       label: 'option',
       name: 'option',
@@ -388,10 +407,11 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+  /** Random object — fixed ID */
   objectRandom(): VariableNode {
     const t = O();
     return {
-      id: nextId('rand'),
+      id: KNOWN_IDS.RANDOM, // fixed, never random
       kind: 'Variable',
       label: 'random',
       name: 'random',
@@ -400,10 +420,11 @@ export const NodeFactories = {
       position: { x: 0, y: 0 },
     };
   },
+  /** System object — fixed ID */
   objectSystem(): VariableNode {
     const t = O();
     return {
-      id: nextId('sys'),
+      id: KNOWN_IDS.SYSTEM, // fixed, never random
       kind: 'Variable',
       label: 'system',
       name: 'system',

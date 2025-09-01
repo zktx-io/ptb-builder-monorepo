@@ -1,3 +1,15 @@
+// src/ui/menu/ContextMenu.tsx
+// -----------------------------------------------------------------------------
+// Context menu with dynamic enable/disable states for well-known singletons.
+// - Reads the current graph via usePtb() and disables items for singleton
+//   variables that already exist (gas/clock/random/system/my wallet).
+// - Disables by adding aria-disabled + styles and guarding click/keyboard.
+//
+// NOTE:
+// - We do not modify menu data or action router. All gating happens here.
+// - If you later expose Start/End in the menu, add them below similarly.
+// -----------------------------------------------------------------------------
+
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewport } from '@xyflow/react';
@@ -5,6 +17,8 @@ import { useViewport } from '@xyflow/react';
 import { handleMenuAction } from './menu.actions';
 import { CanvasCmd, CanvasVar, EdgeMenu, NodeMenu } from './menu.data';
 import type { PTBNode } from '../../ptb/graph/types';
+import { KNOWN_IDS } from '../../ptb/seedGraph';
+import { usePtb } from '../PtbProvider';
 
 type ContextType = 'canvas' | 'node' | 'edge';
 
@@ -12,6 +26,10 @@ const MenuStyle =
   'cursor-pointer px-2 bg-white dark:bg-stone-900 hover:bg-gray-200 dark:hover:bg-stone-700 w-full text-gray-800 dark:text-gray-200 relative';
 const MenuSubStyle =
   'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block bg-white dark:bg-stone-900 rounded-md shadow-lg z-50 w-[220px] whitespace-normal break-words';
+
+// Extra styles for disabled state
+const DisabledStyle =
+  'opacity-40 pointer-events-none cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent';
 
 export interface ContextMenuProps {
   type: ContextType;
@@ -33,8 +51,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onDeleteEdge,
 }) => {
   const { x, y, zoom } = useViewport();
+  const { isWellKnownAvailable } = usePtb();
   // eslint-disable-next-line no-restricted-syntax
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  /** Compute disabled actions based on current well-known singleton presence. */
+  const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
+    () => ({
+      'var/address/wallet': 'MY_WALLET',
+      'var/object/gas': 'GAS',
+      'var/object/clock': 'CLOCK',
+      'var/object/random': 'RANDOM',
+      'var/object/system': 'SYSTEM',
+    }),
+    [],
+  );
+
+  const disabledActions = useMemo(() => {
+    const set = new Set<string>();
+    for (const [action, wkKey] of Object.entries(actionToWellKnown)) {
+      const wkId = KNOWN_IDS[wkKey];
+      if (!isWellKnownAvailable(wkId)) set.add(action);
+    }
+    return set;
+  }, [actionToWellKnown, isWellKnownAvailable]);
 
   const placeAndAdd = useCallback(
     (node: PTBNode) => {
@@ -49,16 +89,26 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   );
 
   const runAction = useCallback(
-    (action: string) =>
-      handleMenuAction(
+    (action: string) => {
+      // Guard execution if disabled
+      if (disabledActions.has(action)) return;
+      return handleMenuAction(
         action,
         placeAndAdd,
         targetId,
         onDeleteNode,
         onDeleteEdge,
         onClose,
-      ),
-    [placeAndAdd, targetId, onDeleteNode, onDeleteEdge, onClose],
+      );
+    },
+    [
+      disabledActions,
+      placeAndAdd,
+      targetId,
+      onDeleteNode,
+      onDeleteEdge,
+      onClose,
+    ],
   );
 
   // Close on Escape
@@ -103,23 +153,31 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   const renderCommands = () => (
     <>
-      {CanvasCmd.map((item) => (
-        <li
-          key={item.action}
-          className={MenuStyle}
-          onClick={() => runAction(item.action)}
-          role="menuitem"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
-        >
-          <div className="flex items-center">
-            {item.icon && (
-              <span className="mr-1 inline-block">{item.icon}</span>
-            )}
-            {item.name}
-          </div>
-        </li>
-      ))}
+      {CanvasCmd.map((item) => {
+        // Commands currently have no singleton rules; always enabled.
+        const isDisabled = false;
+        return (
+          <li
+            key={item.action}
+            className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
+            onClick={() => !isDisabled && runAction(item.action)}
+            role="menuitem"
+            tabIndex={0}
+            aria-disabled={isDisabled}
+            onKeyDown={(e) =>
+              !isDisabled && e.key === 'Enter' && runAction(item.action)
+            }
+            title={isDisabled ? 'Already exists' : undefined}
+          >
+            <div className="flex items-center">
+              {item.icon && (
+                <span className="mr-1 inline-block">{item.icon}</span>
+              )}
+              {item.name}
+            </div>
+          </li>
+        );
+      })}
     </>
   );
 
@@ -151,21 +209,32 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </svg>
           </div>
           <ul className={MenuSubStyle} role="menu">
-            {group.items.map((item) => (
-              <li
-                key={item.action}
-                className={MenuStyle}
-                onClick={() => runAction(item.action)}
-                role="menuitem"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
-              >
-                {item.icon && (
-                  <span className="mr-1 inline-block">{item.icon}</span>
-                )}
-                {item.name}
-              </li>
-            ))}
+            {group.items.map((item) => {
+              const isDisabled = disabledActions.has(item.action);
+              return (
+                <li
+                  key={item.action}
+                  className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
+                  onClick={() => !isDisabled && runAction(item.action)}
+                  role="menuitem"
+                  tabIndex={0}
+                  aria-disabled={isDisabled}
+                  onKeyDown={(e) =>
+                    !isDisabled && e.key === 'Enter' && runAction(item.action)
+                  }
+                  title={
+                    isDisabled
+                      ? 'This singleton already exists in the graph.'
+                      : undefined
+                  }
+                >
+                  {item.icon && (
+                    <span className="mr-1 inline-block">{item.icon}</span>
+                  )}
+                  {item.name}
+                </li>
+              );
+            })}
           </ul>
         </li>
       ))}

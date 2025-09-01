@@ -22,7 +22,7 @@
 //
 // IDs
 // - To avoid timestamp/rand collisions when creating many nodes/edges quickly,
-//   we expose `nextId(prefix?: string)` which returns `${prefix}-${++nonce}`.
+//   we expose `createUniqueId(prefix?: string)` which returns `${prefix}-${++nonce}`.
 // - On load (doc/chain), we *seed* the nonce by scanning current IDs and
 //   picking the max trailing numeric suffix (e.g., "node-42" → 42).
 // -----------------------------------------------------------------------------
@@ -52,7 +52,11 @@ import type { PTBGraph } from '../ptb/graph/types';
 import { toPTBModuleData } from '../ptb/move/normalize';
 import { PTBModuleData } from '../ptb/move/types';
 import { buildDoc, type PTBDoc } from '../ptb/ptbDoc';
-import { seedDefaultGraph } from '../ptb/seedGraph';
+import {
+  KNOWN_IDS,
+  seedDefaultGraph,
+  type WellKnownId,
+} from '../ptb/seedGraph';
 import type { Network, Theme, ToastAdapter } from '../types';
 
 // ===== Context shape ==========================================================
@@ -97,7 +101,7 @@ export type PtbContextValue = {
   exportDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
 
   // Monotonic, doc-scoped ID generator
-  nextId: (prefix?: string) => string;
+  createUniqueId: (prefix?: string) => string;
 
   // Execution
   execOpts: ExecOptions;
@@ -105,6 +109,11 @@ export type PtbContextValue = {
 
   // Toast (always available; console fallback if adapter missing)
   toast: ToastAdapter;
+
+  /** Presence map of well-known singleton nodes (for menu disabling, creation guards, etc.) */
+  wellKnown: Record<WellKnownId, boolean>;
+  isWellKnownAvailable: (k: WellKnownId) => boolean;
+  setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -201,12 +210,16 @@ export function PtbProvider({
   // Persisted PTB snapshot (RF → PTB)
   const [graph, setGraphState] = useState<PTBGraph>({ nodes: [], edges: [] });
 
+  // Track well-known presence for creation guards / menu disabling
+  const [wellKnown, setWellKnown] = useState<Record<WellKnownId, boolean>>(() =>
+    computeWellKnownPresence({ nodes: [], edges: [] }),
+  );
+
   // Monotonic ID nonce (doc-scoped, seeded from current graph)
   const [idNonce, setIdNonce] = useState<number>(() =>
     seedNonceFromGraph(graph),
   );
-  const nextId = useCallback((prefix = 'id') => {
-    // Use functional update to avoid stale closures
+  const genId = useCallback((prefix = 'id') => {
     let nextVal!: number;
     setIdNonce((prev) => (nextVal = prev + 1));
     return `${prefix}-${nextVal}`;
@@ -337,10 +350,12 @@ export function PtbProvider({
 
   const setGraph = useCallback(
     (g: PTBGraph) => {
-      setGraphState(g);
-      scheduleGraphNotify(g);
+      const norm = normalizeGraph(g);
+      setGraphState(norm);
+      setWellKnown(computeWellKnownPresence(norm));
+      scheduleGraphNotify(norm);
       // advance nonce in case external changes introduced larger numeric suffixes
-      setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(g)));
+      setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(norm)));
     },
     [scheduleGraphNotify],
   );
@@ -351,9 +366,11 @@ export function PtbProvider({
       graphTimerRef.current = undefined;
     }
     lastGraphRef.current = undefined;
-    setGraphState(g);
+    const norm = normalizeGraph(g);
+    setGraphState(norm);
+    setWellKnown(computeWellKnownPresence(norm));
     // reset nonce to the max found in the new snapshot
-    setIdNonce(seedNonceFromGraph(g));
+    setIdNonce(seedNonceFromGraph(norm));
   }, []);
 
   // ---- debounced PTBDoc autosave --------------------------------------------
@@ -571,7 +588,7 @@ export function PtbProvider({
         // Decode → PTBGraph
         const { graph: decoded } = decodeTx(programmable);
 
-        // Replace snapshot and set viewer mode
+        // Replace snapshot (viewer mode)
         replaceGraphImmediate(decoded);
         setReadOnly(true);
         scheduleGraphNotify(decoded);
@@ -630,6 +647,108 @@ export function PtbProvider({
     [activeNetwork, graph, modules, objectMetas],
   );
 
+  // ---- well-known helpers ----------------------------------------------------
+
+  /** Build a presence map for well-known IDs on a graph. */
+  function computeWellKnownPresence(g: PTBGraph): Record<WellKnownId, boolean> {
+    const set = new Set((g.nodes || []).map((n) => n.id));
+    return {
+      [KNOWN_IDS.START]: set.has(KNOWN_IDS.START),
+      [KNOWN_IDS.END]: set.has(KNOWN_IDS.END),
+      [KNOWN_IDS.GAS]: set.has(KNOWN_IDS.GAS),
+      [KNOWN_IDS.SYSTEM]: set.has(KNOWN_IDS.SYSTEM),
+      [KNOWN_IDS.CLOCK]: set.has(KNOWN_IDS.CLOCK),
+      [KNOWN_IDS.RANDOM]: set.has(KNOWN_IDS.RANDOM),
+      [KNOWN_IDS.MY_WALLET]: set.has(KNOWN_IDS.MY_WALLET),
+    };
+  }
+
+  /**
+   * Normalize a graph so that:
+   * - Start/End node IDs are canonical (KNOWN_IDS.START / KNOWN_IDS.END).
+   * - If a Start/End exists with a non-canonical id, rename it and rewrite edges.
+   * - If multiple Start/End appear, keep the first one (stable) and drop others, then rewrite edges to the keeper.
+   * - Do NOT auto-create missing constants here (decoder/seedGraph should create them).
+   *
+   * Note: Other constants (gas/system/clock/random/my_wallet) are created with fixed IDs
+   * by the factories/editor; duplicates would already violate ID uniqueness.
+   */
+  function normalizeGraph(g: PTBGraph): PTBGraph {
+    const nodes = [...(g.nodes || [])];
+    const edges = [...(g.edges || [])];
+
+    // Helper to coalesce a kind into a canonical id and rewrite edges.
+    const coalesce = (
+      matchKind: PTBGraph['nodes'][number]['kind'],
+      canonicalId: WellKnownId,
+      canonicalPrevHandle: string,
+      canonicalNextHandle: string,
+    ) => {
+      const idxs = nodes
+        .map((n, i) => ({ n, i }))
+        .filter(({ n }) => n.kind === matchKind);
+
+      if (idxs.length === 0) return;
+
+      // Pick the first one as the keeper
+      const { n: keeperNode } = idxs[0];
+
+      // If keeper has non-canonical id, rename + rewrite all edges
+      if (keeperNode.id !== canonicalId) {
+        const oldId = keeperNode.id;
+        keeperNode.id = canonicalId;
+        // Rewrite edges that reference oldId
+        edges.forEach((e) => {
+          if (e.source === oldId) e.source = canonicalId;
+          if (e.target === oldId) e.target = canonicalId;
+          if (e.kind === 'flow') {
+            // Keep handle names aligned when we retarget Start/End
+            if (e.source === canonicalId) e.sourceHandle = canonicalNextHandle;
+            if (e.target === canonicalId) e.targetHandle = canonicalPrevHandle;
+          }
+        });
+      }
+
+      // Drop extra nodes and rewrite edges pointing to them into keeper
+      for (let k = 1; k < idxs.length; k++) {
+        const { n: dup } = idxs[k];
+        const oldId = dup.id;
+        edges.forEach((e) => {
+          if (e.source === oldId) {
+            e.source = canonicalId;
+            if (e.kind === 'flow') e.sourceHandle = canonicalNextHandle;
+          }
+          if (e.target === oldId) {
+            e.target = canonicalId;
+            if (e.kind === 'flow') e.targetHandle = canonicalPrevHandle;
+          }
+        });
+      }
+      // Actually remove duplicates after rewiring
+      for (let k = idxs.length - 1; k >= 1; k--) {
+        nodes.splice(idxs[k].i, 1);
+      }
+    };
+
+    coalesce('Start', KNOWN_IDS.START, 'prev', 'next');
+    coalesce('End', KNOWN_IDS.END, 'prev', 'next');
+
+    return { nodes, edges };
+    // (Other well-known variable nodes already use canonical ids; no-op here.)
+  }
+
+  const isWellKnownAvailable = useCallback(
+    (k: WellKnownId) => !wellKnown[k],
+    [wellKnown],
+  );
+
+  const setWellKnownPresent = useCallback(
+    (k: WellKnownId, present: boolean) => {
+      setWellKnown((prev) => ({ ...prev, [k]: present }));
+    },
+    [],
+  );
+
   // ---- context value ---------------------------------------------------------
 
   const ctx: PtbContextValue = useMemo(
@@ -654,12 +773,16 @@ export function PtbProvider({
       loadFromDoc,
       exportDoc,
 
-      nextId, // monotonic ID generator
+      createUniqueId: genId, // monotonic ID generator
 
       execOpts: execOptsProp,
 
       runTx,
       toast: toastImpl,
+
+      wellKnown,
+      isWellKnownAvailable,
+      setWellKnownPresent,
     }),
     [
       graph,
@@ -675,10 +798,13 @@ export function PtbProvider({
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
-      nextId,
+      genId,
       execOptsProp,
       runTx,
       toastImpl,
+      wellKnown,
+      isWellKnownAvailable,
+      setWellKnownPresent,
     ],
   );
 

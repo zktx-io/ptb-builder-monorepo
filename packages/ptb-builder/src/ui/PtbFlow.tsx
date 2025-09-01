@@ -183,13 +183,13 @@ export function PTBFlow() {
     network,
     execOpts,
     runTx,
-    nextId,
+    createUniqueId,
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
   useEffect(() => {
-    setIdGenerator(nextId);
-  }, [nextId]);
+    setIdGenerator(createUniqueId);
+  }, [createUniqueId]);
 
   /** Generated source (updated on connect / node change). */
   const [code, setCode] = useState<string>(EMPTY_CODE(network));
@@ -549,7 +549,7 @@ export function PTBFlow() {
           if (createsLoop(filtered, conn.source!, conn.target!)) return prev;
 
           const newEdge: RFEdge<RFEdgeData> = {
-            id: nextId('edge'),
+            id: createUniqueId('edge'),
             type: 'ptb-flow',
             source: conn.source!,
             target: conn.target!,
@@ -578,7 +578,7 @@ export function PTBFlow() {
         const cast = inferCastTarget(sp.dataType, tp.dataType) || undefined;
 
         const newEdge: RFEdge<RFEdgeData> = {
-          id: nextId('edge'),
+          id: createUniqueId('edge'),
           type: 'ptb-io',
           source: conn.source!,
           target: conn.target!,
@@ -595,7 +595,7 @@ export function PTBFlow() {
         return { ...prev, rfEdges: nextEdges };
       });
     },
-    [readOnly, nextId],
+    [readOnly, createUniqueId],
   );
 
   // ----- Debounced persist: RF → PTB -----------------------------------------

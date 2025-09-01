@@ -1,3 +1,4 @@
+// src/ui/menu/menu.actions.ts
 import type { CommandKind, PTBNode } from '../../ptb/graph/types';
 import { NodeFactories } from '../nodes/nodeFactories';
 
@@ -66,6 +67,14 @@ export function handleMenuAction(
         break;
 
       case 'object':
+        if (name === 'gas')
+          return void (placeAndAdd(NodeFactories.objectGas()), onClose?.());
+        if (name === 'clock')
+          return void (placeAndAdd(NodeFactories.objectClock()), onClose?.());
+        if (name === 'random')
+          return void (placeAndAdd(NodeFactories.objectRandom()), onClose?.());
+        if (name === 'system')
+          return void (placeAndAdd(NodeFactories.objectSystem()), onClose?.());
         if (name === 'single')
           return void (placeAndAdd(NodeFactories.object()), onClose?.());
         if (name === 'multi')
@@ -73,10 +82,6 @@ export function handleMenuAction(
         break;
 
       case 'helper':
-        if (name === 'gas')
-          return void (placeAndAdd(NodeFactories.objectGas()), onClose?.());
-        if (name === 'clock')
-          return void (placeAndAdd(NodeFactories.objectClock()), onClose?.());
         if (name === 'coinWithBalance')
           return void (placeAndAdd(NodeFactories.objectCoinWithBalance()),
           onClose?.());
@@ -85,10 +90,6 @@ export function handleMenuAction(
           onClose?.());
         if (name === 'option')
           return void (placeAndAdd(NodeFactories.objectOption()), onClose?.());
-        if (name === 'random')
-          return void (placeAndAdd(NodeFactories.objectRandom()), onClose?.());
-        if (name === 'system')
-          return void (placeAndAdd(NodeFactories.objectSystem()), onClose?.());
         break;
     }
 

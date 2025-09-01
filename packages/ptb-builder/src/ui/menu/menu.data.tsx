@@ -1,3 +1,4 @@
+// src/ui/menu/menu.data.tsx
 import React from 'react';
 
 import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
@@ -47,22 +48,22 @@ export const CanvasVar = [
     items: [
       {
         name: 'gas',
-        action: 'var/helper/gas',
+        action: 'var/object/gas',
         icon: <span className="ptb-marker ptb-marker--object" />,
       },
       {
         name: 'clock',
-        action: 'var/helper/clock',
+        action: 'var/object/clock',
         icon: <span className="ptb-marker ptb-marker--object" />,
       },
       {
         name: 'random',
-        action: 'var/helper/random',
+        action: 'var/object/random',
         icon: <span className="ptb-marker ptb-marker--object" />,
       },
       {
         name: 'system',
-        action: 'var/helper/system',
+        action: 'var/object/system',
         icon: <span className="ptb-marker ptb-marker--object" />,
       },
       {
