@@ -32,6 +32,7 @@ import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
 import { iconOfVar } from '../icons';
 import { MiniStepper } from './inputs/MiniStepper';
+import { NODE_SIZES } from '../../utils/nodeSizes';
 
 const DEBOUNCE_MS = 250;
 const OBJECT_DEBOUNCE_MS = 400;
@@ -279,11 +280,13 @@ export const VarNode = memo(function VarNode({
   return (
     <div className={`ptb-node--${category}`}>
       <div
-        className={[
-          'ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative',
-          isHelper ? 'w-[140px]' : hasEditor ? 'w-[240px]' : 'w-[180px]',
-          'min-w-[140px]',
-        ].join(' ')}
+        className={
+          'ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative'
+        }
+        style={{
+          minWidth: 140,
+          width: isHelper ? NODE_SIZES.Helper.width : NODE_SIZES.Variable.width,
+        }}
       >
         {/* Header: icon (left) + vector stepper (right) */}
         <div className="flex items-center justify-between">

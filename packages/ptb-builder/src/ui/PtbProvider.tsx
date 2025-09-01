@@ -114,6 +114,9 @@ export type PtbContextValue = {
   wellKnown: Record<WellKnownId, boolean>;
   isWellKnownAvailable: (k: WellKnownId) => boolean;
   setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
+
+  /** Flow actions registration */
+  registerFlowActions: (a: { autoLayoutAndFit?: () => void }) => void;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -196,6 +199,16 @@ export function PtbProvider({
       ? root.classList.add('dark')
       : root.classList.remove('dark');
   }, [theme]);
+
+  // Flow actions
+  const flowActionsRef = React.useRef<{ autoLayoutAndFit?: () => void }>({});
+
+  const registerFlowActions = React.useCallback(
+    (a: { autoLayoutAndFit?: () => void }) => {
+      flowActionsRef.current = { ...flowActionsRef.current, ...a };
+    },
+    [],
+  );
 
   // Editor mode (derived)
   const [readOnly, setReadOnly] = useState<boolean>(false);
@@ -593,6 +606,11 @@ export function PtbProvider({
         setReadOnly(true);
         scheduleGraphNotify(decoded);
         scheduleDocNotify();
+
+        // Auto-layout after a tick (if registered)
+        requestAnimationFrame(() => {
+          flowActionsRef.current.autoLayoutAndFit?.();
+        });
       } catch (e: any) {
         toastImpl({
           message: e?.message || 'Failed to load transaction from chain.',
@@ -783,6 +801,8 @@ export function PtbProvider({
       wellKnown,
       isWellKnownAvailable,
       setWellKnownPresent,
+
+      registerFlowActions,
     }),
     [
       graph,
@@ -805,6 +825,7 @@ export function PtbProvider({
       wellKnown,
       isWellKnownAvailable,
       setWellKnownPresent,
+      registerFlowActions,
     ],
   );
 

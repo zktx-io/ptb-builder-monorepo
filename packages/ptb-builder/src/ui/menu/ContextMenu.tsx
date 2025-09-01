@@ -39,6 +39,7 @@ export interface ContextMenuProps {
   onAddNode?: (node: PTBNode) => void;
   onDeleteNode?: (id: string) => void;
   onDeleteEdge?: (id: string) => void;
+  onAutoLayout?: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -49,6 +50,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onAddNode,
   onDeleteNode,
   onDeleteEdge,
+  onAutoLayout,
 }) => {
   const { x, y, zoom } = useViewport();
   const { isWellKnownAvailable } = usePtb();
@@ -265,6 +267,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       <ul className="flex flex-col py-1 text-left text-sm text-gray-700 dark:text-gray-300">
         {type === 'canvas' && (
           <>
+            <li
+              className={MenuStyle}
+              onClick={() => {
+                onAutoLayout?.();
+                onClose();
+              }}
+              role="menuitem"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onAutoLayout?.();
+                  onClose();
+                }
+              }}
+              title="Arrange nodes automatically"
+            >
+              Auto layout
+            </li>
+            <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
             {renderCommands()}
             <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
             {renderVars()}

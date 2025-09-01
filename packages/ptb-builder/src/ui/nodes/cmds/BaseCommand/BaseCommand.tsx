@@ -10,6 +10,7 @@ import type { Port, PTBNode } from '../../../../ptb/graph/types';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
+import { NODE_SIZES } from '../../../utils/nodeSizes';
 import { iconOfCommand } from '../../icons';
 import { canExpandCommand, expandedKeyOf } from '../registry';
 import {
@@ -66,8 +67,8 @@ export const BaseCommand = memo(function BaseCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className="ptb-node-shell rounded-lg w-[200px] px-2 py-2 border-2 shadow relative"
-        style={{ minHeight }}
+        className={`ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative`}
+        style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         <div className="flex items-center justify-between px-2 mb-1">
           <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">

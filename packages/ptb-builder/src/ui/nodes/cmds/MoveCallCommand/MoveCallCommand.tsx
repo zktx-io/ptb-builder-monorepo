@@ -18,6 +18,7 @@ import { toPTBTypeFromMove } from '../../../../ptb/move/toPTBType';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
+import { NODE_SIZES } from '../../../utils/nodeSizes';
 import { iconOfCommand } from '../../icons';
 import { SmallSelect } from '../../vars/inputs/SmallSelect';
 import TextInput from '../../vars/inputs/TextInput';
@@ -213,8 +214,8 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className="ptb-node-shell rounded-lg w-[200px] px-2 py-2 border-2 shadow relative"
-        style={{ minHeight }}
+        className={`ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative`}
+        style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Header (aligned with BaseCommand look & feel) */}
         <div className="flex items-center justify-between px-2 mb-1">

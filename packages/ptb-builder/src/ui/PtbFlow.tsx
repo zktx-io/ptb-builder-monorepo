@@ -36,6 +36,7 @@ import {
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
+  useReactFlow,
 } from '@xyflow/react';
 import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
 
@@ -65,6 +66,7 @@ import {
 import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
 import { materializeCommandPorts } from './nodes/cmds/registry';
 import { setIdGenerator } from './nodes/nodeFactories';
+import { autoLayoutFlow } from './utils/autoLayout';
 import { portIdOf } from './utils/handleId';
 
 const DEBOUNCE_MS = 250;
@@ -184,6 +186,7 @@ export function PTBFlow() {
     execOpts,
     runTx,
     createUniqueId,
+    registerFlowActions,
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
@@ -650,6 +653,26 @@ export function PTBFlow() {
     }
   }, [rfNodes, rfEdges, network, execOpts, runTx]);
 
+  // ----- Auto Layout ---------------------------------------------------------------
+
+  const { fitView } = useReactFlow();
+
+  const onAutoLayout = useCallback(async () => {
+    const { nodes, edges } = await autoLayoutFlow(rfNodes, rfEdges);
+    setRF({ rfNodes: nodes, rfEdges: edges });
+    requestAnimationFrame(() => {
+      try {
+        fitView({ padding: 0.2, duration: 300 });
+      } catch {
+        /* no-op */
+      }
+    });
+  }, [rfNodes, rfEdges, fitView, setRF]);
+
+  useEffect(() => {
+    registerFlowActions({ autoLayoutAndFit: onAutoLayout });
+  }, [registerFlowActions, onAutoLayout]);
+
   // ----- Render ---------------------------------------------------------------
 
   return (
@@ -732,6 +755,7 @@ export function PTBFlow() {
           onAddNode={addNode}
           onDeleteNode={deleteNode}
           onDeleteEdge={deleteEdge}
+          onAutoLayout={onAutoLayout}
           onClose={() => setMenu((s) => ({ ...s, open: false }))}
         />
       )}
