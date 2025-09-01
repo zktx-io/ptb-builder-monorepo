@@ -34,7 +34,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const { x, y, zoom } = useViewport();
   // eslint-disable-next-line no-restricted-syntax
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const placeAndAdd = useCallback(
     (node: PTBNode) => {
