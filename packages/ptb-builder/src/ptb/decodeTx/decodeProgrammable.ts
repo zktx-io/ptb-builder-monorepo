@@ -1,10 +1,5 @@
-// src/ptb/decodeTx.ts
-// Direct programmable-tx → PTBGraph decoder (no separate IR).
-// - Ports are materialized from the registry (single source of truth).
-// - Values tracked via a tiny ValueTable: Input / Result / NestedResult / Gas.
-// - Policies: splitCoins multi-outputs, auto-pack vectors, etc.
-// - Start/End/Gas/Variables are created via NodeFactories for consistency.
-// - IO handle ids use buildHandleId(port), matching PTBHandleIO policy.
+// Decode a ProgrammableTransaction into a PTBGraph.
+// This file coordinates the decode and delegates small utilities to helpers.
 
 import type {
   SuiCallArg,
@@ -13,8 +8,16 @@ import type {
 } from '@mysten/sui/client';
 import { fromHex } from '@mysten/sui/utils';
 
-import { buildHandleId } from './graph/helpers';
-import { O, S, V } from './graph/typeHelpers';
+import {
+  findInPortWithFallback,
+  firstInPorts,
+  outPortsWithPrefix,
+} from './findPorts';
+import { getFnSig } from './fnSig';
+import { materializeCommandPorts } from '../../ui/nodes/cmds/registry';
+import { labelFromType, NodeFactories } from '../../ui/nodes/nodeFactories';
+import { buildHandleId } from '../graph/helpers';
+import { O, S, V } from '../graph/typeHelpers';
 import type {
   Port,
   PTBEdge,
@@ -22,23 +25,21 @@ import type {
   PTBNode,
   PTBType,
   VariableNode,
-} from './graph/types';
-import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from './portTemplates';
-import { materializeCommandPorts } from '../ui/nodes/cmds/registry';
-import { labelFromType, NodeFactories } from '../ui/nodes/nodeFactories';
+} from '../graph/types';
+import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../portTemplates';
 
-// ---------- constants ---------------------------------------------------------
+// ---- constants --------------------------------------------------------------
 
-const START_ID = '@start';
-const END_ID = '@end';
+export const START_ID = '@start';
+export const END_ID = '@end';
 
-// ---------- tiny value table --------------------------------------------------
+// ---- tiny value table -------------------------------------------------------
 
 type ValKey = string; // "in#0" | "res#3#1" | "gas"
 type SourceRef = { nodeId: string; portId: string; t?: PTBType };
 
 const vkey = (arg: any): ValKey | undefined => {
-  if (typeof arg === 'object') {
+  if (typeof arg === 'object' && arg) {
     if ('Input' in arg) return `in#${arg.Input}`;
     if ('Result' in arg) return `res#${arg.Result}#0`;
     if ('NestedResult' in arg) {
@@ -46,7 +47,8 @@ const vkey = (arg: any): ValKey | undefined => {
       return `res#${ci}#${ri}`;
     }
   }
-  return 'gas'; // e.g., "GasCoin"
+  // Fallback used by "GasCoin" and similar pseudo args.
+  return 'gas';
 };
 
 class ValueTable {
@@ -59,9 +61,9 @@ class ValueTable {
   }
 }
 
-// ---------- types, labels & literals -----------------------------------------
+// ---- types, labels & literals ----------------------------------------------
 
-const unknownT = { kind: 'unknown' } as PTBType;
+const unknownT: PTBType = { kind: 'unknown' };
 
 /** Normalize SuiCallArg → PTBType (numbers unified to scalar 'number'). */
 function inferPureType(input: SuiCallArg): PTBType {
@@ -118,7 +120,7 @@ function literalOfPure(input: SuiCallArg): unknown {
   return input.value;
 }
 
-// ---------- nodes/ports/handles ----------------------------------------------
+// ---- nodes/ports/handles ----------------------------------------------------
 
 // Map of nodeId → node, to compute handle ids reliably when creating edges.
 const nodeMap = new Map<string, PTBNode>();
@@ -128,7 +130,7 @@ function pushNode(graph: PTBGraph, n: PTBNode) {
   nodeMap.set(n.id, n);
 }
 
-// Ensure flow ports exist (safety net for command nodes).
+/** Ensure flow ports exist (safety net for command nodes). */
 function ensureFlowPorts(node: PTBNode) {
   const list = ((node as any).ports ?? []) as Port[];
   if (!list.some((p) => p.id === FLOW_PREV)) {
@@ -152,9 +154,9 @@ function ensureFlowPorts(node: PTBNode) {
 
 function makeCommand(kind: string, ui?: Record<string, unknown>): PTBNode {
   const cmd = NodeFactories.command(kind as any, { ui });
-  // registry already materializes ports; enforce flow safety
-  ensureFlowPorts(cmd);
-  return cmd as PTBNode;
+  // Registry already materializes ports; enforce flow ports defensively.
+  ensureFlowPorts(cmd as any);
+  return cmd as any as PTBNode;
 }
 
 /** (nodeId, portId) → concrete RF handle id using buildHandleId(port). */
@@ -163,7 +165,19 @@ function handleIdBy(nodeId: string, portId: string): string {
   const p = ((n as any)?.ports as Port[] | undefined)?.find(
     (pp) => pp.id === portId,
   );
-  return p ? buildHandleId(p) : portId; // fallback: raw id
+  return p ? buildHandleId(p) : portId; // fallback: raw id (best-effort)
+}
+
+/** Push a FLOW edge (prev → next). */
+function pushFlow(graph: PTBGraph, prevId: string, nextId: string): void {
+  graph.edges.push({
+    kind: 'flow',
+    id: `flow:${prevId}->${nextId}`,
+    source: prevId,
+    sourcePort: FLOW_NEXT,
+    target: nextId,
+    targetPort: FLOW_PREV,
+  } as PTBEdge);
 }
 
 /** Push an IO edge with correct handle ids on both ends. */
@@ -205,87 +219,23 @@ function ensurePackedVector(
   if (!isVector) return sources[0];
   if (sources.length === 1) return sources[0];
 
-  const idNode = NodeFactories.command('makeMoveVec', {
+  const packer = NodeFactories.command('makeMoveVec', {
     ui: { elemsExpanded: true, elemsCount: sources.length },
   }) as PTBNode;
-  pushNode(graph, idNode);
+  pushNode(graph, packer);
 
   sources.forEach((s, i) => {
-    pushIoEdge(graph, s, idNode.id, `in_elem_${i}`, `elem_${i}`);
+    pushIoEdge(graph, s, packer.id, `in_elem_${i}`, `elem_${i}`);
   });
 
   return {
-    nodeId: idNode.id,
+    nodeId: packer.id,
     portId: 'out_vec',
     t: V((targetVec as any).elem ?? O()),
   };
 }
 
-function firstInPorts(node: PTBNode): Port[] {
-  const ports = (node as any)?.ports as Port[] | undefined;
-  return (ports || []).filter((p) => p.role === 'io' && p.direction === 'in');
-}
-
-function outPorts(node: PTBNode, prefix: string): Port[] {
-  const ports = (node as any)?.ports as Port[] | undefined;
-  return (ports || []).filter((p) => p.id.startsWith(prefix));
-}
-
-/** Try to find a specific in port; if missing, fallback by prefix or by simple type predicate. */
-function findInPortWithFallback(
-  node: PTBNode,
-  preferredId: string,
-  fallbackPrefix?: string,
-  index?: number,
-  typePredicate?: (t?: PTBType) => boolean,
-): Port | undefined {
-  const ports = (node as any)?.ports as Port[] | undefined;
-  if (!ports?.length) return undefined;
-
-  const exact = ports.find((p) => p.id === preferredId);
-  if (exact) return exact;
-
-  if (fallbackPrefix) {
-    const prefixed = ports
-      .filter(
-        (p) =>
-          p.role === 'io' &&
-          p.direction === 'in' &&
-          p.id.startsWith(fallbackPrefix),
-      )
-      .sort((a, b) => a.id.localeCompare(b.id));
-    if (prefixed.length)
-      return typeof index === 'number' ? prefixed[index] : prefixed[0];
-  }
-
-  if (typePredicate) {
-    const typed = ports.filter(
-      (p) =>
-        p.role === 'io' && p.direction === 'in' && typePredicate(p.dataType),
-    );
-    if (typed.length)
-      return typeof index === 'number' ? typed[index] : typed[0];
-  }
-
-  // last resort: first input port
-  return firstInPorts(node)[index ?? 0];
-}
-
-// ---------- module function signature (optional) -----------------------------
-
-function getFnSig(
-  modules: Record<string, SuiMoveNormalizedModules> | undefined,
-  pkg: string,
-  mod: string,
-  fn: string,
-): any | undefined {
-  const pkgEntry = (modules as any)?.[pkg];
-  if (!pkgEntry) return undefined;
-  const modEntry = pkgEntry?.modules?.[mod] ?? pkgEntry?.[mod];
-  return modEntry?.exposedFunctions?.[fn];
-}
-
-// ---------- main -------------------------------------------------------------
+// ---- main -------------------------------------------------------------------
 
 export function decodeTx(
   prog: SuiTransactionBlockKind,
@@ -309,22 +259,25 @@ export function decodeTx(
   const graph: PTBGraph = { nodes: [], edges: [] };
   const vt = new ValueTable();
 
-  // Start/End via factories
+  // Start/End
   const start = NodeFactories.start();
   const end = NodeFactories.end();
-  // Override stable ids so we can wire Start/End deterministically
   (start as any).id = START_ID;
   (end as any).id = END_ID;
   pushNode(graph, start);
   pushNode(graph, end);
 
-  // Seed "gas" variable so vkey("GasCoin") → "gas" resolves
+  // Seed "gas"
   const gasVar = NodeFactories.objectGas();
+  (gasVar as any).id = 'gas';
+  (gasVar as any).name = (gasVar as any).name ?? 'gas';
+  (gasVar as any).label = (gasVar as any).label ?? 'SUI';
+
   pushNode(graph, gasVar);
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
-  // Inputs → Variable nodes (via factory)
-  (prog.inputs || []).forEach((arg, i) => {
+  // Inputs → Variable nodes
+  (prog.inputs ?? []).forEach((arg, i) => {
     const t = arg.type === 'pure' ? inferPureType(arg) : O();
     const lit = literalOfPure(arg);
     const node: VariableNode = NodeFactories.variable(t, {
@@ -332,21 +285,20 @@ export function decodeTx(
       label: labelFromType(t),
       value: lit,
     });
-    // make stable id for predictability (optional)
-    (node as any).id = `input-${i}`;
+    (node as any).id = `input-${i}`; // stable id
     pushNode(graph, node);
     vt.set(`in#${i}`, { nodeId: node.id, portId: VAR_OUT, t });
   });
 
-  // Commands
-  let prevCmdId: string | undefined = START_ID;
+  // Transactions
+  let prevCmdId: string = START_ID;
 
-  (prog.transactions || []).forEach((tx: any, idx: number) => {
-    // splitCoins --------------------------------------------------------------
+  (prog.transactions ?? []).forEach((tx: any, idx: number) => {
+    // ---- splitCoins ---------------------------------------------------------
     if ('SplitCoins' in tx) {
       const [coinArg, amountArgs] = tx.SplitCoins as [any, any[]];
       const coinRef = vt.get(vkey(coinArg)!);
-      const amounts = (amountArgs || [])
+      const amounts = (amountArgs ?? [])
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
@@ -356,19 +308,9 @@ export function decodeTx(
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-
-      // flow
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
-      // io: coin
       if (coinRef) {
         const inCoin = findInPortWithFallback(
           node,
@@ -380,7 +322,6 @@ export function decodeTx(
         if (inCoin) pushIoEdgeToPort(graph, coinRef, node.id, inCoin, 'coin');
       }
 
-      // io: amounts (vector<number>)
       if (amounts.length > 0) {
         const inAmounts =
           findInPortWithFallback(
@@ -400,8 +341,7 @@ export function decodeTx(
         }
       }
 
-      // results
-      const outs = outPorts(node, 'out_coin_');
+      const outs = outPortsWithPrefix(node, 'out_coin_');
       const n = Math.max(
         outs.length,
         (node as any)?.params?.ui?.amountsCount ?? 1,
@@ -413,11 +353,11 @@ export function decodeTx(
       return;
     }
 
-    // mergeCoins --------------------------------------------------------------
+    // ---- mergeCoins ---------------------------------------------------------
     if ('MergeCoins' in tx) {
       const [destArg, srcArgs] = tx.MergeCoins as [any, any[]];
       const destRef = vt.get(vkey(destArg)!);
-      const sources = (srcArgs || [])
+      const sources = (srcArgs ?? [])
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
@@ -427,15 +367,7 @@ export function decodeTx(
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
       if (destRef) {
@@ -463,10 +395,10 @@ export function decodeTx(
       return;
     }
 
-    // transferObjects ---------------------------------------------------------
+    // ---- transferObjects ----------------------------------------------------
     if ('TransferObjects' in tx) {
       const [objArgs, recipientArg] = tx.TransferObjects as [any[], any];
-      const objs = (objArgs || [])
+      const objs = (objArgs ?? [])
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
       const recp = vt.get(vkey(recipientArg)!);
@@ -477,15 +409,7 @@ export function decodeTx(
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
       if (recp) {
@@ -514,10 +438,10 @@ export function decodeTx(
       return;
     }
 
-    // makeMoveVec -------------------------------------------------------------
+    // ---- makeMoveVec --------------------------------------------------------
     if ('MakeMoveVec' in tx) {
       const [_maybeTp, elems] = tx.MakeMoveVec as [any, any[]];
-      const srcs = (elems || [])
+      const srcs = (elems ?? [])
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
@@ -527,15 +451,7 @@ export function decodeTx(
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
       srcs.forEach((s, i) => {
@@ -549,13 +465,13 @@ export function decodeTx(
       return;
     }
 
-    // moveCall ----------------------------------------------------------------
+    // ---- moveCall -----------------------------------------------------------
     if ('MoveCall' in tx) {
       const pkg = tx.MoveCall.package as string;
       const mod = tx.MoveCall.module as string;
       const fn = tx.MoveCall.function as string;
       const targs = (tx.MoveCall.type_arguments as string[] | undefined) ?? [];
-      const args = (tx.MoveCall.arguments || [])
+      const args = (tx.MoveCall.arguments ?? [])
         .map((a: any) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
@@ -572,27 +488,20 @@ export function decodeTx(
         resCount: retCount,
       });
       (node as any).id = `cmd-${idx}`;
-      // keep call metadata
+
       (node as any).params = {
         ...(node as any).params,
         moveCall: { package: pkg, module: mod, function: fn, typeArgs: targs },
       };
-      // ports might depend on UI → re-materialize once (defensive)
+
+      // Ports may depend on UI → re-materialize once (defensive)
       (node as any).ports = materializeCommandPorts(node as any);
       ensureFlowPorts(node);
       pushNode(graph, node);
-
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
-      // type args as variables
+      // type args as inline string variables if "in_typ_*" exists
       const tpPorts = (node as any)?.ports?.filter((p: Port) =>
         p.id.startsWith('in_typ_'),
       ) as Port[] | undefined;
@@ -628,7 +537,7 @@ export function decodeTx(
       });
 
       // results mapping
-      const outs = outPorts(node, 'out_res_');
+      const outs = outPortsWithPrefix(node, 'out_res_');
       const outCount = Math.max(retCount, outs.length || 0, 1);
       for (let i = 0; i < outCount; i++) {
         const pid = outs[i]?.id ?? `out_res_${i}`;
@@ -637,19 +546,12 @@ export function decodeTx(
       return;
     }
 
-    // publish / upgrade -------------------------------------------------------
+    // ---- publish / upgrade --------------------------------------------------
     if ('Publish' in tx) {
       const node = makeCommand('publish');
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
       return;
     }
@@ -658,14 +560,7 @@ export function decodeTx(
       const node = makeCommand('upgrade');
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
-      graph.edges.push({
-        kind: 'flow',
-        id: `flow:${prevCmdId}->${node.id}`,
-        source: prevCmdId!,
-        sourcePort: FLOW_NEXT,
-        target: node.id,
-        targetPort: FLOW_PREV,
-      } as PTBEdge);
+      pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
       return;
     }
@@ -676,16 +571,8 @@ export function decodeTx(
     });
   });
 
-  // tail → End
-  const tail = prevCmdId ?? START_ID;
-  graph.edges.push({
-    kind: 'flow',
-    id: `flow:${tail}->${END_ID}`,
-    source: tail,
-    sourcePort: FLOW_NEXT,
-    target: END_ID,
-    targetPort: FLOW_PREV,
-  } as PTBEdge);
+  // Tail → End
+  pushFlow(graph, prevCmdId ?? START_ID, END_ID);
 
   return { graph, diags };
 }
