@@ -29,6 +29,9 @@ import type {
   IRVar,
 } from './types';
 
+/** Extract base port id from a handle id like "in_coin:vector<number>" -> "in_coin". */
+export const basePortId = (h?: string) => (h ?? '').split(':')[0];
+
 /* ============================================================================
  * Graph helpers (exported for reuse by generateTsSdkCode/builders)
  * ==========================================================================*/
@@ -115,7 +118,7 @@ export function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
   return out.map((id) => idToNode.get(id)!).filter(Boolean);
 }
 
-/** Index all IO edges by target/source port. */
+/** Index all IO edges by target/source port (using base port id from handle). */
 export function buildIoIndex(edges: PTBEdge[]) {
   const io = edges.filter((e) => e.kind === 'io');
   const byTarget = new Map<string, Map<string, PTBEdge[]>>();
@@ -125,8 +128,12 @@ export function buildIoIndex(edges: PTBEdge[]) {
     if (!bySource.has(e.source)) bySource.set(e.source, new Map());
     const mt = byTarget.get(e.target)!,
       ms = bySource.get(e.source)!;
-    mt.set(e.targetPort, [...(mt.get(e.targetPort) ?? []), e]);
-    ms.set(e.sourcePort, [...(ms.get(e.sourcePort) ?? []), e]);
+
+    const tgtPortId = basePortId((e as any).targetHandle);
+    const srcPortId = basePortId((e as any).sourceHandle);
+
+    if (tgtPortId) mt.set(tgtPortId, [...(mt.get(tgtPortId) ?? []), e]);
+    if (srcPortId) ms.set(srcPortId, [...(ms.get(srcPortId) ?? []), e]);
   }
   return { byTarget, bySource, ioEdges: io };
 }
@@ -299,7 +306,8 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
       const arr: string[] = [];
       for (const e of edges) {
-        const key = `${e.source}:${e.sourcePort}`;
+        // Map is keyed by base target port id; for source side, read from OUT mapping by base of handle.
+        const key = `${e.source}:${basePortId((e as any).sourceHandle)}`;
         const syms = portSyms.get(key) ?? [];
         if (syms.length) arr.push(...syms);
       }

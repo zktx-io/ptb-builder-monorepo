@@ -126,9 +126,9 @@ export interface PTBEdge {
   id: string;
   kind: EdgeKind;
   source: string;
-  sourcePort: string;
+  sourceHandle: string;
   target: string;
-  targetPort: string;
+  targetHandle: string;
   /** number → move_numeric (UI-driven cast hint for codegen) */
   cast?: { to: NumericWidth };
 }

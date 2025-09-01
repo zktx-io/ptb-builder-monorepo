@@ -159,7 +159,7 @@ function makeCommand(kind: string, ui?: Record<string, unknown>): PTBNode {
   return cmd as any as PTBNode;
 }
 
-/** (nodeId, portId) → concrete RF handle id using buildHandleId(port). */
+/** (nodeId, portId) → RF handle id (includes optional serialized type suffix). */
 function handleIdBy(nodeId: string, portId: string): string {
   const n = nodeMap.get(nodeId);
   const p = ((n as any)?.ports as Port[] | undefined)?.find(
@@ -168,15 +168,15 @@ function handleIdBy(nodeId: string, portId: string): string {
   return p ? buildHandleId(p) : portId; // fallback: raw id (best-effort)
 }
 
-/** Push a FLOW edge (prev → next). */
+/** Push a FLOW edge (prev → next). Uses flow handle ids directly. */
 function pushFlow(graph: PTBGraph, prevId: string, nextId: string): void {
   graph.edges.push({
     kind: 'flow',
     id: `flow:${prevId}->${nextId}`,
     source: prevId,
-    sourcePort: FLOW_NEXT,
+    sourceHandle: FLOW_NEXT,
     target: nextId,
-    targetPort: FLOW_PREV,
+    targetHandle: FLOW_PREV,
   } as PTBEdge);
 }
 
@@ -192,9 +192,9 @@ function pushIoEdge(
     kind: 'io',
     id: `io:${src.nodeId}->${tgtNodeId}[${tag}]`,
     source: src.nodeId,
-    sourcePort: handleIdBy(src.nodeId, src.portId),
+    sourceHandle: handleIdBy(src.nodeId, src.portId),
     target: tgtNodeId,
-    targetPort: handleIdBy(tgtNodeId, tgtPortId),
+    targetHandle: handleIdBy(tgtNodeId, tgtPortId),
   } as PTBEdge);
 }
 

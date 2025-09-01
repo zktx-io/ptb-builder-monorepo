@@ -12,7 +12,12 @@ import type {
   VariableNode,
 } from '../ptb/graph/types';
 import type { Network } from '../types';
-import { activeFlowIds, buildIoIndex, orderActive } from './preprocess';
+import {
+  activeFlowIds,
+  basePortId,
+  buildIoIndex,
+  orderActive,
+} from './preprocess';
 import type { ExecOptions } from './types';
 
 /** Detect splitCoins out arity based on OUT ports (array vs single×N). */
@@ -304,7 +309,9 @@ export function generateTsSdkCode(
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
       const arr: string[] = [];
       for (const e of edges) {
-        const key = `${e.source}:${e.sourcePort}`;
+        // Edge map is keyed by target portId (base of handle), so here we
+        // must also use base of source handle to read from portExpr map.
+        const key = `${e.source}:${basePortId(e.sourceHandle)}`;
         const expr = portExpr.get(key);
         if (expr) arr.push(applyCastIfAny(expr, e));
       }
