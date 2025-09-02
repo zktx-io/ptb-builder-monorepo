@@ -10,7 +10,7 @@ import type {
   PTBGraph,
   PTBNode,
 } from '../ptb/graph/types';
-import type { Network } from '../types';
+import type { Chain } from '../types';
 
 export const PTB_VERSION = 'ptb_3' as const;
 
@@ -18,8 +18,8 @@ export interface PTBDoc {
   /** File identifier + version */
   version: typeof PTB_VERSION;
 
-  /** Required active network for this document */
-  network: Network;
+  /** Required active chain for this document */
+  chain: Chain;
 
   /** Transaction sender (wallet address or extracted from tx) */
   sender?: string;
@@ -69,7 +69,7 @@ export function sanitizeGraphForSave(src: PTBGraph): PTBGraph {
 }
 
 export function buildDoc(opts: {
-  network: Network;
+  chain: Chain;
   graph: PTBGraph;
   sender?: string;
   view?: { x: number; y: number; zoom: number };
@@ -77,11 +77,10 @@ export function buildDoc(opts: {
   modules?: Record<string, SuiMoveNormalizedModules>;
   objects?: Record<string, SuiObjectData>;
 }): PTBDoc {
-  const { network, graph, sender, view, includeEmbeds, modules, objects } =
-    opts;
+  const { chain, graph, sender, view, includeEmbeds, modules, objects } = opts;
   const doc: PTBDoc = {
     version: PTB_VERSION,
-    network,
+    chain,
     sender,
     view,
     graph: sanitizeGraphForSave(graph),

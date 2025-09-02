@@ -182,7 +182,7 @@ export function PTBFlow() {
     readOnly,
     theme,
     setTheme,
-    network,
+    chain,
     execOpts,
     runTx,
     createUniqueId,
@@ -195,7 +195,7 @@ export function PTBFlow() {
   }, [createUniqueId]);
 
   /** Generated source (updated on connect / node change). */
-  const [code, setCode] = useState<string>(EMPTY_CODE(network));
+  const [code, setCode] = useState<string>(EMPTY_CODE(chain));
 
   /** Flow animation flag: true iff a Start → End path exists. */
   const [flowActive, setFlowActive] = useState(false);
@@ -621,12 +621,12 @@ export function PTBFlow() {
   useEffect(() => {
     try {
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const src = generateTsSdkCode(ptb, network, execOpts);
-      setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(network));
+      const src = generateTsSdkCode(ptb, chain, execOpts);
+      setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
     } catch {
-      setCode(EMPTY_CODE(network));
+      setCode(EMPTY_CODE(chain));
     }
-  }, [rfNodes, rfEdges, network, execOpts]);
+  }, [rfNodes, rfEdges, chain, execOpts]);
 
   // ----- Theme-dependent grid colors -----------------------------------------
 
@@ -646,12 +646,12 @@ export function PTBFlow() {
     try {
       setExecuting(true);
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const tx = buildTransactionBlock(ptb, network, execOpts);
+      const tx = buildTransactionBlock(ptb, chain, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } finally {
       setExecuting(false);
     }
-  }, [rfNodes, rfEdges, network, execOpts, runTx]);
+  }, [rfNodes, rfEdges, chain, execOpts, runTx]);
 
   // ----- Auto Layout ---------------------------------------------------------------
 
@@ -736,7 +736,7 @@ export function PTBFlow() {
               title="ts-sdk preview"
               theme={theme}
               onThemeChange={setTheme}
-              emptyText={EMPTY_CODE(network)}
+              emptyText={EMPTY_CODE(chain)}
               onExecute={onExecute}
               executing={executing}
               /** require editor mode + valid flow */

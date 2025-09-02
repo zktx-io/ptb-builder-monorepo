@@ -2,7 +2,7 @@
 // Minimal IR + exec options used by both codegen and runtime builder.
 
 import type { PTBType } from '../ptb/graph/types';
-import type { Network } from '../types';
+import type { Chain } from '../types';
 
 export type ExecOptions = {
   myAddress?: string;
@@ -92,7 +92,7 @@ export type IROp =
   | IROpMoveCall;
 
 export type IR = {
-  network: Network;
+  chain: Chain;
   header: IRHeader;
   vars: IRVar[];
   ops: IROp[];

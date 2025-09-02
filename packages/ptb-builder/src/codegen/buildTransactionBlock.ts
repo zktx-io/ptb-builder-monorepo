@@ -7,7 +7,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { preprocessToIR } from './preprocess';
 import type { ExecOptions, IR, IRInit } from './types';
 import type { PTBGraph } from '../ptb/graph/types';
-import type { Network } from '../types';
+import type { Chain } from '../types';
 
 /** 1-level flatten: [a, [b, c], d] -> [a, b, c, d] */
 function normalizeListArg1(xs: any[]): any[] {
@@ -196,9 +196,9 @@ function buildTxFromIR(ir: IR, opts?: ExecOptions): Transaction {
 /** Public API: PTBGraph → Transaction */
 export function buildTransactionBlock(
   graph: PTBGraph,
-  network: Network, // kept for parity with codegen; not used here
+  chain: Chain, // kept for parity with codegen; not used here
   opts?: ExecOptions,
 ): Transaction {
-  const ir = preprocessToIR(graph, network);
+  const ir = preprocessToIR(graph, chain);
   return buildTxFromIR(ir, opts);
 }

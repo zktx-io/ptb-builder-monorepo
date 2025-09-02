@@ -1,4 +1,4 @@
-export type Network = 'devnet' | 'testnet' | 'mainnet';
+export type Chain = 'sui:devnet' | 'sui:testnet' | 'sui:mainnet';
 export type Theme = 'light' | 'dark';
 export type ToastVariant = 'info' | 'success' | 'error' | 'warning';
 export type ToastMessage = {

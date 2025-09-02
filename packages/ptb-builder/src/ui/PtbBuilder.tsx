@@ -33,14 +33,14 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { PTBFlow } from './PtbFlow';
 import { PtbProvider, usePtb } from './PtbProvider';
 import type { PTBDoc } from '../ptb/ptbDoc';
-import type { Theme, ToastAdapter } from '../types';
+import type { Chain, Theme, ToastAdapter } from '../types';
 
 // ---------- Public types ----------
 
 export type PTBBuilderProps = {
   theme?: Theme;
   executeTx?: (
-    chain: `${string}:${string}`,
+    chain: Chain,
     tx: Transaction | undefined,
   ) => Promise<{ digest?: string; error?: string }>;
   address?: string;
@@ -54,10 +54,7 @@ export type PTBBuilderProps = {
 export type PublicPTBApi = {
   exportDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
   loadFromDoc: (doc: PTBDoc) => void;
-  loadFromOnChainTx: (
-    chain: `${string}:${string}`,
-    digest: string,
-  ) => Promise<void>;
+  loadFromOnChainTx: (chain: Chain, digest: string) => Promise<void>;
   setTheme: (t: Theme) => void;
 };
 

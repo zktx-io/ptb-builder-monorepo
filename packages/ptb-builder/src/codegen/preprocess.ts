@@ -17,7 +17,7 @@ import type {
   PTBType,
   VariableNode,
 } from '../ptb/graph/types';
-import type { Network } from '../types';
+import type { Chain } from '../types';
 import type {
   IR,
   IRHeader,
@@ -243,7 +243,7 @@ function initFromVar(v: VariableNode): IRInit {
  * Main transform: PTBGraph -> IR
  * ==========================================================================*/
 
-export function preprocessToIR(graph: PTBGraph, network: Network): IR {
+export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
   const header: IRHeader = { usedMyAddress: false, usedSuiTypeConst: false };
 
   // Active subgraph + order
@@ -469,7 +469,7 @@ export function preprocessToIR(graph: PTBGraph, network: Network): IR {
   }
 
   return {
-    network,
+    chain,
     header,
     vars: irVars,
     ops: irOps,

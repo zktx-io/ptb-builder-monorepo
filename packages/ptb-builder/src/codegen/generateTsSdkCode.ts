@@ -11,7 +11,7 @@ import type {
   PTBType,
   VariableNode,
 } from '../ptb/graph/types';
-import type { Network } from '../types';
+import type { Chain } from '../types';
 import {
   activeFlowIds,
   basePortId,
@@ -244,7 +244,7 @@ function pickTransferInputs(
 /** ==== MAIN: Generate ts-sdk code (commands only on Start→…→End paths) ==== */
 export function generateTsSdkCode(
   graph: PTBGraph,
-  network: Network,
+  chain: Chain,
   opts?: ExecOptions,
 ): string {
   const header = new Writer();
@@ -563,7 +563,7 @@ export function generateTsSdkCode(
 
   // === Header ===
   const out = new Writer();
-  out.w(`// Auto-generated from PTB graph (network: ${network})`);
+  out.w(`// Auto-generated from PTB graph (chain: ${chain})`);
   out.w(`import { Transaction } from '@mysten/sui/transactions';`);
   if (ctx.usedSuiTypeConst) out.w(`const SUI = '0x2::sui::SUI';`);
   out.w('');

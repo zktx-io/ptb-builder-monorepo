@@ -57,7 +57,7 @@ import {
   seedDefaultGraph,
   type WellKnownId,
 } from '../ptb/seedGraph';
-import type { Network, Theme, ToastAdapter } from '../types';
+import type { Chain, Theme, ToastAdapter } from '../types';
 
 // ===== Context shape ==========================================================
 
@@ -66,7 +66,7 @@ export type PtbContextValue = {
   setGraph: (g: PTBGraph) => void; // debounced persist hook
 
   // Runtime flags
-  network: Network;
+  chain: Chain;
   readOnly: boolean;
 
   // UI theme
@@ -91,10 +91,7 @@ export type PtbContextValue = {
   ) => Promise<PTBModuleData | undefined>;
 
   // Loaders
-  loadFromOnChainTx: (
-    chain: `${string}:${string}`,
-    txDigest: string,
-  ) => Promise<void>;
+  loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
   loadFromDoc: (doc: PTBDoc) => void;
 
   // Persistence
@@ -136,7 +133,7 @@ export type PtbProviderProps = {
   execOpts?: ExecOptions;
 
   executeTx?: (
-    chain: `${string}:${string}`,
+    chain: Chain,
     tx: Transaction | undefined,
   ) => Promise<{ digest?: string; error?: string }>;
   toast?: ToastAdapter;
@@ -213,12 +210,14 @@ export function PtbProvider({
   // Editor mode (derived)
   const [readOnly, setReadOnly] = useState<boolean>(false);
 
-  // Network & client
-  const [activeNetwork, setActiveNetwork] = useState<Network>('devnet');
+  // Chain & client
+  const [activeChain, setActiveChain] = useState<Chain>('sui:devnet');
   const clientRef = useRef<SuiClient | undefined>(undefined);
   useLayoutEffect(() => {
-    clientRef.current = new SuiClient({ url: getFullnodeUrl(activeNetwork) });
-  }, [activeNetwork]);
+    clientRef.current = new SuiClient({
+      url: getFullnodeUrl(activeChain.split(':')[1] as any),
+    });
+  }, [activeChain]);
 
   // Persisted PTB snapshot (RF → PTB)
   const [graph, setGraphState] = useState<PTBGraph>({ nodes: [], edges: [] });
@@ -266,7 +265,7 @@ export function PtbProvider({
   // Execute adapter
   const executeTx = useCallback(
     async (
-      chain: `${string}:${string}`,
+      chain: Chain,
       tx?: Transaction,
     ): Promise<{ digest?: string; error?: string }> => {
       if (!executeTxProp) return { error: 'executeTx adapter not provided' };
@@ -317,7 +316,7 @@ export function PtbProvider({
         return { error: msg };
       }
 
-      const res = await executeTx(`sui:${activeNetwork}`, tx);
+      const res = await executeTx(activeChain, tx);
       if (res?.digest) {
         toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
       } else if (res?.error) {
@@ -325,7 +324,7 @@ export function PtbProvider({
       }
       return res ?? {};
     },
-    [activeNetwork, executeTx, toastImpl],
+    [activeChain, executeTx, toastImpl],
   );
 
   // ---- debounced graph autosave ---------------------------------------------
@@ -399,14 +398,14 @@ export function PtbProvider({
     }
     if (!onDocChangeRef.current) return;
     const doc = buildDoc({
-      network: activeNetwork,
+      chain: activeChain,
       graph,
       includeEmbeds: autosaveDocIncludeEmbeds,
       modules: autosaveDocIncludeEmbeds ? modules : undefined,
       objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
     });
     onDocChangeRef.current?.(doc);
-  }, [activeNetwork, graph, autosaveDocIncludeEmbeds, modules, objectMetas]);
+  }, [activeChain, graph, autosaveDocIncludeEmbeds, modules, objectMetas]);
 
   const scheduleDocNotify = useCallback(() => {
     if (!onDocChangeRef.current) return;
@@ -414,7 +413,7 @@ export function PtbProvider({
     docTimerRef.current = setTimeout(() => {
       if (!onDocChangeRef.current) return;
       const doc = buildDoc({
-        network: activeNetwork,
+        chain: activeChain,
         graph,
         includeEmbeds: autosaveDocIncludeEmbeds,
         modules: autosaveDocIncludeEmbeds ? modules : undefined,
@@ -424,7 +423,7 @@ export function PtbProvider({
       docTimerRef.current = undefined;
     }, onDocDebounceMs ?? DEFAULT_DOC_DEBOUNCE);
   }, [
-    activeNetwork,
+    activeChain,
     graph,
     autosaveDocIncludeEmbeds,
     modules,
@@ -438,7 +437,7 @@ export function PtbProvider({
 
   React.useEffect(() => {
     scheduleDocNotify();
-  }, [modules, objectMetas, activeNetwork, scheduleDocNotify]);
+  }, [modules, objectMetas, activeChain, scheduleDocNotify]);
 
   // ---- chain helpers ---------------------------------------------------------
 
@@ -525,13 +524,6 @@ export function PtbProvider({
 
   // ---- on-chain loader (viewer) ---------------------------------------------
 
-  function networkFromChain(chain: `${string}:${string}`): Network | undefined {
-    const [, netRaw] = String(chain).split(':');
-    const net = (netRaw || '').toLowerCase();
-    const allowed: Network[] = ['devnet', 'testnet', 'mainnet'];
-    return allowed.includes(net as Network) ? (net as Network) : undefined;
-  }
-
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
       const digest = (txDigest || '').trim();
@@ -540,16 +532,9 @@ export function PtbProvider({
         return;
       }
 
-      const net = networkFromChain(chain);
-      if (!net) {
-        toastImpl({
-          message: `Unsupported chain "${chain}". Use "sui:devnet|testnet|mainnet".`,
-          variant: 'error',
-        });
-        return;
-      }
-
-      const localClient = new SuiClient({ url: getFullnodeUrl(net) });
+      const localClient = new SuiClient({
+        url: getFullnodeUrl(chain.split(':')[1] as any),
+      });
 
       try {
         const res = await localClient.getTransactionBlock({
@@ -593,8 +578,8 @@ export function PtbProvider({
           }
         }
 
-        // Fix network and prime caches
-        setActiveNetwork(net);
+        // Fix chain and prime caches
+        setActiveChain(chain);
         setModules(modsEmbed);
         setObjectMetas({});
 
@@ -626,7 +611,7 @@ export function PtbProvider({
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (doc) => {
       // Fix network
-      setActiveNetwork(doc.network);
+      setActiveChain(doc.chain);
 
       // Overwrite caches from embeds
       setModules(doc.modulesEmbed ?? {});
@@ -654,7 +639,7 @@ export function PtbProvider({
       const includeEmbeds = !!opts?.includeEmbeds;
       const sender = opts?.sender;
       return buildDoc({
-        network: activeNetwork,
+        chain: activeChain,
         graph,
         sender,
         includeEmbeds,
@@ -662,7 +647,7 @@ export function PtbProvider({
         objects: includeEmbeds ? objectMetas : undefined,
       });
     },
-    [activeNetwork, graph, modules, objectMetas],
+    [activeChain, graph, modules, objectMetas],
   );
 
   // ---- well-known helpers ----------------------------------------------------
@@ -774,7 +759,7 @@ export function PtbProvider({
       graph,
       setGraph,
 
-      network: activeNetwork,
+      chain: activeChain,
       readOnly: !!readOnly,
 
       theme,
@@ -807,7 +792,7 @@ export function PtbProvider({
     [
       graph,
       setGraph,
-      activeNetwork,
+      activeChain,
       readOnly,
       theme,
       objectMetas,
