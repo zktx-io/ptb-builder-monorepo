@@ -205,32 +205,6 @@ function pushIoEdgeToPort(
   pushIoEdge(graph, src, tgtNodeId, tgt.id, tag);
 }
 
-/** If target expects a vector but we have multiple scalars, auto-insert MakeMoveVec packer. */
-function ensurePackedVector(
-  graph: PTBGraph,
-  sources: SourceRef[],
-  targetVec: PTBType,
-): SourceRef {
-  const isVector = (targetVec as any)?.kind === 'vector';
-  if (!isVector) return sources[0];
-  if (sources.length === 1) return sources[0];
-
-  const packer = NodeFactories.command('makeMoveVec', {
-    ui: { elemsExpanded: true, elemsCount: sources.length },
-  }) as PTBNode;
-  pushNode(graph, packer);
-
-  sources.forEach((s, i) => {
-    pushIoEdge(graph, s, packer.id, `in_elem_${i}`, `elem_${i}`);
-  });
-
-  return {
-    nodeId: packer.id,
-    portId: 'out_vec',
-    t: V((targetVec as any).elem ?? O()),
-  };
-}
-
 // ---- main -------------------------------------------------------------------
 
 export function decodeTx(
@@ -307,6 +281,7 @@ export function decodeTx(
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
+      // in_coin
       if (coinRef) {
         const inCoin = findInPortWithFallback(
           node,
@@ -318,25 +293,40 @@ export function decodeTx(
         if (inCoin) pushIoEdgeToPort(graph, coinRef, node.id, inCoin, 'coin');
       }
 
+      // amounts: respect original form strictly
       if (amounts.length > 0) {
-        const inAmounts =
-          findInPortWithFallback(
-            node,
-            'in_amounts',
-            'in_amount',
-            0,
-            (t) => (t as any)?.kind === 'vector',
-          ) || findInPortWithFallback(node, 'in_amounts', undefined, 0);
-        if (inAmounts) {
-          const packed = ensurePackedVector(
-            graph,
-            amounts,
-            inAmounts.dataType ?? V(S('number')),
-          );
-          pushIoEdgeToPort(graph, packed, node.id, inAmounts, 'amounts');
+        const isSingleVector =
+          amounts.length === 1 && (amounts[0].t as any)?.kind === 'vector';
+
+        if (isSingleVector) {
+          // Single vector<T> input → connect to the vector port directly
+          const vecPort =
+            findInPortWithFallback(
+              node,
+              'in_amounts',
+              'in_amounts',
+              0,
+              (t) => (t as any)?.kind === 'vector',
+            ) || findInPortWithFallback(node, 'in_amounts', undefined, 0);
+          if (vecPort) {
+            pushIoEdgeToPort(graph, amounts[0], node.id, vecPort, 'amounts');
+          }
+        } else {
+          // Multiple scalars → connect to expanded ports only (no packing)
+          amounts.forEach((s, i) => {
+            const inI = findInPortWithFallback(
+              node,
+              `in_amount_${i}`,
+              'in_amount_',
+              i,
+              (t) => (t as any)?.kind !== 'vector',
+            );
+            if (inI) pushIoEdgeToPort(graph, s, node.id, inI, `amount_${i}`);
+          });
         }
       }
 
+      // results mapping
       const outs = outPortsWithPrefix(node, 'out_coin_');
       const n = Math.max(
         outs.length,
