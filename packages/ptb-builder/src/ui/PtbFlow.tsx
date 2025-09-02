@@ -1,20 +1,9 @@
 // src/ui/PtbFlow.tsx
 // -----------------------------------------------------------------------------
-// React Flow (RF) is the *source of truth* while the editor is open.
-// - We always mutate RF state first (rfNodes/rfEdges).
-// - On a debounce, we persist RF → PTB snapshot via setGraph(nextPTB).
-// - PTB graph is for persistence/export/loading only. We re-hydrate RF
-//   from PTB *only* when the persisted PTB identity changes (open doc/tx).
-//
-// Why callbacks injection?
-// - Node components (Variables/Commands) need to call back into the canvas
-//   (e.g., patch UI params, change var type). We inject {onPatchUI, onPatchVar,
-//   onLoadTypeTag} into every node's data so nodes can update RF directly.
-//
-// Why pruning?
-// - Port sets can change when UI expands/collapses. We must drop edges whose
-//   handles no longer exist, and also drop IO edges that became type-incompatible.
-//   This keeps RF coherent and prevents broken edges from leaking into PTB.
+// RF is the *source of truth* while the editor is open.
+// We inject PTB → RF only when provider.graphEpoch changes.
+// Programmatic rehydrate is muted from onChange handlers to avoid feedback.
+// We also avoid redundant setRF by comparing edge signatures.
 // -----------------------------------------------------------------------------
 
 import React, {
@@ -175,6 +164,22 @@ function pruneIncompatibleIOEdges(
   });
 }
 
+/** Build a compact signature for edges to avoid redundant setRF. */
+function edgesSig(edges: RFEdge<RFEdgeData>[]): string {
+  const arr = [...edges].map((e) => ({
+    id: e.id,
+    type: e.type,
+    s: e.source,
+    t: e.target,
+    sh: e.sourceHandle ?? undefined,
+    th: e.targetHandle ?? undefined,
+    l: (e as any).label ?? undefined,
+    d: e.data ?? undefined,
+  }));
+  arr.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return JSON.stringify(arr);
+}
+
 export function PTBFlow() {
   const {
     graph,
@@ -187,6 +192,7 @@ export function PTBFlow() {
     runTx,
     createUniqueId,
     registerFlowActions,
+    graphEpoch, // ← only rehydrate when this changes
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
@@ -338,7 +344,6 @@ export function PTBFlow() {
     rfNodes: RFNode<RFNodeData>[];
     rfEdges: RFEdge<RFEdgeData>[];
   }>(() => {
-    // Initial hydration from persisted PTB.
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
     const pruned = pruneDanglingEdges(injected, edges);
@@ -348,24 +353,37 @@ export function PTBFlow() {
   /** Keep the last *persisted* PTB snapshot to help RF → PTB diffs. */
   const baseGraphRef = useRef(graph);
 
-  /** Re-hydrate RF only when the persisted PTB identity changes. */
+  /** Mute onChange handlers while rehydrating from provider. */
+  const rehydratingRef = useRef(false);
+
+  /** Rehydrate RF only when the persisted PTB identity (epoch) changes. */
+  const lastEpochRef = useRef<number>(-1);
   useEffect(() => {
-    if (graph === baseGraphRef.current) return;
+    if (graphEpoch === lastEpochRef.current) return;
+    lastEpochRef.current = graphEpoch;
+
+    rehydratingRef.current = true;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
     let pruned = pruneDanglingEdges(injected, edges);
     pruned = pruneIncompatibleIOEdges(graph.nodes, pruned);
+
     setRF({ rfNodes: injected, rfEdges: pruned });
     setFlowActive(hasStartToEnd(injected, pruned));
     baseGraphRef.current = graph;
-  }, [graph, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks]);
 
-  /** Safety net: whenever rfNodes change, re-prune edges (ports may have changed). */
+    // Unmute next tick to let RF compute dimensions
+    requestAnimationFrame(() => {
+      rehydratingRef.current = false;
+    });
+  }, [graphEpoch, graph, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks]);
+
+  /** Safety net: whenever rfNodes change, re-prune edges (ports may change). */
   useEffect(() => {
     setRF((prev) => {
       let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
       pruned = pruneIncompatibleIOEdges(baseGraphRef.current.nodes, pruned);
-      if (pruned.length === prev.rfEdges.length) return prev;
+      if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
       setFlowActive(hasStartToEnd(rfNodes, pruned));
       return { ...prev, rfEdges: pruned };
     });
@@ -459,6 +477,9 @@ export function PTBFlow() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      // During programmatic rehydrate, ignore RF's callbacks to avoid loop.
+      if (rehydratingRef.current) return;
+
       // In read-only, allow only position/selection/dimensions updates.
       const effective = readOnly
         ? changes.filter(
@@ -481,34 +502,33 @@ export function PTBFlow() {
           );
         });
 
-        const nextNodesRaw = applyNodeChanges(filtered, prev.rfNodes);
-        const nextNodes = withCallbacks(
-          nextNodesRaw,
-          onPatchUI,
-          onPatchVar,
-          onLoadTypeTag,
-        );
+        // Do NOT re-inject callbacks here; prev.rfNodes already have them.
+        const nextNodes = applyNodeChanges(filtered, prev.rfNodes);
         let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
         nextEdges = pruneIncompatibleIOEdges(
           baseGraphRef.current.nodes,
           nextEdges,
         );
+
+        // Avoid redundant updates
+        if (
+          nextNodes === prev.rfNodes &&
+          edgesSig(nextEdges) === edgesSig(prev.rfEdges)
+        ) {
+          return prev;
+        }
+
         recomputeFlowActive(nextNodes, nextEdges);
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
-    [
-      readOnly,
-      recomputeFlowActive,
-      onPatchUI,
-      onPatchVar,
-      onLoadTypeTag,
-      withCallbacks,
-    ],
+    [readOnly, recomputeFlowActive],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (rehydratingRef.current) return;
+
       // In read-only, allow only selection changes.
       const effective = readOnly
         ? changes.filter((ch) => ch.type === 'select')
@@ -517,6 +537,7 @@ export function PTBFlow() {
       setRF((prev) => {
         const nextEdges = applyEdgeChanges(effective, prev.rfEdges);
         const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
+        if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
         recomputeFlowActive(prev.rfNodes, pruned);
         return { ...prev, rfEdges: pruned };
       });
@@ -530,7 +551,6 @@ export function PTBFlow() {
       if (readOnly) return; // block new connections in read-only
       if (!conn.source || !conn.target) return;
 
-      // Find PTB ports to validate roles/directions/types.
       const findPort = (nodeId: string, handle?: string) => {
         const pid = portIdOf(handle);
         const node = baseGraphRef.current.nodes.find((n) => n.id === nodeId);
@@ -564,6 +584,7 @@ export function PTBFlow() {
             ...filtered,
             newEdge,
           ]);
+          if (edgesSig(nextEdges) === edgesSig(prev.rfEdges)) return prev;
           setFlowActive(hasStartToEnd(prev.rfNodes, nextEdges));
           return { ...prev, rfEdges: nextEdges };
         }
@@ -595,6 +616,7 @@ export function PTBFlow() {
           ...filtered,
           newEdge,
         ]);
+        if (edgesSig(nextEdges) === edgesSig(prev.rfEdges)) return prev;
         return { ...prev, rfEdges: nextEdges };
       });
     },
@@ -607,7 +629,7 @@ export function PTBFlow() {
     let t = window.setTimeout(() => {
       const next = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
       setGraph(next); // persist snapshot
-      baseGraphRef.current = next; // advance baseline
+      baseGraphRef.current = next; // advance baseline (prevents false rehydrate)
       t = undefined as any;
     }, DEBOUNCE_MS);
 
@@ -653,21 +675,26 @@ export function PTBFlow() {
     }
   }, [rfNodes, rfEdges, chain, execOpts, runTx]);
 
-  // ----- Auto Layout ---------------------------------------------------------------
-
+  // ----- Auto Layout ----------------------------------------------------------
   const { fitView } = useReactFlow();
 
   const onAutoLayout = useCallback(async () => {
     const { nodes, edges } = await autoLayoutFlow(rfNodes, rfEdges);
     setRF({ rfNodes: nodes, rfEdges: edges });
     requestAnimationFrame(() => {
-      try {
-        fitView({ padding: 0.2, duration: 300 });
-      } catch {
-        /* no-op */
-      }
+      requestAnimationFrame(() => {
+        try {
+          fitView({ padding: 0.2, duration: 300 });
+        } catch {
+          /* no-op */
+        }
+      });
     });
-  }, [rfNodes, rfEdges, fitView, setRF]);
+  }, [rfNodes, rfEdges, setRF, fitView]);
+
+  useEffect(() => {
+    registerFlowActions({ autoLayoutAndFit: onAutoLayout });
+  }, [registerFlowActions, onAutoLayout]);
 
   useEffect(() => {
     registerFlowActions({ autoLayoutAndFit: onAutoLayout });
@@ -727,7 +754,7 @@ export function PTBFlow() {
         <MiniMap />
         <Controls className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
 
-        {/* CodePip lives INSIDE ReactFlow so grid/handles render correctly */}
+        {/* Code preview lives inside */}
         <Panel position="top-right" style={{ pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto' }}>
             <CodePip
