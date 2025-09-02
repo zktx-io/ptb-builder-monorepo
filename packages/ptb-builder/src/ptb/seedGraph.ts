@@ -25,14 +25,14 @@ export function seedDefaultGraph(): PTBGraph {
         id: KNOWN_IDS.START,
         kind: 'Start',
         label: 'Start',
-        position: { x: 160, y: 300 },
+        position: { x: 160, y: 325 },
         ports: PORTS.start(), // [{ id:'next', direction:'out', role:'flow' }]
       },
       {
         id: KNOWN_IDS.END,
         kind: 'End',
         label: 'End',
-        position: { x: 640, y: 300 },
+        position: { x: 640, y: 325 },
         ports: PORTS.end(), // [{ id:'prev', direction:'in', role:'flow' }]
       },
     ],

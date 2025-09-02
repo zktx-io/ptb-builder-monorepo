@@ -719,7 +719,7 @@ export function PTBFlow() {
           key={`accents-${theme}`}
           gap={100}
           color={accentColor}
-          lineWidth={1.25}
+          lineWidth={1.5}
           variant={BackgroundVariant.Lines}
           style={{ backgroundColor: 'transparent' }}
         />
