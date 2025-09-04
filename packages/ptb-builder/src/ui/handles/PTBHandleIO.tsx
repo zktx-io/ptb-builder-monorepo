@@ -1,4 +1,5 @@
 // src/ui/handles/PTBHandleIO.tsx
+
 import React, { useMemo } from 'react';
 
 import {
@@ -15,15 +16,19 @@ import {
   hasConcreteEnds,
   isIOTargetBusy,
 } from './handleUtils';
-import { buildHandleId } from '../../ptb/graph/helpers';
 import {
   ioCategoryOf,
   ioCategoryOfSerialized,
   isTypeCompatible,
-  uiCardinalityOfSerialized,
+  isVectorSerialized,
 } from '../../ptb/graph/typecheck';
-import { serializePTBType, uiCardinalityOf } from '../../ptb/graph/types';
-import type { Port } from '../../ptb/graph/types';
+import { buildHandleId, serializePTBType } from '../../ptb/graph/types';
+import type { Port, PTBType } from '../../ptb/graph/types';
+
+/** Strict check: true only for PTB vector<T> */
+function isVectorType(t?: PTBType): boolean {
+  return !!t && t.kind === 'vector';
+}
 
 type PTBHandleIOProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
   port: Port;
@@ -47,10 +52,10 @@ export function PTBHandleIO({
   );
   const edges = useStore((s) => ((s as any).edges as any[]) || []);
 
-  // Build a stable RF handle id (may include an inline ":type" suffix for IO).
+  // Stable RF handle id (may include ":type" suffix for IO)
   const handleId = useMemo(() => buildHandleId(port), [port]);
 
-  // Serialized hint is for badges/debug only; do NOT use it for color/category primarily.
+  // Serialized hint is for badges/debug only (never primary truth)
   const serializedHint = useMemo(
     () =>
       port.typeStr ??
@@ -58,24 +63,17 @@ export function PTBHandleIO({
     [port.typeStr, port.dataType],
   );
 
-  // Cardinality MUST be derived from structured PTBType first; fall back to serialized hint.
-  const cardinality = useMemo(
-    () =>
-      uiCardinalityOf(port.dataType) ||
-      uiCardinalityOfSerialized(serializedHint),
-    [serializedHint, port.dataType],
-  );
+  // Category coloring: prefer structured type; fallback to serialized
+  const category = useMemo(() => {
+    const c = ioCategoryOf(port.dataType);
+    return c !== 'unknown' ? c : ioCategoryOfSerialized(serializedHint);
+  }, [serializedHint, port.dataType]);
 
-  // Color/category MUST be derived from structured PTBType first; fallback only if missing.
-  const category = useMemo(
-    () =>
-      ioCategoryOf(port.dataType) ||
-      ioCategoryOfSerialized(serializedHint) ||
-      'unknown',
-    [serializedHint, port.dataType],
-  );
+  // Vector-only vector glyph: strict vector check, with serialized fallback
+  const isVector =
+    isVectorType(port.dataType) || isVectorSerialized(serializedHint);
 
-  // Validate connection using structured types from the store (no string-based checks).
+  // Connection validation via structured types from the store
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
     if (!hasConcreteEnds(c)) return false;
@@ -89,8 +87,6 @@ export function PTBHandleIO({
   };
 
   const isLeft = position === Position.Left;
-  const isMulti = cardinality === 'multi';
-
   const colorVarName = `--ptb-io-${category}-stroke`;
 
   return (
@@ -103,8 +99,8 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        `ptb-handle--${cardinality}`,
-        `ptb-handle--${category}`, // helpful for debugging
+        isVector ? 'ptb-handle--vector' : 'ptb-handle--scalar',
+        `ptb-handle--${category}`,
         className,
       ]
         .filter(Boolean)
@@ -114,7 +110,7 @@ export function PTBHandleIO({
         height: 12,
         overflow: 'visible',
         color: `var(${colorVarName}, var(--ptb-io-unknown-stroke))`,
-        ...(isMulti
+        ...(isVector
           ? {}
           : {
               background: `var(${colorVarName}, var(--ptb-io-unknown-stroke))`,
@@ -124,9 +120,9 @@ export function PTBHandleIO({
       }}
       isValidConnection={isValidConnection}
     >
-      {isMulti && (
+      {isVector && (
         <span
-          className="ptb-handle-glyph ptb-handle-glyph--multi"
+          className="ptb-handle-glyph ptb-handle-glyph--vector"
           style={{
             background: `var(${colorVarName}, var(--ptb-io-unknown-stroke))`,
           }}

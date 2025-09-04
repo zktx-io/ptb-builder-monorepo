@@ -44,21 +44,29 @@ import {
   type RFNodeData,
   rfToPTB,
 } from '../ptb/ptbAdapter';
+import { autoLayoutFlow } from './utils/autoLayout';
 import { hasStartToEnd } from './utils/flowPath';
 import { buildTransactionBlock } from '../codegen/buildTransactionBlock';
 import { generateTsSdkCode } from '../codegen/generateTsSdkCode';
+import { setIdGenerator } from '../ptb/factories';
 import {
   inferCastTarget,
   isTypeCompatible,
   isUnknownType,
 } from '../ptb/graph/typecheck';
 import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
-import { materializeCommandPorts } from './nodes/cmds/registry';
-import { setIdGenerator } from './nodes/nodeFactories';
-import { autoLayoutFlow } from './utils/autoLayout';
-import { portIdOf } from './utils/handleId';
+import { buildCommandPorts } from '../ptb/registry';
 
 const DEBOUNCE_MS = 250;
+
+/**
+ * Extracts the base portId (before ":" type suffix) from a handle string.
+ * Example: "in_arg_0:number" -> "in_arg_0"
+ */
+function portIdOf(handle?: string): string | undefined {
+  if (!handle) return undefined;
+  return handle.split(':')[0];
+}
 
 /** DFS loop check for flow edges (prevents cycles). */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
@@ -212,53 +220,32 @@ export function PTBFlow() {
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
       setRF((prev) => {
-        // 1) Rebuild PTB from current RF (RF → PTB).
+        // 1) Build a fresh PTB snapshot from current RF
         const currentPTB = rfToPTB(
           prev.rfNodes,
           prev.rfEdges,
           baseGraphRef.current,
         );
 
-        // 2) Merge UI patch and normalize dynamic group counts.
+        // 2) Locate the target Command node
         const node = currentPTB.nodes.find((n) => n.id === nodeId);
         if (!node || node.kind !== 'Command') return prev;
 
-        const ui = ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
-        const nextUI = { ...ui, ...patch };
-
-        if ('amountsExpanded' in patch) {
-          if ((patch as any).amountsExpanded) {
-            if (typeof (node.params as any)?.ui?.amountsCount !== 'number') {
-              (nextUI as any).amountsCount = 2;
-            }
-          } else delete (nextUI as any).amountsCount;
+        // 3) Shallow-merge UI (delete keys when value is `undefined`)
+        const prevUI =
+          ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
+        const nextUI: Record<string, unknown> = { ...prevUI };
+        for (const k of Object.keys(patch)) {
+          const v = (patch as any)[k];
+          if (typeof v === 'undefined') delete nextUI[k];
+          else nextUI[k] = v;
         }
-        if ('sourcesExpanded' in patch) {
-          if ((patch as any).sourcesExpanded) {
-            if (typeof (node.params as any)?.ui?.sourcesCount !== 'number') {
-              (nextUI as any).sourcesCount = 2;
-            }
-          } else delete (nextUI as any).sourcesCount;
-        }
-        if ('objectsExpanded' in patch) {
-          if ((patch as any).objectsExpanded) {
-            if (typeof (node.params as any)?.ui?.objectsCount !== 'number') {
-              (nextUI as any).objectsCount = 2;
-            }
-          } else delete (nextUI as any).objectsCount;
-        }
-        if ('elemsExpanded' in patch) {
-          if ((patch as any).elemsExpanded) {
-            if (typeof (node.params as any)?.ui?.elemsCount !== 'number') {
-              (nextUI as any).elemsCount = 2;
-            }
-          } else delete (nextUI as any).elemsCount;
-        }
-
         node.params = { ...(node.params ?? {}), ui: nextUI };
 
-        // 3) Re-materialize ports and prune edges for invalid handles/types.
-        node.ports = materializeCommandPorts(node as any);
+        // 4) Re-materialize ports based on the updated UI
+        node.ports = buildCommandPorts((node as any).command, nextUI as any);
+
+        // 5) Convert back to RF, inject callbacks, and prune invalid edges
         const { nodes: freshRFNodes, edges: freshRFEdges } =
           ptbToRF(currentPTB);
         const injected = withCallbacks(
@@ -270,6 +257,7 @@ export function PTBFlow() {
         let pruned = pruneDanglingEdges(injected, freshRFEdges);
         pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
+        // 6) Update flow-active flag and commit state
         setFlowActive(hasStartToEnd(injected, pruned));
         return { rfNodes: injected, rfEdges: pruned };
       });
@@ -682,19 +670,13 @@ export function PTBFlow() {
     const { nodes, edges } = await autoLayoutFlow(rfNodes, rfEdges);
     setRF({ rfNodes: nodes, rfEdges: edges });
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          fitView({ padding: 0.2, duration: 300 });
-        } catch {
-          /* no-op */
-        }
-      });
+      try {
+        fitView({ padding: 0.2, duration: 300 });
+      } catch {
+        /* no-op */
+      }
     });
   }, [rfNodes, rfEdges, setRF, fitView]);
-
-  useEffect(() => {
-    registerFlowActions({ autoLayoutAndFit: onAutoLayout });
-  }, [registerFlowActions, onAutoLayout]);
 
   useEffect(() => {
     registerFlowActions({ autoLayoutAndFit: onAutoLayout });
@@ -716,7 +698,6 @@ export function PTBFlow() {
         colorMode={theme}
         nodes={rfNodes}
         edges={rfEdges}
-        fitView
         /** allow dragging even in read-only */
         nodesDraggable={true}
         /** block creating/updating edges when read-only */

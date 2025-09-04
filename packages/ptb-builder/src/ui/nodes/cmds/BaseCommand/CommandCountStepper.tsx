@@ -1,13 +1,13 @@
 // Ultra-compact count stepper (＋ / − only, no number readout).
-// Rendering policy:
-// - splitCoins: always render (outputs are always N singles; no expand toggle).
-// - others: render only when command supports expansion AND is expanded.
+// Policy:
+// - Expansion toggles were removed. Count alone defines the number of ports.
+// - The stepper renders for any command that exposes a countKey (e.g. amountsCount, sourcesCount).
+// - The parent decides which commands have countKeys via countKeyOf(cmdKind).
+// - No 'expanded' flag is touched anymore.
 
-import React, { useMemo } from 'react';
+import React from 'react';
 
 import clsx from 'clsx';
-
-import { canExpandCommand, countKeyOf, expandedKeyOf } from '../registry';
 
 export type PatchUIPayload = (
   nodeId: string,
@@ -15,16 +15,24 @@ export type PatchUIPayload = (
 ) => void;
 
 export interface CommandCountStepperProps {
+  /** Command kind string (used by parent to decide presence of countKey). */
   cmdKind?: string;
   nodeId?: string;
+  /** Raw UI object that contains the count field (e.g. { amountsCount: 3 }) */
   ui: Record<string, unknown>;
+  /** (nodeId, patch) -> void */
   onPatchUI?: PatchUIPayload;
+  /** Minimum count (inclusive). Defaults to 1. */
   min?: number;
+  /** Optional maximum count (inclusive). */
   max?: number;
   className?: string;
   disabled?: boolean;
+  /** The key of the counter field (already resolved by parent). */
+  countKey?: string;
 }
 
+/** Clamp arbitrary value into an integer in [min, max]. */
 function clampInt(v: unknown, min = 1, max?: number): number {
   const n =
     typeof v === 'number' ? Math.floor(v) : parseInt(String(v ?? ''), 10);
@@ -33,7 +41,6 @@ function clampInt(v: unknown, min = 1, max?: number): number {
 }
 
 export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
-  cmdKind,
   nodeId,
   ui,
   onPatchUI,
@@ -41,21 +48,9 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
   max,
   className,
   disabled,
+  countKey,
 }) => {
-  const forceStepper = cmdKind === 'splitCoins';
-
-  const expKey = useMemo(() => expandedKeyOf(cmdKind), [cmdKind]);
-  const allowed = useMemo(
-    () => canExpandCommand(cmdKind, ui as any),
-    [cmdKind, ui],
-  );
-  const isExpanded = Boolean(expKey && ui?.[expKey]);
-
-  // splitCoins → always render; others → only when allowed & expanded
-  const shouldRender = forceStepper || (!!cmdKind && allowed && isExpanded);
-  if (!shouldRender) return <></>;
-
-  const countKey = countKeyOf(cmdKind);
+  // If the command does not have a countKey, render nothing.
   if (!countKey) return <></>;
 
   const canPatch = Boolean(nodeId && onPatchUI);
@@ -65,14 +60,7 @@ export const CommandCountStepper: React.FC<CommandCountStepperProps> = ({
     if (!canPatch) return;
     const next = clampInt(count + delta, min, max);
     if (next === count) return;
-
-    // For splitCoins, do NOT touch any expand flag; it has no toggle.
-    const patch: Record<string, unknown> = { [countKey]: next };
-
-    // For other commands, keep expanded true while stepping (quality-of-life)
-    if (!forceStepper && expKey) patch[expKey] = true;
-
-    onPatchUI!(nodeId!, patch);
+    onPatchUI!(nodeId!, { [countKey]: next });
   };
 
   const decDisabled = disabled || !canPatch || count <= min;

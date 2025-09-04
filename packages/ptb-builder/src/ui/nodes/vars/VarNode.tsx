@@ -1,8 +1,3 @@
-// src/ui/nodes/vars/VarNode.tsx
-// Variable node with inline editors (safe updates).
-// All graph patches are deferred (microtask / rAF) to avoid
-// "Cannot update a component while rendering a different component" warnings.
-
 import React, {
   memo,
   useCallback,
@@ -24,15 +19,17 @@ import { SelectBool } from './inputs/SelectBool';
 import { TextInput } from './inputs/TextInput';
 import { buildOutPort, placeholderFor } from './varUtils';
 import {
-  ioShapeOf,
+  ioCategoryOf,
+  isOption as isOptionType,
   isVector as isVectorType,
+  optionElem,
   vectorElem,
 } from '../../../ptb/graph/typecheck';
 import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
 import { iconOfVar } from '../icons';
+import { NODE_SIZES } from '../nodeLayout';
 import { MiniStepper } from './inputs/MiniStepper';
-import { NODE_SIZES } from '../../utils/nodeSizes';
 
 const DEBOUNCE_MS = 250;
 const OBJECT_DEBOUNCE_MS = 400;
@@ -70,7 +67,6 @@ function useDebouncedCallback<T extends any[]>(
         timerRef.current = undefined;
       }
       timerRef.current = window.setTimeout(() => {
-        // run outside render stack
         Promise.resolve().then(() => fnRef.current(...args));
         timerRef.current = undefined;
       }, delay);
@@ -81,7 +77,6 @@ function useDebouncedCallback<T extends any[]>(
 
 /** Post a function to the microtask queue (always after current render). */
 function defer(fn: () => void) {
-  // queueMicrotask is ideal; fallback to resolved Promise
   if (typeof queueMicrotask === 'function') queueMicrotask(fn);
   else Promise.resolve().then(fn);
 }
@@ -100,9 +95,10 @@ export const VarNode = memo(function VarNode({
   // Editors enabled only when onPatchVar exists.
   const canEdit = Boolean(nodeId && data?.onPatchVar) && !readOnly;
 
-  const { category } = ioShapeOf(varType);
+  // Category is for node chrome only (color).
+  const category = ioCategoryOf(varType);
 
-  // Helpers/constants are label-only.
+  // Helper variables are label-only (no editors).
   const helperNames = useMemo(
     () => new Set(['sender', 'gas', 'clock', 'system', 'random']),
     [],
@@ -116,9 +112,10 @@ export const VarNode = memo(function VarNode({
     (v?.name ?? '').trim().toLowerCase() === 'sui';
   const isHelper = isHelperByName || isSuiConst;
 
-  // Local UI state.
-  const [scalarBuf, setScalarBuf] = useState(''); // scalar text & object id
-  const [vecItems, setVecItems] = useState<string[]>(['']); // min=1
+  // Local UI buffers
+  const [scalarBuf, setScalarBuf] = useState(''); // scalar & object id
+  const [vecItems, setVecItems] = useState<string[]>(['']); // vector editor
+  const [optSome, setOptSome] = useState<boolean>(false); // option<T>
   const [objTypeLoading, setObjTypeLoading] = useState(false);
 
   // Graph patcher (always deferred)
@@ -130,13 +127,13 @@ export const VarNode = memo(function VarNode({
     [canEdit, nodeId, data],
   );
 
-  // Update internals (always deferred to rAF)
+  // Update internals after layout-affecting changes
   const requestInternals = useCallback(() => {
     if (!rfNodeId) return;
     requestAnimationFrame(() => updateNodeInternals(rfNodeId));
   }, [rfNodeId, updateNodeInternals]);
 
-  // Shallow-equal helper for arrays of strings.
+  // Shallow-equal for string arrays
   const arrShallowEqual = useCallback((a: string[], b: string[]) => {
     if (a === b) return true;
     if (a.length !== b.length) return false;
@@ -144,51 +141,64 @@ export const VarNode = memo(function VarNode({
     return true;
   }, []);
 
-  // Sync local buffers from graph on prop changes.
+  // Sync local buffers from graph when inputs change
   useEffect(() => {
-    if (!isVectorType(varType)) {
-      const next =
-        (v as any)?.value == undefined ? '' : String((v as any)?.value);
-      setScalarBuf((prev) => (prev === next ? prev : next));
+    const val = (v as any)?.value;
+
+    if (isOptionType(varType)) {
+      // option<T>: expect value = null | undefined | innerValue
+      const innerT = optionElem(varType);
+      const isNone = val == undefined;
+      setOptSome(!isNone);
+
+      if (!innerT) return;
+
+      if (isVectorType(innerT)) {
+        const arr =
+          Array.isArray(val) && val.length > 0 ? val.map(String) : [''];
+        setVecItems((prev) => (arrShallowEqual(prev, arr) ? prev : arr));
+      } else {
+        const s = val == undefined ? '' : String(val);
+        setScalarBuf((prev) => (prev === s ? prev : s));
+      }
+      return;
+    }
+
+    if (isVectorType(varType)) {
+      const arr = Array.isArray(val) && val.length > 0 ? val.map(String) : [''];
+      setVecItems((prev) => (arrShallowEqual(prev, arr) ? prev : arr));
     } else {
-      const raw = (v as any)?.value;
-      const next =
-        Array.isArray(raw) && raw.length > 0 ? raw.map(String) : [''];
-      setVecItems((prev) => (arrShallowEqual(prev, next) ? prev : next));
+      const s = val == undefined ? '' : String(val);
+      setScalarBuf((prev) => (prev === s ? prev : s));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, v, varType, arrShallowEqual]);
 
-  // Default scalar<bool>=true once (only editable & not helper).
+  // Default scalar<bool>=true once (not for helpers)
   useEffect(() => {
     if (!canEdit || isHelper) return;
     if (varType?.kind === 'scalar' && varType.name === 'bool') {
       const val = (v as any)?.value as boolean | undefined;
-      if (typeof val === 'undefined') {
-        patchVar({ value: true });
-      }
+      if (typeof val === 'undefined') patchVar({ value: true });
     }
   }, [canEdit, isHelper, varType, v, patchVar]);
 
-  // Debounced patchers for text-based inputs.
+  // Debounced patchers
   const debouncedPatchScalar = useDebouncedCallback((val: string) => {
     patchVar({ value: val });
   });
-
   const debouncedPatchVector = useDebouncedCallback((vals: string[]) => {
     patchVar({ value: vals });
   });
 
-  // Debounced object handler: patch value, fetch meta, then patch varType.
+  // Debounced object handler: patch value, fetch meta, then patch varType
   const reqSeqRef = useRef(0);
   const debouncedHandleObject = useDebouncedCallback(async (idRaw: string) => {
     if (!canEdit) return;
 
     const id = idRaw.trim();
-    // Keep graph in sync while typing (deferred)
     patchVar({ value: idRaw });
 
-    // Empty → clear typeTag and stop
     if (!id) {
       patchVar({ varType: { kind: 'object' } });
       setObjTypeLoading(false);
@@ -227,15 +237,16 @@ export const VarNode = memo(function VarNode({
     }
   }, OBJECT_DEBOUNCE_MS);
 
-  // Out port (with optional human-friendly typeStr).
+  // Out port (with optional human-friendly typeStr)
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
 
   const hasEditor = useMemo(() => !isHelper, [isHelper]);
 
-  // Stepper (+/-)
+  // Vector length stepper
   const stepVec = useCallback(
     (delta: number) => {
-      if (!canEdit || !isVectorType(varType)) return;
+      const t = isOptionType(varType) ? optionElem(varType) : varType;
+      if (!canEdit || !isVectorType(t)) return;
       setVecItems((prev) => {
         const nextLen = Math.max(1, prev.length + delta);
         const next =
@@ -245,37 +256,152 @@ export const VarNode = memo(function VarNode({
                 ...Array.from({ length: nextLen - prev.length }, () => ''),
               ]
             : prev.slice(0, nextLen);
-        // Defer graph patch + internals recompute
-        patchVar({ value: next });
+        const assign = isOptionType(varType)
+          ? optSome
+            ? next
+            : undefined
+          : next;
+        patchVar({ value: assign });
         requestInternals();
         return next;
       });
     },
-    [canEdit, varType, patchVar, requestInternals],
+    [canEdit, varType, optSome, patchVar, requestInternals],
   );
 
-  // Recompute bounds when height-affecting state toggles.
+  // Relayout when height-affecting state toggles
   useEffect(() => {
     requestInternals();
-  }, [rfNodeId, vecItems.length, hasEditor, varType?.kind, requestInternals]);
+  }, [
+    rfNodeId,
+    vecItems.length,
+    hasEditor,
+    varType?.kind,
+    optSome,
+    requestInternals,
+  ]);
 
   const title = (data?.label ?? v?.label ?? 'variable').trim();
-  const elemT = vectorElem(varType);
-  const vecPlaceholder = placeholderFor(elemT);
 
-  const objectTypeTag =
-    varType?.kind === 'object' ? (varType as any)?.typeTag : undefined;
-
-  // Parse → boolean | undefined (no auto-writeback here)
-  const parseBool = (x: unknown): boolean | undefined => {
-    if (typeof x === 'boolean') return x;
-    if (typeof x === 'string') {
-      const s = x.trim().toLowerCase();
-      if (s === 'true') return true;
-      if (s === 'false') return false;
+  // Helpers to render editors
+  const renderScalarEditor = (
+    tKind = varType?.kind,
+    tName = (varType as any)?.name,
+  ) => {
+    if (tKind === 'scalar' && tName === 'bool') {
+      return (
+        <SelectBool
+          value={(v as any)?.value as boolean | undefined}
+          onChange={(val) => {
+            if (!canEdit) return;
+            patchVar({ value: val });
+          }}
+          disabled={!canEdit}
+        />
+      );
     }
-    return undefined;
+    return (
+      <>
+        <TextInput
+          value={scalarBuf}
+          placeholder={placeholderFor(varType)}
+          onChange={(e) => {
+            const s = e.target.value;
+            setScalarBuf(s);
+            if (!canEdit) return;
+
+            if (varType?.kind === 'object') {
+              debouncedHandleObject(s);
+            } else {
+              debouncedPatchScalar(s);
+            }
+          }}
+          disabled={!canEdit}
+        />
+        {varType?.kind === 'object' && (
+          <TextInput
+            value={(varType as any)?.typeTag || ''}
+            placeholder={objTypeLoading ? 'Loading type…' : 'type (read-only)'}
+            readOnly
+            aria-readonly="true"
+            onChange={() => {}}
+          />
+        )}
+      </>
+    );
   };
+
+  const renderVectorEditor = (elemT = vectorElem(varType)) => {
+    const isBoolElem = elemT?.kind === 'scalar' && elemT.name === 'bool';
+    return (
+      <div className="space-y-1">
+        {vecItems.map((val, i) => {
+          if (isBoolElem) {
+            const b =
+              typeof val === 'boolean'
+                ? val
+                : typeof val === 'string'
+                  ? val.trim().toLowerCase() === 'true'
+                    ? true
+                    : val.trim().toLowerCase() === 'false'
+                      ? false
+                      : undefined
+                  : undefined;
+            return (
+              <SelectBool
+                key={`vec-bool-${i}`}
+                value={b}
+                onChange={(newVal) => {
+                  setVecItems((prev) => {
+                    const next = prev.slice();
+                    next[i] = newVal as any;
+                    const assign = isOptionType(varType)
+                      ? optSome
+                        ? next
+                        : undefined
+                      : next;
+                    defer(() => patchVar({ value: assign }));
+                    requestInternals();
+                    return next;
+                  });
+                }}
+                disabled={!canEdit}
+              />
+            );
+          }
+          return (
+            <TextInput
+              key={`vec-${i}`}
+              value={typeof val === 'string' ? val : String(val ?? '')}
+              placeholder={`${placeholderFor(elemT)} [${i}]`}
+              onChange={(e) => {
+                const vv = e.target.value;
+                setVecItems((prev) => {
+                  const copy = prev.slice();
+                  copy[i] = vv;
+                  if (canEdit) {
+                    const assign = isOptionType(varType)
+                      ? optSome
+                        ? copy
+                        : undefined
+                      : copy;
+                    debouncedPatchVector(assign as any);
+                    requestInternals();
+                  }
+                  return copy;
+                });
+              }}
+              disabled={!canEdit}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Option helpers
+  const innerOfOption = optionElem(varType);
+  const optionIsVector = isVectorType(innerOfOption);
 
   return (
     <div className={`ptb-node--${category}`}>
@@ -288,14 +414,15 @@ export const VarNode = memo(function VarNode({
           width: isHelper ? NODE_SIZES.Helper.width : NODE_SIZES.Variable.width,
         }}
       >
-        {/* Header: icon (left) + vector stepper (right) */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <p className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfVar(v, data?.label)}
             {title}
           </p>
 
-          {!isHelper && isVectorType(varType) && (
+          {/* Vector length stepper for vector or option<vector> */}
+          {!isHelper && (isVectorType(varType) || optionIsVector) && (
             <MiniStepper
               decDisabled={!canEdit || vecItems.length <= 1 || readOnly}
               incDisabled={!canEdit || readOnly}
@@ -305,73 +432,84 @@ export const VarNode = memo(function VarNode({
           )}
         </div>
 
-        {/* Editors (disabled when !canEdit or helper) */}
+        {/* Editors */}
         {!isHelper && (
           <div className="mt-2">
-            {isVectorType(varType) ? (
-              // ===== Vector editor =====
-              <div className="space-y-1">
-                {vecItems.map((val, i) => {
-                  const isBoolElem =
-                    elemT?.kind === 'scalar' && elemT.name === 'bool';
+            {isOptionType(varType) ? (
+              // ===== Option<T> editor =====
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xxs text-gray-700 dark:text-gray-300">
+                    Option
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xxs px-2 py-0.5 rounded border border-gray-300 dark:border-stone-700
+                               bg-white hover:bg-gray-100 dark:bg-stone-900 dark:hover:bg-stone-800"
+                    onClick={() => {
+                      if (!canEdit) return;
+                      const next = !optSome;
+                      setOptSome(next);
+                      // When toggling to None → clear value
+                      patchVar({
+                        value: next
+                          ? optionIsVector
+                            ? vecItems
+                            : scalarBuf
+                          : undefined,
+                      });
+                      requestInternals();
+                    }}
+                    disabled={!canEdit}
+                    title={optSome ? 'Set None' : 'Set Some'}
+                  >
+                    {optSome ? 'Some' : 'None'}
+                  </button>
+                </div>
 
-                  if (isBoolElem) {
-                    // Controlled without auto-writeback on mount
-                    const b = parseBool(val);
-                    return (
-                      <SelectBool
-                        key={`vec-bool-${i}`}
-                        value={b}
-                        onChange={(newVal) => {
-                          setVecItems((prev) => {
-                            const next = prev.slice();
-                            next[i] = newVal as boolean | undefined as any;
-                            // patch & internals after state commit
-                            defer(() => patchVar({ value: next }));
-                            requestInternals();
-                            return next;
-                          });
-                        }}
-                        disabled={!canEdit}
-                      />
-                    );
-                  }
-
-                  // vector<others>: TextInput (debounced)
-                  return (
+                {optSome ? (
+                  optionIsVector ? (
+                    renderVectorEditor(innerOfOption)
+                  ) : innerOfOption?.kind === 'scalar' &&
+                    innerOfOption.name === 'bool' ? (
+                    <SelectBool
+                      value={(v as any)?.value as boolean | undefined}
+                      onChange={(val) => canEdit && patchVar({ value: val })}
+                      disabled={!canEdit}
+                    />
+                  ) : (
                     <TextInput
-                      key={`vec-${i}`}
-                      value={typeof val === 'string' ? val : String(val ?? '')}
-                      placeholder={`${vecPlaceholder} [${i}]`}
+                      value={scalarBuf}
+                      placeholder={placeholderFor(innerOfOption)}
                       onChange={(e) => {
-                        const vv = e.target.value;
-                        setVecItems((prev) => {
-                          const copy = prev.slice();
-                          copy[i] = vv;
-                          if (canEdit) {
-                            debouncedPatchVector(copy);
-                            requestInternals();
-                          }
-                          return copy;
-                        });
+                        const s = e.target.value;
+                        setScalarBuf(s);
+                        if (!canEdit) return;
+                        if (innerOfOption?.kind === 'object') {
+                          debouncedHandleObject(s);
+                        } else {
+                          debouncedPatchScalar(s);
+                        }
                       }}
                       disabled={!canEdit}
                     />
-                  );
-                })}
-              </div>
+                  )
+                ) : (
+                  <></>
+                )}
+              </>
+            ) : isVectorType(varType) ? (
+              // ===== Vector<T> editor =====
+              renderVectorEditor(vectorElem(varType))
             ) : varType?.kind === 'scalar' && varType.name === 'bool' ? (
-              // ===== Scalar<bool>: SelectBool (no auto default write) =====
+              // ===== Scalar<bool> =====
               <SelectBool
                 value={(v as any)?.value as boolean | undefined}
-                onChange={(val) => {
-                  if (!canEdit) return;
-                  patchVar({ value: val });
-                }}
+                onChange={(val) => canEdit && patchVar({ value: val })}
                 disabled={!canEdit}
               />
             ) : (
-              // ===== Unified TextInput for scalar & object =====
+              // ===== Scalar & Object =====
               <>
                 <TextInput
                   value={scalarBuf}
@@ -389,11 +527,9 @@ export const VarNode = memo(function VarNode({
                   }}
                   disabled={!canEdit}
                 />
-
-                {/* Object: read-only type field (no inline error) */}
                 {varType?.kind === 'object' && (
                   <TextInput
-                    value={objectTypeTag || ''}
+                    value={(varType as any)?.typeTag || ''}
                     placeholder={
                       objTypeLoading ? 'Loading type…' : 'type (read-only)'
                     }

@@ -18,19 +18,18 @@ import { toPTBTypeFromMove } from '../../../../ptb/move/toPTBType';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
-import { NODE_SIZES } from '../../../utils/nodeSizes';
 import { iconOfCommand } from '../../icons';
-import { SmallSelect } from '../../vars/inputs/SmallSelect';
-import TextInput from '../../vars/inputs/TextInput';
 import {
   BOTTOM_PADDING,
   FLOW_TOP,
   ioTopForIndex,
-  labelOf,
+  NODE_SIZES,
   ROW_SPACING,
   TITLE_TO_IO_GAP,
-  useCommandPorts,
-} from '../shared';
+} from '../../nodeLayout';
+import { SmallSelect } from '../../vars/inputs/SmallSelect';
+import TextInput from '../../vars/inputs/TextInput';
+import { labelOf, useCommandPorts } from '../commandLayout';
 
 // Build PTB type-parameter list (T0, T1, ...) from any shape.
 function buildTypeParams(anyTp: unknown): PTBType[] {

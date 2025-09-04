@@ -1,4 +1,5 @@
 // src/ptb/portTemplates.ts
+
 import type { Port, PTBType } from './graph/types';
 
 export const FLOW_PREV = 'prev' as const;
@@ -28,9 +29,6 @@ function normalizeOptions(arg?: PTBType | PortOptions): PortOptions {
 }
 
 /** Flow ports never carry IO typing; keep only label if provided */
-// NOTE:
-// Flow handles must not carry any IO typing. Types/coloring only applies
-// to IO handles. We intentionally drop both `dataType` and `typeStr` here.
 function flowOptsOnlyLabel(opts?: PortOptions): Pick<PortOptions, 'label'> {
   return opts?.label ? { label: opts.label } : {};
 }

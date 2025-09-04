@@ -1,13 +1,21 @@
 // src/ui/menu/menu.data.tsx
+// -----------------------------------------------------------------------------
+// Context menu data definitions.
+// - Commands: flat list (with icons for recognizability)
+// - Scalars: flat quick actions (address, number, bool, string, id, object)
+// - Vectors: grouped submenu (u8..u256, bool, string, address, id, object)
+// - Resources: grouped submenu (wallet, gas, clock, random, system)
+// Scalars/vectors/resources use type markers (colored handles).
+// -----------------------------------------------------------------------------
+
 import React from 'react';
 
 import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
-/**
- * Menu model for the canvas context menu.
- * - UI cardinality is unified as 'single' | 'multi'.
- * - Variable icons use only CSS markers (no logical meaning).
- * - Command actions use canonical CommandKind keys.
- */
+
+/** ------------------------------------------------------------------
+ * Command section (flat, with lucide-react icons)
+ * Canonical action keys: "cmd/<CommandKind>"
+ * ----------------------------------------------------------------- */
 export const CanvasCmd = [
   { name: 'SplitCoins', action: 'cmd/splitCoins', icon: <Split /> },
   { name: 'MergeCoins', action: 'cmd/mergeCoins', icon: <Merge /> },
@@ -20,143 +28,145 @@ export const CanvasCmd = [
   { name: 'MoveCall', action: 'cmd/moveCall', icon: <FunctionSquare /> },
 ];
 
-export const CanvasVar = [
+/** ------------------------------------------------------------------
+ * Scalar quick actions (flat, using type markers)
+ * Canonical action keys: "var/scalar/<kind>"
+ * ----------------------------------------------------------------- */
+export const CanvasScalarQuick = [
   {
-    label: 'Address',
-    items: [
-      {
-        name: 'my wallet',
-        action: 'var/address/wallet',
-        icon: <span className="ptb-marker ptb-marker--address" />,
-      },
-      {
-        name: 'address',
-        action: 'var/address/single',
-        icon: <span className="ptb-marker ptb-marker--address" />,
-      },
-      {
-        name: 'addresses (multi)',
-        action: 'var/address/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--address" />
-        ),
-      },
-    ],
+    name: 'address',
+    action: 'var/scalar/address',
+    icon: <span className="ptb-marker ptb-marker--address" />,
   },
   {
-    label: 'Object',
-    items: [
-      {
-        name: 'gas',
-        action: 'var/object/gas',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'clock',
-        action: 'var/object/clock',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'random',
-        action: 'var/object/random',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'system',
-        action: 'var/object/system',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'object',
-        action: 'var/object/single',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'objects (multi)',
-        action: 'var/object/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--object" />
-        ),
-      },
-    ],
+    name: 'number',
+    action: 'var/scalar/number',
+    icon: <span className="ptb-marker ptb-marker--number" />,
   },
   {
-    label: 'Boolean',
-    items: [
-      {
-        name: 'bool',
-        action: 'var/bool/single',
-        icon: <span className="ptb-marker ptb-marker--bool" />,
-      },
-      {
-        name: 'bools (multi)',
-        action: 'var/bool/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--bool" />
-        ),
-      },
-    ],
+    name: 'bool',
+    action: 'var/scalar/bool',
+    icon: <span className="ptb-marker ptb-marker--bool" />,
   },
   {
-    label: 'String',
-    items: [
-      {
-        name: 'string',
-        action: 'var/string/single',
-        icon: <span className="ptb-marker ptb-marker--string" />,
-      },
-      {
-        name: 'strings (multi)',
-        action: 'var/string/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--string" />
-        ),
-      },
-      {
-        name: '0x2::sui::SUI',
-        action: 'var/string/0x2suiSui',
-        icon: <span className="ptb-marker ptb-marker--string" />,
-      },
-    ],
+    name: 'string',
+    action: 'var/scalar/string',
+    icon: <span className="ptb-marker ptb-marker--string" />,
   },
   {
-    label: 'Number',
-    items: [
-      {
-        name: 'number',
-        action: 'var/number/single',
-        icon: <span className="ptb-marker ptb-marker--number" />,
-      },
-      {
-        name: 'numbers (multi)',
-        action: 'var/number/multi',
-        icon: (
-          <span className="ptb-marker ptb-marker--multi ptb-marker--number" />
-        ),
-      },
-    ],
+    name: 'id',
+    action: 'var/scalar/id',
+    icon: <span className="ptb-marker ptb-marker--id" />,
   },
   {
-    label: 'Helpers',
-    items: [
-      {
-        name: 'coinWithBalance',
-        action: 'var/helper/coinWithBalance',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'denyList',
-        action: 'var/helper/denyList',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-      {
-        name: 'option',
-        action: 'var/helper/option',
-        icon: <span className="ptb-marker ptb-marker--object" />,
-      },
-    ],
+    name: 'object',
+    action: 'var/scalar/object',
+    icon: <span className="ptb-marker ptb-marker--object" />,
   },
 ];
 
+/** ------------------------------------------------------------------
+ * Vector submenu (grouped under "Vector")
+ * Canonical action keys: "var/vector/<kind>"
+ * ----------------------------------------------------------------- */
+export const CanvasVector = {
+  label: 'Vector',
+  items: [
+    {
+      name: 'vector<u8>',
+      action: 'var/vector/u8',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<u16>',
+      action: 'var/vector/u16',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<u32>',
+      action: 'var/vector/u32',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<u64>',
+      action: 'var/vector/u64',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<u128>',
+      action: 'var/vector/u128',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<u256>',
+      action: 'var/vector/u256',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'vector<bool>',
+      action: 'var/vector/bool',
+      icon: <span className="ptb-marker ptb-marker--bool" />,
+    },
+    {
+      name: 'vector<string>',
+      action: 'var/vector/string',
+      icon: <span className="ptb-marker ptb-marker--string" />,
+    },
+    {
+      name: 'vector<address>',
+      action: 'var/vector/address',
+      icon: <span className="ptb-marker ptb-marker--address" />,
+    },
+    {
+      name: 'vector<id>',
+      action: 'var/vector/id',
+      icon: <span className="ptb-marker ptb-marker--id" />,
+    },
+    {
+      name: 'vector<object>',
+      action: 'var/vector/object',
+      icon: <span className="ptb-marker ptb-marker--object" />,
+    },
+  ],
+};
+
+/** ------------------------------------------------------------------
+ * Resources submenu (singletons / convenience)
+ * Canonical action keys: "var/resource/<name>"
+ * ----------------------------------------------------------------- */
+export const CanvasResources = {
+  label: 'Resources',
+  items: [
+    {
+      name: 'my wallet',
+      action: 'var/resource/wallet',
+      icon: <span className="ptb-marker ptb-marker--address" />,
+    },
+    {
+      name: 'gas',
+      action: 'var/resource/gas',
+      icon: <span className="ptb-marker ptb-marker--object" />,
+    },
+    {
+      name: 'clock',
+      action: 'var/resource/clock',
+      icon: <span className="ptb-marker ptb-marker--object" />,
+    },
+    {
+      name: 'random',
+      action: 'var/resource/random',
+      icon: <span className="ptb-marker ptb-marker--object" />,
+    },
+    {
+      name: 'system',
+      action: 'var/resource/system',
+      icon: <span className="ptb-marker ptb-marker--object" />,
+    },
+  ],
+};
+
+/** ------------------------------------------------------------------
+ * Node / Edge context menu actions
+ * ----------------------------------------------------------------- */
 export const NodeMenu = [{ name: 'delete', action: 'delete_node' }];
 export const EdgeMenu = [{ name: 'delete', action: 'delete_edge' }];

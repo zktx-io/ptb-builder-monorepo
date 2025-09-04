@@ -7,7 +7,7 @@
 //
 // NOTE: This module exports graph helpers so other codegen stages can reuse
 // them without duplicating logic. There is NO dependency on PTBEdge.dataType;
-// all typing decisions are made from port-level PTBType on the node.
+// all typing decisions are made from per-port PTBType on the node.
 
 import type {
   CommandNode,
@@ -30,7 +30,12 @@ import type {
 } from './types';
 
 /** Extract base port id from a handle id like "in_coin:vector<number>" -> "in_coin". */
-export const basePortId = (h?: string) => (h ?? '').split(':')[0];
+export const basePortId = (h?: string) => {
+  const raw = (h ?? '').trim();
+  if (!raw) return '';
+  const i = raw.indexOf(':');
+  return i === -1 ? raw : raw.slice(0, i);
+};
 
 /* ============================================================================
  * Graph helpers (exported for reuse by generateTsSdkCode/builders)
@@ -306,7 +311,7 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
       const arr: string[] = [];
       for (const e of edges) {
-        // Map is keyed by base target port id; for source side, read from OUT mapping by base of handle.
+        // Map is keyed by target base port id; for source side, read from OUT mapping by base of handle.
         const key = `${e.source}:${basePortId((e as any).sourceHandle)}`;
         const syms = portSyms.get(key) ?? [];
         if (syms.length) arr.push(...syms);
@@ -335,15 +340,27 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
           : [];
         const coin = coinSyms[0] ?? 'tx.gas';
 
-        // amounts: explicit 'amounts' label or remaining inputs
+        // amounts: explicit grouped label or remaining inputs
         const amountsPort = (c.ports || []).find(
           (p) =>
-            p.role === 'io' && p.direction === 'in' && p.label === 'amounts',
+            p.role === 'io' &&
+            p.direction === 'in' &&
+            (p.label === 'amounts' ||
+              p.id === 'amounts' ||
+              p.id.startsWith('in_amount_')),
         )?.id;
         let rawAmounts: string[] = [];
-        if (amountsPort) rawAmounts = byPort.get(amountsPort) ?? [];
-        else
+        if (amountsPort) {
+          // If there is a grouped "amounts" port, take it; otherwise fall back to per-index inputs.
+          rawAmounts = byPort.get(amountsPort) ?? [];
+          if (!rawAmounts.length && inPorts.length > 1) {
+            rawAmounts = inPorts
+              .slice(1)
+              .flatMap((p) => byPort.get(p.id) ?? []);
+          }
+        } else {
           rawAmounts = inPorts.slice(1).flatMap((p) => byPort.get(p.id) ?? []);
+        }
 
         // output arity by real out IO port count
         const outs = (c.ports || []).filter(
@@ -370,7 +387,10 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
             out: { mode: 'vector', name: arrName } as IROutVector,
           };
           irOps.push(op);
-          if (outs[0]) portSyms.set(`${c.id}:${outs[0].id}`, [arrName]);
+          const out0 = (c.ports || []).find(
+            (p) => p.role === 'io' && p.direction === 'out',
+          );
+          if (out0) portSyms.set(`${c.id}:${out0.id}`, [arrName]);
         }
         break;
       }
@@ -389,7 +409,7 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
       }
 
       case 'transferObjects': {
-        // recipient heuristic: address-typed IN port or explicit label
+        // Robust recipient detection: label/id/ptype
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
@@ -398,18 +418,32 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
         for (const p of inPorts) {
           const t = p.dataType;
           const vals = byPort.get(p.id) ?? [];
-          if (p.label === 'recipient') {
+          const label = (p.label || '').toLowerCase();
+          const pid = (p.id || '').toLowerCase();
+
+          const isRecipientByName =
+            label === 'recipient' ||
+            label === 'in_recipient' ||
+            pid === 'in_recipient' ||
+            pid.endsWith(':recipient'); // defensive
+
+          if (isRecipientByName) {
             if (!recipient && vals.length) recipient = vals[0];
             continue;
           }
-          if (t?.kind === 'scalar' && t.name === 'address') {
+
+          const isAddressPort = t?.kind === 'scalar' && t.name === 'address';
+          if (isAddressPort) {
             if (!recipient && vals.length) recipient = vals[0];
-          } else {
-            objects.push(...vals);
+            continue;
           }
+
+          // Everything else counts as objects (e.g., in_object_0..N-1)
+          objects.push(...vals);
         }
+
         if (!recipient) {
-          recipient = 'myAddress'; // sentinel
+          recipient = 'myAddress'; // sentinel → header flag
           header.usedMyAddress = true;
         }
         irOps.push({ kind: 'transferObjects', objects, recipient });

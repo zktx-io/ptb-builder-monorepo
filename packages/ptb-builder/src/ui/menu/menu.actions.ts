@@ -1,11 +1,40 @@
-// src/ui/menu/menu.actions.ts
-import type { CommandKind, PTBNode } from '../../ptb/graph/types';
-import { NodeFactories } from '../nodes/nodeFactories';
+// src/ui/nodes/menu.actions.ts
+
+import {
+  // command
+  makeCommandNode,
+  // scalars
+  // eslint-disable-next-line sort-imports
+  makeAddress,
+  makeNumber,
+  makeBool,
+  makeString,
+  makeId,
+  makeObject,
+  // vectors
+  makeAddressVector,
+  makeNumberVector,
+  makeBoolVector,
+  makeStringVector,
+  makeIdVector,
+  makeObjectVector,
+  makeMoveNumericVector,
+  // well-known resources
+  makeWalletAddress,
+  makeGasObject,
+  makeClockObject,
+  makeRandomObject,
+  makeSystemObject,
+} from '../../ptb/factories';
+import type { CommandKind, NumericWidth, PTBNode } from '../../ptb/graph/types';
 
 /**
- * Route context-menu actions to node factories.
- * - Commands: "cmd/<CommandKind>" (camelCase, canonical)
- * - Variables: "var/<category>/<single|multi|special>"
+ * Routes context-menu actions to factories (functional, no class).
+ * Schema aligned to tx.pure:
+ * - Commands:  "cmd/<CommandKind>"
+ * - Scalars:   "var/scalar/<address|number|bool|string|id|object>"
+ * - Vectors:   "var/vector/<u8|u16|u32|u64|u128|u256|bool|string|address|id|object>"
+ * - Resources: "var/resource/<wallet|gas|clock|random|system>"
  */
 export function handleMenuAction(
   action: string,
@@ -15,99 +44,118 @@ export function handleMenuAction(
   onDeleteEdge?: (id: string) => void,
   onClose?: () => void,
 ) {
-  if (!action) {
-    onClose?.();
-    return;
-  }
+  if (!action) return void onClose?.();
 
-  // Commands
+  // ---- Commands ----
   if (action.startsWith('cmd/')) {
     const kind = action.slice(4) as CommandKind;
-    placeAndAdd(NodeFactories.command(kind));
-    onClose?.();
-    return;
+    placeAndAdd(makeCommandNode(kind));
+    return void onClose?.();
   }
 
-  // Variables
-  if (action.startsWith('var/')) {
-    const [, cat, name] = action.split('/');
-
-    switch (cat) {
+  // ---- Scalars ----
+  if (action.startsWith('var/scalar/')) {
+    const k = action.slice('var/scalar/'.length);
+    switch (k) {
       case 'address':
-        if (name === 'single')
-          return void (placeAndAdd(NodeFactories.address()), onClose?.());
-        if (name === 'multi')
-          return void (placeAndAdd(NodeFactories.addressVector()), onClose?.());
-        if (name === 'wallet')
-          return void (placeAndAdd(NodeFactories.addressWallet()), onClose?.());
+        placeAndAdd(makeAddress());
         break;
-
-      case 'bool':
-        if (name === 'single')
-          return void (placeAndAdd(NodeFactories.bool()), onClose?.());
-        if (name === 'multi')
-          return void (placeAndAdd(NodeFactories.boolVector()), onClose?.());
-        break;
-
       case 'number':
-        if (name === 'single')
-          return void (placeAndAdd(NodeFactories.number()), onClose?.());
-        if (name === 'multi')
-          return void (placeAndAdd(NodeFactories.numberVector()), onClose?.());
+        placeAndAdd(makeNumber());
         break;
-
+      case 'bool':
+        placeAndAdd(makeBool());
+        break;
       case 'string':
-        if (name === 'single')
-          return void (placeAndAdd(NodeFactories.string()), onClose?.());
-        if (name === 'multi')
-          return void (placeAndAdd(NodeFactories.stringVector()), onClose?.());
-        if (name === '0x2suiSui')
-          return void (placeAndAdd(NodeFactories.string0x2suiSui()),
-          onClose?.());
+        placeAndAdd(makeString());
         break;
-
+      case 'id':
+        placeAndAdd(makeId());
+        break;
       case 'object':
-        if (name === 'gas')
-          return void (placeAndAdd(NodeFactories.objectGas()), onClose?.());
-        if (name === 'clock')
-          return void (placeAndAdd(NodeFactories.objectClock()), onClose?.());
-        if (name === 'random')
-          return void (placeAndAdd(NodeFactories.objectRandom()), onClose?.());
-        if (name === 'system')
-          return void (placeAndAdd(NodeFactories.objectSystem()), onClose?.());
-        if (name === 'single')
-          return void (placeAndAdd(NodeFactories.object()), onClose?.());
-        if (name === 'multi')
-          return void (placeAndAdd(NodeFactories.objectVector()), onClose?.());
+        placeAndAdd(makeObject());
         break;
-
-      case 'helper':
-        if (name === 'coinWithBalance')
-          return void (placeAndAdd(NodeFactories.objectCoinWithBalance()),
-          onClose?.());
-        if (name === 'denyList')
-          return void (placeAndAdd(NodeFactories.objectDenyList()),
-          onClose?.());
-        if (name === 'option')
-          return void (placeAndAdd(NodeFactories.objectOption()), onClose?.());
+      default:
+        // no-op
         break;
     }
-
-    onClose?.();
-    return;
+    return void onClose?.();
   }
 
-  // Delete actions
+  // ---- Vectors ----
+  if (action.startsWith('var/vector/')) {
+    const k = action.slice('var/vector/'.length);
+
+    // Move numeric widths (vector<width>)
+    if (
+      (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'] as const).includes(k as any)
+    ) {
+      placeAndAdd(makeMoveNumericVector(k as NumericWidth));
+      return void onClose?.();
+    }
+
+    // Common vector<T>
+    switch (k) {
+      case 'address':
+        placeAndAdd(makeAddressVector());
+        break;
+      case 'number':
+        placeAndAdd(makeNumberVector());
+        break;
+      case 'bool':
+        placeAndAdd(makeBoolVector());
+        break;
+      case 'string':
+        placeAndAdd(makeStringVector());
+        break;
+      case 'id':
+        placeAndAdd(makeIdVector());
+        break;
+      case 'object':
+        placeAndAdd(makeObjectVector());
+        break;
+      default:
+        // no-op
+        break;
+    }
+    return void onClose?.();
+  }
+
+  // ---- Resources (singletons) ----
+  if (action.startsWith('var/resource/')) {
+    const name = action.slice('var/resource/'.length);
+    switch (name) {
+      case 'wallet':
+        placeAndAdd(makeWalletAddress());
+        break;
+      case 'gas':
+        placeAndAdd(makeGasObject());
+        break;
+      case 'clock':
+        placeAndAdd(makeClockObject());
+        break;
+      case 'random':
+        placeAndAdd(makeRandomObject());
+        break;
+      case 'system':
+        placeAndAdd(makeSystemObject());
+        break;
+      default:
+        // no-op
+        break;
+    }
+    return void onClose?.();
+  }
+
+  // ---- Deletes ----
   if (action === 'delete_node' && targetId) {
     onDeleteNode?.(targetId);
-    onClose?.();
-    return;
+    return void onClose?.();
   }
   if (action === 'delete_edge' && targetId) {
     onDeleteEdge?.(targetId);
-    onClose?.();
-    return;
+    return void onClose?.();
   }
 
-  onClose?.();
+  return void onClose?.();
 }

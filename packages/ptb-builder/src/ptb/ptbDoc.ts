@@ -1,16 +1,12 @@
 // src/ptb/ptbDoc.ts
+
 import type {
   SuiMoveNormalizedModules,
   SuiObjectData,
 } from '@mysten/sui/client';
 
-import type {
-  CommandNode,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-} from '../ptb/graph/types';
 import type { Chain } from '../types';
+import type { CommandNode, PTBEdge, PTBGraph, PTBNode } from './graph/types';
 
 export const PTB_VERSION = 'ptb_3' as const;
 
@@ -38,11 +34,11 @@ export interface PTBDoc {
 export function isPTBDoc(x: unknown): x is PTBDoc {
   if (!x || typeof x !== 'object') return false;
   const v = (x as any).version;
-  const n = (x as any).network;
+  const c = (x as any).chain; // fixed: was network
   const g = (x as any).graph;
   return (
     v === PTB_VERSION &&
-    !!n &&
+    !!c &&
     !!g &&
     Array.isArray(g.nodes) &&
     Array.isArray(g.edges)

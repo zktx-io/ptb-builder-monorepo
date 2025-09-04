@@ -1,21 +1,26 @@
-// src/ui/menu/ContextMenu.tsx
-// -----------------------------------------------------------------------------
-// Context menu with dynamic enable/disable states for well-known singletons.
-// - Reads the current graph via usePtb() and disables items for singleton
-//   variables that already exist (gas/clock/random/system/my wallet).
-// - Disables by adding aria-disabled + styles and guarding click/keyboard.
+// Context menu (canvas/node/edge) aligned to tx.pure mental model.
+// Structure:
+//   - Auto layout
+//   - Commands (flat)
+//   - Scalars (flat: address/number/bool/string/id/object)
+//   - Vector (submenu: u8..u256, bool, string, address, id, object)
+//   - Resources (submenu: wallet/gas/clock/random/system)
 //
-// NOTE:
-// - We do not modify menu data or action router. All gating happens here.
-// - If you later expose Start/End in the menu, add them below similarly.
-// -----------------------------------------------------------------------------
+// Singleton gating remains for resources (wallet/gas/clock/random/system).
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewport } from '@xyflow/react';
 
 import { handleMenuAction } from './menu.actions';
-import { CanvasCmd, CanvasVar, EdgeMenu, NodeMenu } from './menu.data';
+import {
+  CanvasCmd,
+  CanvasResources,
+  CanvasScalarQuick,
+  CanvasVector,
+  EdgeMenu,
+  NodeMenu,
+} from './menu.data';
 import type { PTBNode } from '../../ptb/graph/types';
 import { KNOWN_IDS } from '../../ptb/seedGraph';
 import { usePtb } from '../PtbProvider';
@@ -25,9 +30,7 @@ type ContextType = 'canvas' | 'node' | 'edge';
 const MenuStyle =
   'cursor-pointer px-2 bg-white dark:bg-stone-900 hover:bg-gray-200 dark:hover:bg-stone-700 w-full text-gray-800 dark:text-gray-200 relative';
 const MenuSubStyle =
-  'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block bg-white dark:bg-stone-900 rounded-md shadow-lg z-50 w-[220px] whitespace-normal break-words';
-
-// Extra styles for disabled state
+  'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block bg-white dark:bg-stone-900 rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words';
 const DisabledStyle =
   'opacity-40 pointer-events-none cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent';
 
@@ -57,14 +60,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   // eslint-disable-next-line no-restricted-syntax
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  /** Compute disabled actions based on current well-known singleton presence. */
+  /** Resource singleton-disable map (wallet/gas/clock/random/system). */
   const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
     () => ({
-      'var/address/wallet': 'MY_WALLET',
-      'var/object/gas': 'GAS',
-      'var/object/clock': 'CLOCK',
-      'var/object/random': 'RANDOM',
-      'var/object/system': 'SYSTEM',
+      'var/resource/wallet': 'MY_WALLET',
+      'var/resource/gas': 'GAS',
+      'var/resource/clock': 'CLOCK',
+      'var/resource/random': 'RANDOM',
+      'var/resource/system': 'SYSTEM',
     }),
     [],
   );
@@ -92,7 +95,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   const runAction = useCallback(
     (action: string) => {
-      // Guard execution if disabled
       if (disabledActions.has(action)) return;
       return handleMenuAction(
         action,
@@ -115,9 +117,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // Close on Escape
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -128,21 +128,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       const el = rootRef.current;
       if (!el) return;
       const path = (e as any).composedPath?.() ?? [];
-      const clickedInside = path.some((n: any) => n === el);
-      if (!clickedInside) onClose();
+      const inside = path.some((n: any) => n === el);
+      if (!inside) onClose();
     };
     window.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () =>
-      window.removeEventListener('pointerdown', onPointerDown, {
-        capture: true,
-      } as any);
+      window.removeEventListener(
+        'pointerdown',
+        onPointerDown as any,
+        {
+          capture: true,
+        } as any,
+      );
   }, [onClose]);
 
   // Prevent clipping off-screen
   const { safeTop, safeLeft } = useMemo(() => {
     const MARGIN = 8;
-    const MENU_W = 240;
-    const MENU_H = 320;
+    const MENU_W = 260;
+    const MENU_H = 420;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const left = Math.min(
@@ -153,94 +157,146 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return { safeTop: top, safeLeft: left };
   }, [position.left, position.top]);
 
-  const renderCommands = () => (
+  // ---- Render helpers ----
+  const renderCmds = () => (
     <>
-      {CanvasCmd.map((item) => {
-        // Commands currently have no singleton rules; always enabled.
-        const isDisabled = false;
-        return (
-          <li
-            key={item.action}
-            className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
-            onClick={() => !isDisabled && runAction(item.action)}
-            role="menuitem"
-            tabIndex={0}
-            aria-disabled={isDisabled}
-            onKeyDown={(e) =>
-              !isDisabled && e.key === 'Enter' && runAction(item.action)
-            }
-            title={isDisabled ? 'Already exists' : undefined}
-          >
-            <div className="flex items-center">
-              {item.icon && (
-                <span className="mr-1 inline-block">{item.icon}</span>
-              )}
-              {item.name}
-            </div>
-          </li>
-        );
-      })}
-    </>
-  );
-
-  const renderVars = () => (
-    <>
-      {CanvasVar.map((group) => (
-        <li key={group.label} className="relative group" role="none">
-          <div
-            className={`${MenuStyle} flex justify-between items-center`}
-            role="menuitem"
-            aria-haspopup="true"
-            aria-expanded="false"
-            tabIndex={0}
-          >
-            {group.label}
-            <svg
-              className="w-4 h-4 ml-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
+      {CanvasCmd.map((item) => (
+        <li
+          key={item.action}
+          className={MenuStyle}
+          onClick={() => runAction(item.action)}
+          role="menuitem"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+        >
+          <div className="flex items-center gap-1">
+            {item.icon && <span className="inline-block">{item.icon}</span>}
+            {item.name}
           </div>
-          <ul className={MenuSubStyle} role="menu">
-            {group.items.map((item) => {
-              const isDisabled = disabledActions.has(item.action);
-              return (
-                <li
-                  key={item.action}
-                  className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
-                  onClick={() => !isDisabled && runAction(item.action)}
-                  role="menuitem"
-                  tabIndex={0}
-                  aria-disabled={isDisabled}
-                  onKeyDown={(e) =>
-                    !isDisabled && e.key === 'Enter' && runAction(item.action)
-                  }
-                  title={
-                    isDisabled
-                      ? 'This singleton already exists in the graph.'
-                      : undefined
-                  }
-                >
-                  {item.icon && (
-                    <span className="mr-1 inline-block">{item.icon}</span>
-                  )}
-                  {item.name}
-                </li>
-              );
-            })}
-          </ul>
         </li>
       ))}
     </>
+  );
+
+  const renderScalars = () => (
+    <>
+      {CanvasScalarQuick.map((item) => (
+        <li
+          key={item.action}
+          className={MenuStyle}
+          onClick={() => runAction(item.action)}
+          role="menuitem"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+        >
+          <div className="flex items-center gap-1">
+            {item.icon && <span className="inline-block">{item.icon}</span>}
+            {item.name}
+          </div>
+        </li>
+      ))}
+    </>
+  );
+
+  const renderVector = () => (
+    <li className="relative group" role="none">
+      <div
+        className={`${MenuStyle} flex justify-between items-center`}
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded="false"
+        tabIndex={0}
+      >
+        {CanvasVector.label}
+        <svg
+          className="w-4 h-4 ml-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 5l7 7-7 7"
+          />
+        </svg>
+      </div>
+      <ul className={MenuSubStyle} role="menu">
+        {CanvasVector.items.map((item) => (
+          <li
+            key={item.action}
+            className={MenuStyle}
+            onClick={() => runAction(item.action)}
+            role="menuitem"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+          >
+            <div className="flex items-center gap-1">
+              {item.icon && <span className="inline-block">{item.icon}</span>}
+              {item.name}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+
+  const renderResources = () => (
+    <li className="relative group" role="none">
+      <div
+        className={`${MenuStyle} flex justify-between items-center`}
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded="false"
+        tabIndex={0}
+      >
+        {CanvasResources.label}
+        <svg
+          className="w-4 h-4 ml-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 5l7 7-7 7"
+          />
+        </svg>
+      </div>
+      <ul className={MenuSubStyle} role="menu">
+        {CanvasResources.items.map((item) => {
+          const isDisabled = disabledActions.has(item.action);
+          return (
+            <li
+              key={item.action}
+              className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
+              onClick={() => !isDisabled && runAction(item.action)}
+              role="menuitem"
+              tabIndex={0}
+              aria-disabled={isDisabled}
+              onKeyDown={(e) =>
+                !isDisabled && e.key === 'Enter' && runAction(item.action)
+              }
+              title={
+                isDisabled
+                  ? 'This singleton already exists in the graph.'
+                  : undefined
+              }
+            >
+              <div className="flex items-center gap-1">
+                {item.icon && <span className="inline-block">{item.icon}</span>}
+                {item.name}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </li>
   );
 
   return (
@@ -252,7 +308,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         left: safeLeft,
         border: '1px solid rgba(0,0,0,0.08)',
         zIndex: 10000,
-        minWidth: 220,
+        minWidth: 240,
         pointerEvents: 'auto',
       }}
       onContextMenu={(e) => {
@@ -267,6 +323,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       <ul className="flex flex-col py-1 text-left text-sm text-gray-700 dark:text-gray-300">
         {type === 'canvas' && (
           <>
+            {/* Auto layout */}
             <li
               className={MenuStyle}
               onClick={() => {
@@ -285,10 +342,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             >
               Auto layout
             </li>
+
             <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
-            {renderCommands()}
+
+            {/* Commands (flat) */}
+            {renderCmds()}
+
             <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
-            {renderVars()}
+
+            {/* Scalars (flat) */}
+            {renderScalars()}
+
+            {/* Vector & Resources (submenus) */}
+            {renderVector()}
+            {renderResources()}
           </>
         )}
 

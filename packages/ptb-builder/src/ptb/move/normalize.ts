@@ -35,7 +35,8 @@ export function toPTBModuleData(data: SuiMoveNormalizedModules): PTBModuleData {
     moduleName,
     moduleData,
   ] of Object.entries<SuiMoveNormalizedModule>(data)) {
-    const names = Object.keys(moduleData.exposedFunctions);
+    // sort function names for stable UI / debugging
+    const names = Object.keys(moduleData.exposedFunctions).sort();
     const funcs: Record<string, SuiMoveNormalizedFunction> = {};
 
     for (const fname of names) {
@@ -44,7 +45,6 @@ export function toPTBModuleData(data: SuiMoveNormalizedModules): PTBModuleData {
         ...f,
         // TxContext is not relevant for PTB, so strip it out
         parameters: deleteTxContext(f.parameters),
-        // typeParameters are kept untouched so PTB can create handles for them
         typeParameters: f.typeParameters,
       };
     }
@@ -56,6 +56,9 @@ export function toPTBModuleData(data: SuiMoveNormalizedModules): PTBModuleData {
       _nameFunctions_: names,
     };
   }
+
+  // sort module names at the very end
+  out._nameModules_.sort();
 
   return out;
 }

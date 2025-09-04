@@ -6,30 +6,32 @@
 export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
 
 /** ------------------------------------------------------------------
- * Scalars (UI simplified)
- * - UI exposes a unified 'number'; on-chain precise widths use 'move_numeric'.
+ * Scalars (UI simplified; tx.pure aligned)
+ * - 'id' is for object IDs via tx.pure.id(...).
+ * - 'number' is a UI convenience that can cast to move_numeric on demand.
  * ----------------------------------------------------------------- */
-export type PTBScalar = 'bool' | 'string' | 'address' | 'number';
+export type PTBScalar = 'bool' | 'string' | 'address' | 'id' | 'number';
 
 /** ------------------------------------------------------------------
  * ADT for PTB types
- * - New: 'typeparam' represents a Move type parameter (e.g., "T0", "T1").
- *   The 'name' should be the canonical identifier like "T0", "T1", etc.
- *   In UI, this behaves like a scalar (single cardinality).
+ * - 'option' models Option<T> (pure option).
+ * - 'vector' models vector<T>; nested vectors are disallowed by policy.
+ * - 'object' is non-pure (owned/shared refs), optional typeTag for specificity.
+ * - 'tuple' can appear in ABI outputs (non-pure for tx.pure).
+ * - 'typeparam' is a generic placeholder (compatible with anything).
  * ----------------------------------------------------------------- */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
   | { kind: 'object'; typeTag?: string }
   | { kind: 'vector'; elem: PTBType }
+  | { kind: 'option'; elem: PTBType }
   | { kind: 'tuple'; elems: PTBType[] }
   | { kind: 'typeparam'; name: string }
   | { kind: 'unknown' };
 
 /** ------------------------------------------------------------------
  * Ports
- * - role 'io' is shared for both value-arguments and type-arguments.
- *   Distinguish by inspecting dataType.kind === 'typeparam' downstream.
  * ----------------------------------------------------------------- */
 export type PortDirection = 'in' | 'out';
 export type PortRole = 'flow' | 'io';
@@ -38,11 +40,11 @@ export interface Port {
   id: string;
   direction: PortDirection;
   role: PortRole;
-  /** Structured type carried by the handle (IO only) */
+  /** Structured type carried by the handle (IO only). */
   dataType?: PTBType;
-  /** Optional pre-serialized type hint (overrides serializePTBType for UI badges) */
+  /** Optional pre-serialized type hint (overrides serializePTBType for UI badges). */
   typeStr?: string;
-  /** Optional handle label shown next to the port */
+  /** Optional handle label shown next to the port. */
   label?: string;
 }
 
@@ -57,6 +59,11 @@ export interface NodeBase {
   position?: { x: number; y: number };
 }
 
+/** ------------------------------------------------------------------
+ * Command kinds
+ * - Core: splitCoins, mergeCoins, transferObjects, moveCall, makeMoveVec
+ * - Graph-only (decode/replay): publish, upgrade
+ * ----------------------------------------------------------------- */
 export type CommandKind =
   | 'splitCoins'
   | 'mergeCoins'
@@ -66,29 +73,24 @@ export type CommandKind =
   | 'publish'
   | 'upgrade';
 
-/** UI cardinality for handles/ports */
-export type UICardinality = 'single' | 'multi';
-
 /** ------------------------------------------------------------------
- * Command UI params (policy-applied)
+ * Command UI params
+ * - Counters for expandable inputs.
+ * - Extra fields for publish/upgrade (graph-only commands).
  * ----------------------------------------------------------------- */
 export interface CommandUIParams {
-  /** SplitCoins: amounts are always multi; expanded controls vector vs. N singles. */
-  amountsExpanded?: boolean;
-  amountsCount?: number;
+  // Core commands
+  amountsCount?: number; // splitCoins outputs (N coins)
+  sourcesCount?: number; // mergeCoins inputs
+  objectsCount?: number; // transferObjects inputs
+  elemsCount?: number; // makeMoveVec inputs (when expanded)
+  elemType?: PTBType; // makeMoveVec element type
 
-  /** MergeCoins: sources vector vs. expanded-many (count drives N when expanded). */
-  sourcesExpanded?: boolean;
-  sourcesCount?: number;
-
-  /** TransferObjects: objects vector vs. expanded-many (count drives N when expanded). */
-  objectsExpanded?: boolean;
-  objectsCount?: number;
-
-  /** MakeMoveVec: elems vector vs. expanded-many (count drives N when expanded); elem type for T. */
-  elemsExpanded?: boolean;
-  elemsCount?: number;
-  elemType?: PTBType;
+  // Publish/Upgrade commands (graph-only)
+  modulesCount?: number; // vector<vector<u8>> length
+  depsCount?: number; // vector<address> length
+  policyWidth?: NumericWidth; // policy width (default u8)
+  readOnly?: boolean; // if true, disable editing (decode-only)
 }
 
 export interface StartNode extends NodeBase {
@@ -105,12 +107,13 @@ export interface CommandNode extends NodeBase {
     runtime?: Record<string, unknown>;
     ui?: CommandUIParams;
   };
-  /** Optional: named outputs produced by the command (for codegen/labels) */
+  /** Named outputs produced by the command (for codegen/labels). */
   outputs?: string[];
 }
 
 export interface VariableNode extends NodeBase {
   kind: 'Variable';
+  /** Should align to tx.pure for pure types; object is non-pure. */
   varType: PTBType;
   name: string;
   value?: unknown;
@@ -129,7 +132,7 @@ export interface PTBEdge {
   sourceHandle: string;
   target: string;
   targetHandle: string;
-  /** number → move_numeric (UI-driven cast hint for codegen) */
+  /** number → move_numeric (UI-driven cast hint for codegen). */
   cast?: { to: NumericWidth };
 }
 
@@ -143,8 +146,8 @@ export interface PTBGraph {
 
 /** ------------------------------------------------------------------
  * Serialization helpers
- * - Returned string is used for UI badges / debug.
- * - For 'typeparam', we emit its name (e.g., "T0").
+ * - For 'typeparam', emit its name (e.g., "T0").
+ * - For 'option', emit `option<...>`.
  * ----------------------------------------------------------------- */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
@@ -154,12 +157,14 @@ export function serializePTBType(t: PTBType): string {
       return t.width;
     case 'vector':
       return `vector<${serializePTBType(t.elem)}>`;
+    case 'option':
+      return `option<${serializePTBType(t.elem)}>`;
     case 'object':
       return t.typeTag ? `object<${t.typeTag}>` : 'object';
     case 'tuple':
       return `(${t.elems.map(serializePTBType).join(',')})`;
     case 'typeparam':
-      return t.name; // e.g., "T0"
+      return t.name;
     case 'unknown':
       return 'unknown';
     default: {
@@ -170,19 +175,58 @@ export function serializePTBType(t: PTBType): string {
 }
 
 /** ------------------------------------------------------------------
- * UI helpers
- * - 'typeparam' behaves like a scalar from a cardinality perspective.
+ * Lightweight graph helpers
  * ----------------------------------------------------------------- */
-export function uiCardinalityOf(t?: PTBType): UICardinality {
-  if (!t) return 'single';
-  switch (t.kind) {
-    case 'vector':
-      return 'multi';
-    case 'tuple':
-      if (t.elems.length === 0) return 'single';
-      if (t.elems.length === 1) return uiCardinalityOf(t.elems[0]);
-      return 'multi';
-    default:
-      return 'single';
-  }
+
+/** Find a port by id on a node (undefined if not found). */
+export const findPort = (node: PTBNode, portId: string) =>
+  node.ports.find((p) => p.id === portId);
+
+/**
+ * Build a React Flow handle id with an inline serialized type suffix for IO.
+ * Examples:
+ *   - "in_coin:object<0x2::coin::Coin<0x2::sui::SUI>>"
+ *   - "in_amounts:vector<number>"
+ *   - "out_vec:vector<object>"
+ *
+ * Notes:
+ * - For non-IO handles (flow), returns the plain id without suffix.
+ * - We intentionally ignore `port.typeStr` for the id; it's only for UI badges.
+ * - If `dataType.kind === 'typeparam'`, the suffix will be that name (e.g., "T0").
+ * - For missing/unknown types, skip the suffix to keep the id stable.
+ */
+export function buildHandleId(port: Port): string {
+  if (port.role !== 'io') return port.id;
+  const t = port.dataType;
+  if (!t || t.kind === 'unknown') return port.id;
+  const raw = serializePTBType(t);
+  const typeStr =
+    typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : undefined;
+  return typeStr ? `${port.id}:${typeStr}` : port.id;
 }
+
+/** Parse "handleId[:TypeString]" into base id and optional type string. */
+export function parseHandleTypeSuffix(handleId?: string): {
+  baseId?: string;
+  typeStr?: string;
+} {
+  if (!handleId) return { baseId: undefined, typeStr: undefined };
+  const raw = String(handleId);
+  const idx = raw.indexOf(':');
+  if (idx < 0) return { baseId: raw, typeStr: undefined };
+  return { baseId: raw.slice(0, idx), typeStr: raw.slice(idx + 1) };
+}
+
+/**
+ * Extract the base port id from a React Flow handle id.
+ *
+ * Example:
+ *   - "in_coin:object<0x2::coin::Coin<0x2::sui::SUI>>" → "in_coin"
+ *   - "out_vec:vector<object>" → "out_vec"
+ *   - "flow_next" → "flow_next" (no suffix to strip)
+ *
+ * Internally this uses parseHandleTypeSuffix(), which splits "id[:type]".
+ * Useful when matching against Port.id, since Port.id never includes the type suffix.
+ */
+export const portIdOf = (handle?: string) =>
+  parseHandleTypeSuffix(handle).baseId;

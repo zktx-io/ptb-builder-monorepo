@@ -5,6 +5,7 @@ import {
   Box,
   Brackets,
   Calculator,
+  CircleQuestionMark,
   Clock,
   Cog,
   Dices,
@@ -13,9 +14,9 @@ import {
   FunctionSquare,
   Hash,
   Merge,
-  MessageCircleQuestionIcon,
   Power,
   Split,
+  TableOfContents,
   Wallet,
 } from 'lucide-react';
 
@@ -24,7 +25,7 @@ import { PTBType, VariableNode } from '../../../ptb/graph/types';
 
 /** Resolve an icon for a PTBType (vector unwraps to its element type) */
 function iconOfType(t?: PTBType): React.ReactNode {
-  if (!t) return <MessageCircleQuestionIcon size={14} />;
+  if (!t) return <CircleQuestionMark size={14} />;
 
   if (t.kind === 'vector') {
     // unwrap vector → show element type icon only
@@ -41,9 +42,10 @@ function iconOfType(t?: PTBType): React.ReactNode {
       if (t.name === 'bool') return <Power size={14} />;
       if (t.name === 'number') return <Calculator size={14} />;
       if (t.name === 'string') return <BookA size={14} />;
-      return <MessageCircleQuestionIcon size={14} />;
+      if (t.name === 'id') return <TableOfContents size={14} />;
+      return <CircleQuestionMark size={14} />;
     default:
-      return <MessageCircleQuestionIcon size={14} />;
+      return <CircleQuestionMark size={14} />;
   }
 }
 

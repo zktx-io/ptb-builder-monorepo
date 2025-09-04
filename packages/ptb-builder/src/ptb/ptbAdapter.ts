@@ -1,7 +1,9 @@
 // src/ptb/ptbAdapter.ts
+
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 import type { NumericWidth, PTBEdge, PTBGraph, PTBNode } from './graph/types';
+import { parseHandleTypeSuffix } from './graph/types';
 import { PORTS } from './portTemplates';
 
 /** UI node payload: only label and the SSOT PTB node */
@@ -12,18 +14,37 @@ export interface RFNodeData extends Record<string, unknown> {
   ptbNode?: PTBNode;
 }
 
-/** UI edge payload: optional serialized type & cast metadata */
+/** UI edge payload: serialized type & cast metadata for badges/debug */
 export interface RFEdgeData extends Record<string, unknown> {
-  /** Serialized type hint taken from handle suffix "portId:TypeString" */
+  /** Source handle type hint from "handleId:TypeString" */
   dataType?: string;
+  /** Optional target handle type hint (debug/diagnostics) */
+  targetType?: string;
   /** Optional cast metadata for number → move_numeric */
   cast?: { to: NumericWidth };
+}
+
+/** Get XYFlow v11/12-compatible handle ids (null-safe → undefined). */
+function getEdgeHandleIds(re: RFEdge<RFEdgeData>): {
+  sh?: string;
+  th?: string;
+} {
+  const rawSh =
+    ((re as any).sourceHandleId as string | null | undefined) ??
+    re.sourceHandle;
+  const rawTh =
+    ((re as any).targetHandleId as string | null | undefined) ??
+    re.targetHandle;
+  const sh = rawSh ?? undefined;
+  const th = rawTh ?? undefined;
+  return { sh, th };
 }
 
 /**
  * PTBGraph → React Flow
  * - Pass sourceHandle/targetHandle through 1:1 (no rebuild, no parsing).
  * - dataType for badges is derived from the sourceHandle suffix if present.
+ * - Optionally expose targetType for diagnostics.
  */
 export function ptbToRF(graph: PTBGraph): {
   nodes: RFNode<RFNodeData>[];
@@ -40,9 +61,8 @@ export function ptbToRF(graph: PTBGraph): {
     const sh = e.sourceHandle;
     const th = e.targetHandle;
 
-    // If the handle encodes "id:TypeString", expose TypeString for UI
-    const typeFromHandle =
-      sh && sh.includes(':') ? sh.slice(sh.indexOf(':') + 1) : undefined;
+    const { typeStr: srcType } = parseHandleTypeSuffix(sh);
+    const { typeStr: dstType } = parseHandleTypeSuffix(th);
 
     return {
       id: e.id,
@@ -59,10 +79,10 @@ export function ptbToRF(graph: PTBGraph): {
 
       type: mapPTBEdgeToRFType(e),
       data: {
-        dataType: typeFromHandle,
+        dataType: srcType, // primary badge = source type
+        targetType: dstType, // optional auxiliary badge
         cast: (e as any).cast,
       },
-      // Optional label passthrough for custom edge renderers
       label: (e as any).label,
     };
   });
@@ -80,6 +100,7 @@ export function ptbNodeToRF(node: PTBNode): RFNode<RFNodeData> {
  * React Flow → PTBGraph
  * - Node SSOT prefers node.data.ptbNode; falls back to prev graph; last resorts to template ports.
  * - Edges pass sourceHandle/targetHandle through unchanged.
+ * - Variable nodes must never receive fallback flow ports.
  */
 export function rfToPTB(
   rfNodes: RFNode<RFNodeData>[],
@@ -93,46 +114,28 @@ export function rfToPTB(
     const kind = mapRFTypeToPTBKind(rn.type as string);
     const chosen = dataNode ?? base;
 
-    // Do not re-materialize ports: use renderer/fabricator outputs when possible.
-    const fallbackPorts =
+    const basePortsByKind =
       kind === 'Start'
         ? PORTS.start()
         : kind === 'End'
           ? PORTS.end()
-          : (chosen?.ports ?? []);
-
-    // Keep chosen node’s other fields without overriding id/kind/position/label
-    const {
-      id: _id,
-      kind: _kind,
-      label: _label,
-      ports: _ports,
-      position: _pos,
-      ...restChosen
-    } = (chosen ?? {}) as PTBNode;
+          : kind === 'Variable'
+            ? [] // Variable: no flow ports
+            : PORTS.commandBase();
 
     return {
-      ...restChosen,
+      ...(chosen ?? ({} as PTBNode)),
       id: rn.id,
       kind,
       label:
         (rn.data?.label as string | undefined) ?? chosen?.label ?? base?.label,
-      ports: chosen?.ports ?? base?.ports ?? fallbackPorts,
+      ports: chosen?.ports ?? base?.ports ?? basePortsByKind,
       position: rn.position ?? chosen?.position ?? base?.position,
     } as PTBNode;
   });
 
   const edges: PTBEdge[] = rfEdges.map((re) => {
-    // Prefer new props; accept legacy v11 aliases
-    const sh =
-      ((re as any).sourceHandleId as string | undefined) ??
-      re.sourceHandle ??
-      '';
-    const th =
-      ((re as any).targetHandleId as string | undefined) ??
-      re.targetHandle ??
-      '';
-
+    const { sh, th } = getEdgeHandleIds(re);
     const cast = (re.data as RFEdgeData | undefined)?.cast;
 
     return {
@@ -140,8 +143,8 @@ export function rfToPTB(
       kind: mapRFTypeToPTBEdgeKind(re.type as string),
       source: re.source,
       target: re.target,
-      sourceHandle: sh,
-      targetHandle: th,
+      sourceHandle: sh ?? '',
+      targetHandle: th ?? '',
       ...(cast ? { cast } : {}),
     };
   });

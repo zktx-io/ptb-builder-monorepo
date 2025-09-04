@@ -3,8 +3,8 @@ import React, { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 
+import { NODE_SIZES } from './nodeLayout';
 import { PTBHandleFlow } from '../handles/PTBHandleFlow';
-import { NODE_SIZES } from '../utils/nodeSizes';
 
 export type StartData = { label?: string };
 export type StartRFNode = Node<StartData, 'ptb-start'>;

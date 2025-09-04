@@ -1,4 +1,5 @@
 // src/ui/handles/PTBHandleFlow.tsx
+
 import React, { memo } from 'react';
 
 import {
@@ -9,16 +10,8 @@ import {
   Position,
 } from '@xyflow/react';
 
-import { hasConcreteEnds, isFlowDirectionOK, isSameNode } from './handleUtils';
+import { hasConcreteEnds, isFlowDirectionOK, isSelfEdge } from './handleUtils';
 import { FLOW_NEXT, FLOW_PREV } from '../../ptb/portTemplates';
-
-/** Module-scoped validator for flow edges (next -> prev only). */
-const isFlowConnectionValid: IsValidConnection = (edgeOrConn) => {
-  const c = edgeOrConn as Connection;
-  if (!hasConcreteEnds(c)) return false;
-  if (isSameNode(c)) return false;
-  return isFlowDirectionOK(c);
-};
 
 type PTBHandleFlowProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
   type: 'source' | 'target';
@@ -34,6 +27,14 @@ export const PTBHandleFlow = memo(function PTBHandleFlow({
   const id = type === 'source' ? FLOW_NEXT : FLOW_PREV;
   const position = type === 'source' ? Position.Right : Position.Left;
 
+  const isValidConnection: IsValidConnection = (edgeOrConn) => {
+    const c = edgeOrConn as Connection;
+    if (!hasConcreteEnds(c)) return false;
+    if (!isFlowDirectionOK(c)) return false;
+    if (isSelfEdge(c)) return false;
+    return true;
+  };
+
   return (
     <Handle
       {...rest}
@@ -45,7 +46,7 @@ export const PTBHandleFlow = memo(function PTBHandleFlow({
         .filter(Boolean)
         .join(' ')}
       style={style}
-      isValidConnection={isFlowConnectionValid}
+      isValidConnection={isValidConnection}
     />
   );
 });

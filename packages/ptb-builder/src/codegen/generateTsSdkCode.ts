@@ -213,31 +213,69 @@ function emitArrayArgFlat(exprs: string[], arrayVarNames: Set<string>): string {
   return `[${exprs.join(', ')}]`;
 }
 
-/** Identify transferObjects inputs robustly (label, address type, or position). */
+/**
+ * Identify transferObjects inputs robustly.
+ * Priority:
+ * 1) Ports explicitly labeled 'objects' and 'recipient'
+ * 2) Address-typed IN port as recipient
+ * 3) Position fallback: last IN port as recipient, others as objects
+ * 4) No recipient found -> default to 'myAddress' sentinel
+ */
 function pickTransferInputs(
   cmd: CommandNode,
   byPort: Map<string, string[]>,
 ): { objectsExprs: string[]; recipientExpr?: string } {
+  const inPorts = (cmd.ports || []).filter(
+    (p) => p.role === 'io' && p.direction === 'in',
+  );
+
   const objectsExprs: string[] = [];
   let recipientExpr: string | undefined;
-  for (const p of cmd.ports || []) {
-    if (p.role !== 'io' || p.direction !== 'in') continue;
+
+  // 1) Use explicit labels first
+  for (const p of inPorts) {
     const vals = byPort.get(p.id) ?? [];
     if (p.label === 'objects') {
       objectsExprs.push(...vals);
-      continue;
-    }
-    if (p.label === 'recipient') {
-      if (!recipientExpr && vals.length) recipientExpr = vals[0];
-      continue;
-    }
-    const t = p.dataType;
-    if (t?.kind === 'scalar' && t.name === 'address') {
-      if (!recipientExpr && vals.length) recipientExpr = vals[0];
-    } else {
-      objectsExprs.push(...vals);
+    } else if (p.label === 'recipient' && !recipientExpr && vals.length) {
+      recipientExpr = vals[0];
     }
   }
+  if (recipientExpr && objectsExprs.length) {
+    return { objectsExprs, recipientExpr };
+  }
+
+  // 2) Type-based detection (address-typed recipient)
+  for (const p of inPorts) {
+    const vals = byPort.get(p.id) ?? [];
+    if (
+      !recipientExpr &&
+      p.dataType?.kind === 'scalar' &&
+      p.dataType.name === 'address' &&
+      vals.length
+    ) {
+      recipientExpr = vals[0];
+    } else if (p.label !== 'recipient' && p.label !== 'objects') {
+      // treat as object input if not the address port
+      if (!(p.dataType?.kind === 'scalar' && p.dataType.name === 'address')) {
+        objectsExprs.push(...vals);
+      }
+    }
+  }
+  if (recipientExpr && objectsExprs.length) {
+    return { objectsExprs, recipientExpr };
+  }
+
+  // 3) Positional fallback: last IN port as recipient, others as objects
+  if (!recipientExpr && inPorts.length > 0) {
+    const last = inPorts[inPorts.length - 1];
+    const rest = inPorts.slice(0, -1);
+    const lastVals = byPort.get(last.id) ?? [];
+    if (lastVals.length) recipientExpr = lastVals[0];
+    for (const p of rest) objectsExprs.push(...(byPort.get(p.id) ?? []));
+  }
+
+  // 4) If still missing, leave recipient undefined; caller will default to myAddress
   return { objectsExprs, recipientExpr };
 }
 
@@ -309,8 +347,6 @@ export function generateTsSdkCode(
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
       const arr: string[] = [];
       for (const e of edges) {
-        // Edge map is keyed by target portId (base of handle), so here we
-        // must also use base of source handle to read from portExpr map.
         const key = `${e.source}:${basePortId(e.sourceHandle)}`;
         const expr = portExpr.get(key);
         if (expr) arr.push(applyCastIfAny(expr, e));
@@ -358,10 +394,10 @@ export function generateTsSdkCode(
     const byPort = collectInputsByPort(c);
 
     const declaredOuts =
-      c.outputs && c.outputs.length > 0
-        ? c.outputs.map((s) => s.trim()).filter(Boolean)
+      (c as any).outputs && (c as any).outputs.length > 0
+        ? (c as any).outputs.map((s: string) => s.trim()).filter(Boolean)
         : [];
-    const uniqueOuts = declaredOuts.map((o) => names.claim(o));
+    const uniqueOuts = declaredOuts.map((o: string) => names.claim(o));
 
     const assignPrefix =
       uniqueOuts.length > 1
@@ -499,7 +535,7 @@ export function generateTsSdkCode(
 
         if (assignPrefix) {
           body.w(`${assignPrefix}${call};`);
-          uniqueOuts.forEach((n) => arrayVarNames.add(n));
+          uniqueOuts.forEach((n: string) => arrayVarNames.add(n));
           registerOutputs(
             c,
             uniqueOuts.length === 1 ? uniqueOuts[0] : call,

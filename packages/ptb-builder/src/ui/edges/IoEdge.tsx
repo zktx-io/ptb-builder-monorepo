@@ -1,10 +1,12 @@
+// src/ui/edges/IoEdge.tsx
+
 import React, { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
+import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import type { RFEdgeData } from '../../ptb/ptbAdapter';
-import { typeOf } from '../utils/handleId';
 
 /**
  * IO edge renderer:
@@ -45,8 +47,9 @@ export const IoEdge = memo(function IoEdge(props: EdgeProps) {
 
   const edgeData = props.data as RFEdgeData | undefined;
 
-  // Prefer source handle’s type; fallback: target handle → edge.data.dataType
-  const serializedType = typeOf(srcH) ?? typeOf(tgtH) ?? edgeData?.dataType;
+  const srcType = parseHandleTypeSuffix(srcH).typeStr;
+  const tgtType = parseHandleTypeSuffix(tgtH).typeStr;
+  const serializedType = srcType ?? tgtType ?? edgeData?.dataType;
   const cat = ioCategoryOfSerialized(serializedType);
 
   return (

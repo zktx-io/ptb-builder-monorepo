@@ -1,3 +1,5 @@
+// src/ptb/decodeTx/decodeProgrammable.ts
+
 // Decode a ProgrammableTransaction into a PTBGraph.
 // This file coordinates the decode and delegates small utilities to helpers.
 
@@ -13,20 +15,20 @@ import {
   firstInPorts,
   outPortsWithPrefix,
 } from './findPorts';
-import { getFnSig } from './fnSig';
-import { materializeCommandPorts } from '../../ui/nodes/cmds/registry';
-import { labelFromType, NodeFactories } from '../../ui/nodes/nodeFactories';
-import { buildHandleId } from '../graph/helpers';
-import { O, S, V } from '../graph/typeHelpers';
-import type {
-  Port,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-  PTBType,
-  VariableNode,
+import { makeCommandNode, makeGasObject, makeVariableNode } from '../factories';
+import { labelFromType, O, S, V } from '../graph/typeHelpers';
+import {
+  buildHandleId,
+  type CommandUIParams,
+  type Port,
+  type PTBEdge,
+  type PTBGraph,
+  type PTBNode,
+  type PTBType,
+  type VariableNode,
 } from '../graph/types';
-import { FLOW_NEXT, FLOW_PREV, VAR_OUT } from '../portTemplates';
+import { FLOW_NEXT, FLOW_PREV, PORTS, VAR_OUT } from '../portTemplates';
+import { buildCommandPorts } from '../registry';
 import { KNOWN_IDS } from '../seedGraph';
 
 // ---- tiny value table -------------------------------------------------------
@@ -75,7 +77,7 @@ function inferPureType(input: SuiCallArg): PTBType {
     case '0x2::object::ID':
       return O();
 
-    // number scalars
+    // number scalars → unify to 'number'
     case 'u8':
     case 'u16':
     case 'u32':
@@ -84,7 +86,7 @@ function inferPureType(input: SuiCallArg): PTBType {
     case 'u256':
       return S('number');
 
-    // vector<number>
+    // vector<number> (u* vectors)
     case 'vector<u8>':
     case 'vector<u16>':
     case 'vector<u32>':
@@ -126,7 +128,27 @@ function pushNode(graph: PTBGraph, n: PTBNode) {
   nodeMap.set(n.id, n);
 }
 
-/** Ensure flow ports exist (safety net for command nodes). */
+/** Create Start / End nodes (fixed IDs, flow-only). */
+function makeStartNode(): PTBNode {
+  return {
+    id: KNOWN_IDS.START,
+    kind: 'Start',
+    label: 'Start',
+    position: { x: 0, y: 0 },
+    ports: PORTS.start(),
+  };
+}
+function makeEndNode(): PTBNode {
+  return {
+    id: KNOWN_IDS.END,
+    kind: 'End',
+    label: 'End',
+    position: { x: 0, y: 0 },
+    ports: PORTS.end(),
+  };
+}
+
+/** Ensure flow ports exist (defensive for command nodes). */
 function ensureFlowPorts(node: PTBNode) {
   const list = ((node as any).ports ?? []) as Port[];
   if (!list.some((p) => p.id === FLOW_PREV)) {
@@ -148,11 +170,12 @@ function ensureFlowPorts(node: PTBNode) {
   (node as any).ports = list;
 }
 
+/** Command constructor (ports via registry). */
 function makeCommand(kind: string, ui?: Record<string, unknown>): PTBNode {
-  const cmd = NodeFactories.command(kind as any, { ui });
+  const node = makeCommandNode(kind as any, { ui: ui as CommandUIParams });
   // Registry already materializes ports; enforce flow ports defensively.
-  ensureFlowPorts(cmd as any);
-  return cmd as any as PTBNode;
+  ensureFlowPorts(node as any);
+  return node as any as PTBNode;
 }
 
 /** (nodeId, portId) → RF handle id (includes optional serialized type suffix). */
@@ -230,16 +253,14 @@ export function decodeTx(
   const vt = new ValueTable();
 
   // Start/End
-  const start = NodeFactories.start();
-  const end = NodeFactories.end();
-  (start as any).id = KNOWN_IDS.START;
-  (end as any).id = KNOWN_IDS.END;
+  const start = makeStartNode();
+  const end = makeEndNode();
   pushNode(graph, start);
   pushNode(graph, end);
 
   // Seed "gas"
-  const gasVar = NodeFactories.objectGas();
-  (gasVar as any).id = KNOWN_IDS.GAS;
+  const gasVar = makeGasObject();
+  (gasVar as any).id = KNOWN_IDS.GAS; // keep stable ID
   (gasVar as any).name = (gasVar as any).name ?? 'gas';
   (gasVar as any).label = (gasVar as any).label ?? 'SUI';
 
@@ -250,7 +271,7 @@ export function decodeTx(
   (prog.inputs ?? []).forEach((arg, i) => {
     const t = arg.type === 'pure' ? inferPureType(arg) : O();
     const lit = literalOfPure(arg);
-    const node: VariableNode = NodeFactories.variable(t, {
+    const node: VariableNode = makeVariableNode(t, {
       name: `input_${i}`,
       label: labelFromType(t),
       value: lit,
@@ -299,17 +320,21 @@ export function decodeTx(
           amounts.length === 1 && (amounts[0].t as any)?.kind === 'vector';
 
         if (isSingleVector) {
-          // Single vector<T> input → connect to the vector port directly
-          const vecPort =
-            findInPortWithFallback(
-              node,
-              'in_amounts',
-              'in_amounts',
-              0,
-              (t) => (t as any)?.kind === 'vector',
-            ) || findInPortWithFallback(node, 'in_amounts', undefined, 0);
-          if (vecPort) {
-            pushIoEdgeToPort(graph, amounts[0], node.id, vecPort, 'amounts');
+          // Single vector<u64> input → connect to the *first expanded scalar* port.
+          // NOTE: Registry has no 'in_amounts' vector port by policy.
+          const firstAmount =
+            findInPortWithFallback(node, 'in_amount_0', 'in_amount_', 0) ||
+            // last resort: any first io/in
+            findInPortWithFallback(node, 'in_amount_0');
+          if (firstAmount) {
+            // Tag clarifies that a vector is being fed into the first expanded slot
+            pushIoEdgeToPort(
+              graph,
+              amounts[0],
+              node.id,
+              firstAmount,
+              'amounts_vec',
+            );
           }
         } else {
           // Multiple scalars → connect to expanded ports only (no packing)
@@ -461,27 +486,21 @@ export function decodeTx(
         .map((a: any) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
-      const sig = getFnSig(modules, pkg, mod, fn);
-      const tpCount = targs.length;
-      const paramCount = Array.isArray(sig?.parameters)
-        ? sig.parameters.length
-        : args.length;
-      const retCount = Array.isArray(sig?.return) ? sig.return.length : 1;
-
-      const node = makeCommand('moveCall', {
-        argCount: paramCount,
-        typCount: tpCount,
-        resCount: retCount,
-      });
+      const node = makeCommandNode('moveCall');
       (node as any).id = `cmd-${idx}`;
 
+      // Record on-chain metadata and also set runtime.target for codegen/preprocess.
+      const targetStr = `${pkg}::${mod}::${fn}`;
       (node as any).params = {
         ...(node as any).params,
+        runtime: {
+          ...(node as any).params?.runtime,
+          target: targetStr,
+        },
         moveCall: { package: pkg, module: mod, function: fn, typeArgs: targs },
       };
 
-      // Ports may depend on UI → re-materialize once (defensive)
-      (node as any).ports = materializeCommandPorts(node as any);
+      (node as any).ports = buildCommandPorts('moveCall');
       ensureFlowPorts(node);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
@@ -493,7 +512,7 @@ export function decodeTx(
       ) as Port[] | undefined;
       if (tpPorts?.length) {
         targs.forEach((targ, i) => {
-          const v = NodeFactories.variable(S('string'), {
+          const v = makeVariableNode(S('string'), {
             name: `type_${i}`,
             label: 'string',
             value: targ,
@@ -524,7 +543,7 @@ export function decodeTx(
 
       // results mapping
       const outs = outPortsWithPrefix(node, 'out_res_');
-      const outCount = Math.max(retCount, outs.length || 0, 1);
+      const outCount = Math.max(outs.length || 0, 1);
       for (let i = 0; i < outCount; i++) {
         const pid = outs[i]?.id ?? `out_res_${i}`;
         vt.set(`res#${idx}#${i}`, { nodeId: node.id, portId: pid });

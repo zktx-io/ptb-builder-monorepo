@@ -1,4 +1,5 @@
 // src/ptb/seedGraph.ts
+
 import { PTBGraph } from './graph/types';
 import { PORTS } from './portTemplates';
 
@@ -26,14 +27,14 @@ export function seedDefaultGraph(): PTBGraph {
         kind: 'Start',
         label: 'Start',
         position: { x: 160, y: 325 },
-        ports: PORTS.start(), // [{ id:'next', direction:'out', role:'flow' }]
+        ports: PORTS.start(),
       },
       {
         id: KNOWN_IDS.END,
         kind: 'End',
         label: 'End',
         position: { x: 640, y: 325 },
-        ports: PORTS.end(), // [{ id:'prev', direction:'in', role:'flow' }]
+        ports: PORTS.end(),
       },
     ],
     edges: [],
