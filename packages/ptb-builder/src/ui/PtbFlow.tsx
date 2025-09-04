@@ -698,6 +698,7 @@ export function PTBFlow() {
         colorMode={theme}
         nodes={rfNodes}
         edges={rfEdges}
+        fitView
         /** allow dragging even in read-only */
         nodesDraggable={true}
         /** block creating/updating edges when read-only */
@@ -739,6 +740,10 @@ export function PTBFlow() {
         <Panel position="top-right" style={{ pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto' }}>
             <CodePip
+              /* Re-mount when switching viewer/editor so defaultCollapsed is reapplied */
+              key={`codepip-${readOnly ? 'ro' : 'rw'}`}
+              /* Close the code pane in viewer mode (on-chain load sets readOnly=true) */
+              defaultCollapsed={readOnly}
               code={code}
               language="typescript"
               title="ts-sdk preview"
