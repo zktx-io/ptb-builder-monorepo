@@ -14,21 +14,22 @@ export type PTBScalar = 'bool' | 'string' | 'address' | 'id' | 'number';
 
 /** ------------------------------------------------------------------
  * ADT for PTB types
- * - 'option' models Option<T> (pure option).
  * - 'vector' models vector<T>; nested vectors are disallowed by policy.
+ * - 'option' kept in the model for future use, but CURRENTLY UNSUPPORTED:
+ *   resolver should not emit option; if it appears, treat as unknown at wiring.
  * - 'object' is non-pure (owned/shared refs), optional typeTag for specificity.
  * - 'tuple' can appear in ABI outputs (non-pure for tx.pure).
- * - 'typeparam' is a generic placeholder (compatible with anything).
+ * - NOTE: generic placeholders ('typeparam') are REMOVED by policy.
+ *   Generics are resolved exclusively via typeArguments: string[] (SSOT).
  * ----------------------------------------------------------------- */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
   | { kind: 'object'; typeTag?: string }
   | { kind: 'vector'; elem: PTBType }
-  | { kind: 'option'; elem: PTBType }
+  | { kind: 'option'; elem: PTBType } // kept for future, but not used by resolver now
   | { kind: 'tuple'; elems: PTBType[] }
-  | { kind: 'typeparam'; name: string }
-  | { kind: 'unknown' };
+  | { kind: 'unknown'; debugInfo?: string };
 
 /** ------------------------------------------------------------------
  * Ports
@@ -146,8 +147,7 @@ export interface PTBGraph {
 
 /** ------------------------------------------------------------------
  * Serialization helpers
- * - For 'typeparam', emit its name (e.g., "T0").
- * - For 'option', emit `option<...>`.
+ * - For 'option', emit `option<...>` (though resolver should not output it now).
  * ----------------------------------------------------------------- */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
@@ -163,10 +163,8 @@ export function serializePTBType(t: PTBType): string {
       return t.typeTag ? `object<${t.typeTag}>` : 'object';
     case 'tuple':
       return `(${t.elems.map(serializePTBType).join(',')})`;
-    case 'typeparam':
-      return t.name;
     case 'unknown':
-      return 'unknown';
+      return t.debugInfo ? `unknown (${t.debugInfo})` : 'unknown';
     default: {
       const _exhaustive: never = t;
       return String(_exhaustive);
@@ -183,26 +181,60 @@ export const findPort = (node: PTBNode, portId: string) =>
   node.ports.find((p) => p.id === portId);
 
 /**
- * Build a React Flow handle id with an inline serialized type suffix for IO.
- * Examples:
- *   - "in_coin:object<0x2::coin::Coin<0x2::sui::SUI>>"
- *   - "in_amounts:vector<number>"
- *   - "out_vec:vector<object>"
+ * Build a stable React Flow handle id for IO ports using a coarse type suffix.
  *
- * Notes:
- * - For non-IO handles (flow), returns the plain id without suffix.
- * - We intentionally ignore `port.typeStr` for the id; it's only for UI badges.
- * - If `dataType.kind === 'typeparam'`, the suffix will be that name (e.g., "T0").
- * - For missing/unknown types, skip the suffix to keep the id stable.
+ * Rationale:
+ * - Keep IDs stable across ABI changes while still preventing obvious mis-wires.
+ * - Use only broad categories so UI badges can be rich, but edges don’t break.
+ *
+ * Policy:
+ * - Non-IO ports (flow) → return plain id.
+ * - object<T> → `${id}:object`   (drop concrete typeTag)
+ * - scalar(name) → `${id}:${name}`  where name ∈ { address | bool | string | number }
+ * - move_numeric (u8..u256) → treat as number → `${id}:number`
+ * - vector<scalar/move_numeric/object> → `${id}:vector<name>` with name mapped above
+ * - Anything else (tuple/unknown/nested vectors) → plain id (no suffix)
  */
 export function buildHandleId(port: Port): string {
   if (port.role !== 'io') return port.id;
+
   const t = port.dataType;
-  if (!t || t.kind === 'unknown') return port.id;
-  const raw = serializePTBType(t);
-  const typeStr =
-    typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : undefined;
-  return typeStr ? `${port.id}:${typeStr}` : port.id;
+  if (!t) return port.id;
+
+  const base = port.id;
+
+  switch (t.kind) {
+    case 'object':
+      // Drop concrete type tags to avoid mismatches like object<0x2::…>
+      return `${base}:object`;
+
+    case 'scalar':
+      // address | bool | string | number
+      return `${base}:${t.name}`;
+
+    case 'move_numeric':
+      // Normalize all Move numerics to number
+      return `${base}:number`;
+
+    case 'vector': {
+      const e = t.elem;
+      if (e.kind === 'scalar') {
+        return `${base}:vector<${e.name}>`; // e.g. vector<number>, vector<address>
+      }
+      if (e.kind === 'move_numeric') {
+        return `${base}:vector<number>`;
+      }
+      if (e.kind === 'object') {
+        return `${base}:vector<object>`;
+      }
+      // For nested/complex vectors, keep id stable without suffix
+      return base;
+    }
+
+    // tuple, unknown, etc. → no suffix
+    default:
+      return base;
+  }
 }
 
 /** Parse "handleId[:TypeString]" into base id and optional type string. */

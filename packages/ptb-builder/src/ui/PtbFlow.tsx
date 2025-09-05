@@ -46,27 +46,24 @@ import {
 } from '../ptb/ptbAdapter';
 import { autoLayoutFlow } from './utils/autoLayout';
 import { hasStartToEnd } from './utils/flowPath';
-import { buildTransactionBlock } from '../codegen/buildTransactionBlock';
-import { generateTsSdkCode } from '../codegen/generateTsSdkCode';
+import { buildTransaction } from '../codegen/buildTransaction';
+import { buildTsSdkCode } from '../codegen/buildTsSdkCode';
 import { setIdGenerator } from '../ptb/factories';
 import {
   inferCastTarget,
   isTypeCompatible,
   isUnknownType,
 } from '../ptb/graph/typecheck';
-import type { Port, PTBNode, PTBType, VariableNode } from '../ptb/graph/types';
+import {
+  parseHandleTypeSuffix,
+  type Port,
+  type PTBNode,
+  type PTBType,
+  type VariableNode,
+} from '../ptb/graph/types';
 import { buildCommandPorts } from '../ptb/registry';
 
 const DEBOUNCE_MS = 250;
-
-/**
- * Extracts the base portId (before ":" type suffix) from a handle string.
- * Example: "in_arg_0:number" -> "in_arg_0"
- */
-function portIdOf(handle?: string): string | undefined {
-  if (!handle) return undefined;
-  return handle.split(':')[0];
-}
 
 /** DFS loop check for flow edges (prevents cycles). */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
@@ -137,8 +134,8 @@ function pruneDanglingEdges(
     const srcSet = idx.get(e.source);
     const tgtSet = idx.get(e.target);
     if (!srcSet || !tgtSet) return false;
-    const sId = portIdOf(e.sourceHandle ?? undefined);
-    const tId = portIdOf(e.targetHandle ?? undefined);
+    const sId = parseHandleTypeSuffix(e.sourceHandle ?? undefined).baseId;
+    const tId = parseHandleTypeSuffix(e.targetHandle ?? undefined).baseId;
     return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
   });
 }
@@ -149,7 +146,7 @@ function resolvePortType(
   nodeId: string,
   handle?: string,
 ): PTBType | undefined {
-  const pid = portIdOf(handle);
+  const pid = parseHandleTypeSuffix(handle).baseId;
   if (!pid) return undefined;
   const n = ptbNodes.find((x) => x.id === nodeId);
   if (!n) return undefined;
@@ -540,7 +537,7 @@ export function PTBFlow() {
       if (!conn.source || !conn.target) return;
 
       const findPort = (nodeId: string, handle?: string) => {
-        const pid = portIdOf(handle);
+        const pid = parseHandleTypeSuffix(handle).baseId;
         const node = baseGraphRef.current.nodes.find((n) => n.id === nodeId);
         return node?.ports.find((p) => p.id === pid);
       };
@@ -631,7 +628,7 @@ export function PTBFlow() {
   useEffect(() => {
     try {
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const src = generateTsSdkCode(ptb, chain, execOpts);
+      const src = buildTsSdkCode(ptb, chain, execOpts);
       setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
     } catch {
       setCode(EMPTY_CODE(chain));
@@ -656,7 +653,7 @@ export function PTBFlow() {
     try {
       setExecuting(true);
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const tx = buildTransactionBlock(ptb, chain, execOpts);
+      const tx = buildTransaction(ptb, chain, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } finally {
       setExecuting(false);

@@ -3,10 +3,11 @@
 // ---------------------------------------------------------------------
 // PTB type guards, IO category utilities, compatibility rules, and helpers.
 // Policy highlights:
-// - Pure types map to tx.pure: scalar/move_numeric/option/vector (no nested vector).
+// - Pure types map to tx.pure: scalar/move_numeric/vector (no nested vector).
 // - object / vector<object> are non-pure (refs), still allowed for IO wiring.
-// - option is one-way compatible: option<X> ← X (wrap Some), not vice versa.
+// - 'option' is CURRENTLY UNSUPPORTED for wiring/codegen: treat as incompatible.
 // - scalar(number) → move_numeric(uXX) allows cast (hint carried in edge.cast).
+// - Generic placeholders ('typeparam') are REMOVED by policy.
 // ---------------------------------------------------------------------
 
 import type { NumericWidth, PTBType } from './types';
@@ -39,11 +40,6 @@ export const isTuple = (
   t?: PTBType,
 ): t is Extract<PTBType, { kind: 'tuple' }> => !!t && t.kind === 'tuple';
 
-export const isTypeParam = (
-  t?: PTBType,
-): t is Extract<PTBType, { kind: 'typeparam' }> =>
-  !!t && t.kind === 'typeparam';
-
 export const isUnknownType = (t?: PTBType) => !t || t.kind === 'unknown';
 
 export const vectorElem = (t?: PTBType): PTBType | undefined =>
@@ -66,19 +62,18 @@ export function isPureScalarName(name: string | undefined): boolean {
   );
 }
 
-/** True if t is encodable by tx.pure (scalar/move_numeric/option/vector of pure) */
+/** True if t is encodable by tx.pure (scalar/move_numeric/vector of pure) */
 export function isPureType(t?: PTBType): boolean {
   if (!t) return false;
-  if (isUnknownType(t) || isTuple(t) || isObject(t)) return false;
+  if (isUnknownType(t) || isTuple(t) || isObject(t) || isOption(t))
+    return false;
 
   if (isScalar(t)) return isPureScalarName(t.name);
   if (isMoveNumeric(t)) return true;
-  if (isOption(t)) return isPureType(t.elem);
   if (isVector(t)) {
     // single-level vector only
     return !isNestedVector(t) && isPureType(t.elem);
   }
-  if (isTypeParam(t)) return true; // treat as pure-capable (placeholder)
   return false;
 }
 
@@ -101,7 +96,7 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
     case 'vector':
       return ioCategoryOf(t.elem);
     case 'option':
-      return ioCategoryOf(t.elem);
+      return 'unknown'; // unsupported currently
     case 'move_numeric':
       return 'number';
     case 'scalar': {
@@ -116,7 +111,6 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
     case 'object':
       return 'object';
     case 'tuple':
-    case 'typeparam':
     case 'unknown':
     default:
       return 'unknown';
@@ -125,7 +119,6 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
 
 /* ---------------------------------------------------------------------
  * Structural equality (strict)
- * - 'typeparam' equal iff names match.
  * - 'object' equal iff typeTag equal (both missing is equal).
  * - 'unknown' is not equal here; reserve unknown for "blocked" state.
  * -------------------------------------------------------------------*/
@@ -150,58 +143,59 @@ function isSameType(a: PTBType, b: PTBType): boolean {
         a.elems.every((t, i) => isSameType(t, bt.elems[i]))
       );
     }
-    case 'typeparam':
-      return (b as any).name === a.name;
     case 'unknown':
       return false;
   }
 }
 
 /* ---------------------------------------------------------------------
- * Compatibility policy (strict, UI wiring)
+ * Compatibility policy (UI wiring)
  * - unknown on either side → NOT compatible (block).
- * - typeparam on either side → compatible (generic placeholder).
- * - scalar(number) → move_numeric(width) is compatible (implies cast).
- * - vector<X> ↔ vector<Y> via inner rule.
- * - option<X> ← X is compatible (wrap Some). X ← option<X> is NOT.
- * - move_numeric widths must match unless source is scalar(number).
- * - object typeTags must match (both empty counts as match).
+ * - option on either side → NOT compatible (unsupported).
+ * - scalar(number) ↔ move_numeric(width) is compatible (cast required).
+ * - vector<X> ↔ vector<Y> via recursive inner rule (1D only).
+ * - move_numeric widths must match unless src/dst is scalar(number).
+ * - object tags are **soft-required**:
+ *     • if either side has no typeTag → compatible (lenient)
+ *     • if both have typeTag → must be equal (strict)
+ * - exact match for remaining scalar/tuple forms.
  * -------------------------------------------------------------------*/
 export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
   if (!src || !dst) return false;
 
   if (isUnknownType(src) || isUnknownType(dst)) return false;
-  if (isTypeParam(src) || isTypeParam(dst)) return true;
+  if (isOption(src) || isOption(dst)) return false;
 
-  // option<X> ← X (Some-wrapping)
-  if (isOption(dst) && isSameType(src, dst.elem)) return true;
-
-  // scalar(number) → move_numeric(width)
+  // scalar(number) ↔ move_numeric(width)
   if (isScalar(src) && src.name === 'number' && isMoveNumeric(dst)) return true;
+  if (isMoveNumeric(src) && isScalar(dst) && dst.name === 'number') return true;
 
-  // vector<X> ↔ vector<Y> (single-level only, enforced elsewhere)
+  // vector<X> ↔ vector<Y>
   if (isVector(src) && isVector(dst)) {
     return isTypeCompatible(src.elem, dst.elem);
   }
 
   // move_numeric ↔ move_numeric (same width)
-  if (isMoveNumeric(src) && isMoveNumeric(dst)) return src.width === dst.width;
-
-  // object ↔ object (same tag; both empty allowed)
-  if (isObject(src) && isObject(dst)) {
-    const a = src.typeTag ?? '';
-    const b = dst.typeTag ?? '';
-    return a === b;
+  if (isMoveNumeric(src) && isMoveNumeric(dst)) {
+    return src.width === dst.width;
   }
 
-  // exact match for remaining cases (scalar names, option, tuple)
+  // object ↔ object (lenient when a tag is missing; strict when both present)
+  if (isObject(src) && isObject(dst)) {
+    const a = (src.typeTag ?? '').trim();
+    const b = (dst.typeTag ?? '').trim();
+    if (!a || !b) return true; // lenient: one side unspecified
+    return a === b; // strict: both specified must match
+  }
+
+  // exact match for remaining cases (scalar names, tuple)
   return isSameType(src, dst);
 }
 
 /* ---------------------------------------------------------------------
  * Cast inference (number → move_numeric)
  * - For vectors, bubble inner cast width up.
- * - Options do not imply a concrete width by themselves.
+ * - Options are unsupported → no cast inference.
  * -------------------------------------------------------------------*/
 export function inferCastTarget(
   src?: PTBType,
@@ -289,9 +283,6 @@ export function ioCategoryOfSerialized(s?: string): IOCategory {
   if (base === 'string') return 'string';
   if (base === 'id') return 'id';
 
-  // Plain typeparam like "T0" / "t" → unknown (neutral color)
-  if (/^t\d*$/i.test(base)) return 'unknown';
-
   return 'unknown';
 }
 
@@ -307,24 +298,4 @@ export function isOptionSerialized(s?: string): boolean {
   if (!s) return false;
   const lower = s.trim().toLowerCase();
   return lower.startsWith('option<');
-}
-
-/* ---------------------------------------------------------------------
- * IO shape for UI (category + boolean “isVector” flag)
- * -------------------------------------------------------------------*/
-export function ioShapeOf(t?: PTBType): {
-  category: IOCategory;
-  isVector: boolean;
-} {
-  return { category: ioCategoryOf(t), isVector: isVector(t) };
-}
-
-export function ioShapeOfSerialized(s?: string): {
-  category: IOCategory;
-  isVector: boolean;
-} {
-  return {
-    category: ioCategoryOfSerialized(s),
-    isVector: isVectorSerialized(s),
-  };
 }

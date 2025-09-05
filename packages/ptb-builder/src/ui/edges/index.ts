@@ -1,9 +1,9 @@
 import type { EdgeTypes as RfEdgeTypes } from '@xyflow/react';
 
-import { FlowEdge } from './FlowEdge';
-import { IoEdge } from './IoEdge';
+import { EdgeFlow } from './EdgeFlow';
+import { EdgeIo } from './EdgeIo';
 
 export const EdgeTypes: RfEdgeTypes = {
-  'ptb-flow': FlowEdge,
-  'ptb-io': IoEdge,
+  'ptb-flow': EdgeFlow,
+  'ptb-io': EdgeIo,
 };

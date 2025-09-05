@@ -27,7 +27,7 @@
   --ptb-io-string-width: 2.5;
   --ptb-io-object-stroke:  #3b82f6; /* blue-500 */
   --ptb-io-object-width: 2.5;
-  --ptb-io-id-stroke:      #14b8a6; /* teal-500 */
+  --ptb-io-id-stroke:      #06b6d4; /* cyan-500 */
   --ptb-io-id-width: 2.5;
   --ptb-io-unknown-stroke: #737373; /* gray-500 */
   --ptb-io-unknown-width: 2;
@@ -39,7 +39,7 @@
   --ptb-io-bool-stroke-active:    #a78bfa; /* violet-400 */
   --ptb-io-string-stroke-active:  #34d399; /* emerald-400 */
   --ptb-io-object-stroke-active:  #60a5fa; /* blue-400 */
-  --ptb-io-id-stroke-active:      #2dd4bf; /* teal-400 */
+  --ptb-io-id-stroke-active:      #22d3ee; /* cyan-400 */
   --ptb-io-unknown-stroke-active: #a3a3a3; /* gray-400 */
 
   /* =======================
@@ -94,13 +94,13 @@
   --ptb-node-object-border-active:  #60a5fa; /* blue-400 */
   --ptb-node-object-bg-active:      rgba(147,197,253,0.90);
 
-  /* ID (teal) */
-  --ptb-node-id-border:        #0f766e; /* teal-700 */
-  --ptb-node-id-bg:            rgba(45,212,191,0.60); /* teal-400 */
-  --ptb-node-id-border-hover:  #14b8a6; /* teal-500 */
-  --ptb-node-id-bg-hover:      rgba(45,212,191,0.75);
-  --ptb-node-id-border-active: #2dd4bf; /* teal-400 */
-  --ptb-node-id-bg-active:     rgba(45,212,191,0.90);
+  /* ID (cyan) */
+  --ptb-node-id-border:        #0e7490; /* cyan-700 */
+  --ptb-node-id-bg:            rgba(103,232,249,0.60); /* cyan-300 */
+  --ptb-node-id-border-hover:  #06b6d4; /* cyan-500 */
+  --ptb-node-id-bg-hover:      rgba(103,232,249,0.75);
+  --ptb-node-id-border-active: #22d3ee; /* cyan-400 */
+  --ptb-node-id-bg-active:     rgba(103,232,249,0.90);
 
   /* Unknown (gray neutral) */
   --ptb-node-unknown-border:        #525252; /* gray-600 */
@@ -109,15 +109,6 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.75);
   --ptb-node-unknown-border-active: #a3a3a3; /* gray-400 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.90);
-
-  /* =======================
-     Switch (track/knob)
-     ======================= */
-  --ptb-switch-track-off: #c7cbd1;      /* slightly darker than node bg */
-  --ptb-switch-track-on:  #2563eb;      /* blue-600 */
-  --ptb-switch-knob:      #ffffff;      /* knob (light) */
-  --ptb-switch-label-off: rgba(17,24,39,1);     /* gray-900 */
-  --ptb-switch-label-on:  rgba(255,255,255,0.95);
 }
 
 /* Dark theme (opaque borders, alpha BGs) */
@@ -131,7 +122,7 @@
   --ptb-io-bool-stroke:    #7c3aed; /* violet-600 */
   --ptb-io-string-stroke:  #059669; /* emerald-600 */
   --ptb-io-object-stroke:  #2563eb; /* blue-600 */
-  --ptb-io-id-stroke:      #0d9488; /* teal-600 */
+  --ptb-io-id-stroke:      #0891b2; /* cyan-600 */
   --ptb-io-unknown-stroke: #737373; /* gray-500 */
 
   /* IO selected/active */
@@ -140,7 +131,7 @@
   --ptb-io-bool-stroke-active:    #8b5cf6; /* violet-500 */
   --ptb-io-string-stroke-active:  #10b981; /* emerald-500 */
   --ptb-io-object-stroke-active:  #3b82f6; /* blue-500 */
-  --ptb-io-id-stroke-active:      #14b8a6; /* teal-500 */
+  --ptb-io-id-stroke-active:      #22d3ee; /* cyan-400 */
   --ptb-io-unknown-stroke-active: #d4d4d4; /* gray-300 */
 
   /* Command */
@@ -192,12 +183,12 @@
   --ptb-node-object-bg-active:      rgba(59,130,246,0.48);
 
   /* ID */
-  --ptb-node-id-border:        #134e4a; /* teal-900 */
-  --ptb-node-id-bg:            rgba(20,184,166,0.22); /* teal-500 */
-  --ptb-node-id-border-hover:  #14b8a6; /* teal-500 */
-  --ptb-node-id-bg-hover:      rgba(20,184,166,0.35);
-  --ptb-node-id-border-active: #2dd4bf; /* teal-400 */
-  --ptb-node-id-bg-active:     rgba(20,184,166,0.48);
+  --ptb-node-id-border:        #164e63; /* cyan-900 */
+  --ptb-node-id-bg:            rgba(103,232,249,0.22); /* cyan-300 */
+  --ptb-node-id-border-hover:  #0891b2; /* cyan-600 */
+  --ptb-node-id-bg-hover:      rgba(103,232,249,0.35);
+  --ptb-node-id-border-active: #22d3ee; /* cyan-400 */
+  --ptb-node-id-bg-active:     rgba(103,232,249,0.48);
 
   /* Unknown */
   --ptb-node-unknown-border:        #404040; /* gray-700 */
@@ -206,13 +197,6 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.35);
   --ptb-node-unknown-border-active: #d4d4d4; /* gray-300 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.48);
-
-  /* Switch (dark) */
-  --ptb-switch-track-off: #4b5563; /* gray-600 */
-  --ptb-switch-track-on:  #3b82f6; /* blue-500 */
-  --ptb-switch-knob:      #e7e5e4; /* stone-100-ish */
-  --ptb-switch-label-off: rgba(229,231,235,1); /* gray-200 */
-  --ptb-switch-label-on:  rgba(255,255,255,0.95);
 }
 
 /* ============================================================
@@ -495,22 +479,3 @@
 .ptb-marker--string  { color: var(--ptb-io-string-stroke);  }
 .ptb-marker--object  { color: var(--ptb-io-object-stroke);  }
 .ptb-marker--id      { color: var(--ptb-io-id-stroke);      }
-
-/* ============================================================
-   COMPACT SWITCH (CommandExpandSwitch)
-   - Uses theme variables so it stays distinct from node surfaces in light mode
-   ============================================================ */
-
-.ptb-switch {
-  background-color: var(--ptb-switch-track-off);
-}
-.ptb-switch.is-checked {
-  background-color: var(--ptb-switch-track-on);
-}
-.ptb-switch__knob {
-  background-color: var(--ptb-switch-knob);
-}
-
-/* Optional switch label colors */
-.ptb-switch__label--off { color: var(--ptb-switch-label-off); }
-.ptb-switch__label--on  { color: var(--ptb-switch-label-on);  }

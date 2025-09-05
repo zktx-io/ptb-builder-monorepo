@@ -1,26 +1,27 @@
 // src/ptb/ptbAdapter.ts
-
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
-import type { NumericWidth, PTBEdge, PTBGraph, PTBNode } from './graph/types';
-import { parseHandleTypeSuffix } from './graph/types';
+import type {
+  NumericWidth,
+  Port,
+  PTBEdge,
+  PTBGraph,
+  PTBNode,
+  VariableNode,
+} from './graph/types';
+import { parseHandleTypeSuffix, serializePTBType } from './graph/types';
 import { PORTS } from './portTemplates';
 
 /** UI node payload: only label and the SSOT PTB node */
 export interface RFNodeData extends Record<string, unknown> {
-  /** Label shown in the UI */
   label?: string;
-  /** Full PTB node carried by the renderer (single source of truth) */
   ptbNode?: PTBNode;
 }
 
 /** UI edge payload: serialized type & cast metadata for badges/debug */
 export interface RFEdgeData extends Record<string, unknown> {
-  /** Source handle type hint from "handleId:TypeString" */
   dataType?: string;
-  /** Optional target handle type hint (debug/diagnostics) */
   targetType?: string;
-  /** Optional cast metadata for number → move_numeric */
   cast?: { to: NumericWidth };
 }
 
@@ -40,17 +41,42 @@ function getEdgeHandleIds(re: RFEdge<RFEdgeData>): {
   return { sh, th };
 }
 
+/** Ensure a Variable node carries a concrete IO out port that reflects its varType. */
+function materializeVarOutPort(n: PTBNode): PTBNode {
+  if ((n as any)?.kind !== 'Variable') return n;
+  const v = n as VariableNode;
+
+  const existingOut =
+    (v.ports || []).find((p) => p.role === 'io' && p.direction === 'out')?.id ??
+    'out';
+
+  const outPort: Port = {
+    id: existingOut,
+    role: 'io',
+    direction: 'out',
+    label: v.label ?? 'out',
+    dataType: v.varType,
+    typeStr: v.varType ? serializePTBType(v.varType) : undefined,
+  };
+
+  return {
+    ...v,
+    ports: [outPort],
+  };
+}
+
 /**
  * PTBGraph → React Flow
  * - Pass sourceHandle/targetHandle through 1:1 (no rebuild, no parsing).
- * - dataType for badges is derived from the sourceHandle suffix if present.
- * - Optionally expose targetType for diagnostics.
+ * - dataType for badges comes from the materialized port types (more reliable than suffix).
  */
 export function ptbToRF(graph: PTBGraph): {
   nodes: RFNode<RFNodeData>[];
   edges: RFEdge<RFEdgeData>[];
 } {
-  const nodes: RFNode<RFNodeData>[] = graph.nodes.map((n) => ({
+  const matNodes = graph.nodes.map((n) => materializeVarOutPort(n));
+
+  const nodes: RFNode<RFNodeData>[] = matNodes.map((n) => ({
     id: n.id,
     type: mapPTBNodeToRFType(n),
     position: n.position ?? { x: 0, y: 0 },
@@ -61,8 +87,21 @@ export function ptbToRF(graph: PTBGraph): {
     const sh = e.sourceHandle;
     const th = e.targetHandle;
 
-    const { typeStr: srcType } = parseHandleTypeSuffix(sh);
-    const { typeStr: dstType } = parseHandleTypeSuffix(th);
+    const srcNode = matNodes.find((n) => n.id === e.source);
+    const dstNode = matNodes.find((n) => n.id === e.target);
+
+    const sBase = parseHandleTypeSuffix(sh).baseId;
+    const tBase = parseHandleTypeSuffix(th).baseId;
+
+    const sPort = srcNode?.ports?.find((p) => p.id === sBase);
+    const tPort = dstNode?.ports?.find((p) => p.id === tBase);
+
+    const srcTypeStr = sPort?.dataType
+      ? serializePTBType(sPort.dataType)
+      : undefined;
+    const dstTypeStr = tPort?.dataType
+      ? serializePTBType(tPort.dataType)
+      : undefined;
 
     return {
       id: e.id,
@@ -70,17 +109,15 @@ export function ptbToRF(graph: PTBGraph): {
       target: e.target,
       sourceHandle: sh,
       targetHandle: th,
-
-      // XYFlow v11/12 compatibility aliases
+      // v11/12 alias
       // @ts-ignore
       sourceHandleId: sh,
       // @ts-ignore
       targetHandleId: th,
-
       type: mapPTBEdgeToRFType(e),
       data: {
-        dataType: srcType, // primary badge = source type
-        targetType: dstType, // optional auxiliary badge
+        dataType: srcTypeStr,
+        targetType: dstTypeStr,
         cast: (e as any).cast,
       },
       label: (e as any).label,

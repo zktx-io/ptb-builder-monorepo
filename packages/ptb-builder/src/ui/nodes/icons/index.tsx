@@ -1,6 +1,7 @@
 import React from 'react';
 
 import {
+  AtSign,
   BookA,
   Box,
   Brackets,
@@ -16,7 +17,6 @@ import {
   Merge,
   Power,
   Split,
-  TableOfContents,
   Wallet,
 } from 'lucide-react';
 
@@ -38,11 +38,11 @@ function iconOfType(t?: PTBType): React.ReactNode {
     case 'move_numeric':
       return <Calculator size={14} />;
     case 'scalar':
-      if (t.name === 'address') return <Hash size={14} />;
+      if (t.name === 'address') return <AtSign size={14} />;
       if (t.name === 'bool') return <Power size={14} />;
       if (t.name === 'number') return <Calculator size={14} />;
       if (t.name === 'string') return <BookA size={14} />;
-      if (t.name === 'id') return <TableOfContents size={14} />;
+      if (t.name === 'id') return <Hash size={14} />;
       return <CircleQuestionMark size={14} />;
     default:
       return <CircleQuestionMark size={14} />;

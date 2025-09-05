@@ -1,3 +1,5 @@
+// src/ptb/decodeTx/findPorts.ts
+
 // Small helpers for discovering IO ports on a node.
 
 import type { Port, PTBNode, PTBType } from '../graph/types';

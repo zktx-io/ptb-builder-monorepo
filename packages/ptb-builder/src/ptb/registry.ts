@@ -1,5 +1,4 @@
 // src/ptb/registry.ts
-
 // -----------------------------------------------------------------------------
 // Single source of truth for command IO port specifications.
 // Flow ports are NOT defined here (they come from PORTS.commandBase()).
@@ -22,16 +21,17 @@
 //   * elemType comes from UI (defaults to object when absent).
 //
 // Notes:
-// - “vector<object>” remains used for graph-only commands (publish/upgrade).
-// - MoveCall stays ABI-driven here (no static IO); factories/decoder will attach IO.
+// - MoveCall generics are SSOT via ui._fnTParams: string[] (length-only for port count).
+// - MoveCall ins/outs come from normalized ABI (_fnIns/_fnOuts).
 // -----------------------------------------------------------------------------
 
 import { M, O, S, V } from './graph/typeHelpers';
-import type {
-  CommandKind,
-  CommandUIParams,
-  Port,
-  PTBType,
+import {
+  type CommandKind,
+  type CommandUIParams,
+  type Port,
+  type PTBType,
+  serializePTBType,
 } from './graph/types';
 import { ioIn, ioOut, PORTS } from './portTemplates';
 
@@ -44,7 +44,7 @@ const VEC_ADDR: PTBType = V(S('address'));
 // -----------------------------------------------------------------------------
 
 export interface CommandSpec {
-  /** Human-friendly default label for the node. */
+  /** Default human-friendly label for the node. */
   label: string;
   /** Build IO ports based on UI params (e.g., counts/types). */
   buildIO(ui?: CommandUIParams): Port[];
@@ -53,8 +53,7 @@ export interface CommandSpec {
 }
 
 // -----------------------------------------------------------------------------
-// Core commands (policy-conformant, expanded scalar/object ports — no vector in/out
-// except MakeMoveVec out_vec which is vector<T> by definition).
+// Core commands
 // -----------------------------------------------------------------------------
 
 /** SplitCoins:
@@ -70,29 +69,18 @@ const splitCoinsSpec: CommandSpec = {
     const count = Math.max(1, Math.floor(ui?.amountsCount ?? 2));
     const ports: Port[] = [];
 
-    // single coin input
     ports.push(ioIn('in_coin', { dataType: O(), label: 'in_coin' }));
 
-    // expanded amounts (u64)
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioIn(`in_amount_${i}`, {
-          dataType: M('u64'),
-          label: `in_amount_${i}`,
-        }),
+        ioIn(`in_amount_${i}`, { dataType: M('u64'), label: `in_amount_${i}` }),
       );
     }
-
-    // expanded outputs coins
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioOut(`out_coin_${i}`, {
-          dataType: O(),
-          label: `out_coin_${i}`,
-        }),
+        ioOut(`out_coin_${i}`, { dataType: O(), label: `out_coin_${i}` }),
       );
     }
-
     return ports;
   },
 };
@@ -109,27 +97,20 @@ const mergeCoinsSpec: CommandSpec = {
     const count = Math.max(1, Math.floor(ui?.sourcesCount ?? 2));
     const ports: Port[] = [];
 
-    // single destination coin
     ports.push(ioIn('in_dest', { dataType: O(), label: 'in_dest' }));
-
-    // expanded sources
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioIn(`in_source_${i}`, {
-          dataType: O(),
-          label: `in_source_${i}`,
-        }),
+        ioIn(`in_source_${i}`, { dataType: O(), label: `in_source_${i}` }),
       );
     }
-
     return ports;
   },
 };
 
 /** TransferObjects:
  *  inputs :
- *    - in_object_0..N-1: object (expanded, count = objectsCount, default 1)
  *    - in_recipient: address (single)
+ *    - in_object_0..N-1: object (expanded, count = objectsCount, default 1)
  *  outputs: none
  */
 const transferObjectsSpec: CommandSpec = {
@@ -138,68 +119,94 @@ const transferObjectsSpec: CommandSpec = {
     const count = Math.max(1, Math.floor(ui?.objectsCount ?? 1));
     const ports: Port[] = [];
 
-    // single recipient FIRST (UX-friendly)
+    // Recipient first (UX)
     ports.push(
       ioIn('in_recipient', { dataType: S('address'), label: 'in_recipient' }),
     );
-
-    // expanded objects AFTER recipient
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioIn(`in_object_${i}`, {
-          dataType: O(),
-          label: `in_object_${i}`,
-        }),
+        ioIn(`in_object_${i}`, { dataType: O(), label: `in_object_${i}` }),
       );
     }
-
     return ports;
   },
 };
 
-/** MakeMoveVec:
- *  inputs :
- *    - in_elem_0..N-1: T (expanded, count = elemsCount, default 2)
- *  outputs:
- *    - out_vec: vector<T> (single)
- *  elemType comes from UI (defaults to object).
- */
 const makeMoveVecSpec: CommandSpec = {
   label: 'MakeMoveVec',
   buildIO(ui) {
     const count = Math.max(1, Math.floor(ui?.elemsCount ?? 2));
     const elemT: PTBType = ui?.elemType ?? O();
     const ports: Port[] = [];
-
-    // expanded elems
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioIn(`in_elem_${i}`, {
-          dataType: elemT,
-          label: `in_elem_${i}`,
-        }),
+        ioIn(`in_elem_${i}`, { dataType: elemT, label: `in_elem_${i}` }),
+      );
+    }
+    ports.push(ioOut('out_vec', { dataType: V(elemT), label: 'out_vec' }));
+    return ports;
+  },
+};
+
+/** MoveCall (ABI-driven):
+ * - Generics: SSOT via ui._fnTParams: string[] (we only need length to make handles).
+ * - Inputs/Outputs: from ui._fnIns / ui._fnOuts (PTBType[]), normalized from ABI.
+ */
+const moveCallSpec: CommandSpec = {
+  label: 'MoveCall',
+  buildIO(ui) {
+    const ports: Port[] = [];
+
+    // 1) Type-argument inputs (T0..Tn-1) as scalar<string>
+    const tparams: string[] = Array.isArray((ui as any)?._fnTParams)
+      ? ((ui as any)._fnTParams as string[])
+      : [];
+    const tcount = tparams.length;
+
+    for (let i = 0; i < tcount; i++) {
+      ports.push(
+        ioIn(`in_targ_${i}`, { dataType: S('string'), label: `T${i}` }),
       );
     }
 
-    // single vector output
-    ports.push(ioOut('out_vec', { dataType: V(elemT), label: 'out_vec' }));
+    // 2) Normal inputs (arg0..)
+    const ins: PTBType[] = Array.isArray((ui as any)?._fnIns)
+      ? (ui as any)._fnIns
+      : [];
+    for (let i = 0; i < ins.length; i++) {
+      const t = ins[i]!;
+      ports.push({
+        id: `in_arg_${i}`,
+        role: 'io',
+        direction: 'in',
+        dataType: t,
+        typeStr: serializePTBType ? serializePTBType(t) : undefined,
+        label: `arg${i}`,
+      });
+    }
+
+    // 3) Outputs (ret0..)
+    const outs: PTBType[] = Array.isArray((ui as any)?._fnOuts)
+      ? (ui as any)._fnOuts
+      : [];
+    for (let i = 0; i < outs.length; i++) {
+      const t = outs[i]!;
+      ports.push({
+        id: `out_ret_${i}`,
+        role: 'io',
+        direction: 'out',
+        dataType: t,
+        typeStr: serializePTBType ? serializePTBType(t) : undefined,
+        label: `ret${i}`,
+      });
+    }
 
     return ports;
   },
 };
 
-/** MoveCall:
- *  ABI-driven. Base spec returns no IO. Decoder/factories attach concrete IO ports later.
- */
-const moveCallSpec: CommandSpec = {
-  label: 'MoveCall',
-  buildIO() {
-    return [];
-  },
-};
-
 // -----------------------------------------------------------------------------
-// Graph-only commands (unchanged; still use vector<...> ports for their domain).
+// Graph-only commands (unchanged).
 // -----------------------------------------------------------------------------
 
 /** Publish (graph-only):
@@ -292,15 +299,7 @@ export function buildCommandPorts(
   return [...flow, ...io];
 }
 
-/** Build only IO ports for a command (no flow). */
-export function buildCommandIOPorts(
-  kind: CommandKind,
-  ui?: CommandUIParams,
-): Port[] {
-  return REGISTRY[kind]?.buildIO(ui) ?? [];
-}
-
-/** Command → UI params count key */
+/** Command → UI params count key (for BaseCommand stepper) */
 export function countKeyOf(cmdKind?: string): string | undefined {
   switch (cmdKind) {
     case 'splitCoins':
@@ -316,7 +315,7 @@ export function countKeyOf(cmdKind?: string): string | undefined {
   }
 }
 
-/** Command → Default count (must match registry buildIO defaults) */
+/** Command → Default count (must match registry defaults) */
 export function countDefaultOf(cmdKind?: string): number | undefined {
   switch (cmdKind) {
     case 'splitCoins':

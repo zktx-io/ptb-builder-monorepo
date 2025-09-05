@@ -181,7 +181,7 @@ function stableGraphSig(g: PTBGraph): string {
       // optional fields depending on node kind
       const extra: Record<string, unknown> = {};
       const anyN = n as any;
-      if (anyN.op !== undefined) extra.op = anyN.op; // Command node
+      if (anyN.command !== undefined) extra.command = anyN.command; // Command node
       if (anyN.params !== undefined) extra.params = anyN.params; // Command node params (ui etc.)
       if (anyN.varType !== undefined) extra.varType = anyN.varType; // Variable node
       if (anyN.value !== undefined) extra.value = anyN.value; // Variable node value
@@ -625,12 +625,14 @@ export function PtbProvider({
         const uniquePkgs = Array.from(new Set(pkgIds));
 
         const modsEmbed: Record<string, SuiMoveNormalizedModules> = {};
+        const modsEmbedView: Record<string, PTBModuleData> = {};
         for (const pkg of uniquePkgs) {
           try {
             const m = await localClient.getNormalizedMoveModulesByPackage({
               package: pkg,
             });
             modsEmbed[pkg] = m;
+            modsEmbedView[pkg] = toPTBModuleData(m);
           } catch {
             // ignore per-package failures
           }
@@ -642,7 +644,7 @@ export function PtbProvider({
         setObjectMetas({});
 
         // Decode → PTBGraph
-        const { graph: decoded } = decodeTx(programmable);
+        const { graph: decoded } = decodeTx(programmable, modsEmbedView);
 
         // Replace snapshot (viewer mode) and bump epoch
         replaceGraphImmediate(decoded);

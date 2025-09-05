@@ -1,28 +1,28 @@
 // src/ui/nodes/vars/varUtils.ts
 // Small helpers used by VarNode and other var-related UIs.
 
-import { isVector } from '../../../ptb/graph/typecheck';
 import type { Port, PTBType, VariableNode } from '../../../ptb/graph/types';
 import { serializePTBType } from '../../../ptb/graph/types';
-import { VAR_OUT } from '../../../ptb/portTemplates';
 
 /** Build an IO out port with a human-friendly typeStr hint */
 export function buildOutPort(v?: VariableNode): Port {
-  let typeStrHint: string | undefined;
+  const t = v?.varType;
 
-  if (v?.varType && isVector(v.varType)) {
-    const elemStr = serializePTBType(v.varType.elem);
-    typeStrHint = `vector<${elemStr}>`;
-  } else if (v?.varType) {
-    typeStrHint = serializePTBType(v.varType);
-  }
+  // Ensure we preserve full PTBType including object.typeTag and vector elem tags
+  const dataType: PTBType | undefined = t
+    ? JSON.parse(JSON.stringify(t)) // deep-clone safety if needed
+    : undefined;
+
+  // Optional: human-friendly string for tooltip/badge
+  const typeStr = t ? serializePTBType(t) : undefined; // if you have this helper here
 
   return {
-    id: VAR_OUT,
+    id: 'out', // or VAR_OUT constant your system uses
     role: 'io',
     direction: 'out',
-    dataType: v?.varType,
-    ...(typeStrHint ? { typeStr: typeStrHint } : {}),
+    label: v?.name || 'out',
+    dataType, // ← MUST include object.typeTag / vector elem tags
+    typeStr, // ← UI-only hint
   };
 }
 

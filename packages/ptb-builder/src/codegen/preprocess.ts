@@ -1,47 +1,97 @@
 // src/codegen/preprocess.ts
-// PTB Graph -> IR
-// Single source of truth for:
-//  - Flow analysis (active subgraph + topological order)
-//  - IO edge indexing (by target/source port)
-//  - Variable/command symbol assignments
-//
-// NOTE: This module exports graph helpers so other codegen stages can reuse
-// them without duplicating logic. There is NO dependency on PTBEdge.dataType;
-// all typing decisions are made from per-port PTBType on the node.
 
-import type {
-  CommandNode,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-  PTBType,
-  VariableNode,
+import {
+  type CommandNode,
+  parseHandleTypeSuffix,
+  type PTBGraph,
+  type PTBNode,
+  type VariableNode,
 } from '../ptb/graph/types';
 import type { Chain } from '../types';
-import type {
-  IR,
-  IRHeader,
-  IRInit,
-  IROp,
-  IROpSplitCoins,
-  IROutDestructure,
-  IROutVector,
-  IRVar,
-} from './types';
+import { POp, Program, PValue, PVar } from './types';
 
-/** Extract base port id from a handle id like "in_coin:vector<number>" -> "in_coin". */
-export const basePortId = (h?: string) => {
-  const raw = (h ?? '').trim();
-  if (!raw) return '';
-  const i = raw.indexOf(':');
-  return i === -1 ? raw : raw.slice(0, i);
-};
+// --- Shared helpers (graph-only; no tx/code awareness) ---
+const PLURAL = (base: string) =>
+  /(list|array|vec|ids|coins|addresses|objects|values|amounts)$/i.test(base)
+    ? base
+    : base.toLowerCase().endsWith('y') && !/[aeiou]y$/i.test(base)
+      ? base.slice(0, -1) + 'ies'
+      : base.toLowerCase().endsWith('s')
+        ? base
+        : base + 's';
 
-/* ============================================================================
- * Graph helpers (exported for reuse by generateTsSdkCode/builders)
- * ==========================================================================*/
+// Reserved identifiers and words we should not emit verbatim
+const RESERVED = new Set([
+  'var',
+  'let',
+  'const',
+  'function',
+  'class',
+  'extends',
+  'super',
+  'return',
+  'export',
+  'import',
+  'default',
+  'if',
+  'else',
+  'switch',
+  'case',
+  'for',
+  'while',
+  'do',
+  'break',
+  'continue',
+  'new',
+  'delete',
+  'try',
+  'catch',
+  'finally',
+  'in',
+  'of',
+  'void',
+  'await',
+  'async',
+  'yield',
+  'with',
+  'enum',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+  // project locals:
+  'tx',
+  'SUI',
+  'myAddress',
+]);
 
-/** Forward/reverse adjacency for flow edges. */
+class NamePool {
+  private used = new Set<string>();
+  constructor(reserved: string[] = []) {
+    reserved.forEach((n) => this.used.add(n));
+    RESERVED.forEach((n) => this.used.add(n)); // avoid claiming exact reserved names
+  }
+  claim(raw: string) {
+    // sanitize
+    let base = (raw || 'val').replace(/[^A-Za-z0-9_]/g, '_') || 'val';
+
+    // avoid reserved exact match by suffixing _id
+    if (RESERVED.has(base)) base = `${base}_id`;
+
+    // enforce numbered style: ensure trailing _\d+ always exists
+    if (!/_\d+$/.test(base)) base = `${base}_0`;
+
+    // allocate unique by bumping the trailing number
+    while (this.used.has(base)) {
+      base = base.replace(/_(\d+)$/, (_, n) => `_${Number(n) + 1}`);
+    }
+    this.used.add(base);
+    return base;
+  }
+}
+
 export function flowAdj(graph: PTBGraph) {
   const fwd = new Map<string, string[]>(),
     rev = new Map<string, string[]>();
@@ -57,9 +107,9 @@ export function flowAdj(graph: PTBGraph) {
   return { fwd, rev };
 }
 
-function reach(startIds: string[], adj: Map<string, string[]>) {
+function reach(starts: string[], adj: Map<string, string[]>) {
   const seen = new Set<string>(),
-    q = [...startIds];
+    q = [...starts];
   while (q.length) {
     const id = q.shift()!;
     if (seen.has(id)) continue;
@@ -69,8 +119,7 @@ function reach(startIds: string[], adj: Map<string, string[]>) {
   return seen;
 }
 
-/** Nodes that lie on some Start → … → End path. */
-export function activeFlowIds(graph: PTBGraph): Set<string> {
+export function activeFlowIds(graph: PTBGraph) {
   const starts = graph.nodes.filter((n) => n.kind === 'Start').map((n) => n.id);
   const ends = graph.nodes.filter((n) => n.kind === 'End').map((n) => n.id);
   const { fwd, rev } = flowAdj(graph);
@@ -81,8 +130,7 @@ export function activeFlowIds(graph: PTBGraph): Set<string> {
   return active;
 }
 
-/** Stable topological-like order restricted to active nodes. */
-export function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
+export function orderActive(graph: PTBGraph, active: Set<string>) {
   const idToNode = new Map(graph.nodes.map((n) => [n.id, n]));
   const indeg = new Map<string, number>(),
     children = new Map<string, string[]>();
@@ -97,17 +145,14 @@ export function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
         indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
       }
     }
-
-  // Prefer Start nodes first among zero-indegree
+  // start first
   const q: string[] = [];
   for (const id of active) {
     const n = idToNode.get(id);
     if ((indeg.get(id) ?? 0) === 0 && n?.kind === 'Start') q.push(id);
   }
-  // Then any other zero-indegree
   for (const id of active)
     if ((indeg.get(id) ?? 0) === 0 && !q.includes(id)) q.push(id);
-
   const out: string[] = [],
     seen = new Set<string>();
   while (q.length) {
@@ -123,46 +168,20 @@ export function orderActive(graph: PTBGraph, active: Set<string>): PTBNode[] {
   return out.map((id) => idToNode.get(id)!).filter(Boolean);
 }
 
-/** Index all IO edges by target/source port (using base port id from handle). */
-export function buildIoIndex(edges: PTBEdge[]) {
+export function buildIoIndex(edges: PTBGraph['edges']) {
   const io = edges.filter((e) => e.kind === 'io');
-  const byTarget = new Map<string, Map<string, PTBEdge[]>>();
-  const bySource = new Map<string, Map<string, PTBEdge[]>>();
+  const byTarget = new Map<string, Map<string, typeof io>>();
   for (const e of io) {
     if (!byTarget.has(e.target)) byTarget.set(e.target, new Map());
-    if (!bySource.has(e.source)) bySource.set(e.source, new Map());
-    const mt = byTarget.get(e.target)!,
-      ms = bySource.get(e.source)!;
-
-    const tgtPortId = basePortId((e as any).targetHandle);
-    const srcPortId = basePortId((e as any).sourceHandle);
-
-    if (tgtPortId) mt.set(tgtPortId, [...(mt.get(tgtPortId) ?? []), e]);
-    if (srcPortId) ms.set(srcPortId, [...(ms.get(srcPortId) ?? []), e]);
+    const mt = byTarget.get(e.target)!;
+    const tgtBase = parseHandleTypeSuffix((e as any).targetHandle).baseId;
+    if (tgtBase) mt.set(tgtBase, [...(mt.get(tgtBase) ?? []), e]);
   }
-  return { byTarget, bySource, ioEdges: io };
+  return { byTarget, ioEdges: io };
 }
 
-/* ============================================================================
- * Small utilities
- * ==========================================================================*/
-
-const SAFE = (s: string, fb: string) =>
-  (s ?? '').trim().replace(/[^A-Za-z0-9_]/g, '_') || fb;
-
-const PLURAL = (base: string) => {
-  if (
-    /(list|array|vec|ids|coins|addresses|objects|values|amounts)$/i.test(base)
-  )
-    return base;
-  const lower = base.toLowerCase();
-  if (lower.endsWith('y') && !/[aeiou]y$/i.test(base))
-    return base.slice(0, -1) + 'ies';
-  if (lower.endsWith('s')) return base;
-  return base + 's';
-};
-
-function isMyWalletVariable(v: VariableNode): boolean {
+// ---- variable & value builders (no tx, no code) ----
+function isMyWalletVariable(v: VariableNode) {
   if (v.varType?.kind !== 'scalar' || v.varType.name !== 'address')
     return false;
   const name = (v.name || '').toLowerCase();
@@ -174,35 +193,16 @@ function isMyWalletVariable(v: VariableNode): boolean {
   );
 }
 
-function objectInitFromVar(v: VariableNode): IRInit {
-  const name = (v.name || '').toLowerCase();
-  const val = (v as any).value as string | undefined;
-  const tag =
-    v.varType?.kind === 'object' ? (v.varType.typeTag || '').toLowerCase() : '';
-
-  if (name.includes('gas') || val === 'gas')
-    return { kind: 'object', special: 'gas' };
-  if (name.includes('system') || tag.includes('sui_system'))
-    return { kind: 'object', special: 'system' };
-  if (name.includes('clock') || tag.endsWith('::clock::clock'))
-    return { kind: 'object', special: 'clock' };
-  if (name.includes('random') || tag.endsWith('::random::random'))
-    return { kind: 'object', special: 'random' };
-  return { kind: 'object', id: String(val ?? '') };
-}
-
-function initFromVar(v: VariableNode): IRInit {
+function toPValueFromVar(v: VariableNode): PValue {
   const t = v.varType;
   const val = (v as any).value;
   if (!t) return { kind: 'scalar', value: '' };
-
   switch (t.kind) {
-    case 'scalar': {
-      if (t.name === 'address') {
-        if (isMyWalletVariable(v))
-          return { kind: 'scalar', value: 'myAddress' }; // sentinel
-        return { kind: 'scalar', value: String(val ?? '') };
-      }
+    case 'scalar':
+      if (t.name === 'address')
+        return isMyWalletVariable(v)
+          ? { kind: 'scalar', value: 'myAddress' }
+          : { kind: 'scalar', value: String(val ?? '') };
       if (t.name === 'string')
         return { kind: 'scalar', value: String(val ?? '') };
       if (t.name === 'bool')
@@ -210,26 +210,42 @@ function initFromVar(v: VariableNode): IRInit {
       if (t.name === 'number')
         return { kind: 'move_numeric', value: Number(val ?? 0) };
       return { kind: 'scalar', value: '' };
-    }
     case 'move_numeric':
       return { kind: 'move_numeric', value: Number(val ?? 0) };
-    case 'object':
-      return objectInitFromVar(v);
+    case 'object': {
+      const name = (v.name || '').toLowerCase();
+      let tag = '';
+      if (t.kind === 'object') {
+        tag = (t.typeTag ?? '').toLowerCase();
+      }
+      const s = (v as any).value as string | undefined;
+      if (name.includes('gas') || s === 'gas')
+        return { kind: 'object', special: 'gas' };
+      if (name.includes('system') || tag.includes('sui_system'))
+        return { kind: 'object', special: 'system' };
+      if (name.includes('clock') || tag.endsWith('::clock::clock'))
+        return { kind: 'object', special: 'clock' };
+      if (name.includes('random') || tag.endsWith('::random::random'))
+        return { kind: 'object', special: 'random' };
+      return { kind: 'object', id: String(s ?? '') };
+    }
     case 'vector': {
       const items = Array.isArray(val) ? val : [];
-      const elem: IRInit[] = items.map((x) => {
-        if (t.elem.kind === 'move_numeric')
-          return { kind: 'move_numeric', value: x as any };
-        if (t.elem.kind === 'scalar') {
-          if (t.elem.name === 'bool')
-            return { kind: 'scalar', value: Boolean(x) };
-          return { kind: 'scalar', value: String(x) };
-        }
-        if (t.elem.kind === 'object')
-          return { kind: 'object', id: String(x ?? '') };
-        return { kind: 'scalar', value: String(x ?? '') };
-      });
-      return { kind: 'vector', items: elem };
+      return {
+        kind: 'vector',
+        items: items.map((x) => {
+          if (t.elem.kind === 'move_numeric')
+            return { kind: 'move_numeric', value: x as any };
+          if (t.elem.kind === 'scalar') {
+            if (t.elem.name === 'bool')
+              return { kind: 'scalar', value: Boolean(x) };
+            return { kind: 'scalar', value: String(x) };
+          }
+          if (t.elem.kind === 'object')
+            return { kind: 'object', id: String(x ?? '') };
+          return { kind: 'scalar', value: String(x ?? '') };
+        }),
+      };
     }
     case 'tuple':
       return {
@@ -244,52 +260,43 @@ function initFromVar(v: VariableNode): IRInit {
   }
 }
 
-/* ============================================================================
- * Main transform: PTBGraph -> IR
- * ==========================================================================*/
+export function preprocess(graph: PTBGraph, chain: Chain): Program {
+  const header = { usedMyAddress: false, usedSuiTypeConst: false };
 
-export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
-  const header: IRHeader = { usedMyAddress: false, usedSuiTypeConst: false };
-
-  // Active subgraph + order
   const active = activeFlowIds(graph);
   const ordered = orderActive(graph, active);
   const idToNode = new Map(graph.nodes.map((n) => [n.id, n]));
-  const { byTarget } = buildIoIndex(graph.edges);
+  const { byTarget, ioEdges } = buildIoIndex(graph.edges);
 
-  // OUT port -> symbols registry
-  const portSyms = new Map<string, string[]>(); // `${nodeId}:${portId}` -> string[]
-
-  // Vars used by active commands
-  const irVars: IRVar[] = [];
+  // variables used by active commands
   const usedVarIds = new Set<string>();
-  for (const e of graph.edges) {
-    if (e.kind !== 'io') continue;
+  for (const e of ioEdges) {
     if (!active.has(e.target)) continue;
-    const srcNode = idToNode.get(e.source);
-    if (srcNode?.kind === 'Variable') usedVarIds.add(srcNode.id);
+    const src = idToNode.get(e.source);
+    if (src?.kind === 'Variable') usedVarIds.add(src.id);
   }
 
-  // Emit variables and map their OUT ports -> symbol(s)
+  // symbol map for OUT ports
+  const portSyms = new Map<string, string[]>(); // `${nodeId}:${portId}` -> string[]
+
+  const vars: PVar[] = [];
+  const names = new NamePool(['tx', 'SUI', 'myAddress']);
+
+  // emit variables
   let varAuto = 1;
   for (const n of graph.nodes) {
     if (!usedVarIds.has(n.id)) continue;
     const v = n as VariableNode;
 
-    let base = SAFE(v.name || '', `val_${varAuto++}`);
+    let base = (v.name || '').trim() || `val_${varAuto++}`;
     if (v.varType?.kind === 'vector') base = PLURAL(base);
-    const sym = base;
+    const sym = names.claim(base);
 
-    const init = initFromVar(v);
-    if (
-      (init.kind === 'scalar' && init.value === 'myAddress') ||
-      (v.varType?.kind === 'scalar' &&
-        v.varType.name === 'address' &&
-        isMyWalletVariable(v))
-    ) {
+    const init = toPValueFromVar(v);
+    if (init.kind === 'scalar' && init.value === 'myAddress')
       header.usedMyAddress = true;
-    }
-    irVars.push({ name: sym, init });
+
+    vars.push({ name: sym, init });
 
     for (const p of v.ports || []) {
       if (p.role === 'io' && p.direction === 'out') {
@@ -298,50 +305,46 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
     }
   }
 
-  const irOps: IROp[] = [];
-  let splitSeq = 0;
-
-  // Helper: gather inputs per IN port as arrays of symbols
-  function collect(node: PTBNode) {
-    const byPort = new Map<string, string[]>();
-    const ports = (node.ports || []).filter(
+  // helper: collect IN-port inputs as symbol refs or literals
+  const collect = (node: PTBNode) => {
+    const byPort = new Map<string, PValue[]>();
+    const inPorts = (node.ports || []).filter(
       (p) => p.role === 'io' && p.direction === 'in',
     );
-    for (const p of ports) {
+    for (const p of inPorts) {
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
-      const arr: string[] = [];
+      const arr: PValue[] = [];
       for (const e of edges) {
-        // Map is keyed by target base port id; for source side, read from OUT mapping by base of handle.
-        const key = `${e.source}:${basePortId((e as any).sourceHandle)}`;
-        const syms = portSyms.get(key) ?? [];
-        if (syms.length) arr.push(...syms);
+        const srcBase = parseHandleTypeSuffix((e as any).sourceHandle).baseId;
+        if (!srcBase) continue;
+        const srcKey = `${e.source}:${srcBase}`;
+        const syms = portSyms.get(srcKey) ?? [];
+        for (const s of syms) arr.push({ kind: 'ref', name: s });
       }
       byPort.set(p.id, arr);
     }
     return byPort;
-  }
+  };
 
-  // Process active commands in order
+  const ops: POp[] = [];
+  let splitSeq = 0;
+
   for (const node of ordered) {
     if (node.kind !== 'Command') continue;
     const c = node as CommandNode;
-    const byPort = collect(c);
+    const byPortVals = collect(c);
 
     switch (c.command) {
       case 'splitCoins': {
         splitSeq += 1;
-
-        // coin: first IN port values
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
-        const coinSyms = inPorts.length
-          ? (byPort.get(inPorts[0].id) ?? [])
-          : [];
-        const coin = coinSyms[0] ?? 'tx.gas';
-
-        // amounts: explicit grouped label or remaining inputs
-        const amountsPort = (c.ports || []).find(
+        const coin = (inPorts.length
+          ? (byPortVals.get(inPorts[0].id) ?? [])
+          : [])[0] ?? { kind: 'object', special: 'gas' };
+        let amounts: PValue[] = [];
+        const grouped = (c.ports || []).find(
           (p) =>
             p.role === 'io' &&
             p.direction === 'in' &&
@@ -349,44 +352,41 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
               p.id === 'amounts' ||
               p.id.startsWith('in_amount_')),
         )?.id;
-        let rawAmounts: string[] = [];
-        if (amountsPort) {
-          // If there is a grouped "amounts" port, take it; otherwise fall back to per-index inputs.
-          rawAmounts = byPort.get(amountsPort) ?? [];
-          if (!rawAmounts.length && inPorts.length > 1) {
-            rawAmounts = inPorts
+        if (grouped) {
+          amounts = byPortVals.get(grouped) ?? [];
+          if (!amounts.length && inPorts.length > 1) {
+            amounts = inPorts
               .slice(1)
-              .flatMap((p) => byPort.get(p.id) ?? []);
+              .flatMap((p) => byPortVals.get(p.id) ?? []);
           }
         } else {
-          rawAmounts = inPorts.slice(1).flatMap((p) => byPort.get(p.id) ?? []);
+          amounts = inPorts.slice(1).flatMap((p) => byPortVals.get(p.id) ?? []);
         }
 
-        // output arity by real out IO port count
         const outs = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'out',
         );
-        const arity = Math.max(outs.length, 0);
-
-        if (arity > 1) {
-          const names: string[] = outs.map((_, i) => `cmd_${splitSeq}_${i}`);
-          const op: IROpSplitCoins = {
+        if (outs.length > 1) {
+          const namesOut = outs.map((_, i) =>
+            names.claim(`out_${splitSeq}_${i}`),
+          );
+          ops.push({
             kind: 'splitCoins',
             coin,
-            amounts: rawAmounts,
-            out: { mode: 'destructure', names } as IROutDestructure,
-          };
-          irOps.push(op);
-          outs.forEach((p, i) => portSyms.set(`${c.id}:${p.id}`, [names[i]]));
+            amounts,
+            out: { mode: 'destructure', names: namesOut },
+          });
+          outs.forEach((p, i) =>
+            portSyms.set(`${c.id}:${p.id}`, [namesOut[i]]),
+          );
         } else {
-          const arrName = 'coins';
-          const op: IROpSplitCoins = {
+          const arrName = names.claim('out');
+          ops.push({
             kind: 'splitCoins',
             coin,
-            amounts: rawAmounts,
-            out: { mode: 'vector', name: arrName } as IROutVector,
-          };
-          irOps.push(op);
+            amounts,
+            out: { mode: 'vector', name: arrName },
+          });
           const out0 = (c.ports || []).find(
             (p) => p.role === 'io' && p.direction === 'out',
           );
@@ -399,113 +399,124 @@ export function preprocessToIR(graph: PTBGraph, chain: Chain): IR {
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
-        const destSyms = inPorts.length
-          ? (byPort.get(inPorts[0].id) ?? [])
-          : [];
-        const destination = destSyms[0] ?? 'tx.gas';
-        const sources = inPorts.slice(1).flatMap((p) => byPort.get(p.id) ?? []);
-        irOps.push({ kind: 'mergeCoins', destination, sources });
+        const destination = (inPorts.length
+          ? (byPortVals.get(inPorts[0].id) ?? [])
+          : [])[0] ?? { kind: 'object', special: 'gas' };
+        const sources = inPorts
+          .slice(1)
+          .flatMap((p) => byPortVals.get(p.id) ?? []);
+        ops.push({ kind: 'mergeCoins', destination, sources });
         break;
       }
 
       case 'transferObjects': {
-        // Robust recipient detection: label/id/ptype
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
-        let recipient: string | undefined;
-        const objects: string[] = [];
+
+        const HINTS = ['recipient', 'to', 'addr', 'address', 'owner'];
+
+        const objects: PValue[] = [];
+        let recipient: PValue | undefined;
+
+        // 1) Name/label-based detection first
         for (const p of inPorts) {
-          const t = p.dataType;
-          const vals = byPort.get(p.id) ?? [];
-          const label = (p.label || '').toLowerCase();
-          const pid = (p.id || '').toLowerCase();
-
-          const isRecipientByName =
-            label === 'recipient' ||
-            label === 'in_recipient' ||
-            pid === 'in_recipient' ||
-            pid.endsWith(':recipient'); // defensive
-
-          if (isRecipientByName) {
-            if (!recipient && vals.length) recipient = vals[0];
+          const vals = byPortVals.get(p.id) ?? [];
+          const name = ((p.label || p.id || '') + '').toLowerCase();
+          const hinted = HINTS.some((h) => name.includes(h));
+          if (hinted && !recipient && vals.length) {
+            recipient = vals[0];
             continue;
           }
+        }
 
-          const isAddressPort = t?.kind === 'scalar' && t.name === 'address';
-          if (isAddressPort) {
-            if (!recipient && vals.length) recipient = vals[0];
+        // 2) Type-based (address-typed IN port)
+        if (!recipient) {
+          for (const p of inPorts) {
+            const vals = byPortVals.get(p.id) ?? [];
+            const isAddressPort =
+              p.dataType?.kind === 'scalar' && p.dataType.name === 'address';
+            if (isAddressPort && !recipient && vals.length) {
+              recipient = vals[0];
+              break;
+            }
+          }
+        }
+
+        // 3) Everything not the recipient is objects
+        for (const p of inPorts) {
+          const vals = byPortVals.get(p.id) ?? [];
+          const name = ((p.label || p.id || '') + '').toLowerCase();
+          const hinted = HINTS.some((h) => name.includes(h));
+          const isAddressPort =
+            p.dataType?.kind === 'scalar' && p.dataType.name === 'address';
+
+          // skip the one we already took as recipient
+          if (
+            (hinted || isAddressPort) &&
+            recipient &&
+            vals.length &&
+            vals[0] === recipient
+          ) {
             continue;
           }
-
-          // Everything else counts as objects (e.g., in_object_0..N-1)
           objects.push(...vals);
         }
 
+        // 4) Fallback to myAddress sentinel only if still missing
         if (!recipient) {
-          recipient = 'myAddress'; // sentinel → header flag
+          recipient = { kind: 'scalar', value: 'myAddress' };
           header.usedMyAddress = true;
         }
-        irOps.push({ kind: 'transferObjects', objects, recipient });
+
+        ops.push({ kind: 'transferObjects', objects, recipient });
         break;
       }
 
       case 'makeMoveVec': {
-        const elems = (c.ports || [])
+        const elements = (c.ports || [])
           .filter((p) => p.role === 'io' && p.direction === 'in')
-          .flatMap((p) => byPort.get(p.id) ?? []);
+          .flatMap((p) => byPortVals.get(p.id) ?? []);
+        const out = names.claim('out');
+        ops.push({
+          kind: 'makeMoveVec',
+          elements,
+          out,
+          elemType: (c.params as any)?.ui?.elemType,
+        });
         const outPort = (c.ports || []).find(
           (p) => p.role === 'io' && p.direction === 'out',
         );
-        const outSym = 'vec';
-
-        irOps.push({
-          kind: 'makeMoveVec',
-          elements: elems,
-          out: outSym,
-          elemType: (c.params as any)?.ui?.elemType as PTBType | undefined,
-        });
-
-        if (outPort) portSyms.set(`${c.id}:${outPort.id}`, [outSym]);
+        if (outPort) portSyms.set(`${c.id}:${outPort.id}`, [out]);
         break;
       }
 
       case 'moveCall': {
+        const uiAny = (c.params as any)?.ui ?? {};
+        const rtAny = (c.params as any)?.runtime ?? {};
         const target =
-          (c.params as any)?.runtime?.target ?? '0x1::module::func';
-        const typeArgs: string[] = [];
-        const args: string[] = [];
+          rtAny.target ??
+          (uiAny.pkgId && uiAny.module && uiAny.func
+            ? `${uiAny.pkgId}::${uiAny.module}::${uiAny.func}`
+            : '/* pkg::module::function */');
 
+        const typeArgs: PValue[] = [];
+        const args: PValue[] = [];
         for (const p of c.ports || []) {
           if (p.role !== 'io' || p.direction !== 'in') continue;
-          const incoming = byPort.get(p.id) ?? [];
-          if ((p.dataType?.kind ?? '') === 'typeparam') {
-            const ts =
-              p.typeStr ||
-              (p.dataType?.kind === 'typeparam'
-                ? p.dataType.name
-                : undefined) ||
-              '/* T */';
-            typeArgs.push(ts);
-          } else {
-            args.push(...incoming);
-          }
+          const incoming = byPortVals.get(p.id) ?? [];
+          if (p.id.startsWith('in_targ_')) typeArgs.push(...incoming);
+          else args.push(...incoming);
         }
-
-        irOps.push({ kind: 'moveCall', target, typeArgs, args });
+        ops.push({ kind: 'moveCall', target, typeArgs, args });
         break;
       }
 
       default:
-        // Skip unsupported commands in IR
+        // ignore
         break;
     }
   }
 
-  return {
-    chain,
-    header,
-    vars: irVars,
-    ops: irOps,
-  };
+  return { chain, header, vars, ops };
 }

@@ -283,54 +283,6 @@ export const VarNode = memo(function VarNode({
 
   const title = (data?.label ?? v?.label ?? 'variable').trim();
 
-  // Helpers to render editors
-  const renderScalarEditor = (
-    tKind = varType?.kind,
-    tName = (varType as any)?.name,
-  ) => {
-    if (tKind === 'scalar' && tName === 'bool') {
-      return (
-        <SelectBool
-          value={(v as any)?.value as boolean | undefined}
-          onChange={(val) => {
-            if (!canEdit) return;
-            patchVar({ value: val });
-          }}
-          disabled={!canEdit}
-        />
-      );
-    }
-    return (
-      <>
-        <TextInput
-          value={scalarBuf}
-          placeholder={placeholderFor(varType)}
-          onChange={(e) => {
-            const s = e.target.value;
-            setScalarBuf(s);
-            if (!canEdit) return;
-
-            if (varType?.kind === 'object') {
-              debouncedHandleObject(s);
-            } else {
-              debouncedPatchScalar(s);
-            }
-          }}
-          disabled={!canEdit}
-        />
-        {varType?.kind === 'object' && (
-          <TextInput
-            value={(varType as any)?.typeTag || ''}
-            placeholder={objTypeLoading ? 'Loading type…' : 'type (read-only)'}
-            readOnly
-            aria-readonly="true"
-            onChange={() => {}}
-          />
-        )}
-      </>
-    );
-  };
-
   const renderVectorEditor = (elemT = vectorElem(varType)) => {
     const isBoolElem = elemT?.kind === 'scalar' && elemT.name === 'bool';
     return (

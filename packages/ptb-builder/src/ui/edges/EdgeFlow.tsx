@@ -1,4 +1,4 @@
-// src/ui/edges/FlowEdge.tsx
+// src/ui/edges/EdgeFlow.tsx
 
 import React, { memo, useMemo } from 'react';
 
@@ -10,7 +10,7 @@ import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
  * - Wide interactionWidth for easy click/hover
  * - CSS classes control visual states
  */
-export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
+export const EdgeFlow = memo(function EdgeFlow(props: EdgeProps) {
   const {
     id,
     sourceX,
@@ -52,4 +52,4 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   );
 });
 
-export default FlowEdge;
+export default EdgeFlow;

@@ -4,6 +4,7 @@ import type { Connection } from '@xyflow/react';
 
 import type { Port, PTBType } from '../../ptb/graph/types';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
+import { buildOutPort } from '../nodes/vars/varUtils';
 
 /** Read handle id from v12 (...HandleId) or v11 (...Handle); null-safe. */
 function getSourceHandle(c: Connection): string | undefined {
@@ -41,11 +42,23 @@ export function findPortFromStore(
   if (!nodeId || !handleIdStr) return undefined;
   const rfNode = nodes.find((n) => n.id === nodeId);
   const ptbNode = rfNode?.data?.ptbNode;
-  if (!ptbNode?.ports) return undefined;
+  if (!ptbNode) return undefined;
 
   const { baseId } = parseHandleTypeSuffix(handleIdStr);
   if (!baseId) return undefined;
-  return ptbNode.ports.find((pp: Port) => pp.id === baseId);
+
+  // 1) Try declared ports
+  const ports: Port[] = Array.isArray(ptbNode.ports) ? ptbNode.ports : [];
+  let port = ports.find((pp: Port) => pp.id === baseId);
+  if (port?.dataType) return port;
+
+  // 2) Fallback: Variable nodes may not carry a fresh ports array → rebuild.
+  if (ptbNode.kind === 'Variable') {
+    const rebuilt = buildOutPort(ptbNode as any);
+    if (rebuilt.id === baseId) return rebuilt;
+  }
+
+  return port;
 }
 
 /** IO: true if the exact target handle is already occupied by another IO edge. */
@@ -54,12 +67,19 @@ export function isIOTargetBusy(edges: any[], c: Connection) {
   const tHandle = getTargetHandle(c);
   if (!tHandle) return false;
 
+  const tBase = parseHandleTypeSuffix(tHandle).baseId;
+
   return edges?.some((e: any) => {
+    if (e.type !== 'ptb-io' || e.target !== tgt) return false;
+
     const eh =
       ((e as any).targetHandleId as string | null | undefined) ??
       ((e as any).targetHandle as string | null | undefined);
     const eTargetHandle = eh ?? undefined;
-    return e.type === 'ptb-io' && e.target === tgt && eTargetHandle === tHandle;
+    if (!eTargetHandle) return false;
+
+    const eBase = parseHandleTypeSuffix(eTargetHandle).baseId;
+    return eBase && tBase && eBase === tBase;
   });
 }
 

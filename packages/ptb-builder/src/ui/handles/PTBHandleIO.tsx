@@ -15,6 +15,7 @@ import {
   findPortTypeFromStore,
   hasConcreteEnds,
   isIOTargetBusy,
+  isSelfEdge,
 } from './handleUtils';
 import {
   ioCategoryOf,
@@ -77,6 +78,7 @@ export function PTBHandleIO({
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
     const c = edgeOrConn as Connection;
     if (!hasConcreteEnds(c)) return false;
+    if (isSelfEdge(c)) return false;
     if (isIOTargetBusy(edges, c)) return false;
 
     const srcT = findPortTypeFromStore(nodes, c.source!, c.sourceHandle as any);
@@ -85,6 +87,34 @@ export function PTBHandleIO({
 
     return isTypeCompatible(srcT, dstT);
   };
+
+  /**
+   * Build a human-friendly tooltip for this handle.
+   * - Prefer structured types (incl. object typeTag)
+   * - Fall back to serialized type string
+   * - For unknown, show ONLY debugInfo (if provided), otherwise "unknown"
+   */
+  const typeTooltip = useMemo(() => {
+    const t = port.dataType;
+
+    // Unknown → show debugInfo only
+    if (!t || t.kind === 'unknown') {
+      const dbg = (t as any)?.debugInfo;
+      return typeof dbg === 'string' && dbg.trim().length > 0 ? dbg : 'unknown';
+    }
+
+    // object and vector<object> get readable forms using typeTag
+    if (t.kind === 'object') {
+      return t.typeTag ? `object<${t.typeTag}>` : 'object';
+    }
+    if (t.kind === 'vector' && t.elem?.kind === 'object') {
+      const tt = (t.elem as any)?.typeTag;
+      return tt ? `vector<object<${tt}>>` : 'vector<object>';
+    }
+
+    // everything else: use serialized fallback (e.g., vector<u64>, number, bool)
+    return serializePTBType(t) || undefined;
+  }, [port.dataType]);
 
   const isLeft = position === Position.Left;
   const colorVarName = `--ptb-io-${category}-stroke`;
@@ -118,6 +148,14 @@ export function PTBHandleIO({
             }),
         ...(style || {}),
       }}
+      // Native tooltip for quick inspection (+ rich unknown debug)
+      title={typeTooltip}
+      aria-label={
+        typeTooltip ? `handle ${port.id} (${typeTooltip})` : `handle ${port.id}`
+      }
+      data-ptb-type={typeTooltip}
+      data-ptb-debug-category={category}
+      data-ptb-debug-serialized={serializedHint || ''}
       isValidConnection={isValidConnection}
     >
       {isVector && (
@@ -126,6 +164,7 @@ export function PTBHandleIO({
           style={{
             background: `var(${colorVarName}, var(--ptb-io-unknown-stroke))`,
           }}
+          title={typeTooltip} // also on glyph (in case mouse hits the glyph)
         />
       )}
       {label ? (
@@ -136,6 +175,7 @@ export function PTBHandleIO({
             marginRight: !isLeft ? labelGap : undefined,
           }}
           data-ptb-handle-label={port.id}
+          title={typeTooltip} // tooltip on label too
         >
           {label}
         </div>

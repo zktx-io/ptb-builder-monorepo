@@ -2,7 +2,11 @@
 
 // -----------------------------------------------------------------------------
 // Canonical PTB type factories. Single source of truth.
-// tx.pure aligned: scalar, move_numeric, object, vector, option, tuple, typeparam
+// tx.pure aligned: scalar, move_numeric, object, vector, option, tuple
+// NOTE:
+// - 'typeparam' factory is REMOVED by policy. Generics are resolved via
+//   typeArguments: string[] and never appear as PTBType.
+// - 'option' is kept for future but resolver should NOT emit it now.
 // -----------------------------------------------------------------------------
 
 import type { NumericWidth, PTBScalar, PTBType } from './types';
@@ -23,14 +27,11 @@ export const O = (typeTag?: string): PTBType =>
 /** Vector type factory */
 export const V = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
 
-/** Option type factory */
+/** Option type factory (kept for future; not emitted by resolver now) */
 export const Opt = (elem: PTBType): PTBType => ({ kind: 'option', elem });
 
 /** Tuple type factory */
-export const Tup = (...elems: PTBType[]): PTBType => ({ kind: 'tuple', elems });
-
-/** Type-parameter factory (e.g., "T0") */
-export const T = (name = 'T0'): PTBType => ({ kind: 'typeparam', name });
+export const T = (...elems: PTBType[]): PTBType => ({ kind: 'tuple', elems });
 
 /** Unknown type factory */
 export const Unknown = (): PTBType => ({ kind: 'unknown' });
@@ -50,8 +51,6 @@ export function labelFromType(t: PTBType): string {
       return `option<${labelFromType(t.elem)}>`;
     case 'tuple':
       return `(${t.elems.map(labelFromType).join(',')})`;
-    case 'typeparam':
-      return t.name;
     case 'unknown':
     default:
       return 'unknown';
@@ -64,6 +63,5 @@ export const moveNumeric = M;
 export const object = O;
 export const vector = V;
 export const option = Opt;
-export const tuple = Tup;
-export const typeParam = T;
+export const tuple = T;
 export const unknown = Unknown;

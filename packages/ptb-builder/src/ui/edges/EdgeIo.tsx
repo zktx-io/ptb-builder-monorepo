@@ -1,4 +1,4 @@
-// src/ui/edges/IoEdge.tsx
+// src/ui/edges/EdgeIo.tsx
 
 import React, { memo, useMemo } from 'react';
 
@@ -14,7 +14,7 @@ import type { RFEdgeData } from '../../ptb/ptbAdapter';
  * - Categorizes edge by serialized type for CSS styling
  * - Memoized to avoid re-render noise
  */
-export const IoEdge = memo(function IoEdge(props: EdgeProps) {
+export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
   const {
     id,
     sourceX,
@@ -49,7 +49,7 @@ export const IoEdge = memo(function IoEdge(props: EdgeProps) {
 
   const srcType = parseHandleTypeSuffix(srcH).typeStr;
   const tgtType = parseHandleTypeSuffix(tgtH).typeStr;
-  const serializedType = srcType ?? tgtType ?? edgeData?.dataType;
+  const serializedType = edgeData?.dataType ?? srcType ?? tgtType;
   const cat = ioCategoryOfSerialized(serializedType);
 
   return (
@@ -69,4 +69,4 @@ export const IoEdge = memo(function IoEdge(props: EdgeProps) {
   );
 });
 
-export default IoEdge;
+export default EdgeIo;
