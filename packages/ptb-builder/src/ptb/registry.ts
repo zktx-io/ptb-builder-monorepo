@@ -180,7 +180,7 @@ const moveCallSpec: CommandSpec = {
         role: 'io',
         direction: 'in',
         dataType: t,
-        typeStr: serializePTBType ? serializePTBType(t) : undefined,
+        typeStr: serializePTBType(t),
         label: `arg${i}`,
       });
     }
@@ -196,7 +196,7 @@ const moveCallSpec: CommandSpec = {
         role: 'io',
         direction: 'out',
         dataType: t,
-        typeStr: serializePTBType ? serializePTBType(t) : undefined,
+        typeStr: serializePTBType(t),
         label: `ret${i}`,
       });
     }

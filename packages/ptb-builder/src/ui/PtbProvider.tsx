@@ -27,7 +27,6 @@ import React, {
 import {
   getFullnodeUrl,
   SuiClient,
-  type SuiMoveNormalizedModules,
   type SuiObjectData,
   type SuiObjectResponse,
 } from '@mysten/sui/client';
@@ -36,9 +35,15 @@ import type { Transaction } from '@mysten/sui/transactions';
 import type { ExecOptions } from '../codegen/types';
 import { decodeTx } from '../ptb/decodeTx';
 import type { PTBGraph } from '../ptb/graph/types';
-import { toPTBModuleData } from '../ptb/move/normalize';
-import { PTBModuleData } from '../ptb/move/types';
-import { buildDoc, type PTBDoc } from '../ptb/ptbDoc';
+import { toPTBModuleData } from '../ptb/move/toPTBModuleData';
+import {
+  buildDoc,
+  type PTBDoc,
+  PTBFunctionData,
+  PTBModulesEmbed,
+  PTBObjectData,
+  PTBObjectsEmbed,
+} from '../ptb/ptbDoc';
 import {
   KNOWN_IDS,
   seedDefaultGraph,
@@ -49,8 +54,8 @@ import type { Chain, Theme, ToastAdapter } from '../types';
 // ===== Context shape ==========================================================
 
 export type PtbContextValue = {
-  graph: PTBGraph; // last persisted PTB snapshot (RF → PTB)
-  setGraph: (g: PTBGraph) => void; // debounced persist hook
+  graph: PTBGraph;
+  setGraph: (g: PTBGraph) => void;
 
   // Runtime flags
   chain: Chain;
@@ -60,49 +65,50 @@ export type PtbContextValue = {
   theme: Theme;
   setTheme: (t: Theme) => void;
 
-  // Chain caches & helpers
-  objectMetas: Record<string, SuiObjectData>;
+  // Chain caches & helpers (PTB-only)
+  objects: PTBObjectsEmbed;
   getObjectData: (
     objectId: string,
     opts?: { forceRefresh?: boolean },
-  ) => Promise<SuiObjectData | undefined>;
+  ) => Promise<PTBObjectData | undefined>;
 
-  modules: Record<string, SuiMoveNormalizedModules>;
+  modules: PTBModulesEmbed;
   getPackageModules: (
     packageId: string,
     opts?: { forceRefresh?: boolean },
-  ) => Promise<SuiMoveNormalizedModules | undefined>;
-  getPackageModulesView: (
-    packageId: string,
-    opts?: { forceRefresh?: boolean },
-  ) => Promise<PTBModuleData | undefined>;
+  ) => Promise<
+    | {
+        names: string[];
+        modules: {
+          [moduleName: string]: { names: string[]; functions: PTBFunctionData };
+        };
+      }
+    | undefined
+  >;
 
   // Loaders
   loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
   loadFromDoc: (doc: PTBDoc) => void;
 
   // Persistence
-  exportDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
+  exportDoc: (opts?: { sender?: string }) => PTBDoc;
 
-  // Monotonic, doc-scoped ID generator
+  // Monotonic ID generator
   createUniqueId: (prefix?: string) => string;
 
   // Execution
   execOpts: ExecOptions;
   runTx?: (tx?: Transaction) => Promise<{ digest?: string; error?: string }>;
 
-  // Toast (always available; console fallback if adapter missing)
+  // Toast
   toast: ToastAdapter;
 
-  /** Presence map of well-known singleton nodes (menu disabling, creation guards). */
   wellKnown: Record<WellKnownId, boolean>;
   isWellKnownAvailable: (k: WellKnownId) => boolean;
   setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
 
-  /** Flow actions registration */
   registerFlowActions: (a: { autoLayoutAndFit?: () => void }) => void;
 
-  /** Epoch for doc/chain injections. RF rehydrates only when this changes. */
   graphEpoch: number;
 };
 
@@ -117,7 +123,6 @@ export type PtbProviderProps = {
 
   onDocChange?: (doc: PTBDoc) => void;
   onDocDebounceMs?: number;
-  autosaveDocIncludeEmbeds?: boolean;
 
   theme?: Theme;
   execOpts?: ExecOptions;
@@ -219,7 +224,6 @@ export function PtbProvider({
   onChangeDebounceMs = DEFAULT_GRAPH_DEBOUNCE,
   onDocChange,
   onDocDebounceMs = DEFAULT_DOC_DEBOUNCE,
-  autosaveDocIncludeEmbeds = false,
 
   theme: themeProp = 'dark',
   execOpts: execOptsProp = {},
@@ -280,12 +284,8 @@ export function PtbProvider({
   const [graphEpoch, setGraphEpoch] = useState(0);
 
   // Chain caches
-  const [objectMetas, setObjectMetas] = useState<Record<string, SuiObjectData>>(
-    () => ({}),
-  );
-  const [modules, setModules] = useState<
-    Record<string, SuiMoveNormalizedModules>
-  >(() => ({}));
+  const [objects, setObjects] = useState<PTBObjectsEmbed>(() => ({}));
+  const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
 
   // Toast (no-op / console fallback)
   const toastImpl: ToastAdapter = useMemo(() => {
@@ -458,12 +458,11 @@ export function PtbProvider({
     const doc = buildDoc({
       chain: activeChain,
       graph,
-      includeEmbeds: autosaveDocIncludeEmbeds,
-      modules: autosaveDocIncludeEmbeds ? modules : undefined,
-      objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
+      modules,
+      objects,
     });
     onDocChangeRef.current?.(doc);
-  }, [activeChain, graph, autosaveDocIncludeEmbeds, modules, objectMetas]);
+  }, [activeChain, graph, modules, objects]);
 
   const scheduleDocNotify = useCallback(() => {
     if (!onDocChangeRef.current) return;
@@ -473,21 +472,13 @@ export function PtbProvider({
       const doc = buildDoc({
         chain: activeChain,
         graph,
-        includeEmbeds: autosaveDocIncludeEmbeds,
-        modules: autosaveDocIncludeEmbeds ? modules : undefined,
-        objects: autosaveDocIncludeEmbeds ? objectMetas : undefined,
+        modules,
+        objects,
       });
       onDocChangeRef.current?.(doc);
       docTimerRef.current = undefined;
     }, onDocDebounceMs ?? DEFAULT_DOC_DEBOUNCE);
-  }, [
-    activeChain,
-    graph,
-    autosaveDocIncludeEmbeds,
-    modules,
-    objectMetas,
-    onDocDebounceMs,
-  ]);
+  }, [onDocDebounceMs, activeChain, graph, modules, objects]);
 
   React.useEffect(() => {
     scheduleDocNotify();
@@ -495,7 +486,11 @@ export function PtbProvider({
 
   React.useEffect(() => {
     scheduleDocNotify();
-  }, [modules, objectMetas, activeChain, scheduleDocNotify]);
+  }, [modules, activeChain, scheduleDocNotify]);
+
+  React.useEffect(() => {
+    scheduleDocNotify();
+  }, [objects, scheduleDocNotify]);
 
   // ---- chain helpers ---------------------------------------------------------
 
@@ -504,7 +499,7 @@ export function PtbProvider({
       const id = objectId?.trim();
       if (!id) return undefined;
 
-      if (!opts?.forceRefresh && objectMetas[id]) return objectMetas[id];
+      if (!opts?.forceRefresh && objects[id]) return objects[id];
 
       const client = clientRef.current;
       if (!client) return undefined;
@@ -512,50 +507,93 @@ export function PtbProvider({
       try {
         const resp = await client.getObject({
           id,
-          options: {
-            showContent: true,
-            showType: true,
-            showOwner: true,
-            showDisplay: true,
-          },
+          options: { showType: true },
         });
 
-        const meta = toSuiObjectData(resp);
-        if (!meta) return undefined;
+        const raw = toSuiObjectData(resp);
+        if (!raw) return undefined;
 
-        setObjectMetas((prev) => ({ ...prev, [id]: meta }));
-        scheduleDocNotify();
-        return meta;
+        const moveType =
+          raw.content?.dataType === 'moveObject'
+            ? (raw.content as any)?.type
+            : undefined;
+
+        const obj: PTBObjectData = {
+          objectId: raw.objectId,
+          typeTag: moveType ?? 'unknown',
+        };
+
+        setObjects((prev) => ({ ...prev, [id]: obj }));
+        return obj;
       } catch {
         return undefined;
       }
     },
-    [objectMetas, scheduleDocNotify],
+    [objects],
   );
 
   const getPackageModules = useCallback<PtbContextValue['getPackageModules']>(
-    async (packageId, opts) => {
+    async (
+      packageId,
+      opts,
+    ): Promise<
+      | {
+          names: string[];
+          modules: {
+            [moduleName: string]: {
+              names: string[];
+              functions: PTBFunctionData;
+            };
+          };
+        }
+      | undefined
+    > => {
       const id = packageId?.trim();
       if (!id || !id.startsWith('0x')) {
-        toastImpl({
-          message: 'Invalid package id. It should start with 0x…',
-          variant: 'warning',
-        });
+        toastImpl({ message: 'Invalid package id', variant: 'warning' });
         return undefined;
       }
 
-      if (!opts?.forceRefresh && modules[id]) return modules[id];
+      if (!opts?.forceRefresh && modules[id]) {
+        return {
+          names: Object.keys(modules[id]),
+          modules: Object.fromEntries(
+            Object.keys(modules[id]).map((name) => [
+              name,
+              {
+                names: Object.keys(modules[id][name]),
+                functions: modules[id][name],
+              },
+            ]),
+          ),
+        };
+      }
 
       const client = clientRef.current;
-      if (!client) return undefined;
+      if (!client) {
+        toastImpl({ message: 'No client available', variant: 'warning' });
+        return undefined;
+      }
 
       try {
-        const res = await client.getNormalizedMoveModulesByPackage({
+        const raw = await client.getNormalizedMoveModulesByPackage({
           package: id,
         });
-        setModules((prev) => ({ ...prev, [id]: res }));
+        const normalized = toPTBModuleData(raw);
+        setModules((prev) => ({ ...prev, [id]: normalized }));
         scheduleDocNotify();
-        return res;
+        return {
+          names: Object.keys(normalized),
+          modules: Object.fromEntries(
+            Object.keys(normalized).map((name) => [
+              name,
+              {
+                names: Object.keys(normalized[name]),
+                functions: normalized[name],
+              },
+            ]),
+          ),
+        };
       } catch (e: any) {
         toastImpl({
           message: e?.message || 'Failed to load package modules',
@@ -565,19 +603,6 @@ export function PtbProvider({
       }
     },
     [modules, clientRef, toastImpl, scheduleDocNotify],
-  );
-
-  const getPackageModulesView = useCallback<
-    PtbContextValue['getPackageModulesView']
-  >(
-    async (packageId, opts) => {
-      const mods =
-        (await getPackageModules(packageId, opts)) ??
-        modules[packageId?.trim() || ''];
-      if (!mods) return undefined;
-      return toPTBModuleData(mods);
-    },
-    [getPackageModules, modules],
   );
 
   // ---- on-chain loader (viewer) ---------------------------------------------
@@ -624,15 +649,13 @@ export function PtbProvider({
           : [];
         const uniquePkgs = Array.from(new Set(pkgIds));
 
-        const modsEmbed: Record<string, SuiMoveNormalizedModules> = {};
-        const modsEmbedView: Record<string, PTBModuleData> = {};
+        const modsEmbed: PTBModulesEmbed = {};
         for (const pkg of uniquePkgs) {
           try {
             const m = await localClient.getNormalizedMoveModulesByPackage({
               package: pkg,
             });
-            modsEmbed[pkg] = m;
-            modsEmbedView[pkg] = toPTBModuleData(m);
+            modsEmbed[pkg] = toPTBModuleData(m);
           } catch {
             // ignore per-package failures
           }
@@ -641,10 +664,10 @@ export function PtbProvider({
         // Fix chain and prime caches
         setActiveChain(chain);
         setModules(modsEmbed);
-        setObjectMetas({});
+        setObjects({});
 
         // Decode → PTBGraph
-        const { graph: decoded } = decodeTx(programmable, modsEmbedView);
+        const { graph: decoded } = decodeTx(programmable, modsEmbed);
 
         // Replace snapshot (viewer mode) and bump epoch
         replaceGraphImmediate(decoded);
@@ -676,8 +699,8 @@ export function PtbProvider({
       setActiveChain(doc.chain);
 
       // Overwrite caches from embeds
-      setModules(doc.modulesEmbed ?? {});
-      setObjectMetas(doc.objectsEmbed ?? {});
+      setModules(doc.modules);
+      setObjects(doc.objects);
 
       // Replace graph (seed if invalid/empty)
       const g = doc.graph;
@@ -698,18 +721,16 @@ export function PtbProvider({
 
   const exportDoc = useCallback<PtbContextValue['exportDoc']>(
     (opts) => {
-      const includeEmbeds = !!opts?.includeEmbeds;
       const sender = opts?.sender;
       return buildDoc({
         chain: activeChain,
         graph,
         sender,
-        includeEmbeds,
-        modules: includeEmbeds ? modules : undefined,
-        objects: includeEmbeds ? objectMetas : undefined,
+        modules,
+        objects,
       });
     },
-    [activeChain, graph, modules, objectMetas],
+    [activeChain, graph, modules, objects],
   );
 
   // ---- well-known helpers ----------------------------------------------------
@@ -812,12 +833,11 @@ export function PtbProvider({
       theme,
       setTheme,
 
-      objectMetas,
+      objects,
       getObjectData,
 
       modules,
       getPackageModules,
-      getPackageModulesView,
 
       loadFromOnChainTx,
       loadFromDoc,
@@ -844,11 +864,10 @@ export function PtbProvider({
       activeChain,
       readOnly,
       theme,
-      objectMetas,
+      objects,
       getObjectData,
       modules,
       getPackageModules,
-      getPackageModulesView,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,

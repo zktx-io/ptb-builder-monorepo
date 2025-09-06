@@ -23,7 +23,6 @@ import {
   countDefaultOf,
   countKeyOf,
   defaultLabelOf,
-  isGraphOnly,
 } from './registry';
 import { KNOWN_IDS } from './seedGraph';
 
@@ -98,11 +97,6 @@ export function makeCommandNode(
 
   // Flow + IO ports from the central registry (use seeded UI)
   node.ports = buildCommandPorts(kind, seededUI);
-
-  // Optional hint for graph-only commands
-  if (isGraphOnly(kind) && !opts?.label) {
-    node.label = `${label}`;
-  }
 
   return node;
 }

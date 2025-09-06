@@ -1,15 +1,14 @@
 // src/ui/nodes/cmds/MoveCallCommand/MoveCallCommand.tsx
 import React, { memo, useCallback, useEffect, useState } from 'react';
 
-import type { Node, NodeProps, Position } from '@xyflow/react';
-import { Position as RFPos } from '@xyflow/react';
+import type { Node, NodeProps } from '@xyflow/react';
+import { Position } from '@xyflow/react';
 
 import type {
   CommandNode,
   PTBNode,
   PTBType,
 } from '../../../../ptb/graph/types';
-import { toPTBTypeFromMove } from '../../../../ptb/move/toPTBType';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -25,13 +24,6 @@ import {
 import { SmallSelect } from '../../vars/inputs/SmallSelect';
 import { TextInput } from '../../vars/inputs/TextInput';
 import { labelOf, useCommandPorts } from '../commandLayout';
-
-/** Move normalized metadata sometimes gives number or array for type params. */
-function getTypeParamCount(anyTp: unknown): number {
-  if (Array.isArray(anyTp)) return anyTp.length;
-  if (typeof anyTp === 'number' && Number.isFinite(anyTp)) return anyTp;
-  return 0;
-}
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
@@ -59,7 +51,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   const node = data?.ptbNode as CommandNode | undefined;
   const ui = ((node?.params?.ui ?? {}) as any) || {};
 
-  const { getPackageModulesView, toast, readOnly } = usePtb();
+  const { getPackageModules, toast, readOnly } = usePtb();
 
   // Local buffer for the package id input (avoid graph writes while typing).
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(ui.pkgId ?? '');
@@ -102,7 +94,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
 
     try {
       setLoading(true);
-      const view = await getPackageModulesView(pkg, { forceRefresh: true });
+      const view = await getPackageModules(pkg, { forceRefresh: true });
       if (!view) {
         toast?.({
           message: 'Failed to load package metadata',
@@ -118,29 +110,31 @@ export const MoveCallCommand = memo(function MoveCallCommand({
         Record<string, { tparamCount: number; ins: PTBType[]; outs: PTBType[] }>
       > = {};
 
-      for (const m of view._nameModules_) {
+      for (const m of view.names) {
         const mod = view.modules[m];
-        const names = mod?._nameFunctions_ ?? [];
+        const names = mod?.names ?? [];
         moduleToFuncs[m] = names;
 
         sigs[m] = {};
         for (const fn of names) {
-          const f = mod.exposedFunctions[fn];
-          const tparamCount = getTypeParamCount((f as any).typeParameters);
-          const ins = (f.parameters ?? []).map(toPTBTypeFromMove);
-          const outs = (f.return ?? []).map(toPTBTypeFromMove);
+          const f = mod.functions[fn];
+          const tparamCount =
+            typeof (f as any)?.tparamCount === 'number'
+              ? (f as any).tparamCount
+              : 0;
+          const ins = f.ins;
+          const outs = f.outs;
           sigs[m][fn] = { tparamCount, ins, outs };
         }
       }
 
       // Pick first module/function as defaults.
-      const nextModule = view._nameModules_[0] ?? '';
+      const nextModule = view.names[0] ?? '';
       const nextFunc = nextModule ? (moduleToFuncs[nextModule][0] ?? '') : '';
       const sig =
         nextModule && nextFunc ? sigs[nextModule]?.[nextFunc] : undefined;
 
-      // SSOT for generics: string[] of type tags the user will fill later.
-      // Initialize with empty strings so registry can create T-arg input ports.
+      // SSOT for generics: initialize placeholders using tparamCount
       const _fnTParams = Array.from(
         { length: sig?.tparamCount ?? 0 },
         () => '',
@@ -149,7 +143,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
       patchUI({
         pkgId: pkg,
         pkgLocked: true,
-        _nameModules_: view._nameModules_,
+        _nameModules_: view.names,
         _moduleFunctions_: moduleToFuncs,
         _fnSigs_: sigs,
 
@@ -173,7 +167,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
     } finally {
       setLoading(false);
     }
-  }, [toast, getPackageModulesView, node?.id, patchUI, pkgIdBuf]);
+  }, [pkgIdBuf, node?.id, getPackageModules, patchUI, toast]);
 
   // Module change → pick first function of the module and update signatures.
   const onChangeModule = useCallback(
@@ -295,7 +289,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <PTBHandleIO
             key={port.id}
             port={port}
-            position={RFPos.Left as Position}
+            position={Position.Left}
             style={{ top: ioTopForIndex(idx, 3 * ROW_SPACING + 24) }}
             label={labelOf(port)}
           />
@@ -304,7 +298,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <PTBHandleIO
             key={port.id}
             port={port}
-            position={RFPos.Right as Position}
+            position={Position.Right}
             style={{ top: ioTopForIndex(idx, 3 * ROW_SPACING + 24) }}
             label={labelOf(port)}
           />

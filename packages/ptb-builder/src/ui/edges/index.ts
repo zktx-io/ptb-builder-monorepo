@@ -1,3 +1,5 @@
+// src/ui/edges/index.ts
+
 import type { EdgeTypes as RfEdgeTypes } from '@xyflow/react';
 
 import { EdgeFlow } from './EdgeFlow';

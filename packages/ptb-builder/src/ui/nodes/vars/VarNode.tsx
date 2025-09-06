@@ -211,13 +211,8 @@ export const VarNode = memo(function VarNode({
       const resp = await getObjectData(id, { forceRefresh: true });
       if (seq !== reqSeqRef.current) return;
 
-      const moveType =
-        resp?.content?.dataType === 'moveObject'
-          ? (resp.content as any)?.type
-          : undefined;
-
-      if (moveType) {
-        patchVar({ varType: { kind: 'object', typeTag: moveType } });
+      if (resp) {
+        patchVar({ varType: { kind: 'object', typeTag: resp.typeTag } });
       } else {
         patchVar({ varType: { kind: 'object' } });
         toast?.({

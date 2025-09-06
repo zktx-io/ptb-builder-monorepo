@@ -1,9 +1,7 @@
 // src/ptb/decodeTx/index.ts
-//
+
 // Decode a ProgrammableTransaction into a PTBGraph.
-// This version expects the ABI "view" shape: Record<pkgId, PTBModuleData>.
-// - RF remains the authoritative runtime while editing.
-// - Ports for MoveCall are materialized using PTBModuleData if available.
+// This file coordinates the decode and delegates small utilities to helpers.
 
 import type { SuiCallArg, SuiTransactionBlockKind } from '@mysten/sui/client';
 import { fromHex } from '@mysten/sui/utils';
@@ -25,14 +23,12 @@ import {
   type PTBType,
   type VariableNode,
 } from '../graph/types';
-import type { PTBModuleData } from '../move/types';
 import { FLOW_NEXT, FLOW_PREV, PORTS, VAR_OUT } from '../portTemplates';
+import { PTBModulesEmbed } from '../ptbDoc';
 import { buildCommandPorts } from '../registry';
 import { KNOWN_IDS } from '../seedGraph';
 
-// -----------------------------------------------------------------------------
-// Tiny value table (resolves input/result/gas to a source node/port)
-// -----------------------------------------------------------------------------
+// ---- tiny value table -------------------------------------------------------
 
 type ValKey = string; // "in#0" | "res#3#1" | "gas"
 type SourceRef = { nodeId: string; portId: string; t?: PTBType };
@@ -60,13 +56,11 @@ class ValueTable {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Type inference for pure literals (+ helper for extracting literal value)
-// -----------------------------------------------------------------------------
+// ---- types, labels & literals ----------------------------------------------
 
 const unknownT: PTBType = { kind: 'unknown' };
 
-/** Normalize SuiCallArg → PTBType (all u* numbers unified to scalar 'number'). */
+/** Normalize SuiCallArg → PTBType (numbers unified to scalar 'number'). */
 function inferPureType(input: SuiCallArg): PTBType {
   if (input.type !== 'pure') return O(); // object ref
 
@@ -80,7 +74,7 @@ function inferPureType(input: SuiCallArg): PTBType {
     case '0x2::object::ID':
       return O();
 
-    // numeric scalars → 'number'
+    // number scalars → unify to 'number'
     case 'u8':
     case 'u16':
     case 'u32':
@@ -89,7 +83,7 @@ function inferPureType(input: SuiCallArg): PTBType {
     case 'u256':
       return S('number');
 
-    // vector<number>
+    // vector<number> (u* vectors)
     case 'vector<u8>':
     case 'vector<u16>':
     case 'vector<u32>':
@@ -121,9 +115,7 @@ function literalOfPure(input: SuiCallArg): unknown {
   return input.value;
 }
 
-// -----------------------------------------------------------------------------
-// Node/port/handle helpers
-// -----------------------------------------------------------------------------
+// ---- nodes/ports/handles ----------------------------------------------------
 
 // Map of nodeId → node, to compute handle ids reliably when creating edges.
 const nodeMap = new Map<string, PTBNode>();
@@ -233,73 +225,11 @@ function pushIoEdgeToPort(
   pushIoEdge(graph, src, tgtNodeId, tgt.id, tag);
 }
 
-// -----------------------------------------------------------------------------
-// PTBModuleData view helpers (defensive readers)
-// -----------------------------------------------------------------------------
-
-type FnSig = { tparamCount: number; ins: PTBType[]; outs: PTBType[] };
-
-/** Return module names in a PTBModuleData-like view. */
-function getModuleNamesFromView(viewPkg: unknown): string[] {
-  const v: any = viewPkg ?? {};
-  if (v.modules && typeof v.modules === 'object') return Object.keys(v.modules);
-  if (v && typeof v === 'object') return Object.keys(v);
-  return [];
-}
-
-/** Return a function table for a module: Record<fn, {tparamCount, ins, outs}>. */
-function getFnTableFromView(
-  viewPkg: unknown,
-  moduleName: string,
-): Record<string, FnSig> {
-  const v: any = viewPkg ?? {};
-  const modObj =
-    (v.modules && v.modules[moduleName]) ?? v[moduleName] ?? undefined;
-
-  // Prefer normalized "functions"; allow "exposedFunctions" as fallback.
-  const fns = modObj?.functions ?? modObj?.exposedFunctions ?? {};
-  const out: Record<string, FnSig> = {};
-
-  for (const fname of Object.keys(fns)) {
-    const f = fns[fname] || {};
-
-    // tparamCount can be a number or derivable from an array of typeParameters.
-    const tparamCount =
-      Number.isFinite(f.tparamCount) && typeof f.tparamCount === 'number'
-        ? f.tparamCount
-        : Array.isArray(f.typeParameters)
-          ? f.typeParameters.length
-          : 0;
-
-    // Prefer normalized PTBType[] arrays, otherwise fall back and trust shape.
-    const ins: PTBType[] = Array.isArray(f.ins)
-      ? f.ins
-      : Array.isArray(f.parameters)
-        ? f.parameters
-        : [];
-
-    const outs: PTBType[] = Array.isArray(f.outs)
-      ? f.outs
-      : Array.isArray(f.return)
-        ? f.return
-        : [];
-
-    out[fname] = {
-      tparamCount: tparamCount || 0,
-      ins: (ins?.length ? ins : []) as PTBType[],
-      outs: (outs?.length ? outs : []) as PTBType[],
-    };
-  }
-  return out;
-}
-
-// -----------------------------------------------------------------------------
-// Main
-// -----------------------------------------------------------------------------
+// ---- main -------------------------------------------------------------------
 
 export function decodeTx(
   prog: SuiTransactionBlockKind,
-  modulesView?: Record<string, PTBModuleData>,
+  modules?: PTBModulesEmbed,
 ): {
   graph: PTBGraph;
   diags: { level: 'info' | 'warn' | 'error'; msg: string }[];
@@ -330,6 +260,7 @@ export function decodeTx(
   (gasVar as any).id = KNOWN_IDS.GAS; // keep stable ID
   (gasVar as any).name = (gasVar as any).name ?? 'gas';
   (gasVar as any).label = (gasVar as any).label ?? 'SUI';
+
   pushNode(graph, gasVar);
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
@@ -396,12 +327,14 @@ export function decodeTx(
           amounts.length === 1 && (amounts[0].t as any)?.kind === 'vector';
 
         if (isSingleVector) {
-          // Single vector<u64> input → attach to the first scalar port.
-          // (Registry intentionally has no "in_amounts" vector port.)
+          // Single vector<u64> input → connect to the *first expanded scalar* port.
+          // NOTE: Registry has no 'in_amounts' vector port by policy.
           const firstAmount =
             findInPortWithFallback(node, 'in_amount_0', 'in_amount_', 0) ||
+            // last resort: any first io/in
             findInPortWithFallback(node, 'in_amount_0');
           if (firstAmount) {
+            // Tag clarifies that a vector is being fed into the first expanded slot
             pushIoEdgeToPort(
               graph,
               amounts[0],
@@ -411,7 +344,7 @@ export function decodeTx(
             );
           }
         } else {
-          // Multiple scalars → connect only to expanded scalar ports
+          // Multiple scalars → connect to expanded ports only (no packing)
           amounts.forEach((s, i) => {
             const inI = findInPortWithFallback(
               node,
@@ -552,7 +485,6 @@ export function decodeTx(
 
     // ---- moveCall -----------------------------------------------------------
     if ('MoveCall' in tx) {
-      // 1) Raw parts from the on-chain tx
       const pkg = tx.MoveCall.package as string;
       const mod = tx.MoveCall.module as string;
       const fn = tx.MoveCall.function as string;
@@ -561,11 +493,9 @@ export function decodeTx(
         .map((a: any) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
-      // 2) Create node & stabilize id
       const node = makeCommandNode('moveCall');
       (node as any).id = `cmd-${idx}`;
 
-      // 3) Minimal runtime preview (string)
       const targetStr = `${pkg}::${mod}::${fn}`;
       (node as any).params = {
         ...(node as any).params,
@@ -573,60 +503,39 @@ export function decodeTx(
         moveCall: { package: pkg, module: mod, function: fn, typeArgs: targs },
       };
 
-      // 4) Prepare UI seeds for port materialization
       const inferredIns = args.map((s) => s.t ?? unknownT);
       let uiAny: any = {
         pkgId: pkg,
         module: mod,
         func: fn,
-        _fnTParams: Array.from({ length: targs.length }, () => ''), // lengths only; user fills strings in UI
+        _fnTParams: Array.from({ length: targs.length }, () => ''),
         _fnIns: inferredIns,
         _fnOuts: [unknownT],
       };
 
-      // 5) If ABI view present → use exact signatures/names for ports
-      if (modulesView && modulesView[pkg]) {
-        const pkgView = modulesView[pkg];
-        const moduleNames = getModuleNamesFromView(pkgView);
-        const fnSigs: Record<string, Record<string, FnSig>> = {};
-        for (const mName of moduleNames) {
-          fnSigs[mName] = getFnTableFromView(pkgView, mName);
-        }
-
-        const sig = fnSigs?.[mod]?.[fn];
-        if (sig) {
-          uiAny = {
-            ...uiAny,
-            _nameModules_: moduleNames,
-            _moduleFunctions_: Object.fromEntries(
-              moduleNames.map((m) => {
-                const table = getFnTableFromView(pkgView, m);
-                return [m, Object.keys(table)];
-              }),
-            ),
-            _fnSigs_: fnSigs,
-            pkgLocked: true,
-            _fnTParams: Array.from({ length: sig.tparamCount }, () => ''),
-            _fnIns: sig.ins.length ? sig.ins : inferredIns,
-            _fnOuts: sig.outs.length ? sig.outs : [unknownT],
-          };
-        } else {
-          // No exact (module, function) in this ABI: still expose names to correct in UI
-          uiAny = {
-            ...uiAny,
-            _nameModules_: moduleNames,
-            _moduleFunctions_: Object.fromEntries(
-              moduleNames.map((m) => {
-                const table = getFnTableFromView(pkgView, m);
-                return [m, Object.keys(table)];
-              }),
-            ),
-            _fnSigs_: fnSigs,
-          };
-        }
+      if (
+        modules &&
+        modules[pkg] &&
+        modules[pkg][mod] &&
+        modules[pkg][mod][fn]
+      ) {
+        const moduleNames = Object.keys(modules[pkg]);
+        const moduleFunctions = Object.fromEntries(
+          moduleNames.map((m) => [m, Object.keys(modules[pkg][m])]),
+        );
+        const sig = modules[pkg][mod][fn];
+        uiAny = {
+          ...uiAny,
+          _nameModules_: moduleNames,
+          _moduleFunctions_: moduleFunctions,
+          _fnSigs_: modules[pkg],
+          pkgLocked: true,
+          _fnTParams: Array.from({ length: sig.tparamCount }, () => ''),
+          _fnIns: sig.ins.length ? sig.ins : inferredIns,
+          _fnOuts: sig.outs.length ? sig.outs : [unknownT],
+        };
       }
 
-      // 6) Materialize ports from the prepared UI & wire flow
       (node as any).params = { ...(node as any).params, ui: uiAny };
       (node as any).ports = buildCommandPorts('moveCall', uiAny);
       ensureFlowPorts(node);
@@ -634,7 +543,7 @@ export function decodeTx(
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
-      // 7) Visualize type arguments as inline string variables → in_targ_*
+      // 7) (Optional) Visualize type arguments as inline string variables to in_targ_*
       const tpPorts = ((node as any)?.ports as Port[] | undefined)?.filter(
         (p) => p.id.startsWith('in_targ_'),
       );
@@ -669,7 +578,7 @@ export function decodeTx(
         if (tgt) pushIoEdgeToPort(graph, s, node.id, tgt, `arg_${i}`);
       });
 
-      // 9) Register results (use out_ret_*; ensure at least one)
+      // 9) Register results as vt keys (use out_ret_*; ensure at least one)
       const outs = outPortsWithPrefix(node, 'out_ret_');
       const outCount = Math.max(outs.length || 0, 1);
       for (let i = 0; i < outCount; i++) {
@@ -698,7 +607,6 @@ export function decodeTx(
       return;
     }
 
-    // ---- unsupported tx kind ------------------------------------------------
     diags.push({
       level: 'warn',
       msg: `Unsupported tx at index ${idx}: ${Object.keys(tx)[0]}`,

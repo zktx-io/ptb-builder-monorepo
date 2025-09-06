@@ -22,6 +22,8 @@ class W {
   }
 }
 
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
 function renderValue(v: PValue): string {
   // treat 'myAddress' / 'sender' as identifiers (no quotes)
   const isSentinel = (s: string) => s === 'myAddress' || s === 'sender';
@@ -133,7 +135,7 @@ function generate(p: Program, opts?: ExecOptions): string {
 
         body.w(`tx.moveCall({`);
         body.push();
-        body.w(`target: '${op.target}',`);
+        body.w(`target: '${esc(op.target)}',`);
         if (hasTypeArgs) {
           body.w(
             `typeArguments: [${op.typeArgs.map(renderValue).join(', ')}],`,
