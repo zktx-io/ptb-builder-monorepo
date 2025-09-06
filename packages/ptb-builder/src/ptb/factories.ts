@@ -8,7 +8,7 @@
 // - Provides an injectable ID generator for doc-scoped uniqueness.
 // -----------------------------------------------------------------------------
 
-import { labelFromType, M, O, S, V } from './graph/typeHelpers';
+import { M, O, S, V } from './graph/typeHelpers';
 import type {
   CommandKind,
   CommandNode,
@@ -112,12 +112,11 @@ export function makeVariableNode(
   },
 ): VariableNode {
   const id = createUniqueId('var');
-  const label = opts?.label ?? labelFromType(varType);
 
   return {
     id,
     kind: 'Variable',
-    label,
+    label: opts?.label ?? 'var',
     name: opts?.name ?? 'var',
     varType,
     value: opts?.value,
@@ -151,11 +150,7 @@ export const makeId = (
 export const makeObject = (
   typeTag?: string,
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
-  makeVariableNode(O(typeTag), {
-    ...opts,
-    label: typeTag ? `object<${typeTag}>` : 'object',
-  });
+) => makeVariableNode(O(typeTag), { ...opts, label: 'object' });
 
 /** Vectors */
 export const makeAddressVector = (

@@ -11,8 +11,24 @@ import {
   firstInPorts,
   outPortsWithPrefix,
 } from './findPorts';
-import { makeCommandNode, makeGasObject, makeVariableNode } from '../factories';
-import { labelFromType, O, S, V } from '../graph/typeHelpers';
+import {
+  makeAddress,
+  makeAddressVector,
+  makeBool,
+  makeBoolVector,
+  makeCommandNode,
+  makeGasObject,
+  makeId,
+  makeIdVector,
+  makeNumber,
+  makeNumberVector,
+  makeObject,
+  makeObjectVector,
+  makeString,
+  makeStringVector,
+  makeVariableNode,
+} from '../factories';
+import { O, S, V } from '../graph/typeHelpers';
 import {
   buildHandleId,
   type CommandUIParams,
@@ -24,7 +40,7 @@ import {
   type VariableNode,
 } from '../graph/types';
 import { FLOW_NEXT, FLOW_PREV, PORTS, VAR_OUT } from '../portTemplates';
-import { PTBModulesEmbed } from '../ptbDoc';
+import { PTBModulesEmbed, PTBObjectsEmbed } from '../ptbDoc';
 import { buildCommandPorts } from '../registry';
 import { KNOWN_IDS } from '../seedGraph';
 
@@ -113,6 +129,64 @@ function literalOfPure(input: SuiCallArg): unknown {
       : input.value;
   }
   return input.value;
+}
+
+// Choose the right variable factory by PTBType so that label matches UI policy.
+function makeVarByType(
+  t: PTBType,
+  opts: { name?: string; value?: unknown },
+): VariableNode {
+  // object
+  if (t.kind === 'object') {
+    // use concrete typeTag if present to get "object<typeTag>" label
+    const v = makeObject(t.typeTag, { name: opts.name, value: opts.value });
+    return v;
+  }
+
+  // scalar
+  if (t.kind === 'scalar') {
+    switch (t.name) {
+      case 'address':
+        return makeAddress({ name: opts.name, value: opts.value });
+      case 'bool':
+        return makeBool({ name: opts.name, value: opts.value });
+      case 'string':
+        return makeString({ name: opts.name, value: opts.value });
+      case 'number':
+        return makeNumber({ name: opts.name, value: opts.value });
+      case 'id':
+        return makeId({ name: opts.name, value: opts.value });
+    }
+  }
+
+  // vector
+  if (t.kind === 'vector') {
+    const elem = t.elem;
+    if (elem?.kind === 'scalar') {
+      switch (elem.name) {
+        case 'address':
+          return makeAddressVector({ name: opts.name, value: opts.value });
+        case 'bool':
+          return makeBoolVector({ name: opts.name, value: opts.value });
+        case 'string':
+          return makeStringVector({ name: opts.name, value: opts.value });
+        case 'number':
+          // width information is not preserved in inferPureType; default to number vector
+          return makeNumberVector({ name: opts.name, value: opts.value });
+        case 'id':
+          return makeIdVector({ name: opts.name, value: opts.value });
+      }
+    }
+    if (elem?.kind === 'object') {
+      return makeObjectVector(elem.typeTag, {
+        name: opts.name,
+        value: opts.value,
+      });
+    }
+  }
+
+  // fallback: keep whatever type but no custom label
+  return makeVariableNode(t, { name: opts.name, value: opts.value });
 }
 
 // ---- nodes/ports/handles ----------------------------------------------------
@@ -229,7 +303,13 @@ function pushIoEdgeToPort(
 
 export function decodeTx(
   prog: SuiTransactionBlockKind,
-  modules?: PTBModulesEmbed,
+  {
+    modules,
+    objects,
+  }: {
+    modules?: PTBModulesEmbed;
+    objects?: PTBObjectsEmbed;
+  },
 ): {
   graph: PTBGraph;
   diags: { level: 'info' | 'warn' | 'error'; msg: string }[];
@@ -257,33 +337,34 @@ export function decodeTx(
 
   // Seed "gas"
   const gasVar = makeGasObject();
-  (gasVar as any).id = KNOWN_IDS.GAS; // keep stable ID
+  (gasVar as any).id = KNOWN_IDS.GAS;
   (gasVar as any).name = (gasVar as any).name ?? 'gas';
-  (gasVar as any).label = (gasVar as any).label ?? 'SUI';
+  // type-only label policy
+  (gasVar as any).label = 'object';
 
   pushNode(graph, gasVar);
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
-  // Inputs → Variable nodes
+  // Inputs → Variable nodes (use embed.objects to enrich object types)
   (prog.inputs ?? []).forEach((arg, i) => {
     let t: PTBType;
     let init: unknown;
+
     if (arg.type === 'pure') {
       t = inferPureType(arg);
       init = literalOfPure(arg);
     } else if (arg.type === 'object') {
-      t = O();
-      init = (arg as any).objectId;
+      const oid = (arg as any).objectId as string | undefined;
+      const meta = oid ? objects?.[oid] : undefined;
+      t = meta?.typeTag ? O(meta.typeTag) : O();
+      init = oid;
     } else {
       t = O();
       init = undefined;
     }
-    const node: VariableNode = makeVariableNode(t, {
-      name: `input_${i}`,
-      label: labelFromType(t),
-      value: init,
-    });
-    (node as any).id = `input-${i}`; // stable id
+    const node = makeVarByType(t, { name: `input_${i}`, value: init });
+    // keep a stable id for inputs
+    (node as any).id = `input-${i}`;
     pushNode(graph, node);
     vt.set(`in#${i}`, { nodeId: node.id, portId: VAR_OUT, t });
   });
@@ -543,7 +624,7 @@ export function decodeTx(
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
-      // 7) (Optional) Visualize type arguments as inline string variables to in_targ_*
+      // (Optional) Inline type arguments as string variables to in_targ_*
       const tpPorts = ((node as any)?.ports as Port[] | undefined)?.filter(
         (p) => p.id.startsWith('in_targ_'),
       );
@@ -566,7 +647,7 @@ export function decodeTx(
         });
       }
 
-      // 8) Wire value arguments to in_arg_*
+      // Wire value arguments to in_arg_*
       const argPortsAll = firstInPorts(node).filter((p) =>
         p.id.startsWith('in_arg_'),
       );
@@ -578,7 +659,7 @@ export function decodeTx(
         if (tgt) pushIoEdgeToPort(graph, s, node.id, tgt, `arg_${i}`);
       });
 
-      // 9) Register results as vt keys (use out_ret_*; ensure at least one)
+      // Register results as vt keys (use out_ret_*; ensure at least one)
       const outs = outPortsWithPrefix(node, 'out_ret_');
       const outCount = Math.max(outs.length || 0, 1);
       for (let i = 0; i < outCount; i++) {
@@ -612,6 +693,25 @@ export function decodeTx(
       msg: `Unsupported tx at index ${idx}: ${Object.keys(tx)[0]}`,
     });
   });
+
+  // Post-pass: upgrade object type from embed.objects (label is untouched)
+  if (objects) {
+    for (const n of graph.nodes) {
+      if (n.kind !== 'Variable') continue;
+      const v = n as VariableNode;
+      const val = (v as any).value;
+
+      if (typeof val === 'string' && val.startsWith('0x')) {
+        const meta = objects[val];
+        if (meta?.typeTag) {
+          // Only specialize type; keep label type-only ("object")
+          if (!v.varType || v.varType.kind !== 'object' || !v.varType.typeTag) {
+            v.varType = O(meta.typeTag);
+          }
+        }
+      }
+    }
+  }
 
   // Tail → End
   pushFlow(graph, prevCmdId ?? KNOWN_IDS.START, KNOWN_IDS.END);

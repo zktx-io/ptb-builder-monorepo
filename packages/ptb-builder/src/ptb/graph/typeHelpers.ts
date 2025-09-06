@@ -36,27 +36,6 @@ export const T = (...elems: PTBType[]): PTBType => ({ kind: 'tuple', elems });
 /** Unknown type factory */
 export const Unknown = (): PTBType => ({ kind: 'unknown' });
 
-/** Pretty label for variables inferred from PTBType. */
-export function labelFromType(t: PTBType): string {
-  switch (t.kind) {
-    case 'scalar':
-      return t.name;
-    case 'move_numeric':
-      return t.width;
-    case 'object':
-      return t.typeTag ? `object<${t.typeTag}>` : 'object';
-    case 'vector':
-      return `vector<${labelFromType(t.elem)}>`;
-    case 'option':
-      return `option<${labelFromType(t.elem)}>`;
-    case 'tuple':
-      return `(${t.elems.map(labelFromType).join(',')})`;
-    case 'unknown':
-    default:
-      return 'unknown';
-  }
-}
-
 // Optional friendly aliases (back-compat)
 export const scalar = S;
 export const moveNumeric = M;

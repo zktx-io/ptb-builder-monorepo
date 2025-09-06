@@ -24,12 +24,7 @@ import React, {
   useState,
 } from 'react';
 
-import {
-  getFullnodeUrl,
-  SuiClient,
-  type SuiObjectData,
-  type SuiObjectResponse,
-} from '@mysten/sui/client';
+import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import type { Transaction } from '@mysten/sui/transactions';
 
 import type { ExecOptions } from '../codegen/types';
@@ -69,7 +64,7 @@ export type PtbContextValue = {
   objects: PTBObjectsEmbed;
   getObjectData: (
     objectId: string,
-    opts?: { forceRefresh?: boolean },
+    opts?: { forceRefresh?: boolean; clientOverride?: SuiClient },
   ) => Promise<PTBObjectData | undefined>;
 
   modules: PTBModulesEmbed;
@@ -138,11 +133,6 @@ const DEFAULT_GRAPH_DEBOUNCE = 400;
 const DEFAULT_DOC_DEBOUNCE = 1000;
 
 // ===== tiny utils =============================================================
-
-function toSuiObjectData(resp: SuiObjectResponse): SuiObjectData | undefined {
-  if ((resp as any)?.error) return undefined;
-  return resp.data ?? undefined;
-}
 
 /** Extract the maximum trailing numeric suffix from IDs like "n-12" / "edge_7". */
 function maxNumericSuffix(ids: Iterable<string>): number {
@@ -501,26 +491,25 @@ export function PtbProvider({
 
       if (!opts?.forceRefresh && objects[id]) return objects[id];
 
-      const client = clientRef.current;
+      const client = opts?.clientOverride ?? clientRef.current;
       if (!client) return undefined;
 
       try {
         const resp = await client.getObject({
           id,
-          options: { showType: true },
+          options: { showType: true, showContent: true },
         });
 
-        const raw = toSuiObjectData(resp);
-        if (!raw) return undefined;
+        if (!resp.data) return undefined;
 
         const moveType =
-          raw.content?.dataType === 'moveObject'
-            ? (raw.content as any)?.type
+          resp.data.content?.dataType === 'moveObject'
+            ? (resp.data.content as any)?.type
             : undefined;
 
         const obj: PTBObjectData = {
-          objectId: raw.objectId,
-          typeTag: moveType ?? 'unknown',
+          objectId: resp.data.objectId,
+          typeTag: moveType ?? '',
         };
 
         setObjects((prev) => ({ ...prev, [id]: obj }));
@@ -641,7 +630,7 @@ export function PtbProvider({
           return;
         }
 
-        // Preload modules referenced by MoveCalls (best-effort)
+        // 1) Preload modules referenced by MoveCalls (best effort)
         const pkgIds: string[] = Array.isArray(programmable?.transactions)
           ? programmable.transactions
               .filter((t: any) => t?.MoveCall?.package)
@@ -661,23 +650,51 @@ export function PtbProvider({
           }
         }
 
-        // Fix chain and prime caches
+        // 2) Collect candidate object ids (from inputs; decoded not needed anymore)
+        const candidateIds = new Set<string>();
+        const inputs = Array.isArray(programmable?.inputs)
+          ? programmable.inputs
+          : [];
+        for (const inp of inputs) {
+          if (
+            inp?.type === 'object' &&
+            typeof inp.objectId === 'string' &&
+            inp.objectId.startsWith('0x')
+          ) {
+            candidateIds.add(inp.objectId);
+          }
+        }
+
+        // 3) Fetch object metadata via getObjectData (using localClient)
+        const fetched = await Promise.all(
+          [...candidateIds].map((oid) =>
+            getObjectData(oid, { clientOverride: localClient }),
+          ),
+        );
+        const objectsEmbed: PTBObjectsEmbed = {};
+        for (const o of fetched) {
+          if (o) objectsEmbed[o.objectId] = o;
+        }
+
+        // 4) Decode once with embed = { modules, objects }
+        const { graph: decoded } = decodeTx(programmable, {
+          modules: modsEmbed,
+          objects: objectsEmbed,
+        });
+
+        // 5) Fix chain and prime caches
         setActiveChain(chain);
         setModules(modsEmbed);
-        setObjects({});
+        setObjects(objectsEmbed);
 
-        // Decode → PTBGraph
-        const { graph: decoded } = decodeTx(programmable, modsEmbed);
-
-        // Replace snapshot (viewer mode) and bump epoch
+        // 6) Replace snapshot (viewer mode) and bump epoch
         replaceGraphImmediate(decoded);
         setReadOnly(true);
 
-        // Schedule doc/graph notify after replacement
+        // 7) Notify and layout
         scheduleGraphNotify(decoded);
         scheduleDocNotify();
 
-        // Auto-layout after a tick (if registered)
         requestAnimationFrame(() => {
           flowActionsRef.current.autoLayoutAndFit?.();
         });
@@ -688,7 +705,13 @@ export function PtbProvider({
         });
       }
     },
-    [toastImpl, replaceGraphImmediate, scheduleGraphNotify, scheduleDocNotify],
+    [
+      toastImpl,
+      replaceGraphImmediate,
+      scheduleGraphNotify,
+      scheduleDocNotify,
+      getObjectData,
+    ],
   );
 
   // ---- document loader (editor) ---------------------------------------------
