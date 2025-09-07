@@ -209,6 +209,7 @@ function toPValueFromVar(v: VariableNode): PValue {
         return { kind: 'scalar', value: Boolean(val ?? false) };
       if (t.name === 'number')
         return { kind: 'move_numeric', value: Number(val ?? 0) };
+      if (t.name === 'id') return { kind: 'scalar', value: String(val ?? '') };
       return { kind: 'scalar', value: '' };
     case 'move_numeric':
       return { kind: 'move_numeric', value: Number(val ?? 0) };

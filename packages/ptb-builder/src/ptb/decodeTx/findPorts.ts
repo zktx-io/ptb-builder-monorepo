@@ -39,14 +39,12 @@ export function findInPortWithFallback(
   if (exact) return exact;
 
   if (fallbackPrefix) {
-    const prefixed = ports
-      .filter(
-        (p) =>
-          p.role === 'io' &&
-          p.direction === 'in' &&
-          p.id.startsWith(fallbackPrefix),
-      )
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const prefixed = ports.filter(
+      (p) =>
+        p.role === 'io' &&
+        p.direction === 'in' &&
+        p.id.startsWith(fallbackPrefix),
+    );
     if (prefixed.length)
       return typeof index === 'number' ? prefixed[index] : prefixed[0];
   }

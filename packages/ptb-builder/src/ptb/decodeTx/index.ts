@@ -87,7 +87,7 @@ function inferPureType(input: SuiCallArg): PTBType {
     case 'string':
       return S('string');
     case '0x2::object::ID':
-      return O();
+      return S('id');
 
     // number scalars → unify to 'number'
     case 'u8':
@@ -375,7 +375,6 @@ export function decodeTx(
         .filter(Boolean) as SourceRef[];
 
       const node = makeCommand('splitCoins', {
-        amountsExpanded: true,
         amountsCount: Math.max(1, amounts.length || 2),
       });
       (node as any).id = `cmd-${idx}`;
@@ -454,8 +453,7 @@ export function decodeTx(
         .filter(Boolean) as SourceRef[];
 
       const node = makeCommand('mergeCoins', {
-        sourcesExpanded: true,
-        sourcesCount: Math.max(1, sources.length || 2),
+        sourcesCount: Math.max(1, sources.length || 1),
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
@@ -496,8 +494,7 @@ export function decodeTx(
       const recp = vt.get(vkey(recipientArg)!);
 
       const node = makeCommand('transferObjects', {
-        objectsExpanded: true,
-        objectsCount: Math.max(1, objs.length || 2),
+        objectsCount: Math.max(1, objs.length || 1),
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
@@ -538,8 +535,7 @@ export function decodeTx(
         .filter(Boolean) as SourceRef[];
 
       const node = makeCommand('makeMoveVec', {
-        elemsExpanded: true,
-        elemsCount: Math.max(1, srcs.length || 2),
+        elemsCount: Math.max(1, srcs.length || 1),
       });
       (node as any).id = `cmd-${idx}`;
       pushNode(graph, node);
@@ -553,7 +549,12 @@ export function decodeTx(
         if (inElemI) pushIoEdgeToPort(graph, s, node.id, inElemI, `elem_${i}`);
       });
 
-      vt.set(`res#${idx}#0`, { nodeId: node.id, portId: 'out_vec', t: V(O()) });
+      const elemT = srcs.length && srcs[0]?.t ? srcs[0]!.t! : O();
+      vt.set(`res#${idx}#0`, {
+        nodeId: node.id,
+        portId: 'out_vec',
+        t: V(elemT),
+      });
       return;
     }
 
