@@ -14,20 +14,19 @@ export type PTBScalar = 'bool' | 'string' | 'address' | 'id' | 'number';
 
 /** ------------------------------------------------------------------
  * ADT for PTB types
- * - 'vector' models vector<T>; nested vectors are disallowed by policy.
- * - 'option' kept in the model for future use, but CURRENTLY UNSUPPORTED:
- *   resolver should not emit option; if it appears, treat as unknown at wiring.
+ * - 'vector' models vector<T>; nested vectors are disallowed by policy (UI creation),
+ *   but the model still allows it for future-proofing; validators should enforce.
+ * - 'option' models option<T>; same as vector: UI creates only first-level, model allows it.
  * - 'object' is non-pure (owned/shared refs), optional typeTag for specificity.
  * - 'tuple' can appear in ABI outputs (non-pure for tx.pure).
- * - NOTE: generic placeholders ('typeparam') are REMOVED by policy.
- *   Generics are resolved exclusively via typeArguments: string[] (SSOT).
+ * - Generic placeholders are removed by policy; generics resolved via typeArguments[] elsewhere.
  * ----------------------------------------------------------------- */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
   | { kind: 'move_numeric'; width: NumericWidth }
   | { kind: 'object'; typeTag?: string }
   | { kind: 'vector'; elem: PTBType }
-  | { kind: 'option'; elem: PTBType } // kept for future, but not used by resolver now
+  | { kind: 'option'; elem: PTBType }
   | { kind: 'tuple'; elems: PTBType[] }
   | { kind: 'unknown'; debugInfo?: string };
 
@@ -187,13 +186,14 @@ export const findPort = (node: PTBNode, portId: string) =>
  * - Keep IDs stable across ABI changes while still preventing obvious mis-wires.
  * - Use only broad categories so UI badges can be rich, but edges don’t break.
  *
- * Policy:
+ * Policy (suffix examples):
  * - Non-IO ports (flow) → return plain id.
  * - object<T> → `${id}:object`   (drop concrete typeTag)
- * - scalar(name) → `${id}:${name}`  where name ∈ { address | bool | string | number }
- * - move_numeric (u8..u256) → treat as number → `${id}:number`
- * - vector<scalar/move_numeric/object> → `${id}:vector<name>` with name mapped above
- * - Anything else (tuple/unknown/nested vectors) → plain id (no suffix)
+ * - scalar(name) → `${id}:${name}`  where name ∈ { address | bool | string | number | id }
+ * - move_numeric (u8..u256) → `${id}:number`
+ * - vector<scalar/move_numeric/object> → `${id}:vector<name>` as above
+ * - option<scalar/move_numeric/object> → `${id}:option<name>` as above
+ * - Complex shapes (tuple/unknown/nested vectors/option<vector<...>> etc.) → conservative suffix
  */
 export function buildHandleId(port: Port): string {
   if (port.role !== 'io') return port.id;
@@ -209,7 +209,7 @@ export function buildHandleId(port: Port): string {
       return `${base}:object`;
 
     case 'scalar':
-      // address | bool | string | number
+      // address | bool | string | number | id
       return `${base}:${t.name}`;
 
     case 'move_numeric':
@@ -222,16 +222,24 @@ export function buildHandleId(port: Port): string {
         return `${base}:vector<${e.name}>`; // e.g. vector<number>, vector<address>
       }
       if (e.kind === 'move_numeric') {
-        return `${base}:vector<number>`;
-      }
-      if (e.kind === 'object') {
-        return `${base}:vector<object>`;
+        return `${base}:vector<${e.width}>`;
       }
       // For nested/complex vectors, keep id stable without suffix
       return base;
     }
 
-    // tuple, unknown, etc. → no suffix
+    case 'option': {
+      const e = t.elem;
+      if (e.kind === 'scalar') {
+        return `${base}:option<${e.name}>`;
+      }
+      if (e.kind === 'move_numeric') {
+        return `${base}:option<${e.width}>`;
+      }
+      return base;
+    }
+
+    // tuple/unknown → no suffix
     default:
       return base;
   }

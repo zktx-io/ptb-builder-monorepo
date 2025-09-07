@@ -23,7 +23,6 @@ import {
   makeNumber,
   makeNumberVector,
   makeObject,
-  makeObjectVector,
   makeString,
   makeStringVector,
   makeVariableNode,
@@ -176,12 +175,6 @@ function makeVarByType(
         case 'id':
           return makeIdVector({ name: opts.name, value: opts.value });
       }
-    }
-    if (elem?.kind === 'object') {
-      return makeObjectVector(elem.typeTag, {
-        name: opts.name,
-        value: opts.value,
-      });
     }
   }
 

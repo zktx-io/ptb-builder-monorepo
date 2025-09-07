@@ -15,6 +15,7 @@ import { useViewport } from '@xyflow/react';
 import { handleMenuAction } from './menu.actions';
 import {
   CanvasCmd,
+  CanvasOption,
   CanvasResources,
   CanvasScalarQuick,
   CanvasVector,
@@ -243,6 +244,51 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     </li>
   );
 
+  const renderOption = () => (
+    <li className="relative group" role="none">
+      <div
+        className={`${MenuStyle} flex justify-between items-center`}
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded="false"
+        tabIndex={0}
+      >
+        {CanvasOption.label}
+        <svg
+          className="w-4 h-4 ml-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 5l7 7-7 7"
+          />
+        </svg>
+      </div>
+      <ul className={MenuSubStyle} role="menu">
+        {CanvasOption.items.map((item) => (
+          <li
+            key={item.action}
+            className={MenuStyle}
+            onClick={() => runAction(item.action)}
+            role="menuitem"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+          >
+            <div className="flex items-center gap-1">
+              {item.icon && <span className="inline-block">{item.icon}</span>}
+              {item.name}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+
   const renderResources = () => (
     <li className="relative group" role="none">
       <div
@@ -355,6 +401,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
             {/* Vector & Resources (submenus) */}
             {renderVector()}
+            {renderOption()}
             {renderResources()}
           </>
         )}

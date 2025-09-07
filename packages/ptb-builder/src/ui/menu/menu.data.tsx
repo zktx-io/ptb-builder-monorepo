@@ -122,10 +122,66 @@ export const CanvasVector = {
       action: 'var/vector/id',
       icon: <span className="ptb-marker ptb-marker--id" />,
     },
+  ],
+};
+
+/** ------------------------------------------------------------------
+ * Option submenu (grouped under "Option")
+ * Canonical action keys: "var/option/<kind>"
+ * ----------------------------------------------------------------- */
+export const CanvasOption = {
+  label: 'Option',
+  items: [
+    // move numeric widths
     {
-      name: 'vector<object>',
-      action: 'var/vector/object',
-      icon: <span className="ptb-marker ptb-marker--object" />,
+      name: 'option<u8>',
+      action: 'var/option/u8',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<u16>',
+      action: 'var/option/u16',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<u32>',
+      action: 'var/option/u32',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<u64>',
+      action: 'var/option/u64',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<u128>',
+      action: 'var/option/u128',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<u256>',
+      action: 'var/option/u256',
+      icon: <span className="ptb-marker ptb-marker--number" />,
+    },
+    {
+      name: 'option<bool>',
+      action: 'var/option/bool',
+      icon: <span className="ptb-marker ptb-marker--bool" />,
+    },
+    {
+      name: 'option<string>',
+      action: 'var/option/string',
+      icon: <span className="ptb-marker ptb-marker--string" />,
+    },
+    {
+      name: 'option<address>',
+      action: 'var/option/address',
+      icon: <span className="ptb-marker ptb-marker--address" />,
+    },
+    {
+      name: 'option<id>',
+      action: 'var/option/id',
+      icon: <span className="ptb-marker ptb-marker--id" />,
     },
   ],
 };

@@ -76,7 +76,6 @@ export function toPTBModuleData(
         tparamCount,
         ins,
         outs,
-        tparams: Array.from({ length: tparamCount }, (_, i) => `T${i}`),
       } as any;
     }
 

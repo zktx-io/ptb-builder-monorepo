@@ -32,6 +32,10 @@ function iconOfType(t?: PTBType): React.ReactNode {
     return iconOfType(t.elem);
   }
 
+  if (t.kind === 'option') {
+    return iconOfType(t.elem);
+  }
+
   switch (t.kind) {
     case 'object':
       return <Box size={14} />;

@@ -13,11 +13,9 @@ import {
   makeObject,
   // vectors
   makeAddressVector,
-  makeNumberVector,
   makeBoolVector,
   makeStringVector,
   makeIdVector,
-  makeObjectVector,
   makeMoveNumericVector,
   // well-known resources
   makeWalletAddress,
@@ -25,15 +23,21 @@ import {
   makeClockObject,
   makeRandomObject,
   makeSystemObject,
+  makeAddressOption,
+  makeBoolOption,
+  makeStringOption,
+  makeIdOption,
+  makeMoveNumericOption,
 } from '../../ptb/factories';
 import type { CommandKind, NumericWidth, PTBNode } from '../../ptb/graph/types';
 
 /**
  * Routes context-menu actions to factories (functional, no class).
  * Schema aligned to tx.pure:
- * - Commands:  "cmd/<CommandKind>"
- * - Scalars:   "var/scalar/<address|number|bool|string|id|object>"
- * - Vectors:   "var/vector/<u8|u16|u32|u64|u128|u256|bool|string|address|id|object>"
+ * - Commands : "cmd/<CommandKind>"
+ * - Scalars  : "var/scalar/<address|number|bool|string|id|object>"
+ * - Vectors  : "var/vector/<u8|u16|u32|u64|u128|u256|bool|string|address|id>"
+ * - Options  : "var/option/<u8|u16|u32|u64|u128|u256|bool|string|address|id>" // ← 추가
  * - Resources: "var/resource/<wallet|gas|clock|random|system>"
  */
 export function handleMenuAction(
@@ -99,9 +103,6 @@ export function handleMenuAction(
       case 'address':
         placeAndAdd(makeAddressVector());
         break;
-      case 'number':
-        placeAndAdd(makeNumberVector());
-        break;
       case 'bool':
         placeAndAdd(makeBoolVector());
         break;
@@ -111,8 +112,38 @@ export function handleMenuAction(
       case 'id':
         placeAndAdd(makeIdVector());
         break;
-      case 'object':
-        placeAndAdd(makeObjectVector());
+      default:
+        // no-op
+        break;
+    }
+    return void onClose?.();
+  }
+
+  // ---- Options ----
+  if (action.startsWith('var/option/')) {
+    const k = action.slice('var/option/'.length);
+
+    // Move numeric widths (option<width>)
+    if (
+      (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'] as const).includes(k as any)
+    ) {
+      placeAndAdd(makeMoveNumericOption(k as NumericWidth));
+      return void onClose?.();
+    }
+
+    // Common option<T>
+    switch (k) {
+      case 'address':
+        placeAndAdd(makeAddressOption());
+        break;
+      case 'bool':
+        placeAndAdd(makeBoolOption());
+        break;
+      case 'string':
+        placeAndAdd(makeStringOption());
+        break;
+      case 'id':
+        placeAndAdd(makeIdOption());
         break;
       default:
         // no-op

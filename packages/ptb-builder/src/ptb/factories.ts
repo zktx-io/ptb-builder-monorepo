@@ -8,7 +8,7 @@
 // - Provides an injectable ID generator for doc-scoped uniqueness.
 // -----------------------------------------------------------------------------
 
-import { M, O, S, V } from './graph/typeHelpers';
+import { M, O, Opt, S, V } from './graph/typeHelpers';
 import type {
   CommandKind,
   CommandNode,
@@ -173,15 +173,6 @@ export const makeIdVector = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
 ) => makeVariableNode(V(S('id')), { ...opts, label: 'vector<id>' });
 
-export const makeObjectVector = (
-  typeTag?: string,
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
-  makeVariableNode(V(O(typeTag)), {
-    ...opts,
-    label: typeTag ? `vector<object<${typeTag}>>` : 'vector<object>',
-  });
-
 /** Move numeric vectors: vector<u8|u16|u32|u64|u128|u256> */
 export function makeMoveNumericVector(
   width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256',
@@ -190,6 +181,38 @@ export function makeMoveNumericVector(
   return makeVariableNode(V(M(width)), {
     ...opts,
     label: `vector<${width}>`,
+  });
+}
+
+/** Options */
+export const makeAddressOption = (
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) => makeVariableNode(Opt(S('address')), { ...opts, label: 'option<address>' });
+
+export const makeNumberOption = (
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) => makeVariableNode(Opt(S('number')), { ...opts, label: 'option<number>' });
+
+export const makeBoolOption = (
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) => makeVariableNode(Opt(S('bool')), { ...opts, label: 'option<bool>' });
+
+export const makeStringOption = (
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) => makeVariableNode(Opt(S('string')), { ...opts, label: 'option<string>' });
+
+export const makeIdOption = (
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) => makeVariableNode(Opt(S('id')), { ...opts, label: 'option<id>' });
+
+/** Move numeric options: option<u8|u16|u32|u64|u128|u256> */
+export function makeMoveNumericOption(
+  width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256',
+  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+) {
+  return makeVariableNode(Opt(M(width)), {
+    ...opts,
+    label: `option<${width}>`,
   });
 }
 
@@ -273,7 +296,6 @@ export function makeFromVectorToken(
     | 'bool'
     | 'string'
     | 'id'
-    | 'object'
     | 'u8'
     | 'u16'
     | 'u32'
@@ -292,8 +314,6 @@ export function makeFromVectorToken(
       return makeStringVector();
     case 'id':
       return makeIdVector();
-    case 'object':
-      return makeObjectVector();
     // move numeric widths
     case 'u8':
     case 'u16':

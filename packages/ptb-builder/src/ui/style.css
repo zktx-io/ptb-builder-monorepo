@@ -109,6 +109,14 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.75);
   --ptb-node-unknown-border-active: #a3a3a3; /* gray-400 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.90);
+
+  /* === Option (violet-ish, distinct from Bool) === */
+  --ptb-node-option-border:         #7c3aed; /* violet-600 */
+  --ptb-node-option-bg:             rgba(199, 178, 255, 0.55); /* custom soft violet */
+  --ptb-node-option-border-hover:   #8b5cf6; /* violet-500 */
+  --ptb-node-option-bg-hover:       rgba(199, 178, 255, 0.72);
+  --ptb-node-option-border-active:  #a78bfa; /* violet-400 */
+  --ptb-node-option-bg-active:      rgba(199, 178, 255, 0.90);
 }
 
 /* Dark theme (opaque borders, alpha BGs) */
@@ -197,6 +205,14 @@
   --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.35);
   --ptb-node-unknown-border-active: #d4d4d4; /* gray-300 */
   --ptb-node-unknown-bg-active:     rgba(163,163,163,0.48);
+
+  /* Option */
+  --ptb-node-option-border:         #6d28d9; /* violet-700 */
+  --ptb-node-option-bg:             rgba(139,92,246,0.22);  /* violet-500 faint */
+  --ptb-node-option-border-hover:   #8b5cf6; /* violet-500 */
+  --ptb-node-option-bg-hover:       rgba(139,92,246,0.35);
+  --ptb-node-option-border-active:  #a78bfa; /* violet-400 */
+  --ptb-node-option-bg-active:      rgba(139,92,246,0.48);
 }
 
 /* ============================================================
@@ -285,6 +301,8 @@
 .ptb-node--object  { --ptb-active-ring: var(--ptb-node-object-border-active); }
 .ptb-node--id      { --ptb-active-ring: var(--ptb-node-id-border-active); }
 .ptb-node--unknown { --ptb-active-ring: var(--ptb-node-unknown-border-active); }
+/* Option */
+.ptb-node--option  { --ptb-active-ring: var(--ptb-node-option-border-active); }
 
 /* Base (Normal) surfaces per type */
 .ptb-node--command .ptb-node-shell { border-color: var(--ptb-node-command-border); background: var(--ptb-node-command-bg); }
@@ -295,6 +313,8 @@
 .ptb-node--object  .ptb-node-shell { border-color: var(--ptb-node-object-border);  background: var(--ptb-node-object-bg); }
 .ptb-node--id      .ptb-node-shell { border-color: var(--ptb-node-id-border);      background: var(--ptb-node-id-bg); }
 .ptb-node--unknown .ptb-node-shell { border-color: var(--ptb-node-unknown-border); background: var(--ptb-node-unknown-bg); }
+/* Option */
+.ptb-node--option  .ptb-node-shell { border-color: var(--ptb-node-option-border);  background: var(--ptb-node-option-bg); }
 
 /* Hover (brighter) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-node-shell { border-color: var(--ptb-node-command-border-hover); background: var(--ptb-node-command-bg-hover); }
@@ -305,6 +325,8 @@
 .react-flow__node:has(.ptb-node--object):hover  .ptb-node-shell { border-color: var(--ptb-node-object-border-hover);  background: var(--ptb-node-object-bg-hover); }
 .react-flow__node:has(.ptb-node--id):hover      .ptb-node-shell { border-color: var(--ptb-node-id-border-hover);      background: var(--ptb-node-id-bg-hover); }
 .react-flow__node:has(.ptb-node--unknown):hover .ptb-node-shell { border-color: var(--ptb-node-unknown-border-hover); background: var(--ptb-node-unknown-bg-hover); }
+/* Option */
+.react-flow__node:has(.ptb-node--option):hover  .ptb-node-shell { border-color: var(--ptb-node-option-border-hover);  background: var(--ptb-node-option-bg-hover); }
 
 /* Selected/Active (brightest) */
 .react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell { border-color: var(--ptb-node-command-border-active); background: var(--ptb-node-command-bg-active); }
@@ -315,6 +337,8 @@
 .react-flow__node.selected:has(.ptb-node--object)  .ptb-node-shell { border-color: var(--ptb-node-object-border-active);  background: var(--ptb-node-object-bg-active); }
 .react-flow__node.selected:has(.ptb-node--id)      .ptb-node-shell { border-color: var(--ptb-node-id-border-active);      background: var(--ptb-node-id-bg-active); }
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-node-shell { border-color: var(--ptb-node-unknown-border-active); background: var(--ptb-node-unknown-bg-active); }
+/* Option */
+.react-flow__node.selected:has(.ptb-node--option)  .ptb-node-shell { border-color: var(--ptb-node-option-border-active);  background: var(--ptb-node-option-bg-active); }
 
 /* ============================================================
    HANDLE & LABEL STYLES (CLEAN)
@@ -383,6 +407,13 @@
   border-radius: 2px;
 }
 
+/* Option = square (explicit) */
+.ptb-handle--option {
+  border-radius: 2px;           /* square-ish corners */
+  background-color: currentColor;
+  border: 0;
+}
+
 /* Glyph layer (rotates for diamond) */
 .ptb-handle-glyph {
   position: absolute;
@@ -424,6 +455,8 @@
 .react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
 .react-flow__node:has(.ptb-node--id)      .ptb-handle--io { color: var(--ptb-node-id-border); }
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
+/* Option */
+.react-flow__node:has(.ptb-node--option)  .ptb-handle--io { color: var(--ptb-node-option-border); }
 
 /* Hover / Selected mapping (IO handles only) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
@@ -449,6 +482,10 @@
 
 .react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border-active); }
+
+/* Option */
+.react-flow__node:has(.ptb-node--option):hover .ptb-handle--io { color: var(--ptb-node-option-border-hover); }
+.react-flow__node.selected:has(.ptb-node--option) .ptb-handle--io { color: var(--ptb-node-option-border-active); }
 
 /* Subtle hover affordance on the handle icon itself */
 .react-flow__handle:hover,
@@ -479,3 +516,112 @@
 .ptb-marker--string  { color: var(--ptb-io-string-stroke);  }
 .ptb-marker--object  { color: var(--ptb-io-object-stroke);  }
 .ptb-marker--id      { color: var(--ptb-io-id-stroke);      }
+/* option marker */
+.ptb-marker--option  { color: var(--ptb-node-option-border); }
+
+/* ============================================================
+   OPTION NODE EXTRAS (UI bits used by VarNode when kind=Option)
+   ============================================================ */
+
+/* Small title text helper (optional) */
+.ptb-title {
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .2px;
+}
+
+/* Option editor area separator */
+.ptb-option-editor {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0,0,0,0.12);
+}
+.dark .ptb-option-editor { border-top-color: rgba(255,255,255,0.12); }
+
+/* Some/None compact toggle */
+.ptb-option-toggle {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db; /* gray-300 */
+  background: #ffffff;
+  color: #111827;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.ptb-option-toggle:hover { background: #f9fafb; } /* gray-50 */
+.dark .ptb-option-toggle {
+  border-color: #4b5563; /* gray-600 */
+  background: #0b0e12;
+  color: #e5e7eb;
+}
+.dark .ptb-option-toggle:hover { background: #111827; }
+
+.ptb-option-toggle.is-some {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 25%, transparent);
+}
+.ptb-option-toggle.is-none { opacity: .9; }
+
+/* Chip-style label for Option */
+.ptb-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: rgba(167,139,250,0.18); /* violet-400 faint */
+  border: 1px solid var(--ptb-node-option-border);
+  color: inherit;
+}
+
+/* Vector list inside option/vector */
+.ptb-vec-list {
+  display: grid;
+  gap: 6px;
+}
+.ptb-vec-list .ptb-text-input,
+.ptb-vec-list .ptb-select-bool {
+  width: 100%;
+}
+
+/* Mini stepper near header */
+.ptb-mini-stepper { margin-left: 6px; }
+
+/* Inputs inside node */
+.ptb-text-input {
+  display: block;
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.ptb-text-input:focus {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 22%, transparent);
+}
+.dark .ptb-text-input {
+  border-color: #4b5563;
+  background: #0b0e12;
+  color: #e5e7eb;
+}
+.dark .ptb-text-input:focus {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 28%, transparent);
+}
+
+/* Subtle appear animation */
+.ptb-node-shell {
+  animation: ptb-fade-in 140ms ease-out;
+}
+@keyframes ptb-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

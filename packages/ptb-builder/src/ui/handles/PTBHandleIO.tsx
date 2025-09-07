@@ -20,6 +20,7 @@ import {
 import {
   ioCategoryOf,
   ioCategoryOfSerialized,
+  isOptionSerialized,
   isTypeCompatible,
   isVectorSerialized,
 } from '../../ptb/graph/typecheck';
@@ -73,6 +74,10 @@ export function PTBHandleIO({
   // Vector-only vector glyph: strict vector check, with serialized fallback
   const isVector =
     isVectorType(port.dataType) || isVectorSerialized(serializedHint);
+
+  const isOption =
+    (!!port.dataType && port.dataType.kind === 'option') ||
+    isOptionSerialized(serializedHint);
 
   // Connection validation via structured types from the store
   const isValidConnection: IsValidConnection = (edgeOrConn) => {
@@ -129,7 +134,11 @@ export function PTBHandleIO({
         'ptb-handle',
         'ptb-handle--io',
         `ptb-handle--${port.direction === 'in' ? 'in' : 'out'}`,
-        isVector ? 'ptb-handle--vector' : 'ptb-handle--scalar',
+        isVector
+          ? 'ptb-handle--vector'
+          : isOption
+            ? 'ptb-handle--option'
+            : 'ptb-handle--scalar',
         `ptb-handle--${category}`,
         className,
       ]
