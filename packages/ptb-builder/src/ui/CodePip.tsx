@@ -1,6 +1,7 @@
 // src/ui/CodePip.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { Copy, Folder, Play } from 'lucide-react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
@@ -52,6 +53,9 @@ type CodePipProps = {
   canExecute?: boolean;
 
   onCopy?: (text: string) => Promise<void> | void;
+
+  /** Dummy handler for opening the Assets panel (optional). */
+  onOpenAssets?: () => Promise<void> | void;
 };
 
 /** Inline transient hint label */
@@ -93,6 +97,8 @@ export function CodePip({
   canExecute = true,
 
   onCopy,
+
+  onOpenAssets,
 }: CodePipProps) {
   // eslint-disable-next-line no-restricted-syntax
   const preRef = useRef<HTMLPreElement | null>(null);
@@ -142,6 +148,18 @@ export function CodePip({
       show('Copied');
     } catch {
       show('Copy failed');
+    }
+  };
+
+  const handleOpenAssets = async () => {
+    try {
+      if (onOpenAssets) {
+        await onOpenAssets();
+      } else {
+        show('Assets coming soon');
+      }
+    } catch {
+      show('Failed to open Assets');
     }
   };
 
@@ -281,6 +299,20 @@ export function CodePip({
         >
           <button
             type="button"
+            onClick={handleOpenAssets}
+            className="px-2 py-1 rounded"
+            title="Assets"
+            aria-label="Open Assets"
+            style={{
+              background: theme === 'dark' ? '#374151' : '#e5e7eb',
+              color: theme === 'dark' ? '#fff' : '#111',
+            }}
+          >
+            <Folder />
+          </button>
+
+          <button
+            type="button"
             onClick={handleCopy}
             className="px-2 py-1 rounded"
             title="Copy"
@@ -289,8 +321,9 @@ export function CodePip({
               color: theme === 'dark' ? '#fff' : '#111',
             }}
           >
-            Copy
+            <Copy />
           </button>
+
           {onExecute && (
             <button
               type="button"
@@ -312,7 +345,7 @@ export function CodePip({
                 opacity: !!executing || !canExecute ? 0.7 : 1,
               }}
             >
-              {executing ? 'Running…' : 'Run'}
+              <Play />
             </button>
           )}
         </div>

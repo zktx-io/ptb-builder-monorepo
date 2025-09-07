@@ -292,6 +292,31 @@ function pushIoEdgeToPort(
   pushIoEdge(graph, src, tgtNodeId, tgt.id, tag);
 }
 
+/** Remove unused singleton nodes (e.g. gas, my wallet) from the graph. */
+function pruneUnusedSingletons(graph: PTBGraph) {
+  const singletonIds = [
+    KNOWN_IDS.GAS,
+    KNOWN_IDS.MY_WALLET,
+    KNOWN_IDS.CLOCK,
+    KNOWN_IDS.RANDOM,
+    KNOWN_IDS.SYSTEM,
+  ];
+
+  for (const id of singletonIds) {
+    const hasNode = graph.nodes.some((n) => n.id === id);
+    if (!hasNode) continue;
+
+    const used = graph.edges.some(
+      (e) => e.kind === 'io' && (e.source === id || e.target === id),
+    );
+
+    if (!used) {
+      graph.nodes = graph.nodes.filter((n) => n.id !== id);
+      nodeMap.delete(id);
+    }
+  }
+}
+
 // ---- main -------------------------------------------------------------------
 
 export function decodeTx(
@@ -709,6 +734,9 @@ export function decodeTx(
 
   // Tail → End
   pushFlow(graph, prevCmdId ?? KNOWN_IDS.START, KNOWN_IDS.END);
+
+  // Unused singleton pruning
+  pruneUnusedSingletons(graph);
 
   return { graph, diags };
 }
