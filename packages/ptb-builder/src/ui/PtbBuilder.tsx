@@ -8,7 +8,7 @@
 // - Hide all rich internal APIs inside the provider/flow layer.
 //
 // Public Props (PTBBuilderProps)
-// - theme          : initial theme (managed by provider afterwards)
+// - initialTheme   : initial theme (managed by provider afterwards)
 // - executeTx      : adapter for executing transactions
 // - address        : optional sender for codegen/exec
 // - gasBudget      : optional gas budget for tx build
@@ -52,7 +52,7 @@ export type PTBBuilderProps = {
 };
 
 export type PublicPTBApi = {
-  exportDoc: (opts?: { includeEmbeds?: boolean; sender?: string }) => PTBDoc;
+  exportDoc: (opts?: { sender?: string }) => PTBDoc;
   loadFromDoc: (doc: PTBDoc) => void;
   loadFromOnChainTx: (chain: Chain, digest: string) => Promise<void>;
   setTheme: (t: Theme) => void;
@@ -110,7 +110,7 @@ export function PTBBuilder({
     <ReactFlowProvider>
       <PtbProvider
         // UI
-        theme={theme ?? 'dark'}
+        initialTheme={theme ?? 'dark'}
         // flattened adapters
         executeTx={executeTx}
         toast={toast}

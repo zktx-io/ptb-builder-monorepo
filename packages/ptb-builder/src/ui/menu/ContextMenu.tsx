@@ -6,7 +6,7 @@
 //   - Vector (submenu: u8..u256, bool, string, address, id, object)
 //   - Resources (submenu: wallet/gas/clock/random/system)
 //
-// Singleton gating remains for resources (wallet/gas/clock/random/system).
+// Resource submenu keeps singleton gating (wallet/gas/clock/random/system).
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
@@ -28,12 +28,11 @@ import { usePtb } from '../PtbProvider';
 
 type ContextType = 'canvas' | 'node' | 'edge';
 
-const MenuStyle =
-  'cursor-pointer px-2 bg-white dark:bg-stone-900 hover:bg-gray-200 dark:hover:bg-stone-700 w-full text-gray-800 dark:text-gray-200 relative';
+// Base item/submenu styles. Visual tokens come from CSS variables via .ptb-menu*
+const MenuStyle = 'cursor-pointer px-2 w-full relative ptb-menu__item';
 const MenuSubStyle =
-  'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block bg-white dark:bg-stone-900 rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words';
-const DisabledStyle =
-  'opacity-40 pointer-events-none cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent';
+  'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words ptb-menu__submenu';
+const DisabledStyle = 'ptb-menu__item--disabled';
 
 export interface ContextMenuProps {
   type: ContextType;
@@ -61,7 +60,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   // eslint-disable-next-line no-restricted-syntax
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  /** Resource singleton-disable map (wallet/gas/clock/random/system). */
+  /** Map menu actions → well-known singleton keys (wallet/gas/clock/random/system). */
   const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
     () => ({
       'var/resource/wallet': 'MY_WALLET',
@@ -73,6 +72,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     [],
   );
 
+  /** Disabled action set computed from singleton availability. */
   const disabledActions = useMemo(() => {
     const set = new Set<string>();
     for (const [action, wkKey] of Object.entries(actionToWellKnown)) {
@@ -82,6 +82,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return set;
   }, [actionToWellKnown, isWellKnownAvailable]);
 
+  /** Place a node at the pointer (flow coords) and add to graph. */
   const placeAndAdd = useCallback(
     (node: PTBNode) => {
       node.position = {
@@ -94,6 +95,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     [onAddNode, onClose, position.left, position.top, x, y, zoom],
   );
 
+  /** Run a menu action (with singleton gating for resources). */
   const runAction = useCallback(
     (action: string) => {
       if (disabledActions.has(action)) return;
@@ -116,14 +118,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     ],
   );
 
-  // Close on Escape
+  /** Close on Escape. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Close on outside click (capture)
+  /** Close on outside click (capture). */
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const el = rootRef.current;
@@ -143,7 +145,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       );
   }, [onClose]);
 
-  // Prevent clipping off-screen
+  /** Prevent the menu from clipping off-screen. */
   const { safeTop, safeLeft } = useMemo(() => {
     const MARGIN = 8;
     const MENU_W = 260;
@@ -159,6 +161,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, [position.left, position.top]);
 
   // ---- Render helpers ----
+
   const renderCmds = () => (
     <>
       {CanvasCmd.map((item) => (
@@ -348,11 +351,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={rootRef}
-      className="absolute rounded-md shadow-2xl bg-white dark:bg-stone-900"
+      className="absolute rounded-md shadow-2xl ptb-menu"
       style={{
         top: safeTop,
         left: safeLeft,
-        border: '1px solid rgba(0,0,0,0.08)',
         zIndex: 10000,
         minWidth: 240,
         pointerEvents: 'auto',
@@ -366,7 +368,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       role="menu"
       aria-label="Context menu"
     >
-      <ul className="flex flex-col py-1 text-left text-sm text-gray-700 dark:text-gray-300">
+      <ul className="flex flex-col py-1 text-left text-sm ptb-menu__list">
         {type === 'canvas' && (
           <>
             {/* Auto layout */}
@@ -389,12 +391,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               Auto layout
             </li>
 
-            <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
+            <li className="my-1 ptb-menu__sep" />
 
             {/* Commands (flat) */}
             {renderCmds()}
 
-            <li className="my-1 border-t border-gray-300 dark:border-stone-700" />
+            <li className="my-1 ptb-menu__sep" />
 
             {/* Scalars (flat) */}
             {renderScalars()}
@@ -437,3 +439,5 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     </div>
   );
 };
+
+export default ContextMenu;

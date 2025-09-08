@@ -12,12 +12,12 @@ import 'prismjs/plugins/line-numbers/prism-line-numbers';
 import 'prismjs/plugins/normalize-whitespace/prism-normalize-whitespace';
 
 // Prism CSS (theme + line numbers)
-import 'prismjs/themes/prism-tomorrow.css';
+// import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 
 import { AssetsModal } from './AssetsModal';
 import { usePtb } from './PtbProvider';
-import { ExecOptions } from '../codegen/types';
+import { type Theme, THEMES } from '../types';
 
 export const EMPTY_CODE = (
   net: string,
@@ -44,15 +44,11 @@ type CodePipProps = {
   defaultWidth?: number | string;
   maxHeight?: number | string;
 
-  theme: 'light' | 'dark';
-  onThemeChange?: (t: 'light' | 'dark') => void;
-
   defaultCollapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
 
   emptyText?: string;
 
-  execOpts: ExecOptions;
   onExecute?: () => Promise<void> | void;
   executing?: boolean;
   canExecute?: boolean;
@@ -87,15 +83,11 @@ export function CodePip({
   defaultWidth = 380,
   maxHeight = 520,
 
-  theme,
-  onThemeChange,
-
   defaultCollapsed = false,
   onCollapsedChange,
 
   emptyText = '// No code yet. Connect nodes or change values to see generated code.',
 
-  execOpts,
   onExecute,
   executing,
   canExecute = true,
@@ -110,7 +102,7 @@ export function CodePip({
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
-  const { readOnly } = usePtb();
+  const { readOnly, setTheme, theme, execOpts } = usePtb();
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = useMemo(() => code ?? '', [code]);
@@ -204,13 +196,14 @@ export function CodePip({
             <select
               aria-label="Theme"
               value={theme}
-              onChange={(e) =>
-                onThemeChange?.(e.target.value as 'light' | 'dark')
-              }
+              onChange={(e) => setTheme?.(e.target.value as Theme)}
               className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
             >
-              <option value="dark">dark</option>
-              <option value="light">light</option>
+              {THEMES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
             </select>
           </div>
         </div>

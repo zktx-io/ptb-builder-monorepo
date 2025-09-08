@@ -8,13 +8,7 @@
 // After offscreen spawn, we enable fitView only once layout is ready to avoid flicker.
 // -----------------------------------------------------------------------------
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   applyEdgeChanges,
@@ -32,7 +26,13 @@ import {
 import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
-import './style.css';
+import './styles/tailwind.css';
+import './styles/theme.light.css';
+import './styles/theme.dark.css';
+import './styles/theme.cobalt2.css';
+import './styles/theme.tokyo.night.css';
+import './styles/theme.cream.css';
+import './styles/common.css';
 
 import { CodePip, EMPTY_CODE } from './CodePip';
 import { EdgeTypes } from './edges';
@@ -64,6 +64,7 @@ import {
   type VariableNode,
 } from '../ptb/graph/types';
 import { buildCommandPorts } from '../ptb/registry';
+import { toColorMode } from '../types';
 
 const DEBOUNCE_MS = 250;
 
@@ -193,7 +194,6 @@ export function PTBFlow() {
     setGraph,
     readOnly,
     theme,
-    setTheme,
     chain,
     execOpts,
     runTx,
@@ -644,16 +644,6 @@ export function PTBFlow() {
     }
   }, [rfNodes, rfEdges, chain, execOpts]);
 
-  // ----- Theme-dependent grid colors -----------------------------------------
-
-  const { fineColor, accentColor } = useMemo(
-    () => ({
-      fineColor: theme === 'dark' ? '#2d333b' : '#e9e9e9',
-      accentColor: theme === 'dark' ? '#3d444d' : '#cfcfcf',
-    }),
-    [theme],
-  );
-
   // ----- Execute --------------------------------------------------------------
 
   const [executing, setExecuting] = useState(false);
@@ -804,12 +794,12 @@ export function PTBFlow() {
         width: '100%',
         height: '100%',
         position: 'relative',
-        background: theme === 'dark' ? '#0b0e12' : '#ffffff',
+        background: 'var(--ptb-canvas-bg)',
       }}
       className={flowActive ? 'ptb-flow-active' : undefined}
     >
       <ReactFlow
-        colorMode={theme}
+        colorMode={toColorMode(theme)}
         nodes={rfNodes}
         edges={rfEdges}
         /** Enable auto fit only after positions are laid out */
@@ -834,7 +824,7 @@ export function PTBFlow() {
           id="grid"
           key={`grid-${theme}`}
           gap={20}
-          color={fineColor}
+          color={'var(--ptb-grid-fine)'}
           lineWidth={1}
           variant={BackgroundVariant.Lines}
         />
@@ -842,7 +832,7 @@ export function PTBFlow() {
           id="accents"
           key={`accents-${theme}`}
           gap={100}
-          color={accentColor}
+          color={'var(--ptb-grid-accent)'}
           lineWidth={1.5}
           variant={BackgroundVariant.Lines}
           style={{ backgroundColor: 'transparent' }}
@@ -862,14 +852,11 @@ export function PTBFlow() {
               code={code}
               language="typescript"
               title="ts-sdk preview"
-              theme={theme}
-              onThemeChange={setTheme}
               emptyText={EMPTY_CODE(chain)}
               onExecute={onExecute}
               executing={executing}
               /** require editor mode + valid flow */
               canExecute={!readOnly && flowActive}
-              execOpts={execOpts}
               onAssetPick={onAssetPick}
             />
           </div>

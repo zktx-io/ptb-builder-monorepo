@@ -133,7 +133,7 @@ export type PtbProviderProps = {
   onDocChange?: (doc: PTBDoc) => void;
   onDocDebounceMs?: number;
 
-  theme?: Theme;
+  initialTheme: Theme;
   execOpts?: ExecOptions;
 
   executeTx?: (
@@ -229,20 +229,24 @@ export function PtbProvider({
   onDocChange,
   onDocDebounceMs = DEFAULT_DOC_DEBOUNCE,
 
-  theme: themeProp = 'dark',
+  initialTheme,
   execOpts: execOptsProp = {},
 
   executeTx: executeTxProp,
   toast: toastProp,
 }: PtbProviderProps) {
   // Theme
-  const [theme, setTheme] = useState<Theme>(themeProp);
-  useLayoutEffect(() => {
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+
+  const applyTheme = React.useCallback((t: Theme) => {
     const root = document.documentElement;
-    theme === 'dark'
-      ? root.classList.add('dark')
-      : root.classList.remove('dark');
-  }, [theme]);
+    t === 'dark' ? root.classList.add('dark') : root.classList.remove('dark');
+    root.setAttribute('data-ptb-theme', t);
+  }, []);
+
+  useLayoutEffect(() => {
+    applyTheme(theme);
+  }, [theme, applyTheme]);
 
   // Flow actions
   const flowActionsRef = React.useRef<{ autoLayoutAndFit?: () => void }>({});

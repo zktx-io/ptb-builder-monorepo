@@ -1,312 +1,96 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* ============================================================
-   PTB THEME: CSS VARIABLES
-   - Borders are opaque (no alpha).
-   - Backgrounds keep alpha to show layering.
-   - Brightness order: normal < hover < active.
+   PTB COMMON STYLES (theme-agnostic; uses CSS variables)
    ============================================================ */
 
-/* Light (default theme) */
+/* ---------- Root tokens (geometry/widths/animation/global) ---------- */
 :root {
-  /* Flow (command → command) */
-  --ptb-flow-stroke: #9ca3af; /* gray-400 */
+  /* Flow */
   --ptb-flow-width: 2.75;
   --ptb-flow-dash: 5 5;
 
-  /* IO edge colors by category (normal) */
-  --ptb-io-address-stroke: #f59e0b; /* amber-500 */
+  /* IO edge widths/dash (colors live in theme files) */
   --ptb-io-address-width: 2.5;
-  --ptb-io-number-stroke:  #ef4444; /* red-500 */
-  --ptb-io-number-width: 2.5;
-  --ptb-io-bool-stroke:    #8b5cf6; /* violet-500 */
-  --ptb-io-bool-width: 2.5;
-  --ptb-io-string-stroke:  #10b981; /* emerald-500 */
-  --ptb-io-string-width: 2.5;
-  --ptb-io-object-stroke:  #3b82f6; /* blue-500 */
-  --ptb-io-object-width: 2.5;
-  --ptb-io-id-stroke:      #06b6d4; /* cyan-500 */
-  --ptb-io-id-width: 2.5;
-  --ptb-io-unknown-stroke: #737373; /* gray-500 */
+  --ptb-io-number-width:  2.5;
+  --ptb-io-bool-width:    2.5;
+  --ptb-io-string-width:  2.5;
+  --ptb-io-object-width:  2.5;
+  --ptb-io-id-width:      2.5;
+
   --ptb-io-unknown-width: 2;
-  --ptb-io-unknown-dash: 4 4;
+  --ptb-io-unknown-dash:  4 4;
 
-  /* IO edge colors (selected/active = brighter) */
-  --ptb-io-address-stroke-active: #fbbf24; /* amber-400 */
-  --ptb-io-number-stroke-active:  #f87171; /* red-400 */
-  --ptb-io-bool-stroke-active:    #a78bfa; /* violet-400 */
-  --ptb-io-string-stroke-active:  #34d399; /* emerald-400 */
-  --ptb-io-object-stroke-active:  #60a5fa; /* blue-400 */
-  --ptb-io-id-stroke-active:      #22d3ee; /* cyan-400 */
-  --ptb-io-unknown-stroke-active: #a3a3a3; /* gray-400 */
-
-  /* =======================
-     Node surfaces (border/bg)
-     ======================= */
-
-  /* Command (gray) */
-  --ptb-node-command-border:        #9ca3af; /* gray-400 */
-  --ptb-node-command-bg:            rgba(209,213,219,0.60); /* gray-300 */
-  --ptb-node-command-border-hover:  #6b7280; /* gray-500 */
-  --ptb-node-command-bg-hover:      rgba(209,213,219,0.75);
-  --ptb-node-command-border-active: #6b7280; /* gray-500 */
-  --ptb-node-command-bg-active:     rgba(209,213,219,0.90);
-
-  /* Address (amber) */
-  --ptb-node-address-border:        #b45309; /* amber-700 */
-  --ptb-node-address-bg:            rgba(253,230,138,0.60); /* amber-200 */
-  --ptb-node-address-border-hover:  #f59e0b; /* amber-500 */
-  --ptb-node-address-bg-hover:      rgba(253,230,138,0.75);
-  --ptb-node-address-border-active: #fbbf24; /* amber-400 */
-  --ptb-node-address-bg-active:     rgba(253,230,138,0.90);
-
-  /* Number (red) */
-  --ptb-node-number-border:         #b91c1c; /* red-700 */
-  --ptb-node-number-bg:             rgba(252,165,165,0.60); /* red-300 */
-  --ptb-node-number-border-hover:   #ef4444; /* red-500 */
-  --ptb-node-number-bg-hover:       rgba(252,165,165,0.75);
-  --ptb-node-number-border-active:  #f87171; /* red-400 */
-  --ptb-node-number-bg-active:      rgba(252,165,165,0.90);
-
-  /* Bool (violet) */
-  --ptb-node-bool-border:           #6d28d9; /* violet-700 */
-  --ptb-node-bool-bg:               rgba(196,181,253,0.60); /* violet-300 */
-  --ptb-node-bool-border-hover:     #8b5cf6; /* violet-500 */
-  --ptb-node-bool-bg-hover:         rgba(196,181,253,0.75);
-  --ptb-node-bool-border-active:    #a78bfa; /* violet-400 */
-  --ptb-node-bool-bg-active:        rgba(196,181,253,0.90);
-
-  /* String (emerald) */
-  --ptb-node-string-border:         #047857; /* emerald-700 */
-  --ptb-node-string-bg:             rgba(134,239,172,0.60); /* emerald-300 */
-  --ptb-node-string-border-hover:   #10b981; /* emerald-500 */
-  --ptb-node-string-bg-hover:       rgba(134,239,172,0.75);
-  --ptb-node-string-border-active:  #34d399; /* emerald-400 */
-  --ptb-node-string-bg-active:      rgba(134,239,172,0.90);
-
-  /* Object (blue) */
-  --ptb-node-object-border:         #1d4ed8; /* blue-700 */
-  --ptb-node-object-bg:             rgba(147,197,253,0.60); /* blue-300 */
-  --ptb-node-object-border-hover:   #3b82f6; /* blue-500 */
-  --ptb-node-object-bg-hover:       rgba(147,197,253,0.75);
-  --ptb-node-object-border-active:  #60a5fa; /* blue-400 */
-  --ptb-node-object-bg-active:      rgba(147,197,253,0.90);
-
-  /* ID (cyan) */
-  --ptb-node-id-border:        #0e7490; /* cyan-700 */
-  --ptb-node-id-bg:            rgba(103,232,249,0.60); /* cyan-300 */
-  --ptb-node-id-border-hover:  #06b6d4; /* cyan-500 */
-  --ptb-node-id-bg-hover:      rgba(103,232,249,0.75);
-  --ptb-node-id-border-active: #22d3ee; /* cyan-400 */
-  --ptb-node-id-bg-active:     rgba(103,232,249,0.90);
-
-  /* Unknown (gray neutral) */
-  --ptb-node-unknown-border:        #525252; /* gray-600 */
-  --ptb-node-unknown-bg:            rgba(163,163,163,0.60); /* gray-400 */
-  --ptb-node-unknown-border-hover:  #737373; /* gray-500 */
-  --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.75);
-  --ptb-node-unknown-border-active: #a3a3a3; /* gray-400 */
-  --ptb-node-unknown-bg-active:     rgba(163,163,163,0.90);
-
-  /* === Option (violet-ish, distinct from Bool) === */
-  --ptb-node-option-border:         #7c3aed; /* violet-600 */
-  --ptb-node-option-bg:             rgba(199, 178, 255, 0.55); /* custom soft violet */
-  --ptb-node-option-border-hover:   #8b5cf6; /* violet-500 */
-  --ptb-node-option-bg-hover:       rgba(199, 178, 255, 0.72);
-  --ptb-node-option-border-active:  #a78bfa; /* violet-400 */
-  --ptb-node-option-bg-active:      rgba(199, 178, 255, 0.90);
-
-  /* ===== CodePip palette (Light) ===== */
-  --ptb-codepip-header-bg: rgba(255,255,255,0.92);
-  --ptb-codepip-header-fg: #111;
-  --ptb-codepip-body-bg: rgba(250,250,250,0.98);
-  --ptb-codepip-border: rgba(0,0,0,0.08);
-
-  /* resizer (light) */
-  --ptb-code-resizer-bg: rgba(0,0,0,0.08);
-  --ptb-code-resizer-hover-bg: rgba(0,0,0,0.18);
-  --ptb-code-resizer-grip: rgba(0,0,0,0.35);
-
-  --ptb-code-btn-neutral-bg: #e5e7eb; /* gray-200 */
-  --ptb-code-btn-neutral-fg: #111827;
-
-  /* Run button = RED */
-  --ptb-code-btn-run: #ef4444;           /* red-500 */
-  --ptb-code-btn-run-hover: #f87171;     /* red-400 */
-  --ptb-code-btn-run-active: #dc2626;    /* red-600 */
-  --ptb-code-btn-run-disabled: #c7cbd1;  /* muted */
-
-  /* neutral buttons hover/active */
-  --ptb-code-btn-neutral-hover: #f3f4f6; /* gray-100 */
-  --ptb-code-btn-neutral-active: #d1d5db; /* gray-300 */
-
-  /* Modal Overlay */
-  --ptb-modal-overlay: rgba(0,0,0,0.45);
-
-  /* Modal Panel */
-  --ptb-modal-panel-bg: #f8fafc;
-  --ptb-modal-panel-fg: #0b0f14;
-  --ptb-modal-panel-border: rgba(0,0,0,0.12);
-
-  /* Modal Header */
-  --ptb-modal-header-bg: rgba(255,255,255,0.98);
-
-  /* Modal List */
+  /* Assets / Modal list */
   --ptb-assets-list-h: 58vh;
-  --ptb-assets-row-hover: rgba(0,0,0,0.06);
-  --ptb-assets-divider: rgba(0,0,0,0.12);
 
-  /* Modal Buttons (neutral) */
-  --ptb-modal-btn-neutral-bg: #e5e7eb;      /* gray-200 */
-  --ptb-modal-btn-neutral-fg: #111827;      /* gray-900 */
-  --ptb-modal-btn-neutral-hover: #f3f4f6;   /* gray-100 */
-  --ptb-modal-btn-neutral-active: #d1d5db;  /* gray-300 */
+  /* Mode */
+  --ptb-node-backdrop-filter: blur(1px);
+
+  /* Fallbacks - Prism code tokens (themes may override) */
+  --ptb-code-fg: #111827;
+  --ptb-code-bg: #fafafa;
+
+  --ptb-code-comment:  #6b7280;
+  --ptb-code-keyword:  #2563eb;
+  --ptb-code-string:   #047857;
+  --ptb-code-function: #b45309;
+  --ptb-code-number:   #b91c1c;
+  --ptb-code-operator: #374151;
+  --ptb-code-punctuation: #374151;
+  --ptb-code-class:    #7c3aed;
+  --ptb-code-attr:     #0d9488;
+  --ptb-code-builtin:  #db2777;
+  --ptb-code-boolean:  #b91c1c;
+
+  /* Optional: selection & inline-code backgrounds (Prism) */
+  --ptb-code-selection-bg: color-mix(in srgb, var(--ptb-code-fg) 10%, transparent);
+  --ptb-code-highlight-bg: color-mix(in srgb, var(--ptb-code-fg) 6%, transparent);
 }
-
-/* Dark theme (opaque borders, alpha BGs) */
-.dark {
-  --ptb-flow-stroke: #374151; /* gray-700 */
-  --ptb-io-unknown-stroke: #a3a3a3;
-
-  /* IO edge colors (normal, tuned for dark) */
-  --ptb-io-address-stroke: #d97706; /* amber-600 */
-  --ptb-io-number-stroke:  #dc2626; /* red-600 */
-  --ptb-io-bool-stroke:    #7c3aed; /* violet-600 */
-  --ptb-io-string-stroke:  #059669; /* emerald-600 */
-  --ptb-io-object-stroke:  #2563eb; /* blue-600 */
-  --ptb-io-id-stroke:      #0891b2; /* cyan-600 */
-  --ptb-io-unknown-stroke: #737373; /* gray-500 */
-
-  /* IO selected/active */
-  --ptb-io-address-stroke-active: #f59e0b; /* amber-500 */
-  --ptb-io-number-stroke-active:  #ef4444; /* red-500 */
-  --ptb-io-bool-stroke-active:    #8b5cf6; /* violet-500 */
-  --ptb-io-string-stroke-active:  #10b981; /* emerald-500 */
-  --ptb-io-object-stroke-active:  #3b82f6; /* blue-500 */
-  --ptb-io-id-stroke-active:      #22d3ee; /* cyan-400 */
-  --ptb-io-unknown-stroke-active: #d4d4d4; /* gray-300 */
-
-  /* Command */
-  --ptb-node-command-border:        #374151; /* gray-700 */
-  --ptb-node-command-bg:            rgba(31,41,55,0.60);
-  --ptb-node-command-border-hover:  #9ca3af; /* gray-400 */
-  --ptb-node-command-bg-hover:      rgba(31,41,55,0.75);
-  --ptb-node-command-border-active: #9ca3af; /* gray-400 */
-  --ptb-node-command-bg-active:     rgba(31,41,55,0.95);
-
-  /* Address */
-  --ptb-node-address-border:        #92400e; /* amber-800 */
-  --ptb-node-address-bg:            rgba(245,158,11,0.22);
-  --ptb-node-address-border-hover:  #f59e0b; /* amber-500 */
-  --ptb-node-address-bg-hover:      rgba(245,158,11,0.35);
-  --ptb-node-address-border-active: #fbbf24; /* amber-400 */
-  --ptb-node-address-bg-active:     rgba(245,158,11,0.48);
-
-  /* Number */
-  --ptb-node-number-border:         #7f1d1d; /* red-900 */
-  --ptb-node-number-bg:             rgba(248,113,113,0.22);
-  --ptb-node-number-border-hover:   #ef4444; /* red-500 */
-  --ptb-node-number-bg-hover:       rgba(248,113,113,0.35);
-  --ptb-node-number-border-active:  #f87171; /* red-400 */
-  --ptb-node-number-bg-active:      rgba(248,113,113,0.48);
-
-  /* Bool */
-  --ptb-node-bool-border:           #5b21b6; /* violet-800 */
-  --ptb-node-bool-bg:               rgba(167,139,250,0.22);
-  --ptb-node-bool-border-hover:     #8b5cf6; /* violet-500 */
-  --ptb-node-bool-bg-hover:         rgba(167,139,250,0.35);
-  --ptb-node-bool-border-active:    #a78bfa; /* violet-400 */
-  --ptb-node-bool-bg-active:        rgba(167,139,250,0.48);
-
-  /* String */
-  --ptb-node-string-border:         #065f46; /* emerald-800 */
-  --ptb-node-string-bg:             rgba(16,185,129,0.22);
-  --ptb-node-string-border-hover:   #10b981; /* emerald-500 */
-  --ptb-node-string-bg-hover:       rgba(16,185,129,0.35);
-  --ptb-node-string-border-active:  #34d399; /* emerald-400 */
-  --ptb-node-string-bg-active:      rgba(16,185,129,0.48);
-
-  /* Object */
-  --ptb-node-object-border:         #1e3a8a; /* blue-900 */
-  --ptb-node-object-bg:             rgba(59,130,246,0.22);
-  --ptb-node-object-border-hover:   #3b82f6; /* blue-500 */
-  --ptb-node-object-bg-hover:       rgba(59,130,246,0.35);
-  --ptb-node-object-border-active:  #60a5fa; /* blue-400 */
-  --ptb-node-object-bg-active:      rgba(59,130,246,0.48);
-
-  /* ID */
-  --ptb-node-id-border:        #164e63; /* cyan-900 */
-  --ptb-node-id-bg:            rgba(103,232,249,0.22); /* cyan-300 */
-  --ptb-node-id-border-hover:  #0891b2; /* cyan-600 */
-  --ptb-node-id-bg-hover:      rgba(103,232,249,0.35);
-  --ptb-node-id-border-active: #22d3ee; /* cyan-400 */
-  --ptb-node-id-bg-active:     rgba(103,232,249,0.48);
-
-  /* Unknown */
-  --ptb-node-unknown-border:        #404040; /* gray-700 */
-  --ptb-node-unknown-bg:            rgba(163,163,163,0.22);
-  --ptb-node-unknown-border-hover:  #737373; /* gray-500 */
-  --ptb-node-unknown-bg-hover:      rgba(163,163,163,0.35);
-  --ptb-node-unknown-border-active: #d4d4d4; /* gray-300 */
-  --ptb-node-unknown-bg-active:     rgba(163,163,163,0.48);
-
-  /* Option */
-  --ptb-node-option-border:         #6d28d9; /* violet-700 */
-  --ptb-node-option-bg:             rgba(139,92,246,0.22);  /* violet-500 faint */
-  --ptb-node-option-border-hover:   #8b5cf6; /* violet-500 */
-  --ptb-node-option-bg-hover:       rgba(139,92,246,0.35);
-  --ptb-node-option-border-active:  #a78bfa; /* violet-400 */
-  --ptb-node-option-bg-active:      rgba(139,92,246,0.48);
-
-  /* ===== CodePip palette (Dark) ===== */
-  --ptb-codepip-header-bg: rgba(17,17,17,0.9);
-  --ptb-codepip-header-fg: #fff;
-  --ptb-codepip-body-bg: rgba(13,17,23,0.9);
-  --ptb-codepip-border: rgba(255,255,255,0.08);
-
-  /* resizer (dark) */
-  --ptb-code-resizer-bg: rgba(255,255,255,0.10);
-  --ptb-code-resizer-hover-bg: rgba(255,255,255,0.20);
-  --ptb-code-resizer-grip: rgba(255,255,255,0.55);
-
-  --ptb-code-btn-neutral-bg: #374151; /* gray-700 */
-  --ptb-code-btn-neutral-fg: #ffffff;
-  
-  /* Run button */
-  --ptb-code-btn-run: #ef4444;           /* red-500 */
-  --ptb-code-btn-run-hover: #f87171;     /* red-400 */
-  --ptb-code-btn-run-active: #dc2626;    /* red-600 */
-  --ptb-code-btn-run-disabled: #6b7280;  /* gray-500-ish */
-
-  --ptb-code-btn-neutral-hover: #4b5563;  /* gray-600 */
-  --ptb-code-btn-neutral-active: #6b7280; /* gray-500 */
-
-  /* Modal */
-  --ptb-modal-overlay: rgba(0,0,0,0.45);
-
-  --ptb-modal-panel-bg: #0f1115;
-  --ptb-modal-panel-fg: #ffffff;
-  --ptb-modal-panel-border: rgba(255,255,255,0.12);
-
-  --ptb-modal-header-bg: rgba(17,17,17,0.95);
-
-  --ptb-assets-row-hover: rgba(255,255,255,0.06);
-  --ptb-assets-divider: rgba(255,255,255,0.12);
-
-  --ptb-modal-btn-neutral-bg: #1f2937;       /* gray-800 */
-  --ptb-modal-btn-neutral-fg: #e5e7eb;
-  --ptb-modal-btn-neutral-hover: #374151;    /* gray-700 */
-  --ptb-modal-btn-neutral-active: #4b5563;   /* gray-600 */
-}
-
-/* ============================================================
-   EDGE STYLES
-   ============================================================ */
 
 @keyframes ptb-flow-dash { to { stroke-dashoffset: -50; } }
 
+/* ============================================================
+   Context menu (consumes theme tokens)
+   ============================================================ */
+
+.ptb-menu {
+  background: var(--ptb-menu-bg);
+  color: var(--ptb-menu-fg);
+  border: 1px solid var(--ptb-menu-border);
+}
+
+.ptb-menu__list {
+  color: var(--ptb-menu-fg);
+}
+
+.ptb-menu__item {
+  background: var(--ptb-menu-bg);
+  color: var(--ptb-menu-fg);
+}
+
+.ptb-menu__item:hover {
+  background: var(--ptb-menu-hover-bg);
+}
+
+.ptb-menu__submenu {
+  background: var(--ptb-menu-submenu-bg);
+  border: 1px solid var(--ptb-menu-border);
+}
+
+.ptb-menu__sep {
+  border-top: 1px solid var(--ptb-menu-separator);
+}
+
+.ptb-menu__item--disabled {
+  opacity: var(--ptb-menu-disabled-opacity);
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Edges
+   ============================================================ */
+
+/* Flow (dashed, animated when Start→End path exists) */
 .ptb-flow-edge {
   stroke: var(--ptb-flow-stroke);
   stroke-width: var(--ptb-flow-width);
@@ -320,7 +104,7 @@
 .ptb-flow-active .ptb-flow-edge { animation: ptb-flow-dash 1.8s linear infinite; }
 .ptb-flow-edge.is-selected { filter: drop-shadow(0 0 2px rgba(0,0,0,0.25)); }
 
-/* IO edge (solid, no dash/animation). Selected state uses XY vars we set. */
+/* IO (solid) */
 .ptb-io-edge {
   stroke-dasharray: none !important;
   animation: none !important;
@@ -332,6 +116,7 @@
   --xy-edge-stroke: var(--ptb-io-unknown-stroke);
   --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
 }
+
 /* Category → stroke vars + width */
 .ptb-io-edge--address { --xy-edge-stroke: var(--ptb-io-address-stroke);  --xy-edge-stroke-selected: var(--ptb-io-address-stroke-active);  stroke-width: var(--ptb-io-address-width); }
 .ptb-io-edge--number  { --xy-edge-stroke: var(--ptb-io-number-stroke);   --xy-edge-stroke-selected: var(--ptb-io-number-stroke-active);   stroke-width: var(--ptb-io-number-width);  }
@@ -345,15 +130,23 @@
 .react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke); }
 
 /* Hover brighten (falls back to selected if no hover var is provided) */
-.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected)); }
+.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge {
+  stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected));
+}
 
 /* Keep pointer affordance and hit-test behavior */
 .react-flow__edge, .react-flow__edge-path { cursor: pointer; }
 .react-flow__edge-path { pointer-events: stroke; }
 
 /* ============================================================
-   NODE STYLES
+   Nodes
    ============================================================ */
+
+/* Optional theme-driven backdrop blur for all nodes */
+.react-flow__node {
+  backdrop-filter: var(--ptb-node-backdrop-filter, none);
+  -webkit-backdrop-filter: var(--ptb-node-backdrop-filter, none);
+}
 
 .ptb-node-shell {
   position: relative;
@@ -361,6 +154,7 @@
   z-index: 0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
   will-change: border-color, background-color;
+  animation: ptb-fade-in 140ms ease-out;
 }
 
 /* Remove default shadow; keep ring */
@@ -390,7 +184,7 @@
 /* Option */
 .ptb-node--option  { --ptb-active-ring: var(--ptb-node-option-border-active); }
 
-/* Base (Normal) surfaces per type */
+/* Base surfaces per type */
 .ptb-node--command .ptb-node-shell { border-color: var(--ptb-node-command-border); background: var(--ptb-node-command-bg); }
 .ptb-node--address .ptb-node-shell { border-color: var(--ptb-node-address-border); background: var(--ptb-node-address-bg); }
 .ptb-node--number  .ptb-node-shell { border-color: var(--ptb-node-number-border);  background: var(--ptb-node-number-bg); }
@@ -426,34 +220,37 @@
 /* Option */
 .react-flow__node.selected:has(.ptb-node--option)  .ptb-node-shell { border-color: var(--ptb-node-option-border-active);  background: var(--ptb-node-option-bg-active); }
 
+/* Subtle appear animation */
+@keyframes ptb-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ============================================================
-   HANDLE & LABEL STYLES (CLEAN)
-   - Parent never rotates; only the glyph rotates for vector (diamond).
-   - Labels are always horizontal and overflow outside the 12x12 box.
+   Handles & Labels
    ============================================================ */
 
-/* Base handle: no outline, no shadow; color inherits from node state */
+/* Base handle: no outline/shadow; color=inherit */
 .ptb-handle {
   width: 12px;
   height: 12px;
-  border: 0;                       /* remove outline */
-  background-color: currentColor;  /* fill uses currentColor */
+  border: 0;
+  background-color: currentColor;
   box-sizing: border-box;
-  box-shadow: none;                 /* remove glow/border shadow */
+  box-shadow: none;
   color: inherit;
   pointer-events: all;
-  overflow: visible;                /* allow glyph/label overflow */
+  overflow: visible;
   z-index: 10;
   transition: filter .12s ease;
 }
 
-/* Keyboard accessibility ring only */
 .ptb-handle:focus-visible {
   outline: 2px solid var(--ptb-active-ring);
   outline-offset: 2px;
 }
 
-/* Flow handle: size + shape + theme-driven color */
+/* Flow handle */
 .ptb-handle--flow {
   width: 12px;
   height: 12px;
@@ -465,8 +262,7 @@
   background: var(--ptb-flow-stroke);
   border-color: var(--ptb-flow-stroke);
 }
-
-/* --- Flow handle → follow Command node border color (normal/hover/selected) --- */
+/* Follow Command node border color */
 .react-flow__node:has(.ptb-node--command) .ptb-handle--flow {
   color: var(--ptb-node-command-border);
   background: var(--ptb-node-command-border);
@@ -483,24 +279,12 @@
   border-color: var(--ptb-node-command-border-active);
 }
 
-/* Scalar = circle */
-.ptb-handle--scalar { border-radius: 9999px; }
+/* Shapes */
+.ptb-handle--scalar { border-radius: 9999px; }      /* circle  */
+.ptb-handle--vector { background-color: transparent; border-color: transparent; border-radius: 2px; }
+.ptb-handle--option { border-radius: 2px; background-color: currentColor; border: 0; }
 
-/* Vector parent transparent; diamond is drawn by glyph */
-.ptb-handle--vector {
-  background-color: transparent;
-  border-color: transparent;
-  border-radius: 2px;
-}
-
-/* Option = square (explicit) */
-.ptb-handle--option {
-  border-radius: 2px;           /* square-ish corners */
-  background-color: currentColor;
-  border: 0;
-}
-
-/* Glyph layer (rotates for diamond) */
+/* Glyph layer */
 .ptb-handle-glyph {
   position: absolute;
   inset: 0;
@@ -515,10 +299,9 @@
   transform-origin: center center;
 }
 
-/* Ensure handle color always tracks node color (even if other rules compete) */
+/* IO handle color = node border color */
 .ptb-handle--io { color: inherit !important; }
 
-/* ------- Labels rendered inside <Handle> ------- */
 .ptb-handle-label {
   position: absolute;
   top: 50%;
@@ -526,13 +309,13 @@
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
-  color: #111827;                /* gray-900 (light) */
+  color: #111827; /* fallback */
 }
-.dark .ptb-handle-label { color: #e5e7eb; } /* gray-200 (dark) */
+.dark .ptb-handle-label { color: #e5e7eb; } /* fallback */
 .ptb-handle-label--left  { left:  calc(100% + 8px); text-align: left; }
 .ptb-handle-label--right { right: calc(100% + 8px); text-align: right; }
 
-/* ===== Handle color sync with node border (Normal / Hover / Active) ===== */
+/* Map IO handle colors to node state */
 .react-flow__node:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border); }
 .react-flow__node:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border); }
 .react-flow__node:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border); }
@@ -541,10 +324,9 @@
 .react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
 .react-flow__node:has(.ptb-node--id)      .ptb-handle--io { color: var(--ptb-node-id-border); }
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
-/* Option */
 .react-flow__node:has(.ptb-node--option)  .ptb-handle--io { color: var(--ptb-node-option-border); }
 
-/* Hover / Selected mapping (IO handles only) */
+/* Hover / Selected mapping */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
 .react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
 
@@ -569,7 +351,6 @@
 .react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border-active); }
 
-/* Option */
 .react-flow__node:has(.ptb-node--option):hover .ptb-handle--io { color: var(--ptb-node-option-border-hover); }
 .react-flow__node.selected:has(.ptb-node--option) .ptb-handle--io { color: var(--ptb-node-option-border-active); }
 
@@ -577,25 +358,26 @@
 .react-flow__handle:hover,
 .ptb-handle:hover { filter: brightness(1.05); }
 
-/* === Context-menu variable markers (match IO colors) === */
+/* ============================================================
+   Context-menu variable markers (match IO colors)
+   ============================================================ */
+
 .ptb-marker {
   display: inline-block;
   width: 10px;
   height: 10px;
-  background: currentColor;   /* fill from currentColor */
-  border-radius: 9999px;      /* scalar = round */
+  background: currentColor;
+  border-radius: 9999px; /* scalar */
   vertical-align: middle;
   color: var(--ptb-io-unknown-stroke); /* safe default */
 }
-
 /* vector = diamond */
 .ptb-marker.ptb-marker--vector {
   border-radius: 2px !important;
   transform: rotate(45deg);
   transform-origin: center center;
 }
-
-/* category → color (use same vars as edges/handles) */
+/* category → color */
 .ptb-marker--address { color: var(--ptb-io-address-stroke); }
 .ptb-marker--number  { color: var(--ptb-io-number-stroke);  }
 .ptb-marker--bool    { color: var(--ptb-io-bool-stroke);    }
@@ -606,10 +388,9 @@
 .ptb-marker--option  { color: var(--ptb-node-option-border); }
 
 /* ============================================================
-   OPTION NODE EXTRAS (UI bits used by VarNode when kind=Option)
+   Option node extras (UI controls used in VarNode when kind=Option)
    ============================================================ */
 
-/* Small title text helper (optional) */
 .ptb-title {
   color: inherit;
   font-size: 11px;
@@ -617,7 +398,6 @@
   letter-spacing: .2px;
 }
 
-/* Option editor area separator */
 .ptb-option-editor {
   margin-top: 6px;
   padding-top: 6px;
@@ -625,20 +405,19 @@
 }
 .dark .ptb-option-editor { border-top-color: rgba(255,255,255,0.12); }
 
-/* Some/None compact toggle */
 .ptb-option-toggle {
   font-size: 10px;
   line-height: 1;
   padding: 3px 8px;
   border-radius: 8px;
-  border: 1px solid #d1d5db; /* gray-300 */
+  border: 1px solid #d1d5db; /* fallback */
   background: #ffffff;
   color: #111827;
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 .ptb-option-toggle:hover { background: #f9fafb; } /* gray-50 */
 .dark .ptb-option-toggle {
-  border-color: #4b5563; /* gray-600 */
+  border-color: #4b5563; /* fallback */
   background: #0b0e12;
   color: #e5e7eb;
 }
@@ -650,7 +429,6 @@
 }
 .ptb-option-toggle.is-none { opacity: .9; }
 
-/* Chip-style label for Option */
 .ptb-option-chip {
   display: inline-flex;
   align-items: center;
@@ -658,7 +436,7 @@
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 9999px;
-  background: rgba(167,139,250,0.18); /* violet-400 faint */
+  background: rgba(167,139,250,0.18); /* fallback */
   border: 1px solid var(--ptb-node-option-border);
   color: inherit;
 }
@@ -676,7 +454,7 @@
 /* Mini stepper near header */
 .ptb-mini-stepper { margin-left: 6px; }
 
-/* Inputs inside node */
+/* Inputs inside node (fallbacks for non-tokenized controls) */
 .ptb-text-input {
   display: block;
   width: 100%;
@@ -703,9 +481,8 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 28%, transparent);
 }
 
-
 /* ============================================================
-   CodePip styles
+   CodePip
    ============================================================ */
 
 .ptb-codepip {
@@ -748,9 +525,7 @@
   border: 1px solid color-mix(in srgb, var(--ptb-codepip-header-fg) 20%, transparent);
 }
 
-
-/* ===== Resizable LEFT handle ===== */
-
+/* Resizable LEFT handle */
 .ptb-resize-handle {
   position: absolute;
   top: 0;
@@ -765,7 +540,6 @@
   justify-content: center;
   z-index: 5;
 }
-
 .ptb-resize-handle::after {
   content: '';
   width: 2px;
@@ -777,11 +551,9 @@
      3px 0 0 0 var(--ptb-code-resizer-grip);
   opacity: .9;
 }
-
 .ptb-resize-handle:hover {
   background: var(--ptb-code-resizer-hover-bg);
 }
-
 .ptb-codepip .resizable-handle-left {
   width: 8px;
   cursor: ew-resize;
@@ -800,12 +572,9 @@
   padding: 0.2rem 0.4rem;
   transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out;
 }
+.ptb-codepip__btn:active { transform: translateY(0.5px); }
 
-.ptb-codepip__btn:active {
-  transform: translateY(0.5px);
-}
-
-/* Neutral buttons: copy / assets */
+/* Neutral: copy / assets */
 .ptb-codepip__btn--copy,
 .ptb-codepip__btn--assets {
   background: var(--ptb-code-btn-neutral-bg);
@@ -822,19 +591,14 @@
   transform: translateY(0.5px);
 }
 
-/* Run button - RED */
+/* Run */
 .ptb-codepip__btn--run {
   background: var(--ptb-code-btn-run);
   color: #fff;
   transition: background 120ms ease, transform 40ms ease-in-out;
 }
-.ptb-codepip__btn--run:hover {
-  background: var(--ptb-code-btn-run-hover);
-}
-.ptb-codepip__btn--run:active {
-  background: var(--ptb-code-btn-run-active);
-  transform: translateY(0.5px);
-}
+.ptb-codepip__btn--run:hover  { background: var(--ptb-code-btn-run-hover); }
+.ptb-codepip__btn--run:active { background: var(--ptb-code-btn-run-active); transform: translateY(0.5px); }
 .ptb-codepip__btn--run[disabled],
 .ptb-codepip__btn--run[aria-busy="true"] {
   background: var(--ptb-code-btn-run-disabled);
@@ -850,7 +614,7 @@
 }
 
 /* ============================================================
-   AssetsModal styles
+   AssetsModal
    ============================================================ */
 
 .ptb-modal {
@@ -884,22 +648,15 @@
   background: var(--ptb-modal-header-bg);
   border-bottom: 1px solid var(--ptb-modal-panel-border);
 }
-.ptb-modal__title {
-  font-weight: 600;
-}
-.ptb-modal__subtitle {
-  font-size: 12px;
-  opacity: .7;
-}
+.ptb-modal__title { font-weight: 600; }
+.ptb-modal__subtitle { font-size: 12px; opacity: .7; }
 
 /* Body */
-.ptb-modal__body {
-  padding: 12px;
-}
+.ptb-modal__body { padding: 12px; }
 .ptb-modal__list {
   border: 1px solid var(--ptb-modal-panel-border);
   border-radius: 6px;
-  height: 58vh;
+  height: var(--ptb-assets-list-h);
   overflow: auto;
 }
 .ptb-modal__list-empty,
@@ -919,26 +676,9 @@
   cursor: pointer;
   transition: background 120ms ease;
 }
-.ptb-modal__item:hover {
-  background: rgba(0,0,0,0.06);
-}
-.dark .ptb-modal__item:hover {
-  background: rgba(255,255,255,0.06);
-}
-.ptb-modal__item-id {
-  font-size: 12px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ptb-modal__item-type {
-  font-size: 11px;
-  opacity: .75;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.ptb-modal__item:hover { background: var(--ptb-assets-row-hover); }
+.ptb-modal__item-id   { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptb-modal__item-type { font-size: 11px; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Footer (pagination) */
 .ptb-modal__footer {
@@ -959,11 +699,117 @@
 .ptb-modal__btn:active { background: var(--ptb-modal-btn-neutral-active); transform: translateY(0.5px); }
 .ptb-modal__btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
-/* Subtle appear animation */
-.ptb-node-shell {
-  animation: ptb-fade-in 140ms ease-out;
+/* ============================================================
+   Canvas background (container uses this var)
+   ============================================================ */
+
+.ptb-canvas {
+  background: var(--ptb-canvas-bg);
 }
-@keyframes ptb-fade-in {
-  from { opacity: 0; transform: translateY(2px); }
-  to   { opacity: 1; transform: translateY(0); }
+
+/* ============================================================
+   Prism (syntax highlighting driven by CSS vars)
+   - Uses --ptb-code-* tokens set by each theme.
+   - Works with Prism core + line-numbers plugin.
+   ============================================================ */
+
+/* Base mapping for code blocks inside CodePip */
+.ptb-codepip__body pre[class*="language-"],
+.ptb-codepip__body code[class*="language-"] {
+  background: var(--ptb-code-bg) !important;
+  color: var(--ptb-code-fg) !important;
+  text-shadow: none !important;
+}
+
+/* Token colors */
+.ptb-codepip__body .token.comment,
+.ptb-codepip__body .token.block-comment,
+.ptb-codepip__body .token.prolog,
+.ptb-codepip__body .token.doctype,
+.ptb-codepip__body .token.cdata {
+  color: var(--ptb-code-comment) !important;
+}
+
+.ptb-codepip__body .token.punctuation {
+  color: var(--ptb-code-punctuation) !important;
+}
+
+.ptb-codepip__body .token.property,
+.ptb-codepip__body .token.tag,
+.ptb-codepip__body .token.boolean,
+.ptb-codepip__body .token.number,
+.ptb-codepip__body .token.constant,
+.ptb-codepip__body .token.symbol {
+  color: var(--ptb-code-number) !important;
+}
+
+.ptb-codepip__body .token.selector,
+.ptb-codepip__body .token.attr-name,
+.ptb-codepip__body .token.string,
+.ptb-codepip__body .token.char,
+.ptb-codepip__body .token.builtin,
+.ptb-codepip__body .token.inserted {
+  color: var(--ptb-code-string) !important;
+}
+
+.ptb-codepip__body .token.operator,
+.ptb-codepip__body .token.entity,
+.ptb-codepip__body .token.url,
+.ptb-codepip__body .language-css .token.string,
+.ptb-codepip__body .style .token.string {
+  color: var(--ptb-code-operator) !important;
+}
+
+.ptb-codepip__body .token.atrule,
+.ptb-codepip__body .token.keyword {
+  color: var(--ptb-code-keyword) !important;
+}
+
+.ptb-codepip__body .token.function {
+  color: var(--ptb-code-function) !important;
+}
+
+.ptb-codepip__body .token.regex,
+.ptb-codepip__body .token.important,
+.ptb-codepip__body .token.variable {
+  color: var(--ptb-code-attr) !important;
+}
+
+.ptb-codepip__body .token.deleted {
+  color: var(--ptb-code-number) !important;
+}
+
+.ptb-codepip__body .token.class-name {
+  color: var(--ptb-code-class) !important;
+}
+
+.ptb-codepip__body .token.bold { font-weight: 700; }
+.ptb-codepip__body .token.italic { font-style: italic; }
+
+/* Selection & highlight lines */
+.ptb-codepip__body pre[class*="language-"] ::selection,
+.ptb-codepip__body pre[class*="language-"] ::-moz-selection {
+  background: var(--ptb-code-selection-bg);
+}
+.ptb-codepip__body pre[class*="language-"] > code > .line-highlight {
+  background: var(--ptb-code-highlight-bg);
+}
+
+/* Line numbers plugin */
+.ptb-codepip__body pre[class*="language-"].line-numbers {
+  padding-left: 3.2em;
+}
+.ptb-codepip__body pre[class*="language-"].line-numbers .line-numbers-rows {
+  border-right: 1px solid color-mix(in srgb, var(--ptb-code-fg) 18%, transparent);
+}
+.ptb-codepip__body pre[class*="language-"].line-numbers .line-numbers-rows > span:before {
+  color: color-mix(in srgb, var(--ptb-code-fg) 55%, transparent);
+}
+
+/* Optional: inline code (if you ever render it within CodePip header/help) */
+.ptb-codepip__body code:not([class*="language-"]) {
+  background: color-mix(in srgb, var(--ptb-code-fg) 6%, transparent);
+  color: var(--ptb-code-fg);
+  border-radius: 4px;
+  padding: 0 4px;
 }

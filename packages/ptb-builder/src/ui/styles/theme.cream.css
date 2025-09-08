@@ -1,0 +1,173 @@
+/* ============================================================
+   PTB CREAM THEME TOKENS (warm, soft light palette)
+   ============================================================ */
+
+:root[data-ptb-theme="cream"] {
+  /* -------- Canvas / Grid -------- */
+  --ptb-canvas-bg: #fff7ec;                 /* warm cream */
+
+  --ptb-grid-fine:   #f0e7d6;               /* soft grid lines */
+  --ptb-grid-accent: #e1d4bd;
+
+  /* -------- Context menu -------- */
+  --ptb-menu-bg: #fffdf7;
+  --ptb-menu-fg: #3a2f2a;                   /* warm dark brown */
+  --ptb-menu-border: rgba(0,0,0,0.06);
+  --ptb-menu-hover-bg: #f2eadb;
+  --ptb-menu-submenu-bg: #fffdf7;
+  --ptb-menu-separator: #e5dcc7;
+  --ptb-menu-disabled-opacity: 0.45;
+
+  /* -------- Flow (dashed) -------- */
+  --ptb-flow-stroke: #b9a88f;               /* taupe */
+
+  /* -------- IO edge colors (normal) -------- */
+  --ptb-io-address-stroke: #d29b0b;         /* warm amber */
+  --ptb-io-number-stroke:  #d24b4b;         /* brick red */
+  --ptb-io-bool-stroke:    #9a7fd1;         /* warm violet */
+  --ptb-io-string-stroke:  #4da37d;         /* jade/teal green */
+  --ptb-io-object-stroke:  #5b8bd9;         /* cornflower */
+  --ptb-io-id-stroke:      #43b9c8;         /* soft cyan */
+  --ptb-io-unknown-stroke: #8a8375;         /* warm gray */
+
+  /* -------- IO edge colors (active) -------- */
+  --ptb-io-address-stroke-active: #f3b44a;
+  --ptb-io-number-stroke-active:  #e57272;
+  --ptb-io-bool-stroke-active:    #b39be2;
+  --ptb-io-string-stroke-active:  #69c19b;
+  --ptb-io-object-stroke-active:  #7aa6e8;
+  --ptb-io-id-stroke-active:      #6cd6e3;
+  --ptb-io-unknown-stroke-active: #b0a899;
+
+  /* ============================================================
+     Node surfaces (border/bg) — soft translucency with warm hues
+     ============================================================ */
+
+  /* Command */
+  --ptb-node-command-border:        #b7aa95;
+  --ptb-node-command-bg:            rgba(223,211,189,0.55);
+  --ptb-node-command-border-hover:  #9e9078;
+  --ptb-node-command-bg-hover:      rgba(223,211,189,0.72);
+  --ptb-node-command-border-active: #887a63;
+  --ptb-node-command-bg-active:     rgba(223,211,189,0.90);
+
+  /* Address (amber) */
+  --ptb-node-address-border:        #a66a00;
+  --ptb-node-address-bg:            rgba(250,224,170,0.60);
+  --ptb-node-address-border-hover:  #d29b0b;
+  --ptb-node-address-bg-hover:      rgba(250,224,170,0.75);
+  --ptb-node-address-border-active: #f3b44a;
+  --ptb-node-address-bg-active:     rgba(250,224,170,0.90);
+
+  /* Number (red) */
+  --ptb-node-number-border:         #a22828;
+  --ptb-node-number-bg:             rgba(244,182,182,0.60);
+  --ptb-node-number-border-hover:   #d24b4b;
+  --ptb-node-number-bg-hover:       rgba(244,182,182,0.75);
+  --ptb-node-number-border-active:  #e57272;
+  --ptb-node-number-bg-active:      rgba(244,182,182,0.90);
+
+  /* Bool (violet) */
+  --ptb-node-bool-border:           #6e59b0;
+  --ptb-node-bool-bg:               rgba(206,196,244,0.60);
+  --ptb-node-bool-border-hover:     #9a7fd1;
+  --ptb-node-bool-bg-hover:         rgba(206,196,244,0.75);
+  --ptb-node-bool-border-active:    #b39be2;
+  --ptb-node-bool-bg-active:        rgba(206,196,244,0.90);
+
+  /* String (green) */
+  --ptb-node-string-border:         #2c7a5b;
+  --ptb-node-string-bg:             rgba(176,224,201,0.60);
+  --ptb-node-string-border-hover:   #4da37d;
+  --ptb-node-string-bg-hover:       rgba(176,224,201,0.75);
+  --ptb-node-string-border-active:  #69c19b;
+  --ptb-node-string-bg-active:      rgba(176,224,201,0.90);
+
+  /* Object (blue) */
+  --ptb-node-object-border:         #2f5ea8;
+  --ptb-node-object-bg:             rgba(186,210,249,0.60);
+  --ptb-node-object-border-hover:   #5b8bd9;
+  --ptb-node-object-bg-hover:       rgba(186,210,249,0.75);
+  --ptb-node-object-border-active:  #7aa6e8;
+  --ptb-node-object-bg-active:      rgba(186,210,249,0.90);
+
+  /* ID (cyan) */
+  --ptb-node-id-border:             #126b79;
+  --ptb-node-id-bg:                 rgba(173,234,240,0.60);
+  --ptb-node-id-border-hover:       #43b9c8;
+  --ptb-node-id-bg-hover:           rgba(173,234,240,0.75);
+  --ptb-node-id-border-active:      #6cd6e3;
+  --ptb-node-id-bg-active:          rgba(173,234,240,0.90);
+
+  /* Unknown (warm gray) */
+  --ptb-node-unknown-border:        #6f6656;
+  --ptb-node-unknown-bg:            rgba(194,186,172,0.60);
+  --ptb-node-unknown-border-hover:  #8a8375;
+  --ptb-node-unknown-bg-hover:      rgba(194,186,172,0.75);
+  --ptb-node-unknown-border-active: #b0a899;
+  --ptb-node-unknown-bg-active:     rgba(194,186,172,0.90);
+
+  /* Option (lavender) */
+  --ptb-node-option-border:         #7a5cd6;
+  --ptb-node-option-bg:             rgba(205,195,255,0.55);
+  --ptb-node-option-border-hover:   #8e74e0;
+  --ptb-node-option-bg-hover:       rgba(205,195,255,0.72);
+  --ptb-node-option-border-active:  #a58df0;
+  --ptb-node-option-bg-active:      rgba(205,195,255,0.90);
+
+  /* Node backdrop blur (optional, subtle) */
+  --ptb-node-backdrop-filter: saturate(115%) blur(4px);
+
+  /* ===== CodePip palette (Cream) ===== */
+  --ptb-codepip-header-bg:  rgba(255,253,248,0.92);
+  --ptb-codepip-header-fg:  #2f2b25;
+  --ptb-codepip-body-bg:    rgba(254,250,240,0.98);
+  --ptb-codepip-border:     rgba(0,0,0,0.07);
+
+  /* Resizer */
+  --ptb-code-resizer-bg:        rgba(0,0,0,0.06);
+  --ptb-code-resizer-hover-bg:  rgba(0,0,0,0.14);
+  --ptb-code-resizer-grip:      rgba(0,0,0,0.32);
+
+  /* Buttons (neutral) */
+  --ptb-code-btn-neutral-bg:     #eae2d3;
+  --ptb-code-btn-neutral-fg:     #2f2b25;
+  --ptb-code-btn-neutral-hover:  #f4eee3;
+  --ptb-code-btn-neutral-active: #ddd3bf;
+
+  /* Run button (warm coral) */
+  --ptb-code-btn-run:            #ef6b4a;
+  --ptb-code-btn-run-hover:      #f28b6d;
+  --ptb-code-btn-run-active:     #d95738;
+  --ptb-code-btn-run-disabled:   #ccbfb2;
+
+  /* Prism */
+  --ptb-code-fg: #1f2937;   /* gray-800 */
+  --ptb-code-bg: #fffdfa;
+
+  --ptb-code-comment:  #9ca3af; /* gray-400 */
+  --ptb-code-keyword:  #7c3aed; /* violet-600 */
+  --ptb-code-string:   #047857; /* emerald-700 */
+  --ptb-code-function: #b45309; /* amber-700 */
+  --ptb-code-number:   #b91c1c; /* red-700 */
+  --ptb-code-operator: #374151; /* gray-700 */
+  --ptb-code-punctuation: #4b5563; /* gray-600 */
+  --ptb-code-class:    #6d28d9; /* violet-700 */
+  --ptb-code-attr:     #0ea5e9; /* sky-500 */
+  --ptb-code-builtin:  #7c3aed;
+  --ptb-code-boolean:  #b91c1c;
+
+  /* ===== Modal ===== */
+  --ptb-modal-overlay:           rgba(0,0,0,0.40);
+  --ptb-modal-panel-bg:          #fffaf0;
+  --ptb-modal-panel-fg:          #2b211c;
+  --ptb-modal-panel-border:      rgba(0,0,0,0.10);
+  --ptb-modal-header-bg:         rgba(255,253,248,0.98);
+  --ptb-assets-row-hover:        rgba(0,0,0,0.04);
+  --ptb-assets-divider:          rgba(0,0,0,0.10);
+
+  --ptb-modal-btn-neutral-bg:     #eae2d3;
+  --ptb-modal-btn-neutral-fg:     #2f2b25;
+  --ptb-modal-btn-neutral-hover:  #f4eee3;
+  --ptb-modal-btn-neutral-active: #ddd3bf;
+}
