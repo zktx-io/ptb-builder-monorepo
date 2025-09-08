@@ -50,7 +50,7 @@ import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
 import { hasStartToEnd } from './utils/flowPath';
 import { buildTransaction } from '../codegen/buildTransaction';
 import { buildTsSdkCode } from '../codegen/buildTsSdkCode';
-import { setIdGenerator } from '../ptb/factories';
+import { makeObject, setIdGenerator } from '../ptb/factories';
 import {
   inferCastTarget,
   isTypeCompatible,
@@ -783,6 +783,18 @@ export function PTBFlow() {
     registerFlowActions({ autoLayoutAndFit: onAutoLayout });
   }, [registerFlowActions, onAutoLayout]);
 
+  const onAssetPick = useCallback(
+    (obj: { objectId: string; typeTag: string }) => {
+      const center = getViewportCenterFlow();
+      const placeAndAdd = (node: PTBNode) => {
+        node.position = { x: center.x, y: center.y };
+        addNode(node);
+      };
+      placeAndAdd(makeObject(obj.typeTag, { value: obj.objectId }));
+    },
+    [addNode, getViewportCenterFlow],
+  );
+
   // ----- Render ---------------------------------------------------------------
 
   return (
@@ -857,6 +869,8 @@ export function PTBFlow() {
               executing={executing}
               /** require editor mode + valid flow */
               canExecute={!readOnly && flowActive}
+              execOpts={execOpts}
+              onAssetPick={onAssetPick}
             />
           </div>
         </Panel>

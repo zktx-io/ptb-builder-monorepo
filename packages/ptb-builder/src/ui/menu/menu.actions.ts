@@ -37,7 +37,7 @@ import type { CommandKind, NumericWidth, PTBNode } from '../../ptb/graph/types';
  * - Commands : "cmd/<CommandKind>"
  * - Scalars  : "var/scalar/<address|number|bool|string|id|object>"
  * - Vectors  : "var/vector/<u8|u16|u32|u64|u128|u256|bool|string|address|id>"
- * - Options  : "var/option/<u8|u16|u32|u64|u128|u256|bool|string|address|id>" // ← 추가
+ * - Options  : "var/option/<u8|u16|u32|u64|u128|u256|bool|string|address|id>"
  * - Resources: "var/resource/<wallet|gas|clock|random|system>"
  */
 export function handleMenuAction(

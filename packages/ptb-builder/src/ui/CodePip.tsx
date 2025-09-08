@@ -1,7 +1,7 @@
 // src/ui/CodePip.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Copy, Folder, Play } from 'lucide-react';
+import { Copy, PackageSearch, Play } from 'lucide-react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
@@ -14,6 +14,10 @@ import 'prismjs/plugins/normalize-whitespace/prism-normalize-whitespace';
 // Prism CSS (theme + line numbers)
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
+
+import { AssetsModal } from './AssetsModal';
+import { usePtb } from './PtbProvider';
+import { ExecOptions } from '../codegen/types';
 
 export const EMPTY_CODE = (
   net: string,
@@ -48,14 +52,13 @@ type CodePipProps = {
 
   emptyText?: string;
 
+  execOpts: ExecOptions;
   onExecute?: () => Promise<void> | void;
   executing?: boolean;
   canExecute?: boolean;
 
   onCopy?: (text: string) => Promise<void> | void;
-
-  /** Dummy handler for opening the Assets panel (optional). */
-  onOpenAssets?: () => Promise<void> | void;
+  onAssetPick?: (obj: { objectId: string; typeTag: string }) => void;
 };
 
 /** Inline transient hint label */
@@ -92,33 +95,35 @@ export function CodePip({
 
   emptyText = '// No code yet. Connect nodes or change values to see generated code.',
 
+  execOpts,
   onExecute,
   executing,
   canExecute = true,
 
   onCopy,
-
-  onOpenAssets,
+  onAssetPick,
 }: CodePipProps) {
   // eslint-disable-next-line no-restricted-syntax
   const preRef = useRef<HTMLPreElement | null>(null);
   // eslint-disable-next-line no-restricted-syntax
-  const codeRef = useRef<HTMLElement | null>(null); // highlight only this node
+  const codeRef = useRef<HTMLElement | null>(null);
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
+  const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
+  const { readOnly } = usePtb();
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = useMemo(() => code ?? '', [code]);
   const visibleCode = normalized.trim().length ? normalized : emptyText;
 
-  // Prism: highlight only the <code> node, when visible
+  // Prism highlight when visible
   useEffect(() => {
     if (collapsed) return;
     if (!codeRef.current) return;
     try {
       Prism.highlightElement(codeRef.current);
     } catch {
-      // never crash UI due to highlighting
+      // no-op
     }
   }, [visibleCode, language, collapsed]);
 
@@ -126,7 +131,6 @@ export function CodePip({
     try {
       const text = visibleCode;
 
-      // SSR/legacy guards + custom handler
       if (onCopy) {
         await onCopy(text);
       } else if (
@@ -151,206 +155,137 @@ export function CodePip({
     }
   };
 
-  const handleOpenAssets = async () => {
+  const handleOpenAssets = () => {
     try {
-      if (onOpenAssets) {
-        await onOpenAssets();
-      } else {
-        show('Assets coming soon');
-      }
+      setAssetsOpen(true);
     } catch {
       show('Failed to open Assets');
     }
   };
 
   const handleCheckbox = (checked: boolean) => {
-    // checked = show code; unchecked = collapsed
     setCollapsed(!checked);
     onCollapsedChange?.(!checked);
   };
 
-  // Simple theming for header/body
-  const headerBg =
-    theme === 'dark' ? 'rgba(17,17,17,0.9)' : 'rgba(255,255,255,0.92)';
-  const headerFg = theme === 'dark' ? '#fff' : '#111';
-  const bodyBg =
-    theme === 'dark' ? 'rgba(13,17,23,0.9)' : 'rgba(250,250,250,0.98)';
-  const borderColor =
-    theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-
   return (
-    <Resizable
-      className="ptb-codepip"
-      defaultSize={{ width: defaultWidth, height: 'auto' }}
-      minWidth={280}
-      maxWidth={640}
-      enable={{ left: true }}
-      style={{
-        pointerEvents: 'auto',
-        userSelect: 'text',
-        boxShadow: '0 4px 18px rgba(0,0,0,0.25)',
-        borderRadius: 10,
-        overflow: 'hidden',
-        background: 'transparent',
-      }}
-      handleClasses={{ left: 'cursor-ew-resize' }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-2 py-1 text-xs"
-        style={{
-          backgroundColor: headerBg,
-          color: headerFg,
-          borderBottom: `1px solid ${borderColor}`,
-        }}
+    <>
+      <Resizable
+        className="ptb-codepip"
+        defaultSize={{ width: defaultWidth, height: 'auto' }}
+        minWidth={280}
+        maxWidth={640}
+        enable={{ left: true }}
+        handleClasses={{ left: 'ptb-resize-handle' }}
       >
-        <div className="flex items-center gap-2">
-          <span style={{ opacity: 0.85, fontWeight: 600 }}>{title}</span>
-          {/* aria-live allows screen readers to announce short feedback */}
-          <span
-            aria-live="polite"
-            className="ml-1"
-            style={{ opacity: 0.65, fontStyle: 'italic' }}
-          >
-            {hint}
-          </span>
-        </div>
+        {/* Header */}
+        <div className="ptb-codepip__header flex items-center justify-between px-2 py-1 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold opacity-85">{title}</span>
+            <span aria-live="polite" className="ml-1 italic opacity-65">
+              {hint}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-3">
-          <label
-            title="Toggle code preview"
-            className="flex items-center gap-1 cursor-pointer select-none"
-            style={{ opacity: 0.9 }}
-          >
-            <span>Code</span>
-            <input
-              type="checkbox"
-              checked={!collapsed}
-              onChange={(e) => handleCheckbox(e.target.checked)}
-              aria-label="Toggle code preview"
-            />
-          </label>
-
-          <select
-            aria-label="Theme"
-            value={theme}
-            onChange={(e) =>
-              onThemeChange?.(e.target.value as 'light' | 'dark')
-            }
-            className="px-1 py-[2px] rounded"
-            style={{
-              fontSize: 12,
-              background: 'transparent',
-              color: 'inherit',
-              border:
-                theme === 'dark'
-                  ? '1px solid rgba(255,255,255,0.2)'
-                  : '1px solid rgba(0,0,0,0.2)',
-            }}
-          >
-            <option value="dark">dark</option>
-            <option value="light">light</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Body (code) */}
-      {!collapsed && (
-        <div
-          style={{
-            maxHeight,
-            overflow: 'auto',
-            background: bodyBg,
-          }}
-        >
-          <pre
-            ref={preRef}
-            className="line-numbers"
-            style={{
-              margin: 0,
-              padding: '10px 12px',
-              fontSize: 12,
-              tabSize: 2,
-              whiteSpace: 'pre',
-              color: theme === 'dark' ? '#eaeef2' : '#1f2328',
-            }}
-          >
-            <code
-              ref={codeRef}
-              className={`language-${language}`}
-              // key to force Prism to re-parse when language changes
-              key={language}
+          <div className="flex items-center gap-3">
+            <label
+              title="Toggle code preview"
+              className="flex items-center gap-1 cursor-pointer select-none opacity-90"
             >
-              {visibleCode}
-            </code>
-          </pre>
+              <span>Code</span>
+              <input
+                type="checkbox"
+                checked={!collapsed}
+                onChange={(e) => handleCheckbox(e.target.checked)}
+                aria-label="Toggle code preview"
+              />
+            </label>
+
+            <select
+              aria-label="Theme"
+              value={theme}
+              onChange={(e) =>
+                onThemeChange?.(e.target.value as 'light' | 'dark')
+              }
+              className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
+            >
+              <option value="dark">dark</option>
+              <option value="light">light</option>
+            </select>
+          </div>
         </div>
-      )}
 
-      {/* Footer (actions) */}
-      {!collapsed && (
-        <div
-          className="flex items-center justify-end gap-2 px-2 py-1"
-          style={{
-            backgroundColor: headerBg,
-            color: headerFg,
-            borderTop: `1px solid ${borderColor}`,
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleOpenAssets}
-            className="px-2 py-1 rounded"
-            title="Assets"
-            aria-label="Open Assets"
-            style={{
-              background: theme === 'dark' ? '#374151' : '#e5e7eb',
-              color: theme === 'dark' ? '#fff' : '#111',
-            }}
+        {/* Body (code) */}
+        {!collapsed && (
+          <div
+            className="ptb-codepip__body"
+            style={{ maxHeight, overflow: 'auto' }}
           >
-            <Folder />
-          </button>
+            <pre
+              ref={preRef}
+              className="line-numbers m-0 p-[10px] px-[12px] text-[12px] whitespace-pre"
+            >
+              <code
+                ref={codeRef}
+                className={`language-${language}`}
+                key={language}
+              >
+                {visibleCode}
+              </code>
+            </pre>
+          </div>
+        )}
 
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="px-2 py-1 rounded"
-            title="Copy"
-            style={{
-              background: theme === 'dark' ? '#374151' : '#e5e7eb',
-              color: theme === 'dark' ? '#fff' : '#111',
-            }}
-          >
-            <Copy />
-          </button>
-
-          {onExecute && (
+        {/* Footer (actions) */}
+        {!collapsed && (
+          <div className="ptb-codepip__footer flex items-center justify-end gap-2 px-2 py-1">
             <button
               type="button"
-              onClick={onExecute}
-              disabled={!!executing || !canExecute}
-              aria-disabled={!!executing || !canExecute}
-              aria-busy={!!executing}
-              className="px-2 py-1 rounded disabled:cursor-not-allowed"
-              title="Run"
-              style={{
-                background: executing
-                  ? theme === 'dark'
-                    ? '#6b7280'
-                    : '#c7cbd1'
-                  : theme === 'dark'
-                    ? '#059669'
-                    : '#10b981',
-                color: '#fff',
-                opacity: !!executing || !canExecute ? 0.7 : 1,
-              }}
+              onClick={handleCopy}
+              className="ptb-codepip__btn ptb-codepip__btn--copy"
+              title="Copy"
             >
-              <Play />
+              <Copy size={16} />
             </button>
-          )}
-        </div>
-      )}
-    </Resizable>
+
+            {onAssetPick && !readOnly && (
+              <button
+                type="button"
+                onClick={handleOpenAssets}
+                disabled={!onAssetPick}
+                className="ptb-codepip__btn ptb-codepip__btn--assets disabled:cursor-not-allowed"
+                title="Assets"
+                aria-label="Open Assets"
+              >
+                <PackageSearch size={16} />
+              </button>
+            )}
+
+            {onExecute && !readOnly && (
+              <button
+                type="button"
+                onClick={onExecute}
+                disabled={!!executing || !canExecute}
+                aria-disabled={!!executing || !canExecute}
+                aria-busy={!!executing}
+                className="ptb-codepip__btn ptb-codepip__btn--run disabled:cursor-not-allowed"
+                title="Run"
+              >
+                <Play size={16} />
+              </button>
+            )}
+          </div>
+        )}
+      </Resizable>
+
+      {/* Assets modal */}
+      <AssetsModal
+        open={assetsOpen}
+        onClose={() => setAssetsOpen(false)}
+        owner={execOpts.myAddress || ''}
+        onPick={(it) => onAssetPick?.(it)}
+      />
+    </>
   );
 }
 
