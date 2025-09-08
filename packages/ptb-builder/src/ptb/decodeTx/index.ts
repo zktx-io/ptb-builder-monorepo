@@ -360,11 +360,6 @@ export function decodeTx(
 
   // Seed "gas"
   const gasVar = makeGasObject();
-  (gasVar as any).id = KNOWN_IDS.GAS;
-  (gasVar as any).name = (gasVar as any).name ?? 'gas';
-  // type-only label policy
-  (gasVar as any).label = 'object';
-
   pushNode(graph, gasVar);
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
