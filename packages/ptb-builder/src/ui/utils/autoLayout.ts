@@ -1,28 +1,21 @@
-// ui/utils/autoLayout.ts
+// src/ui/utils/autoLayout.ts
 // -----------------------------------------------------------------------------
 // PTB-aware auto layout (single-row flow) with data-driven node heights.
-// Rules:
-//   1) Flow nodes (Start, Commands, End) are placed strictly in execution order.
-//   2) Columns: [Start][C1][C2]...[Cn][End] with uniform column width.
-//   3) Each input Variable is stacked under the LEFT column of its earliest-used
-//      command (if earliest is C1, left column is [Start]).
-//   4) Variable stacking uses data-driven height (from node data), then
-//      measured height if available, else a heuristic fallback.
-//   5) All variable stacks start at a common baseline aligned to the tallest
-//      flow-row node height to keep a clean horizontal “waterline”.
-// Variable height policies:
-//   - Vector variables and commands (moveCall/splitCoins/mergeCoins/transferObjects/makeMoveVec)
-//     grow by port/value counts.
-//   - Object variables are slightly taller than scalar variables by one text input line.
-// Fallback: ELK layered layout when Start/End are missing or single-row fails.
+// Returns positions only. If options.targetCenter is provided, the layout is
+// shifted so its visual center aligns with that flow-space point.
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
 import { firstInPorts, outPortsWithPrefix } from '../../ptb/decodeTx/findPorts';
-import { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
+import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
 import { NODE_SIZES } from '../nodes/nodeLayout';
+
+export type LayoutPositions = Record<string, { x: number; y: number }>;
+export type AutoLayoutOptions = {
+  targetCenter?: { x: number; y: number }; // viewport center in flow coords
+};
 
 const elk = new ELK();
 
@@ -37,53 +30,38 @@ function ptbNode(n: RFNode<RFNodeData>): any | undefined {
 function getNodeSize(kind?: string) {
   return (NODE_SIZES as any)[kind ?? ''] ?? { width: 200, height: 120 };
 }
+
+// Edge-kind detection must honor RFEdge.type primarily
 function isFlowEdge(e: RFEdge<RFEdgeData>) {
+  if (e.type === 'ptb-flow') return true;
   const k = (e.data as any)?.ptbEdge?.kind;
   return k === 'flow' || String(e.id).startsWith('flow:');
 }
 function isIoEdge(e: RFEdge<RFEdgeData>) {
+  if (e.type === 'ptb-io') return true;
   const k = (e.data as any)?.ptbEdge?.kind;
   return k === 'io' || String(e.id).startsWith('io:');
 }
 
-// ---- Layout constants -------------------------------------------------------
+// ---- constants --------------------------------------------------------------
 
-// Flow columns
-const COL_GAP_X = 140; // horizontal spacing between columns
-const ROW_Y = 0; // Y for Start/Commands/End row
-const MARGIN_X = 40; // left margin
+const COL_GAP_X = 140;
+const ROW_Y = 0;
+const MARGIN_X = 40;
 
-// Variable stacking
-const VAR_GAP_Y = 16; // vertical gap between stacked variables
-const VAR_PAD_TOP = 28; // padding from flow-node bottom to first variable in that column
+const VAR_GAP_Y = 16;
+const VAR_PAD_TOP = 28;
 
-// Height tuning (fallbacks)
-const TEXT_INPUT_H = 28; // object = scalar + one text input height
-const VECTOR_EXTRA_H = 40; // extra height for vector variable (fallback)
-const MOVECALL_EXTRA_H = 60; // extra height for moveCall (fallback)
+const TEXT_INPUT_H = 28;
+const VECTOR_EXTRA_H = 40;
+const MOVECALL_EXTRA_H = 60;
 
-// Data-driven row sizing for commands
 const TITLE_H = 28;
 const BODY_VPAD = 12;
 const PORT_ROW_H = 12;
 const GROUP_GAP_V = 6;
 
 // ---- Height estimation (data → measured → heuristic) ------------------------
-
-type VarSubkind = 'scalar' | 'object' | 'vector' | 'other';
-function variableSubkind(n: RFNode<RFNodeData>): VarSubkind {
-  const p = ptbNode(n);
-  const t = p?.varType;
-  if (!t || t.kind === undefined) return 'other';
-  if (t.kind === 'scalar') return 'scalar';
-  if (t.kind === 'object') return 'object';
-  if (t.kind === 'vector') return 'vector';
-  return 'other';
-}
-function commandKind(n: RFNode<RFNodeData>): string | undefined {
-  const p = ptbNode(n);
-  return p?.command;
-}
 
 /** Extract a semantic group key from a port id. */
 function groupKeyFromPortId(id: string, dir: 'in' | 'out'): string {
@@ -133,13 +111,13 @@ function countPortRowsAndGroups(n: RFNode<RFNodeData>) {
   return { rows, groups, hasAny: rows > 0 };
 }
 
-/** Estimate effective height purely from ptbNode data (preferred). */
+/** Estimate effective height purely from ptbNode data (ports only). */
 function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
   const kind = nodeKind(n);
   const p = ptbNode(n);
   if (!kind || !p) return undefined;
 
-  // Variables
+  // Variables (data-only)
   if (kind === 'Variable') {
     const base = getNodeSize('Variable').height ?? 100;
     const vt = p.varType;
@@ -158,16 +136,12 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     return base;
   }
 
-  // Commands (generic, works for moveCall/split/merge/transfer/makeMoveVec)
+  // Commands (ports-only: title + paddings + rows + group gaps)
   if (kind === 'Command') {
-    const base = getNodeSize('Command').height ?? 120;
-    const { rows, groups, hasAny } = countPortRowsAndGroups(n);
-    if (hasAny) {
-      const gaps = Math.max(0, groups - 1) * GROUP_GAP_V;
-      const h = TITLE_H + BODY_VPAD + rows * PORT_ROW_H + BODY_VPAD + gaps;
-      return Math.max(h, base);
-    }
-    return base;
+    const { rows, groups } = countPortRowsAndGroups(n);
+    const gaps = Math.max(0, groups - 1) * GROUP_GAP_V;
+    const rowsH = rows * PORT_ROW_H;
+    return TITLE_H + BODY_VPAD + rowsH + gaps + BODY_VPAD;
   }
 
   // Start / End
@@ -176,26 +150,10 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
 
 /** Final height: data estimate → measured → heuristic fallback. */
 function nodeHeight(n: RFNode<RFNodeData>): number {
+  const kind = nodeKind(n);
   const byData = estimateHeightFromData(n);
   if (typeof byData === 'number' && byData > 0) return byData;
-
-  const measured = (n as any)?.measured?.height;
-  if (typeof measured === 'number' && measured > 0) return measured;
-
-  const kind = nodeKind(n);
-  const base = getNodeSize(kind).height ?? 120;
-
-  if (kind === 'Variable') {
-    const sub = variableSubkind(n);
-    if (sub === 'object') return base + TEXT_INPUT_H;
-    if (sub === 'vector') return base + VECTOR_EXTRA_H;
-    return base;
-  }
-  if (kind === 'Command') {
-    if (commandKind(n) === 'moveCall') return base + MOVECALL_EXTRA_H;
-    return base;
-  }
-  return base;
+  return getNodeSize(kind).height ?? 120;
 }
 
 // ---- Lightweight flow graph utils ------------------------------------------
@@ -325,12 +283,12 @@ function orderByExecution(
   return { start, end, orderedCmdIds };
 }
 
-// ---- Single-row layout (execution-ordered) ----------------------------------
+// ---- Single-row layout (positions only) -------------------------------------
 
-function layoutSingleRow(
+function layoutSingleRowPositions(
   nodes: RFNode<RFNodeData>[],
   edges: RFEdge<RFEdgeData>[],
-): { nodes: RFNode<RFNodeData>[] } | undefined {
+): LayoutPositions | undefined {
   const { start, end, orderedCmdIds } = orderByExecution(nodes, edges);
   if (!start || !end) return undefined;
 
@@ -345,22 +303,22 @@ function layoutSingleRow(
   const wEnd = getNodeSize('End').width ?? 220;
   const colW = Math.max(wStart, wCmd, wEnd) + COL_GAP_X;
 
-  const pos = new Map<string, { x: number; y: number }>();
+  const pos: LayoutPositions = {};
   const colAnchorY = new Map<number, number>();
 
   // Flow row (Start → Commands → End)
   let col = 0;
-  pos.set(start.id, { x: MARGIN_X + colW * col, y: ROW_Y });
+  pos[start.id] = { x: MARGIN_X + colW * col, y: ROW_Y };
   const startCol = col;
   col++;
 
   const cmdColIndex = new Map<string, number>();
   for (const c of commands) {
-    pos.set(c.id, { x: MARGIN_X + colW * col, y: ROW_Y });
+    pos[c.id] = { x: MARGIN_X + colW * col, y: ROW_Y };
     cmdColIndex.set(c.id, col);
     col++;
   }
-  pos.set(end.id, { x: MARGIN_X + colW * col, y: ROW_Y });
+  pos[end.id] = { x: MARGIN_X + colW * col, y: ROW_Y };
   const endCol = col;
 
   // Common baseline for variable stacks = tallest flow-row node
@@ -371,10 +329,8 @@ function layoutSingleRow(
   );
   const commonAnchorY = ROW_Y + flowRowMaxH + VAR_PAD_TOP;
   colAnchorY.set(startCol, commonAnchorY);
-  for (const c of commands) {
-    const cc = cmdColIndex.get(c.id)!;
-    colAnchorY.set(cc, commonAnchorY);
-  }
+  for (const c of commands)
+    colAnchorY.set(cmdColIndex.get(c.id)!, commonAnchorY);
   colAnchorY.set(endCol, commonAnchorY);
 
   // For each Variable, find earliest-used command and assign to *left* column
@@ -416,26 +372,13 @@ function layoutSingleRow(
     const colIdx = earliestColForVar.get(v.id)!;
     const x = MARGIN_X + colW * colIdx;
     const y = nextY(colIdx, v);
-    pos.set(v.id, { x, y });
+    pos[v.id] = { x, y };
   }
 
-  // Emit final nodes
-  const outNodes = nodes.map((n) => {
-    const p = pos.get(n.id);
-    if (!p) return n;
-    return {
-      ...n,
-      position: { x: p.x, y: p.y },
-      positionAbsolute: undefined,
-      dragging: false,
-      selected: n.selected,
-    };
-  });
-
-  return { nodes: outNodes };
+  return pos;
 }
 
-// ---- ELK layered fallback ---------------------------------------------------
+// ---- ELK fallback -----------------------------------------------------------
 
 const elkLayoutOptions = {
   'elk.algorithm': 'layered',
@@ -448,17 +391,17 @@ const elkLayoutOptions = {
   'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
 } as const;
 
-async function layoutElk(
+async function layoutElkPositions(
   nodes: RFNode<RFNodeData>[],
   edges: RFEdge<RFEdgeData>[],
-) {
+): Promise<LayoutPositions> {
   const elkGraph: ElkNode = {
     id: 'root',
     layoutOptions: elkLayoutOptions,
     children: nodes.map((n) => {
       const kind = nodeKind(n);
       const { width } = getNodeSize(kind);
-      const height = (n as any)?.measured?.height ?? nodeHeight(n);
+      const height = nodeHeight(n);
       return {
         id: n.id,
         width,
@@ -475,29 +418,76 @@ async function layoutElk(
 
   const laidOut = await elk.layout(elkGraph);
 
-  return nodes.map((n) => {
+  const positions: LayoutPositions = {};
+  for (const n of nodes) {
     const lgNode = laidOut.children?.find((c) => c.id === n.id);
-    return {
-      ...n,
-      position: {
-        x: lgNode?.x ?? n.position.x ?? 0,
-        y: lgNode?.y ?? n.position.y ?? 0,
-      },
-      positionAbsolute: undefined,
-      dragging: false,
-      selected: n.selected,
+    positions[n.id] = {
+      x: lgNode?.x ?? n.position.x ?? 0,
+      y: lgNode?.y ?? n.position.y ?? 0,
     };
-  });
+  }
+  return positions;
 }
 
-// ---- Public API -------------------------------------------------------------
+// ---- center + shift ---------------------------------------------------------
+
+function computeCenterFromBounds(
+  nodes: RFNode<RFNodeData>[],
+  positions: LayoutPositions,
+) {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const n of nodes) {
+    const p = positions[n.id];
+    if (!p) continue;
+    const kind = nodeKind(n);
+    const w = getNodeSize(kind).width ?? 240;
+    const h = nodeHeight(n);
+    const l = p.x,
+      t = p.y,
+      r = p.x + w,
+      b = p.y + h;
+    if (l < minX) minX = l;
+    if (t < minY) minY = t;
+    if (r > maxX) maxX = r;
+    if (b > maxY) maxY = b;
+  }
+  if (!isFinite(minX) || !isFinite(minY)) return { cx: 0, cy: 0 };
+  return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
+function shiftPositions(
+  positions: LayoutPositions,
+  dx: number,
+  dy: number,
+): LayoutPositions {
+  const out: LayoutPositions = {};
+  for (const id of Object.keys(positions)) {
+    const p = positions[id]!;
+    out[id] = { x: p.x + dx, y: p.y + dy };
+  }
+  return out;
+}
+
+// ---- public API -------------------------------------------------------------
 
 export async function autoLayoutFlow(
   nodes: RFNode<RFNodeData>[],
   edges: RFEdge<RFEdgeData>[],
-): Promise<{ nodes: RFNode<RFNodeData>[]; edges: RFEdge<RFEdgeData>[] }> {
-  const single = layoutSingleRow(nodes, edges);
-  if (single) return { nodes: single.nodes, edges };
-  const elkNodes = await layoutElk(nodes, edges);
-  return { nodes: elkNodes, edges };
+  options: AutoLayoutOptions,
+): Promise<LayoutPositions> {
+  const base =
+    layoutSingleRowPositions(nodes, edges) ??
+    (await layoutElkPositions(nodes, edges));
+
+  if (options?.targetCenter) {
+    const { cx, cy } = computeCenterFromBounds(nodes, base);
+    const dx = options.targetCenter.x - cx;
+    const dy = options.targetCenter.y - cy;
+    return shiftPositions(base, dx, dy);
+  }
+
+  return base;
 }

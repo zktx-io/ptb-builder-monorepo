@@ -48,6 +48,8 @@ import { KNOWN_IDS } from '../seedGraph';
 type ValKey = string; // "in#0" | "res#3#1" | "gas"
 type SourceRef = { nodeId: string; portId: string; t?: PTBType };
 
+const OFFSCREEN_POS = { x: -100000, y: -100000 };
+
 const vkey = (arg: any): ValKey | undefined => {
   if (typeof arg === 'object' && arg) {
     if ('Input' in arg) return `in#${arg.Input}`;
@@ -188,6 +190,9 @@ function makeVarByType(
 const nodeMap = new Map<string, PTBNode>();
 
 function pushNode(graph: PTBGraph, n: PTBNode) {
+  // Force-spawn offscreen so initial render does not flicker in the viewport.
+  n.position = { ...OFFSCREEN_POS };
+
   graph.nodes.push(n);
   nodeMap.set(n.id, n);
 }

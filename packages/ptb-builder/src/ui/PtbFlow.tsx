@@ -1,9 +1,11 @@
-// src/ui/PtbFlow.tsx
+// src/ui/PTBFlow.tsx
 // -----------------------------------------------------------------------------
 // RF is the *source of truth* while the editor is open.
 // We inject PTB → RF only when provider.graphEpoch changes.
 // Programmatic rehydrate is muted from onChange handlers to avoid feedback.
 // We also avoid redundant setRF by comparing edge signatures.
+// Auto layout: apply positions only (do not replace nodes).
+// After offscreen spawn, we enable fitView only once layout is ready to avoid flicker.
 // -----------------------------------------------------------------------------
 
 import React, {
@@ -44,7 +46,7 @@ import {
   type RFNodeData,
   rfToPTB,
 } from '../ptb/ptbAdapter';
-import { autoLayoutFlow } from './utils/autoLayout';
+import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
 import { hasStartToEnd } from './utils/flowPath';
 import { buildTransaction } from '../codegen/buildTransaction';
 import { buildTsSdkCode } from '../codegen/buildTsSdkCode';
@@ -211,6 +213,9 @@ export function PTBFlow() {
   /** Flow animation flag: true iff a Start → End path exists. */
   const [flowActive, setFlowActive] = useState(false);
 
+  /** Fit control: enable fitView only after positions are laid out. */
+  const [layoutReady, setLayoutReady] = useState(false);
+
   // ----- Node-level patchers injected into RF nodes --------------------------
 
   /** Patch Command node UI params and keep ports consistent with UI. */
@@ -357,7 +362,10 @@ export function PTBFlow() {
     setFlowActive(hasStartToEnd(injected, pruned));
     baseGraphRef.current = graph;
 
-    // Unmute next tick to let RF compute dimensions
+    // Disable fit until layout finishes (prevents initial flicker).
+    setLayoutReady(false);
+
+    // Unmute next tick to let RF compute dimensions.
     requestAnimationFrame(() => {
       rehydratingRef.current = false;
     });
@@ -660,20 +668,115 @@ export function PTBFlow() {
     }
   }, [rfNodes, rfEdges, chain, execOpts, runTx]);
 
-  // ----- Auto Layout ----------------------------------------------------------
-  const { fitView } = useReactFlow();
+  // ----- Auto Layout (positions-only merge) ----------------------------------
+  const { fitView, screenToFlowPosition } = useReactFlow();
+
+  // eslint-disable-next-line no-restricted-syntax
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const getViewportCenterFlow = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const w = el.clientWidth || 0;
+    const h = el.clientHeight || 0;
+    return screenToFlowPosition({ x: w / 2, y: h / 2 });
+  }, [screenToFlowPosition]);
 
   const onAutoLayout = useCallback(async () => {
-    const { nodes, edges } = await autoLayoutFlow(rfNodes, rfEdges);
-    setRF({ rfNodes: nodes, rfEdges: edges });
+    // Guard 1: if rehydrating, defer
+    if (rehydratingRef.current) {
+      requestAnimationFrame(() => {
+        // run once more after rehydrate tick
+        onAutoLayout();
+      });
+      return;
+    }
+
+    // Guard 2: if nodes are not ready, defer up to a few frames
+    if (!rfNodes || rfNodes.length === 0) {
+      let tries = 0;
+      const retry = () => {
+        if (!rehydratingRef.current && rfNodes.length > 0) {
+          onAutoLayout();
+          return;
+        }
+        if (tries++ < 3) requestAnimationFrame(retry);
+      };
+      requestAnimationFrame(retry);
+      return;
+    }
+
+    const positions: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
+      targetCenter: getViewportCenterFlow(),
+    });
+
+    // If still empty (edge-case), do one fallback retry next frame
+    if (!positions || Object.keys(positions).length === 0) {
+      requestAnimationFrame(async () => {
+        const pos2: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
+          targetCenter: getViewportCenterFlow(),
+        });
+        if (!pos2 || Object.keys(pos2).length === 0) return; // give up silently
+        setRF((prev) => {
+          const nextNodes = prev.rfNodes.map((n) =>
+            pos2[n.id]
+              ? {
+                  ...n,
+                  position: pos2[n.id],
+                  positionAbsolute: undefined,
+                  dragging: false,
+                }
+              : n,
+          );
+          let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
+          nextEdges = pruneIncompatibleIOEdges(
+            baseGraphRef.current.nodes,
+            nextEdges,
+          );
+          setFlowActive(hasStartToEnd(nextNodes, nextEdges));
+          return { rfNodes: nextNodes, rfEdges: nextEdges };
+        });
+        requestAnimationFrame(() => {
+          try {
+            fitView({ padding: 0.2, duration: 300 });
+          } catch {
+            /* no-op */
+          }
+          // Mark layout ready so ReactFlow can auto-fit on future mounts if needed.
+          setLayoutReady(true);
+        });
+      });
+      return;
+    }
+
+    setRF((prev) => {
+      const nextNodes = prev.rfNodes.map((n) =>
+        positions[n.id]
+          ? {
+              ...n,
+              position: positions[n.id],
+              positionAbsolute: undefined,
+              dragging: false,
+            }
+          : n,
+      );
+      let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
+      nextEdges = pruneIncompatibleIOEdges(
+        baseGraphRef.current.nodes,
+        nextEdges,
+      );
+      setFlowActive(hasStartToEnd(nextNodes, nextEdges));
+      return { rfNodes: nextNodes, rfEdges: nextEdges };
+    });
+
     requestAnimationFrame(() => {
       try {
         fitView({ padding: 0.2, duration: 300 });
       } catch {
         /* no-op */
       }
+      setLayoutReady(true);
     });
-  }, [rfNodes, rfEdges, setRF, fitView]);
+  }, [rfNodes, rfEdges, fitView, getViewportCenterFlow]);
 
   useEffect(() => {
     registerFlowActions({ autoLayoutAndFit: onAutoLayout });
@@ -683,6 +786,7 @@ export function PTBFlow() {
 
   return (
     <div
+      ref={containerRef}
       style={{
         width: '100%',
         height: '100%',
@@ -695,7 +799,8 @@ export function PTBFlow() {
         colorMode={theme}
         nodes={rfNodes}
         edges={rfEdges}
-        fitView
+        /** Enable auto fit only after positions are laid out */
+        fitView={layoutReady}
         /** allow dragging even in read-only */
         nodesDraggable={true}
         /** block creating/updating edges when read-only */

@@ -695,8 +695,17 @@ export function PtbProvider({
         scheduleGraphNotify(decoded);
         scheduleDocNotify();
 
+        // NOTE:
+        // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
+        // 1st RAF: lets Provider.replaceGraphImmediate() commit new PTB graph
+        // 2nd RAF: lets PTBFlow finish rehydrating RF nodes/edges from that graph
+        // Without this, autoLayoutFlow() may see an empty RF state and return {}.
+        // If timing issues are ever fixed upstream, this block can be collapsed
+        // back to a single RAF safely.
         requestAnimationFrame(() => {
-          flowActionsRef.current.autoLayoutAndFit?.();
+          requestAnimationFrame(() => {
+            flowActionsRef.current.autoLayoutAndFit?.();
+          });
         });
       } catch (e: any) {
         toastImpl({
@@ -736,6 +745,19 @@ export function PtbProvider({
 
       scheduleGraphNotify(base);
       scheduleDocNotify();
+
+      // NOTE:
+      // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
+      // 1st RAF: lets Provider.replaceGraphImmediate() commit new PTB graph
+      // 2nd RAF: lets PTBFlow finish rehydrating RF nodes/edges from that graph
+      // Without this, autoLayoutFlow() may see an empty RF state and return {}.
+      // If timing issues are ever fixed upstream, this block can be collapsed
+      // back to a single RAF safely.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          flowActionsRef.current.autoLayoutAndFit?.();
+        });
+      });
     },
     [replaceGraphImmediate, scheduleGraphNotify, scheduleDocNotify],
   );
