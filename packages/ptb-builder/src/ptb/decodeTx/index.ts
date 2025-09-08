@@ -16,6 +16,7 @@ import {
   makeAddressVector,
   makeBool,
   makeBoolVector,
+  makeClockObject,
   makeCommandNode,
   makeGasObject,
   makeId,
@@ -139,6 +140,9 @@ function makeVarByType(
 ): VariableNode {
   // object
   if (t.kind === 'object') {
+    if (t.typeTag === '0x2::clock::Clock') {
+      return makeClockObject();
+    }
     // use concrete typeTag if present to get "object<typeTag>" label
     const v = makeObject(t.typeTag, { name: opts.name, value: opts.value });
     return v;
@@ -381,10 +385,17 @@ export function decodeTx(
       init = undefined;
     }
     const node = makeVarByType(t, { name: `input_${i}`, value: init });
-    // keep a stable id for inputs
-    (node as any).id = `input-${i}`;
-    pushNode(graph, node);
-    vt.set(`in#${i}`, { nodeId: node.id, portId: VAR_OUT, t });
+    const knownIds = new Set(Object.values(KNOWN_IDS));
+    if (!knownIds.has((node as any).id)) {
+      (node as any).id = `input-${i}`;
+    }
+    const existing = graph.nodes.find((n) => n.id === (node as any).id);
+    if (!existing) {
+      pushNode(graph, node);
+    } else {
+      nodeMap.set(existing.id, existing);
+    }
+    vt.set(`in#${i}`, { nodeId: (existing ?? node).id, portId: VAR_OUT, t });
   });
 
   // Transactions

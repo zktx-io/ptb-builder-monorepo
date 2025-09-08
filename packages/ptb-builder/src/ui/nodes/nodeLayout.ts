@@ -11,8 +11,8 @@ export const BOTTOM_PADDING = 22;
 
 /** Horizontal sizes per node kind (kept small and consistent). */
 export const NODE_SIZES = {
-  Start: { width: 180 },
-  End: { width: 180 },
+  Start: { width: 180, height: 40 },
+  End: { width: 180, height: 40 },
   Command: { width: 180 },
   Variable: { width: 180 },
   Helper: { width: 180 },

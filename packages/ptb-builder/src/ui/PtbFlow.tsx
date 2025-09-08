@@ -200,6 +200,7 @@ export function PTBFlow() {
     createUniqueId,
     registerFlowActions,
     graphEpoch, // ← only rehydrate when this changes
+    codePipOpenTick,
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
@@ -843,9 +844,9 @@ export function PTBFlow() {
           <div style={{ pointerEvents: 'auto' }}>
             <CodePip
               /* Re-mount when switching viewer/editor so defaultCollapsed is reapplied */
-              key={`codepip-${readOnly ? 'ro' : 'rw'}`}
+              key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
               /* Close the code pane in viewer mode (on-chain load sets readOnly=true) */
-              defaultCollapsed={readOnly}
+              defaultCollapsed={readOnly || codePipOpenTick === 0}
               code={code}
               language="typescript"
               title="ts-sdk preview"

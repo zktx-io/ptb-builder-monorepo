@@ -105,6 +105,8 @@ export type PtbContextValue = {
   registerFlowActions: (a: { autoLayoutAndFit?: () => void }) => void;
 
   graphEpoch: number;
+
+  codePipOpenTick: number;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -596,6 +598,8 @@ export function PtbProvider({
 
   // ---- on-chain loader (viewer) ---------------------------------------------
 
+  const [codePipOpenTick, setCodePipOpenTick] = useState(0);
+
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
       const digest = (txDigest || '').trim();
@@ -694,6 +698,7 @@ export function PtbProvider({
         // 7) Notify and layout
         scheduleGraphNotify(decoded);
         scheduleDocNotify();
+        setCodePipOpenTick(0);
 
         // NOTE:
         // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
@@ -745,6 +750,7 @@ export function PtbProvider({
 
       scheduleGraphNotify(base);
       scheduleDocNotify();
+      setCodePipOpenTick((t) => t + 1);
 
       // NOTE:
       // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
@@ -902,6 +908,7 @@ export function PtbProvider({
       registerFlowActions,
 
       graphEpoch,
+      codePipOpenTick,
     }),
     [
       graph,
@@ -925,6 +932,7 @@ export function PtbProvider({
       setWellKnownPresent,
       registerFlowActions,
       graphEpoch,
+      codePipOpenTick,
     ],
   );
 
