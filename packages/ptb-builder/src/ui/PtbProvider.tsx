@@ -24,7 +24,12 @@ import React, {
   useState,
 } from 'react';
 
-import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
+import {
+  getFullnodeUrl,
+  type GetOwnedObjectsParams,
+  type PaginatedObjectsResponse,
+  SuiClient,
+} from '@mysten/sui/client';
 import type { Transaction } from '@mysten/sui/transactions';
 
 import type { ExecOptions } from '../codegen/types';
@@ -80,6 +85,13 @@ export type PtbContextValue = {
       }
     | undefined
   >;
+
+  getOwnedObjects: (
+    params: Omit<GetOwnedObjectsParams, 'owner'> & {
+      owner: string;
+      clientOverride?: SuiClient;
+    },
+  ) => Promise<PaginatedObjectsResponse | undefined>;
 
   // Loaders
   loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
@@ -596,6 +608,24 @@ export function PtbProvider({
     [modules, clientRef, toastImpl, scheduleDocNotify],
   );
 
+  const getOwnedObjects = useCallback<PtbContextValue['getOwnedObjects']>(
+    async (params) => {
+      const { clientOverride, ...rest } = params ?? {};
+      const client = clientOverride ?? clientRef.current;
+      if (!client) return undefined;
+
+      try {
+        const page = await client.getOwnedObjects(
+          rest as GetOwnedObjectsParams,
+        );
+        return page;
+      } catch {
+        return undefined;
+      }
+    },
+    [],
+  );
+
   // ---- on-chain loader (viewer) ---------------------------------------------
 
   const [codePipOpenTick, setCodePipOpenTick] = useState(0);
@@ -890,6 +920,8 @@ export function PtbProvider({
       modules,
       getPackageModules,
 
+      getOwnedObjects,
+
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
@@ -920,6 +952,7 @@ export function PtbProvider({
       getObjectData,
       modules,
       getPackageModules,
+      getOwnedObjects,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
