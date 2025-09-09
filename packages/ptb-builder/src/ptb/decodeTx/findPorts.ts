@@ -1,6 +1,13 @@
 // src/ptb/decodeTx/findPorts.ts
 
-// Small helpers for discovering IO ports on a node.
+// -----------------------------------------------------------------------------
+// Small helpers to discover node IO ports reliably.
+// - firstInPorts(node): returns all "io/in" ports in declaration order.
+// - outPortsWithPrefix(node, prefix): returns ports whose id starts with prefix.
+// - findInPortWithFallback(...): tries exact id, then prefix, then type
+//   predicate, and finally falls back to the first input port.
+//   This keeps decoding robust against small port-id/layout changes.
+// -----------------------------------------------------------------------------
 
 import type { Port, PTBNode, PTBType } from '../graph/types';
 

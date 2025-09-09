@@ -1,15 +1,16 @@
 // src/ui/edges/EdgeFlow.tsx
 
+/**
+ * Flow edge renderer
+ * - Memoizes Bezier path to avoid unnecessary recalculation.
+ * - Wide interactionWidth improves hit testing.
+ * - Styling driven by CSS classes (selected state appended).
+ */
+
 import React, { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
-/**
- * Flow edge renderer:
- * - Memoizes path to avoid unnecessary recompute
- * - Wide interactionWidth for easy click/hover
- * - CSS classes control visual states
- */
 export const EdgeFlow = memo(function EdgeFlow(props: EdgeProps) {
   const {
     id,

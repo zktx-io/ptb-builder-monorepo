@@ -1,3 +1,5 @@
+// src/ui/nodes/index.ts
+
 import { BaseCommand } from './cmds/BaseCommand/BaseCommand';
 import { MoveCallCommand } from './cmds/MoveCallCommand/MoveCallCommand';
 import { EndNode } from './EndNode';

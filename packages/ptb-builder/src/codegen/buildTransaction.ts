@@ -61,7 +61,7 @@ function evalValue(
   }
 }
 
-/** Wrap numeric-like inputs with tx.pure.u64, passthrough others. */
+/** Wrap numeric-like inputs with tx.pure.u64; passthrough objects/refs. */
 function toU64Arg(tx: Transaction, x: any) {
   if (typeof x === 'number' || typeof x === 'bigint')
     return (tx as any).pure.u64(x);
@@ -69,7 +69,7 @@ function toU64Arg(tx: Transaction, x: any) {
   return x;
 }
 
-/** Resolve a recipient: allow ref, address literal, or 'myAddress' sentinel. */
+/** Resolve recipient: supports refs, hex addresses (0x...), and 'myAddress'/'sender' sentinel. */
 function resolveRecipient(tx: Transaction, raw: any, my?: string): any {
   // Late injection for sentinel
   if (isMySentinel(raw)) {

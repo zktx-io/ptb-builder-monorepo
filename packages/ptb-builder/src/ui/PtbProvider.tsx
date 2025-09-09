@@ -1,4 +1,4 @@
-// PtbProvider.tsx
+// src/ui/PtbProvider.tsx
 // -----------------------------------------------------------------------------
 // Provider that owns persistence, chain caches, and RF/PTB synchronization.
 // Fixes feedback loops by:
@@ -841,6 +841,13 @@ export function PtbProvider({
   function normalizeGraph(g: PTBGraph): PTBGraph {
     const nodes = [...(g.nodes || [])];
     const edges = [...(g.edges || [])];
+
+    // NOTE:
+    // Flow-handle base IDs are assumed to be:
+    //   - 'prev' for the inbound/target handle (previous)
+    //   - 'next' for the outbound/source handle (next)
+    // PTBHandleFlow must keep these base IDs stable.
+    // If you change handle IDs in UI, update normalizeGraph() accordingly.
 
     const coalesce = (
       matchKind: PTBGraph['nodes'][number]['kind'],

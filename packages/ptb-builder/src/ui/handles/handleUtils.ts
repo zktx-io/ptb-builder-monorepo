@@ -7,17 +7,21 @@ import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import { buildOutPort } from '../nodes/vars/varUtils';
 
 /** Read handle id from v12 (...HandleId) or v11 (...Handle); null-safe. */
-function getSourceHandle(c: Connection): string | undefined {
-  const v =
-    ((c as any).sourceHandleId as string | null | undefined) ??
-    ((c as any).sourceHandle as string | null | undefined);
-  return v ?? undefined;
+export function extractHandles(x: {
+  sourceHandleId?: string | null;
+  targetHandleId?: string | null;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+}): { source?: string; target?: string } {
+  const source = (x.sourceHandleId ?? x.sourceHandle ?? undefined) || undefined;
+  const target = (x.targetHandleId ?? x.targetHandle ?? undefined) || undefined;
+  return { source, target };
 }
-function getTargetHandle(c: Connection): string | undefined {
-  const v =
-    ((c as any).targetHandleId as string | null | undefined) ??
-    ((c as any).targetHandle as string | null | undefined);
-  return v ?? undefined;
+function getSourceHandle(c: Connection) {
+  return extractHandles(c).source;
+}
+function getTargetHandle(c: Connection) {
+  return extractHandles(c).target;
 }
 
 /** Quick guards for connections (must have concrete ends & handles). */
@@ -93,5 +97,3 @@ export function isFlowDirectionOK(c: Connection) {
 }
 
 export const isSelfEdge = (c: Connection) => c.source === c.target;
-
-export { getSourceHandle, getTargetHandle };

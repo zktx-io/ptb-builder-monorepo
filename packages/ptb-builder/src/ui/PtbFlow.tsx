@@ -661,6 +661,7 @@ export function PTBFlow() {
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
   const { fitView, screenToFlowPosition } = useReactFlow();
+  const retryFlag = useRef(false);
 
   // eslint-disable-next-line no-restricted-syntax
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -675,10 +676,13 @@ export function PTBFlow() {
   const onAutoLayout = useCallback(async () => {
     // Guard 1: if rehydrating, defer
     if (rehydratingRef.current) {
-      requestAnimationFrame(() => {
-        // run once more after rehydrate tick
-        onAutoLayout();
-      });
+      if (!retryFlag.current) {
+        retryFlag.current = true;
+        requestAnimationFrame(() => {
+          retryFlag.current = false;
+          onAutoLayout();
+        });
+      }
       return;
     }
 

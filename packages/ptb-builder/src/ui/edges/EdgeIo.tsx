@@ -1,5 +1,14 @@
 // src/ui/edges/EdgeIo.tsx
 
+/**
+ * IO edge renderer
+ * - Uses a Bezier path for smooth curvature.
+ * - Derives a coarse IO category for CSS from the serialized type:
+ *   props.data.dataType (preferred) → source/target handle suffix.
+ * - Compatible with v11 (sourceHandle/targetHandle) and v12
+ *   (sourceHandleId/targetHandleId).
+ */
+
 import React, { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';

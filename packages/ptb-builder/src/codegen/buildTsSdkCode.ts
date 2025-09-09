@@ -1,5 +1,9 @@
 // src/codegen/buildTsSdkCode.ts
 
+// Auto-generated TS code emitter for PTB Program.
+// - Emits raw numeric and argument literals without tx.pure.* wrapping.
+// - The runtime builder (buildTransaction) is responsible for wrapping u64-like inputs.
+
 import { PTBGraph } from '../ptb/graph/types';
 import { Chain } from '../types';
 import { preprocess } from './preprocess';
@@ -126,6 +130,7 @@ function generate(p: Program, opts?: ExecOptions): string {
         body.w(
           `const ${out} = tx.makeMoveVec({ type: undefined, elements: ${elems} });`,
         );
+        // NOTE: We omit concrete type for simplicity; runtime will rely on elements.
         break;
       }
       case 'moveCall': {

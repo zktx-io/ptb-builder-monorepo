@@ -1,7 +1,23 @@
 // src/ptb/decodeTx/index.ts
 
+// -----------------------------------------------------------------------------
 // Decode a ProgrammableTransaction into a PTBGraph.
-// This file coordinates the decode and delegates small utilities to helpers.
+// Responsibilities:
+// - Create Start/End and command/variable nodes offscreen to avoid UI flicker.
+// - Infer pure input types (numbers unify to scalar 'number') and seed variables
+//   with initial literals when available.
+// - Rebuild command nodes using the registry; wire flow edges in sequence.
+// - Wire IO edges using handle ids derived from current ports (buildHandleId).
+// - Respect ABI when embedded (modules embed); otherwise infer from values.
+// - Keep model permissive (e.g., vector<object>) for decode/compat, while UI
+//   creation may still disallow such shapes.
+// Notes:
+// - SplitCoins amounts: registry exposes expanded scalar ports only. If the
+//   original tx used a single vector<u64>, we connect that vector to the first
+//   expanded scalar port (best-effort) and tag accordingly.
+// - MoveCall: generics (type args) are materialized as string inputs in_targ_*.
+//   Function ins/outs come from normalized ABI when present; otherwise inferred.
+// -----------------------------------------------------------------------------
 
 import type { SuiCallArg, SuiTransactionBlockKind } from '@mysten/sui/client';
 import { fromHex } from '@mysten/sui/utils';
@@ -78,7 +94,11 @@ class ValueTable {
 
 const unknownT: PTBType = { kind: 'unknown' };
 
-/** Normalize SuiCallArg → PTBType (numbers unified to scalar 'number'). */
+/** Normalize SuiCallArg → PTBType.
+ * - All numeric widths unify to scalar 'number'.
+ * - Numeric vectors unify to vector<number>.
+ * - Non-pure inputs default to object (ref).
+ */
 function inferPureType(input: SuiCallArg): PTBType {
   if (input.type !== 'pure') return O(); // object ref
 
@@ -133,7 +153,9 @@ function literalOfPure(input: SuiCallArg): unknown {
   return input.value;
 }
 
-// Choose the right variable factory by PTBType so that label matches UI policy.
+// Choose a variable factory by PTBType so labels follow UI policy.
+// - Objects keep concrete typeTag in type (label remains "object").
+// - Model allows vector/object; UI creation may disallow object-in-vector.
 function makeVarByType(
   t: PTBType,
   opts: { name?: string; value?: unknown },
@@ -193,6 +215,7 @@ function makeVarByType(
 // Map of nodeId → node, to compute handle ids reliably when creating edges.
 const nodeMap = new Map<string, PTBNode>();
 
+// Spawn offscreen to prevent initial viewport flicker; layout will reposition.
 function pushNode(graph: PTBGraph, n: PTBNode) {
   // Force-spawn offscreen so initial render does not flicker in the viewport.
   n.position = { ...OFFSCREEN_POS };
@@ -221,7 +244,7 @@ function makeEndNode(): PTBNode {
   };
 }
 
-/** Ensure flow ports exist (defensive for command nodes). */
+/** Ensure prev/next flow ports exist (defensive for decoded commands). */
 function ensureFlowPorts(node: PTBNode) {
   const list = ((node as any).ports ?? []) as Port[];
   if (!list.some((p) => p.id === FLOW_PREV)) {
@@ -272,7 +295,7 @@ function pushFlow(graph: PTBGraph, prevId: string, nextId: string): void {
   } as PTBEdge);
 }
 
-/** Push an IO edge with correct handle ids on both ends. */
+/** Use buildHandleId so handle ids reflect the current coarse type suffix. */
 function pushIoEdge(
   graph: PTBGraph,
   src: SourceRef,
@@ -564,6 +587,9 @@ export function decodeTx(
     }
 
     // ---- makeMoveVec --------------------------------------------------------
+    // elemsCount comes from actual element sources length (fallback 1).
+    // Result type uses the first source's type as element type (fallback object).
+    // NOTE: Model keeps vector<object> for decode; UI creation may disallow it.
     if ('MakeMoveVec' in tx) {
       const [_maybeTp, elems] = tx.MakeMoveVec as [any, any[]];
       const srcs = (elems ?? [])

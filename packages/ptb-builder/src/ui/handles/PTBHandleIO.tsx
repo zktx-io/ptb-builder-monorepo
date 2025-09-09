@@ -1,5 +1,15 @@
 // src/ui/handles/PTBHandleIO.tsx
 
+/** IO handle component.
+ *  - Stable handle id is derived via buildHandleId(port) and may include a
+ *    coarse type suffix (e.g., ":number", ":object", "vector<number>").
+ *  - Connection validation uses structured PTB types resolved from the store
+ *    (findPortTypeFromStore) and applies isTypeCompatible() semantics.
+ *  - Visual category/glyphs are purely cosmetic; they do not affect validation.
+ *  - NOTE: The PTB model permits vector<object>/option<object> for decode and
+ *    forward-compat. UI-level creation of such shapes may be disabled.
+ */
+
 import React, { useMemo } from 'react';
 
 import {
@@ -27,7 +37,7 @@ import {
 import { buildHandleId, serializePTBType } from '../../ptb/graph/types';
 import type { Port, PTBType } from '../../ptb/graph/types';
 
-/** Strict check: true only for PTB vector<T> */
+/** Strict check: true only for PTB vector<T> (structured type). */
 function isVectorType(t?: PTBType): boolean {
   return !!t && t.kind === 'vector';
 }
@@ -57,7 +67,7 @@ export function PTBHandleIO({
   // Stable RF handle id (may include ":type" suffix for IO)
   const handleId = useMemo(() => buildHandleId(port), [port]);
 
-  // Serialized hint is for badges/debug only (never primary truth)
+  // Serialized hint is for badges/debug only; not the source of truth.
   const serializedHint = useMemo(
     () =>
       port.typeStr ??
@@ -65,13 +75,13 @@ export function PTBHandleIO({
     [port.typeStr, port.dataType],
   );
 
-  // Category coloring: prefer structured type; fallback to serialized
+  // Category coloring: prefer structured type; fall back to serialized type string.
   const category = useMemo(() => {
     const c = ioCategoryOf(port.dataType);
     return c !== 'unknown' ? c : ioCategoryOfSerialized(serializedHint);
   }, [serializedHint, port.dataType]);
 
-  // Vector-only vector glyph: strict vector check, with serialized fallback
+  // Vector/Option glyphs: visual hints only; they do not change validation rules.
   const isVector =
     isVectorType(port.dataType) || isVectorSerialized(serializedHint);
 
@@ -93,11 +103,10 @@ export function PTBHandleIO({
     return isTypeCompatible(srcT, dstT);
   };
 
-  /**
-   * Build a human-friendly tooltip for this handle.
-   * - Prefer structured types (incl. object typeTag)
-   * - Fall back to serialized type string
-   * - For unknown, show ONLY debugInfo (if provided), otherwise "unknown"
+  /** Build a human-friendly tooltip:
+   *  - Prefer structured PTB type (preserving object typeTag when present).
+   *  - Fall back to serialized type string.
+   *  - For unknown, show debugInfo if available; otherwise "unknown".
    */
   const typeTooltip = useMemo(() => {
     const t = port.dataType;

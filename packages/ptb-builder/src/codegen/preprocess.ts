@@ -1,5 +1,9 @@
 // src/codegen/preprocess.ts
 
+// POLICY NOTE:
+// - Vectors/Options do not support object elements at the UI level (creation blocked).
+// - The preprocessing layer stays permissive to support future extensions and decoding.
+
 import {
   type CommandNode,
   parseHandleTypeSuffix,
@@ -231,6 +235,8 @@ function toPValueFromVar(v: VariableNode): PValue {
       return { kind: 'object', id: String(s ?? '') };
     }
     case 'vector': {
+      // NOTE: UI prevents creating vector<object> (and option<object>) for now.
+      // The serializer remains permissive for forward compatibility / decode paths.
       const items = Array.isArray(val) ? val : [];
       return {
         kind: 'vector',

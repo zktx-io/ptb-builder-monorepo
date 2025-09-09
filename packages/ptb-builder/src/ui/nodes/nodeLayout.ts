@@ -18,6 +18,6 @@ export const NODE_SIZES = {
   Helper: { width: 180 },
 } as const;
 
-/** Compute the top offset for an IO row (optionally with an extra offset). */
+/** Compute top offset for an IO row (optionally adds a constant offset). */
 export const ioTopForIndex = (idx: number, offset = 0) =>
   TITLE_TO_IO_GAP + offset + idx * ROW_SPACING;

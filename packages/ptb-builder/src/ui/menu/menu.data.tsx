@@ -1,20 +1,31 @@
 // src/ui/menu/menu.data.tsx
 // -----------------------------------------------------------------------------
 // Context menu data definitions.
-// - Commands: flat list (with icons for recognizability)
+// - Commands: flat list (with icons)
 // - Scalars: flat quick actions (address, number, bool, string, id, object)
-// - Vectors: grouped submenu (u8..u256, bool, string, address, id, object)
+// - Vectors: grouped submenu (u8..u256, bool, string, address, id)
+//   NOTE: vector<object> is intentionally not offered at UI level.
+// - Options: grouped submenu (u8..u256, bool, string, address, id)
+//   NOTE: option<object> is intentionally not offered at UI level.
 // - Resources: grouped submenu (wallet, gas, clock, random, system)
-// Scalars/vectors/resources use type markers (colored handles).
+// Scalars/vectors/options/resources use type markers (colored handles).
 // -----------------------------------------------------------------------------
 
 import React from 'react';
 
-import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
+import {
+  /* Brackets ,*/ Download,
+  FunctionSquare,
+  Merge,
+  Split,
+} from 'lucide-react';
 
 /** ------------------------------------------------------------------
  * Command section (flat, with lucide-react icons)
  * Canonical action keys: "cmd/<CommandKind>"
+ * NOTE:
+ * - MakeMoveVec is defined in the registry but intentionally hidden in the menu for now.
+ *   Uncomment the line below when you want to expose it in the UI.
  * ----------------------------------------------------------------- */
 export const CanvasCmd = [
   { name: 'SplitCoins', action: 'cmd/splitCoins', icon: <Split /> },

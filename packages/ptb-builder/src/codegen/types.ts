@@ -5,13 +5,23 @@ import type { Chain } from '../types';
 /** A value literal or reference that can appear in variables & arguments */
 export type PValue =
   | { kind: 'scalar'; value: string | number | boolean } // strings, booleans, or address literal sentinel 'myAddress'
-  | { kind: 'move_numeric'; value: number | string | bigint } // Move numeric types (e.g. u64); builder wraps with tx.pure.u64
+  | {
+      kind: 'move_numeric';
+      value: number | string | bigint;
+      // NOTE: Runtime builder (buildTransaction) wraps numeric-like inputs with tx.pure.u64 as needed.
+      // The TS code generator (buildTsSdkCode) emits raw values and does NOT wrap them.
+    }
   | {
       kind: 'object';
       special?: 'gas' | 'system' | 'clock' | 'random'; // special Sui objects
       id?: string; // object ID
     }
-  | { kind: 'vector'; items: PValue[] } // vector of PValues
+  | {
+      kind: 'vector';
+      items: PValue[];
+      // POLICY: Object elements in vectors are forbidden at the UI layer.
+      // The schema remains permissive for future extension and decoding purposes.
+    }
   | { kind: 'ref'; name: string }; // reference to a previously-emitted symbol
 
 /** A declared variable with its initialization value */

@@ -1,8 +1,9 @@
 // src/ptb/ptbDoc.ts
+
 // -----------------------------------------------------------------------------
-// PTB document model (self-contained, no runtime dependencies on Sui types).
-// - Keep only the data PTB actually needs for offline reproduction.
-// - ABI embed is fully normalized to PTB types (no Sui shapes).
+// PTB document model (self-contained; no Sui runtime types).
+// - Embeds (modules/objects) are normalized to PTB shapes for offline replay.
+// - The document captures only what PTB needs to reconstruct/preview a graph.
 // -----------------------------------------------------------------------------
 
 import type { Chain } from '../types';

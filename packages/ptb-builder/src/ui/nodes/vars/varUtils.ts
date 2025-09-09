@@ -3,21 +3,24 @@
 
 import type { Port, PTBType, VariableNode } from '../../../ptb/graph/types';
 import { serializePTBType } from '../../../ptb/graph/types';
+import { VAR_OUT } from '../../../ptb/portTemplates';
 
-/** Build an IO out port with a human-friendly typeStr hint */
+/** Build a variable's single IO out-port with stable type metadata. */
 export function buildOutPort(v?: VariableNode): Port {
   const t = v?.varType;
 
-  // Ensure we preserve full PTBType including object.typeTag and vector elem tags
+  // Preserve full PTBType including object.typeTag and vector element tags.
   const dataType: PTBType | undefined = t
-    ? JSON.parse(JSON.stringify(t)) // deep-clone safety if needed
+    ? typeof structuredClone === 'function'
+      ? structuredClone(t)
+      : JSON.parse(JSON.stringify(t))
     : undefined;
 
-  // Optional: human-friendly string for tooltip/badge
-  const typeStr = t ? serializePTBType(t) : undefined; // if you have this helper here
+  // Human-friendly string used for tooltip/badge only (UI hint).
+  const typeStr = t ? serializePTBType(t) : undefined;
 
   return {
-    id: 'out', // or VAR_OUT constant your system uses
+    id: VAR_OUT,
     role: 'io',
     direction: 'out',
     label: v?.name || 'out',
@@ -26,7 +29,7 @@ export function buildOutPort(v?: VariableNode): Port {
   };
 }
 
-/** Placeholder text by PTBType (recurses into vector elem) */
+/** Placeholder text by PTBType (recurses into vector element). */
 export function placeholderFor(t?: PTBType): string {
   if (!t) return 'value';
 

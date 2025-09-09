@@ -3,7 +3,10 @@
 //   - Auto layout
 //   - Commands (flat)
 //   - Scalars (flat: address/number/bool/string/id/object)
-//   - Vector (submenu: u8..u256, bool, string, address, id, object)
+//   - Vector (submenu: u8..u256, bool, string, address, id)
+//     NOTE: vector<object> is intentionally not offered at UI level.
+//   - Option (submenu: u8..u256, bool, string, address, id)
+//     NOTE: option<object> is intentionally not offered at UI level.
 //   - Resources (submenu: wallet/gas/clock/random/system)
 //
 // Resource submenu keeps singleton gating (wallet/gas/clock/random/system).

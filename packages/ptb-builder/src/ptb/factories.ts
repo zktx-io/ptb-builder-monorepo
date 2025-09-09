@@ -3,9 +3,12 @@
 // -----------------------------------------------------------------------------
 // Pure PTB node factories (domain-level, UI-agnostic).
 // - Variable nodes: no flow ports (IO out only).
-// - Command nodes: ports come from the central registry (flow + IO).
-// - Well-known resources use fixed IDs from seedGraph.
-// - Provides an injectable ID generator for doc-scoped uniqueness.
+// - Command nodes: flow+IO ports are provided by the central registry.
+// - ID generation is injectable (doc-scoped monotonicity via setIdGenerator).
+// - UI count defaults for commands are seeded automatically when absent,
+//   so the initial port sets always reflect a usable default.
+// - IMPORTANT: while the model allows vector<object>/option<object> for forward
+//   compatibility, UI-level creation currently disallows them.
 // -----------------------------------------------------------------------------
 
 import { M, O, Opt, S, V } from './graph/typeHelpers';

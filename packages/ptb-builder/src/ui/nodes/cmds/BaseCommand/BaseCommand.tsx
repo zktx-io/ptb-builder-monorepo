@@ -9,8 +9,8 @@
 
 import React, { memo, useMemo } from 'react';
 
-import type { Node, NodeProps, Position } from '@xyflow/react';
-import { Position as RFPos } from '@xyflow/react';
+import type { Node, NodeProps } from '@xyflow/react';
+import { Position } from '@xyflow/react';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import type { Port, PTBNode } from '../../../../ptb/graph/types';
@@ -108,7 +108,7 @@ export const BaseCommand = memo(function BaseCommand({
           <PTBHandleIO
             key={port.id}
             port={port}
-            position={RFPos.Left as Position}
+            position={Position.Left}
             style={{ top: ioTopForIndex(idx) }}
             label={labelOf(port)}
           />
@@ -119,7 +119,7 @@ export const BaseCommand = memo(function BaseCommand({
           <PTBHandleIO
             key={port.id}
             port={port}
-            position={RFPos.Right as Position}
+            position={Position.Right}
             style={{ top: ioTopForIndex(idx + rightOffsetRows) }}
             label={labelOf(port)}
           />

@@ -1,4 +1,15 @@
 // src/ptb/ptbAdapter.ts
+
+// -----------------------------------------------------------------------------
+// PTBGraph ↔ React Flow adapter.
+// - Nodes: SSOT lives in node.data.ptbNode. Variable nodes always materialize
+//   a single IO out port that mirrors varType.
+// - Edges: sourceHandle/targetHandle are passed through 1:1. For RF v11/12,
+//   sourceHandleId/targetHandleId aliases are also set for compatibility.
+// - Edge badges: serialized types are derived from the port dataType, not from
+//   handle suffixes (suffixes are conservative).
+// -----------------------------------------------------------------------------
+
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 import type {
@@ -11,6 +22,7 @@ import type {
 } from './graph/types';
 import { parseHandleTypeSuffix, serializePTBType } from './graph/types';
 import { PORTS } from './portTemplates';
+import { extractHandles } from '../ui/handles/handleUtils';
 
 /** UI node payload: only label and the SSOT PTB node */
 export interface RFNodeData extends Record<string, unknown> {
@@ -23,22 +35,6 @@ export interface RFEdgeData extends Record<string, unknown> {
   dataType?: string;
   targetType?: string;
   cast?: { to: NumericWidth };
-}
-
-/** Get XYFlow v11/12-compatible handle ids (null-safe → undefined). */
-function getEdgeHandleIds(re: RFEdge<RFEdgeData>): {
-  sh?: string;
-  th?: string;
-} {
-  const rawSh =
-    ((re as any).sourceHandleId as string | null | undefined) ??
-    re.sourceHandle;
-  const rawTh =
-    ((re as any).targetHandleId as string | null | undefined) ??
-    re.targetHandle;
-  const sh = rawSh ?? undefined;
-  const th = rawTh ?? undefined;
-  return { sh, th };
 }
 
 /** Ensure a Variable node carries a concrete IO out port that reflects its varType. */
@@ -172,7 +168,7 @@ export function rfToPTB(
   });
 
   const edges: PTBEdge[] = rfEdges.map((re) => {
-    const { sh, th } = getEdgeHandleIds(re);
+    const { source, target } = extractHandles(re);
     const cast = (re.data as RFEdgeData | undefined)?.cast;
 
     return {
@@ -180,8 +176,8 @@ export function rfToPTB(
       kind: mapRFTypeToPTBEdgeKind(re.type as string),
       source: re.source,
       target: re.target,
-      sourceHandle: sh ?? '',
-      targetHandle: th ?? '',
+      sourceHandle: source ?? '',
+      targetHandle: target ?? '',
       ...(cast ? { cast } : {}),
     };
   });

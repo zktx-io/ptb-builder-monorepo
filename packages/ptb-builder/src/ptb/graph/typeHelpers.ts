@@ -3,10 +3,13 @@
 // -----------------------------------------------------------------------------
 // Canonical PTB type factories. Single source of truth.
 // tx.pure aligned: scalar, move_numeric, object, vector, option, tuple
-// NOTE:
-// - 'typeparam' factory is REMOVED by policy. Generics are resolved via
+// Notes:
+// - 'typeparam' factory is intentionally removed. Generics are resolved via
 //   typeArguments: string[] and never appear as PTBType.
-// - 'option' is kept for future but resolver should NOT emit it now.
+// - The model permits vector<option<...>> etc. at any depth, but the UI may
+//   restrict creation for simplicity.
+// - Although the model permits vector<object> / option<object> for forward
+//   compatibility, UI-level creation currently disallows them.
 // -----------------------------------------------------------------------------
 
 import type { NumericWidth, PTBScalar, PTBType } from './types';

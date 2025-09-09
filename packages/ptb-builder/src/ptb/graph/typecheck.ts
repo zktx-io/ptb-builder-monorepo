@@ -2,13 +2,22 @@
 
 // ---------------------------------------------------------------------
 // PTB type guards, IO category utilities, compatibility rules, and helpers.
-// Policy highlights:
-// - Pure types map to tx.pure: scalar/move_numeric/vector (no nested vector).
-// - object / vector<object> are non-pure (refs), still allowed for IO wiring.
-// - option<T> is modeled; UI creates first-level only. Treat option vs non-option
-//   as incompatible. option<X> ↔ option<Y> compares X ↔ Y recursively.
-// - scalar(number) ↔ move_numeric(uXX) is compatible (cast carried in edge.cast).
-// - Generic placeholders are removed by policy.
+// Policy overview (matches implementation):
+// - Pure types (tx.pure-encodable):
+//     * scalar (bool, string, address, id, number)
+//     * move_numeric (u8..u256)
+//     * vector<T> and option<T> are pure iff T is pure (arbitrary depth).
+//       UI may restrict creating nested vectors/options for simplicity.
+// - object and tuple are non-pure (tx.pure does not encode them).
+// - The type model permits vector<object> / option<object> for forward
+//   compatibility, but UI-level creation disallows them currently.
+// - Compatibility:
+//     * option<X> vs non-option are incompatible; option<X> ↔ option<Y> compares inner.
+//     * scalar(number) ↔ move_numeric(uXX) is compatible (edge.cast carries width).
+//     * For vector/option, compatibility is recursive on the element type.
+//     * move_numeric ↔ move_numeric compatible only if width matches.
+//     * object ↔ object: lenient if either side lacks typeTag; strict equality if both present.
+// - Serialized-type helpers unwrap vector/option/tuple syntax conservatively.
 // ---------------------------------------------------------------------
 
 import type { NumericWidth, PTBType } from './types';
@@ -63,7 +72,7 @@ export function isPureScalarName(name: string | undefined): boolean {
   );
 }
 
-/** True if t is encodable by tx.pure (scalar/move_numeric/vector of pure) */
+/** True if t is encodable by tx.pure (scalar/move_numeric/vector/option of pure) */
 export function isPureType(t?: PTBType): boolean {
   if (!t) return false;
   if (isUnknownType(t) || isTuple(t) || isObject(t)) return false;

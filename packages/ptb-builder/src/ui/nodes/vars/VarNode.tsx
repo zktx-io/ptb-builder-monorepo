@@ -105,6 +105,7 @@ export const VarNode = memo(function VarNode({
     () => new Set(['sender', 'gas', 'clock', 'system', 'random']),
     [],
   );
+  // NOTE: helpers have chrome-only visuals (no editor area & fixed labels).
   const isHelperByName = useMemo(() => {
     const n = (v?.name ?? '').toLowerCase().trim();
     return helperNames.has(n);

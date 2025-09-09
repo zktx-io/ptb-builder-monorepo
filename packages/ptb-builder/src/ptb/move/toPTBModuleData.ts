@@ -1,8 +1,10 @@
 // src/ptb/move/toPTBModuleData.ts
 
 // -----------------------------------------------------------------------------
-// Convert on-chain normalized modules (Sui ABI) → PTB-friendly view
-// PTBModuleData: only the data PTB actually needs (tparamCount, ins, outs).
+// Convert Sui normalized modules (ABI) → PTB-friendly view.
+// PTBFunctionData captures only what PTB needs: tparamCount, ins, outs.
+// - TxContext is not modeled by PTB and is dropped from both parameters/returns.
+// - The resulting types are already normalized to PTBType via toPTBTypeFromMove.
 // -----------------------------------------------------------------------------
 
 import type {

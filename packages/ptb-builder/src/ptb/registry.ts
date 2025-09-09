@@ -1,28 +1,16 @@
 // src/ptb/registry.ts
+
+// src/ptb/registry.ts
 // -----------------------------------------------------------------------------
-// Single source of truth for command IO port specifications.
-// Flow ports are NOT defined here (they come from PORTS.commandBase()).
-// This file only defines IO ports per command according to the latest policy.
-//
-// Policy (core commands):
-// - No “expanded” toggle. Only the count stepper per command controls multiplicity.
-// - SplitCoins
-//     inputs : in_coin (object, single), in_amount_0..N-1 (scalar u64, expanded)
-//     outputs: out_coin_0..N-1 (object, expanded)
-// - MergeCoins
-//     inputs : in_dest (object, single), in_source_0..N-1 (object, expanded)
-//     outputs: none
-// - TransferObjects
-//     inputs : in_object_0..N-1 (object, expanded), in_recipient (address, single)
-//     outputs: none
-// - MakeMoveVec
-//     inputs : in_elem_0..N-1 (T, expanded)
-//     outputs: out_vec (vector<T>, single)
-//   * elemType comes from UI (defaults to object when absent).
-//
-// Notes:
-// - MoveCall generics are SSOT via ui._fnTParams: string[] (length-only for port count).
-// - MoveCall ins/outs come from normalized ABI (_fnIns/_fnOuts).
+// Single source of truth for command IO port specifications (IO only).
+// Flow ports are defined by PORTS.commandBase() and merged here.
+// Policy notes:
+// - No "expanded" toggle flag; multiplicity is controlled solely by count steppers.
+// - MakeMoveVec: elemType defaults to object when absent (kept for decode/future).
+//   IMPORTANT: although the model allows vector<object>, UI-level creation
+//   currently disallows it. The default is preserved for compatibility.
+// - MoveCall generics: SSOT via ui._fnTParams (length-only); ABI-normalized
+//   ins/outs come via ui._fnIns/_fnOuts as PTBType[].
 // -----------------------------------------------------------------------------
 
 import { M, O, S, V } from './graph/typeHelpers';
@@ -132,6 +120,11 @@ const transferObjectsSpec: CommandSpec = {
   },
 };
 
+/** MakeMoveVec:
+ *  inputs : in_elem_0..N-1 (T, expanded; T = ui.elemType or object by default)
+ *  outputs: out_vec (vector<T>, single)
+ *  NOTE: UI disallows creating vector<object>; default is kept for decode/future.
+ */
 const makeMoveVecSpec: CommandSpec = {
   label: 'MakeMoveVec',
   buildIO(ui) {

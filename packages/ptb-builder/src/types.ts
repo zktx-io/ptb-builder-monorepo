@@ -1,3 +1,5 @@
+// src/types.ts
+
 export type Chain = 'sui:devnet' | 'sui:testnet' | 'sui:mainnet';
 export type ToastVariant = 'info' | 'success' | 'error' | 'warning';
 export type ToastMessage = {

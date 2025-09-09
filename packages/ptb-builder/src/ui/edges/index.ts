@@ -1,5 +1,7 @@
 // src/ui/edges/index.ts
 
+// Edge type registry for @xyflow/react.
+
 import type { EdgeTypes as RfEdgeTypes } from '@xyflow/react';
 
 import { EdgeFlow } from './EdgeFlow';

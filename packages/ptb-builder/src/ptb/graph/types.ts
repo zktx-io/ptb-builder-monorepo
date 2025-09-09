@@ -14,12 +14,14 @@ export type PTBScalar = 'bool' | 'string' | 'address' | 'id' | 'number';
 
 /** ------------------------------------------------------------------
  * ADT for PTB types
- * - 'vector' models vector<T>; nested vectors are disallowed by policy (UI creation),
- *   but the model still allows it for future-proofing; validators should enforce.
- * - 'option' models option<T>; same as vector: UI creates only first-level, model allows it.
- * - 'object' is non-pure (owned/shared refs), optional typeTag for specificity.
+ * - 'vector' models vector<T>. The model allows arbitrary nesting; UI creation
+ *   may restrict nested vectors for simplicity.
+ * - 'option' models option<T>. The model allows it; UI creation may restrict it.
+ * - 'object' is non-pure (owned/shared refs). An optional typeTag can specify it.
  * - 'tuple' can appear in ABI outputs (non-pure for tx.pure).
- * - Generic placeholders are removed by policy; generics resolved via typeArguments[] elsewhere.
+ * - Generic placeholders are removed by policy; generics are resolved elsewhere.
+ * - IMPORTANT: Although the type model permits vector<object> or option<object>
+ *   for forward compatibility, the UI-level creation currently disallows them.
  * ----------------------------------------------------------------- */
 export type PTBType =
   | { kind: 'scalar'; name: PTBScalar }
@@ -75,8 +77,7 @@ export type CommandKind =
 
 /** ------------------------------------------------------------------
  * Command UI params
- * - Counters for expandable inputs.
- * - Extra fields for publish/upgrade (graph-only commands).
+ * - UI counters and decode-only knobs. The model keeps fields optional.
  * ----------------------------------------------------------------- */
 export interface CommandUIParams {
   // Core commands
@@ -146,7 +147,7 @@ export interface PTBGraph {
 
 /** ------------------------------------------------------------------
  * Serialization helpers
- * - For 'option', emit `option<...>` (though resolver should not output it now).
+ * - For 'option', emit `option<...>` even though the resolver may not output it now.
  * ----------------------------------------------------------------- */
 export function serializePTBType(t: PTBType): string {
   switch (t.kind) {
@@ -191,9 +192,9 @@ export const findPort = (node: PTBNode, portId: string) =>
  * - object<T> → `${id}:object`   (drop concrete typeTag)
  * - scalar(name) → `${id}:${name}`  where name ∈ { address | bool | string | number | id }
  * - move_numeric (u8..u256) → `${id}:number`
- * - vector<scalar/move_numeric/object> → `${id}:vector<name>` as above
- * - option<scalar/move_numeric/object> → `${id}:option<name>` as above
- * - Complex shapes (tuple/unknown/nested vectors/option<vector<...>> etc.) → conservative suffix
+ * - vector<scalar|move_numeric|object> → `${id}:vector<...>` as above
+ * - option<scalar|move_numeric|object> → `${id}:option<...>` as above
+ * - Complex shapes (tuple/unknown/nested vectors/option<vector<...>> etc.) → use base id
  */
 export function buildHandleId(port: Port): string {
   if (port.role !== 'io') return port.id;

@@ -1,4 +1,4 @@
-// src/ui/assets/AssetsModal.tsx
+// src/ui/AssetsModal.tsx
 import React, { useEffect, useState } from 'react';
 
 import { Boxes, Coins, FileBox, Loader2, X } from 'lucide-react';
@@ -36,7 +36,7 @@ export function AssetsModal({
   onPick,
   pageSize = 50,
 }: AssetsModalProps) {
-  const { getOwnedObjects, toast, theme } = usePtb();
+  const { getOwnedObjects, toast } = usePtb();
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<OwnedItem[]>([]);
@@ -98,7 +98,7 @@ export function AssetsModal({
     if (!canPrev || loading) return;
     setPrevStack((s) => {
       const prev = s.slice(0, -1);
-      const backCursor = prev[prev.length - 1];
+      const backCursor = prev.length ? prev[prev.length - 1] : undefined;
       loadPage(backCursor, false);
       return prev;
     });

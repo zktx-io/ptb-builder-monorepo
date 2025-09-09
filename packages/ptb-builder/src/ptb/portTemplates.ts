@@ -1,5 +1,12 @@
 // src/ptb/portTemplates.ts
 
+// -----------------------------------------------------------------------------
+// Port builders and standard port sets.
+// - Flow ports carry no data typing; only optional label is kept.
+// - IO helpers accept PTBType or PortOptions; typeStr can override serialization.
+// - UNKNOWN is a placeholder type for UI when the real type is not yet known.
+// -----------------------------------------------------------------------------
+
 import type { Port, PTBType } from './graph/types';
 
 export const FLOW_PREV = 'prev' as const;

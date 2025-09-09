@@ -1,5 +1,21 @@
 // src/ptb/move/toPTBType.ts
 
+// -----------------------------------------------------------------------------
+// Normalize Move ABI types into PTBType.
+// Policy:
+// - No generic placeholders inside PTBType (no 'typeparam' variant).
+//   Generics are handled out-of-band in UI as string arrays (SSOT: _fnTParams).
+// - Known structs are mapped when they have a canonical PTB form:
+//     0x1::string::String     → scalar('string')
+//     0x2::object::ID         → scalar('id')
+//     0x1::option::Option<T>  → option<...>
+// - Structs with type arguments → generic objects (no concrete typeTag).
+// - References are unwrapped recursively.
+// - NOTE: While the model allows option<vector<...>> (and vector<object>),
+//   UI-level creation of object inside vector/option is currently disallowed.
+//   The model keeps it for decode/forward-compat.
+// -----------------------------------------------------------------------------
+
 import type { SuiMoveNormalizedType } from '@mysten/sui/client';
 
 import type { PTBType } from '../graph/types';

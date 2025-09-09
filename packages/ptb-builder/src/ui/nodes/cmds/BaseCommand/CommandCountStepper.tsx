@@ -1,3 +1,5 @@
+// src/ui/nodes/cmds/BaseCommand/CommandCountStepper.tsx
+
 // Ultra-compact count stepper (＋ / − only, no number readout).
 // Policy:
 // - Expansion toggles were removed. Count alone defines the number of ports.

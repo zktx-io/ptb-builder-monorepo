@@ -1,4 +1,4 @@
-// PtbBuilder.tsx
+// src/ui/PtbBuilder.tsx
 // -----------------------------------------------------------------------------
 // Public wrapper around internal PtbProvider + PTBFlow.
 //

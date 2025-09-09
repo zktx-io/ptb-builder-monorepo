@@ -1,5 +1,11 @@
 // src/ptb/seedGraph.ts
 
+// -----------------------------------------------------------------------------
+// Default seeded graph and well-known ids used by the canvas.
+// - Positions are editor-friendly defaults only (not part of the data model).
+// - START/END ids are canonical; provider normalizes duplicates onto these ids.
+// -----------------------------------------------------------------------------
+
 import { PTBGraph } from './graph/types';
 import { PORTS } from './portTemplates';
 
