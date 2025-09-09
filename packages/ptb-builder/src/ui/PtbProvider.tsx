@@ -118,6 +118,7 @@ export type PtbContextValue = {
 
   // Toast
   toast: ToastAdapter;
+  showExportButton?: boolean;
 
   wellKnown: Record<WellKnownId, boolean>;
   isWellKnownAvailable: (k: WellKnownId) => boolean;
@@ -150,6 +151,7 @@ export type PtbProviderProps = {
     tx: Transaction | undefined,
   ) => Promise<{ digest?: string; error?: string }>;
   toast?: ToastAdapter;
+  showExportButton?: boolean;
 };
 
 const DEFAULT_GRAPH_DEBOUNCE = 400;
@@ -243,6 +245,7 @@ export function PtbProvider({
 
   executeTx: executeTxProp,
   toast: toastProp,
+  showExportButton = false,
 }: PtbProviderProps) {
   // Theme
   const [theme, setTheme] = useState<Theme>(initialTheme);

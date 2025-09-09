@@ -110,7 +110,8 @@ export function CodePip({
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
-  const { readOnly, setTheme, theme, execOpts, exportDoc } = usePtb();
+  const { readOnly, setTheme, theme, execOpts, exportDoc, showExportButton } =
+    usePtb();
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = useMemo(() => code ?? '', [code]);
@@ -281,15 +282,17 @@ export function CodePip({
             </button>
 
             {/* Save */}
-            <button
-              type="button"
-              onClick={handleSave}
-              className="ptb-codepip__btn ptb-codepip__btn--neutral"
-              title="Export document as .ptb"
-              aria-label="Export document as .ptb"
-            >
-              <Save size={16} />
-            </button>
+            {showExportButton && (
+              <button
+                type="button"
+                onClick={handleSave}
+                className="ptb-codepip__btn ptb-codepip__btn--neutral"
+                title="Export document as .ptb"
+                aria-label="Export document as .ptb"
+              >
+                <Save size={16} />
+              </button>
+            )}
 
             {/* Assets */}
             {onAssetPick && !readOnly && (
