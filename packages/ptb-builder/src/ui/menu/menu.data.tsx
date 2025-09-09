@@ -24,7 +24,7 @@ export const CanvasCmd = [
     action: 'cmd/transferObjects',
     icon: <Download />,
   },
-  { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <Brackets /> },
+  // { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <Brackets /> },
   { name: 'MoveCall', action: 'cmd/moveCall', icon: <FunctionSquare /> },
 ];
 
