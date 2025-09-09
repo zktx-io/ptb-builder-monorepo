@@ -32,6 +32,7 @@ import './styles/theme.dark.css';
 import './styles/theme.cobalt2.css';
 import './styles/theme.tokyo.night.css';
 import './styles/theme.cream.css';
+import './styles/theme.mint.breeze.css';
 import './styles/common.css';
 
 import { CodePip, EMPTY_CODE } from './CodePip';
@@ -196,11 +197,13 @@ export function PTBFlow() {
     theme,
     chain,
     execOpts,
+    dryRunTx,
     runTx,
     createUniqueId,
     registerFlowActions,
-    graphEpoch, // ← only rehydrate when this changes
+    graphEpoch,
     codePipOpenTick,
+    toast,
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
@@ -645,19 +648,33 @@ export function PTBFlow() {
   }, [rfNodes, rfEdges, chain, execOpts]);
 
   // ----- Execute --------------------------------------------------------------
+  const [isRunning, setIsRunning] = useState(false);
 
-  const [executing, setExecuting] = useState(false);
+  const onDryRun = useCallback(async () => {
+    try {
+      setIsRunning(true);
+      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
+      const tx = buildTransaction(ptb, chain, execOpts);
+      await dryRunTx?.(tx); // toast behavior is controlled in provider
+    } catch (e: any) {
+      toast?.({ message: e?.message || 'Unexpected error', variant: 'error' });
+    } finally {
+      setIsRunning(false);
+    }
+  }, [rfNodes, rfEdges, chain, execOpts, dryRunTx, toast]);
 
   const onExecute = useCallback(async () => {
     try {
-      setExecuting(true);
+      setIsRunning(true);
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
       const tx = buildTransaction(ptb, chain, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
+    } catch (e: any) {
+      toast?.({ message: e?.message || 'Unexpected error', variant: 'error' });
     } finally {
-      setExecuting(false);
+      setIsRunning(false);
     }
-  }, [rfNodes, rfEdges, chain, execOpts, runTx]);
+  }, [rfNodes, rfEdges, chain, execOpts, runTx, toast]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
   const { fitView, screenToFlowPosition } = useReactFlow();
@@ -857,10 +874,10 @@ export function PTBFlow() {
               language="typescript"
               title="ts-sdk preview"
               emptyText={EMPTY_CODE(chain)}
+              canRunning={!readOnly && flowActive}
+              isRunning={isRunning}
+              onDryRun={onDryRun}
               onExecute={onExecute}
-              executing={executing}
-              /** require editor mode + valid flow */
-              canExecute={!readOnly && flowActive}
               onAssetPick={onAssetPick}
             />
           </div>

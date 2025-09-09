@@ -25,6 +25,7 @@ import React, {
 } from 'react';
 
 import {
+  DryRunTransactionBlockResponse,
   getFullnodeUrl,
   type GetOwnedObjectsParams,
   type PaginatedObjectsResponse,
@@ -106,6 +107,7 @@ export type PtbContextValue = {
   // Execution
   execOpts: ExecOptions;
   runTx?: (tx?: Transaction) => Promise<{ digest?: string; error?: string }>;
+  dryRunTx?: (tx?: Transaction) => Promise<void>;
 
   // Toast
   toast: ToastAdapter;
@@ -375,6 +377,59 @@ export function PtbProvider({
       return res ?? {};
     },
     [activeChain, executeTx, toastImpl],
+  );
+
+  const dryRunTx = useCallback(
+    async (tx?: Transaction): Promise<void> => {
+      if (!tx) {
+        toastImpl({ message: 'No transaction to dry-run', variant: 'error' });
+        return;
+      }
+
+      const client = clientRef.current;
+      if (!client) {
+        toastImpl({
+          message: 'SuiClient unavailable (not ready).',
+          variant: 'error',
+        });
+        return;
+      }
+
+      try {
+        // 1) Build tx bytes using the current client (fills gas/price where needed)
+        const bytes = await tx.build({ client });
+
+        // 2) Run simulation
+        const sim = (await client.dryRunTransactionBlock({
+          transactionBlock: bytes,
+        })) as DryRunTransactionBlockResponse;
+
+        // 3) Normalize status / error
+        const status =
+          (sim as any)?.effects?.status?.status ??
+          (sim as any)?.effects?.status ??
+          (sim as any)?.status;
+
+        const errorMsg =
+          (sim as any)?.effects?.status?.error ||
+          (sim as any)?.checkpointError ||
+          (sim as any)?.error;
+
+        if (status !== 'success') {
+          toastImpl({
+            message: errorMsg || 'Dry run failed',
+            variant: 'error',
+          });
+          return;
+        }
+
+        toastImpl({ message: 'Dry run success', variant: 'success' });
+      } catch (e: any) {
+        const msg = e?.message || 'Dry run error';
+        toastImpl({ message: msg, variant: 'error' });
+      }
+    },
+    [toastImpl],
   );
 
   // ---- debounced graph autosave ---------------------------------------------
@@ -942,6 +997,7 @@ export function PtbProvider({
       execOpts: execOptsProp,
 
       runTx,
+      dryRunTx,
       toast: toastImpl,
 
       wellKnown,
@@ -970,6 +1026,7 @@ export function PtbProvider({
       genId,
       execOptsProp,
       runTx,
+      dryRunTx,
       toastImpl,
       wellKnown,
       isWellKnownAvailable,

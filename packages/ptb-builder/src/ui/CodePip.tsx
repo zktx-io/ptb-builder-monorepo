@@ -1,7 +1,7 @@
 // src/ui/CodePip.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Copy, PackageSearch, Play } from 'lucide-react';
+import { Copy, FlaskConical, PackageSearch, Play } from 'lucide-react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
@@ -49,9 +49,15 @@ type CodePipProps = {
 
   emptyText?: string;
 
+  /** Shared enable state for both Dry-run and Execute */
+  canRunning?: boolean;
+
+  /** Shared running state for both buttons (mutually exclusive UX) */
+  isRunning?: boolean;
+
+  /** Actions */
+  onDryRun?: () => Promise<void> | void;
   onExecute?: () => Promise<void> | void;
-  executing?: boolean;
-  canExecute?: boolean;
 
   onCopy?: (text: string) => Promise<void> | void;
   onAssetPick?: (obj: { objectId: string; typeTag: string }) => void;
@@ -88,9 +94,11 @@ export function CodePip({
 
   emptyText = '// No code yet. Connect nodes or change values to see generated code.',
 
+  isRunning = false,
+  canRunning = true,
+
+  onDryRun,
   onExecute,
-  executing,
-  canExecute = true,
 
   onCopy,
   onAssetPick,
@@ -255,13 +263,29 @@ export function CodePip({
               </button>
             )}
 
+            {/* Dry-run */}
+            {onDryRun && !readOnly && (
+              <button
+                type="button"
+                onClick={onDryRun}
+                disabled={!!isRunning || !canRunning}
+                aria-disabled={!!isRunning || !canRunning}
+                aria-busy={!!isRunning}
+                className="ptb-codepip__btn ptb-codepip__btn--assets disabled:cursor-not-allowed"
+                title="Dry run"
+              >
+                <FlaskConical size={16} />
+              </button>
+            )}
+
+            {/* Execute */}
             {onExecute && !readOnly && (
               <button
                 type="button"
                 onClick={onExecute}
-                disabled={!!executing || !canExecute}
-                aria-disabled={!!executing || !canExecute}
-                aria-busy={!!executing}
+                disabled={!!isRunning || !canRunning}
+                aria-disabled={!!isRunning || !canRunning}
+                aria-busy={!!isRunning}
                 className="ptb-codepip__btn ptb-codepip__btn--run disabled:cursor-not-allowed"
                 title="Run"
               >
