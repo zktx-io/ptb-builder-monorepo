@@ -1036,6 +1036,7 @@ export function PtbProvider({
 
       theme,
       setTheme,
+      showExportButton,
 
       objects,
       getObjectData,
@@ -1073,6 +1074,7 @@ export function PtbProvider({
       activeChain,
       readOnly,
       theme,
+      showExportButton,
       objects,
       getObjectData,
       modules,
