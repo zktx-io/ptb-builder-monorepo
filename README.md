@@ -35,7 +35,13 @@
 
 * **Load from Digest**: Import an existing on‑chain transaction by digest and visualize its structure.
 
-### 6. Themes
+### 6. Use On-Chain Assets as Objects
+
+* **Asset Browser**: Open a modal to browse all objects owned by your address (coins, Move objects, modules, etc.).
+* **One-Click Insert**: Select an object to instantly insert it as an **Object node** in the graph.
+* **Seamless Integration**: Use registered assets directly in commands like `TransferObjects`, `MergeCoins`, or `MoveCall`.
+
+### 7. Themes
 
 * **Initial Theme Selection**: Choose your preferred theme (`dark`, `light`, `cobalt2`, `tokyo.night`, `cream`).
 * **Switch Anytime**: Change themes dynamically from the workspace.
@@ -59,6 +65,7 @@ Inputs follow `tx.option` conventions from the Sui TS SDK:
 * **Scalars**: numbers, booleans, addresses, strings ✅
 * **Objects**: supported for direct ownership/transfer ✅
   (includes `Coin<T>` objects)
+  _Objects can also be selected from your owned assets via the **Assets modal**._
 * **Vectors**: scalars only ✅
   (❌ objects, including coins, are not supported in vectors)
 * **Options**: available for scalars ✅
