@@ -212,15 +212,16 @@ export function CodePip({
         {!collapsed && (
           <div
             className="ptb-codepip__body"
-            style={{ maxHeight, overflow: 'auto' }}
+            style={{ maxHeight, overflow: 'hidden' }}
           >
             <pre
               ref={preRef}
-              className="line-numbers m-0 p-[10px] px-[12px] text-[12px] whitespace-pre"
+              className="line-numbers m-0 p-[10px] px-[12px] text-[12px] whitespace-pre
+               overflow-x-auto overflow-y-auto bg-[var(--ptb-code-bg)]"
             >
               <code
                 ref={codeRef}
-                className={`language-${language}`}
+                className={`language-${language} block min-w-max`}
                 key={language}
               >
                 {visibleCode}
