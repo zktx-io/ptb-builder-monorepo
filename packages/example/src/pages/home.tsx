@@ -9,7 +9,27 @@ export const Home = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="container">
+    <div
+      className="container"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#011829',
+        color: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 9999,
+        fontSize: '24px',
+        textAlign: 'center',
+        userSelect: 'none',
+        transition: 'opacity 0.3s ease',
+      }}
+    >
       <img src="/logo-sui.svg" alt="sui" className="logo" />
       <h1 className="title">PTB Builder</h1>
       <ConnectButton />
