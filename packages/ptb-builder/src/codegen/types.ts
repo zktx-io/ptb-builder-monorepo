@@ -62,7 +62,9 @@ export type PMakeMoveVec = {
     kind: 'scalar' | 'move_numeric' | 'object'; // element type
     name?: string; // optional name
     width?: string; // numeric width (e.g., u64)
-    typeTag?: string; // raw type tag
+    typeTag?: string;
+    // NOTE: Currently informational. Neither buildTransaction nor buildTsSdkCode
+    // passes a concrete type to tx.makeMoveVec (we use { type: undefined }).
   };
 };
 
