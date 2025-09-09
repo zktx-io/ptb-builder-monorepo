@@ -446,6 +446,9 @@ export function PtbProvider({
   const lastGraphRef = useRef<PTBGraph | undefined>(undefined);
   onChangeRef.current = onChange;
 
+  // NEW: suppress flag to avoid notifies during reload
+  const suppressNotifyRef = useRef<boolean>(false);
+
   const flushGraphNotify = useCallback(() => {
     if (graphTimerRef.current !== undefined) {
       clearTimeout(graphTimerRef.current);
@@ -456,9 +459,18 @@ export function PtbProvider({
     lastGraphRef.current = undefined;
   }, []);
 
+  // NEW: cancel (no-callback) version for reloads
+  const cancelGraphNotify = useCallback(() => {
+    if (graphTimerRef.current !== undefined) {
+      clearTimeout(graphTimerRef.current);
+      graphTimerRef.current = undefined;
+    }
+    lastGraphRef.current = undefined;
+  }, []);
+
   const scheduleGraphNotify = useCallback(
     (g: PTBGraph) => {
-      if (!onChangeRef.current) return;
+      if (!onChangeRef.current || suppressNotifyRef.current) return;
       lastGraphRef.current = g;
       if (graphTimerRef.current !== undefined)
         clearTimeout(graphTimerRef.current);
@@ -534,8 +546,16 @@ export function PtbProvider({
     onDocChangeRef.current?.(doc);
   }, [activeChain, graph, modules, objects]);
 
+  // NEW: cancel (no-callback) version for reloads
+  const cancelDocNotify = useCallback(() => {
+    if (docTimerRef.current !== undefined) {
+      clearTimeout(docTimerRef.current);
+      docTimerRef.current = undefined;
+    }
+  }, []);
+
   const scheduleDocNotify = useCallback(() => {
-    if (!onDocChangeRef.current) return;
+    if (!onDocChangeRef.current || suppressNotifyRef.current) return;
     if (docTimerRef.current !== undefined) clearTimeout(docTimerRef.current);
     docTimerRef.current = setTimeout(() => {
       if (!onDocChangeRef.current) return;
@@ -701,9 +721,15 @@ export function PtbProvider({
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
+      // START RELOAD: cancel old notifies and suppress during state churn
+      cancelGraphNotify();
+      cancelDocNotify();
+      suppressNotifyRef.current = true;
+
       const digest = (txDigest || '').trim();
       if (!digest) {
         toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
+        suppressNotifyRef.current = false; // end suppression even on early-return
         return;
       }
 
@@ -735,6 +761,7 @@ export function PtbProvider({
             message: 'Only ProgrammableTransaction is supported.',
             variant: 'warning',
           });
+          suppressNotifyRef.current = false;
           return;
         }
 
@@ -752,13 +779,14 @@ export function PtbProvider({
             const m = await localClient.getNormalizedMoveModulesByPackage({
               package: pkg,
             });
+            // reset-and-fill: we build a fresh embed, not merging
             modsEmbed[pkg] = toPTBModuleData(m);
           } catch {
             // ignore per-package failures
           }
         }
 
-        // 2) Collect candidate object ids (from inputs; decoded not needed anymore)
+        // 2) Collect candidate object ids (from inputs)
         const candidateIds = new Set<string>();
         const inputs = Array.isArray(programmable?.inputs)
           ? programmable.inputs
@@ -797,7 +825,7 @@ export function PtbProvider({
           });
         });
 
-        // 5) Fix chain and prime caches
+        // 5) Fix chain and prime caches (overwrite → no carry-over)
         setActiveChain(chain);
         setModules(modsEmbed);
         setObjects(objectsEmbed);
@@ -806,24 +834,20 @@ export function PtbProvider({
         replaceGraphImmediate(decoded);
         setReadOnly(true);
 
-        // 7) Notify and layout
+        // END RELOAD: emit a single notify for the fresh state
+        suppressNotifyRef.current = false;
         scheduleGraphNotify(decoded);
         scheduleDocNotify();
+
         setCodePipOpenTick(0);
 
-        // NOTE:
-        // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
-        // 1st RAF: lets Provider.replaceGraphImmediate() commit new PTB graph
-        // 2nd RAF: lets PTBFlow finish rehydrating RF nodes/edges from that graph
-        // Without this, autoLayoutFlow() may see an empty RF state and return {}.
-        // If timing issues are ever fixed upstream, this block can be collapsed
-        // back to a single RAF safely.
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             flowActionsRef.current.autoLayoutAndFit?.();
           });
         });
       } catch (e: any) {
+        suppressNotifyRef.current = false;
         toastImpl({
           message: e?.message || 'Failed to load transaction from chain.',
           variant: 'error',
@@ -836,6 +860,8 @@ export function PtbProvider({
       scheduleGraphNotify,
       scheduleDocNotify,
       getObjectData,
+      cancelGraphNotify,
+      cancelDocNotify,
     ],
   );
 
@@ -843,10 +869,15 @@ export function PtbProvider({
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (doc) => {
+      // START RELOAD: cancel old notifies and suppress during state churn
+      cancelGraphNotify();
+      cancelDocNotify();
+      suppressNotifyRef.current = true;
+
       // Fix network
       setActiveChain(doc.chain);
 
-      // Overwrite caches from embeds
+      // Overwrite caches from embeds (full replace → no carry-over)
       setModules(doc.modules || {});
       setObjects(doc.objects || {});
 
@@ -859,24 +890,25 @@ export function PtbProvider({
       replaceGraphImmediate(base);
       setReadOnly(false);
 
+      // END RELOAD: emit a single notify for the fresh state
+      suppressNotifyRef.current = false;
       scheduleGraphNotify(base);
       scheduleDocNotify();
       setCodePipOpenTick((t) => t + 1);
 
-      // NOTE:
-      // We deliberately double-wrap autoLayoutAndFit() in requestAnimationFrame.
-      // 1st RAF: lets Provider.replaceGraphImmediate() commit new PTB graph
-      // 2nd RAF: lets PTBFlow finish rehydrating RF nodes/edges from that graph
-      // Without this, autoLayoutFlow() may see an empty RF state and return {}.
-      // If timing issues are ever fixed upstream, this block can be collapsed
-      // back to a single RAF safely.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           flowActionsRef.current.autoLayoutAndFit?.();
         });
       });
     },
-    [replaceGraphImmediate, scheduleGraphNotify, scheduleDocNotify],
+    [
+      replaceGraphImmediate,
+      scheduleGraphNotify,
+      scheduleDocNotify,
+      cancelGraphNotify,
+      cancelDocNotify,
+    ],
   );
 
   // ---- export doc ------------------------------------------------------------
