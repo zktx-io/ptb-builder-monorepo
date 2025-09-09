@@ -66,6 +66,7 @@ import {
 } from '../ptb/graph/types';
 import { buildCommandPorts } from '../ptb/registry';
 import { toColorMode } from '../types';
+import { StatusBar } from './StatusBar';
 
 const DEBOUNCE_MS = 250;
 
@@ -204,6 +205,7 @@ export function PTBFlow() {
     graphEpoch,
     codePipOpenTick,
     toast,
+    loadTxStatus,
   } = usePtb();
 
   // Keep factories aligned with the provider's monotonic ID policy
@@ -881,6 +883,14 @@ export function PTBFlow() {
               onAssetPick={onAssetPick}
             />
           </div>
+        </Panel>
+        <Panel position="top-left" style={{ pointerEvents: 'none' }}>
+          {loadTxStatus && (
+            <StatusBar
+              status={loadTxStatus.status}
+              error={loadTxStatus.error}
+            />
+          )}
         </Panel>
       </ReactFlow>
 

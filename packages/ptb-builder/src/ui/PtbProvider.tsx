@@ -26,6 +26,7 @@ import React, {
 
 import {
   DryRunTransactionBlockResponse,
+  ExecutionStatus,
   getFullnodeUrl,
   type GetOwnedObjectsParams,
   type PaginatedObjectsResponse,
@@ -53,6 +54,11 @@ import {
 import type { Chain, Theme, ToastAdapter } from '../types';
 
 // ===== Context shape ==========================================================
+
+type TxStatus = {
+  status: 'success' | 'failure';
+  error?: string;
+};
 
 export type PtbContextValue = {
   graph: PTBGraph;
@@ -95,6 +101,7 @@ export type PtbContextValue = {
   ) => Promise<PaginatedObjectsResponse | undefined>;
 
   // Loaders
+  loadTxStatus: TxStatus | undefined;
   loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
   loadFromDoc: (doc: PTBDoc) => void;
 
@@ -688,6 +695,9 @@ export function PtbProvider({
   // ---- on-chain loader (viewer) ---------------------------------------------
 
   const [codePipOpenTick, setCodePipOpenTick] = useState(0);
+  const [loadTxStatus, setLoadTxStatus] = useState<TxStatus | undefined>(
+    undefined,
+  );
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
@@ -714,6 +724,11 @@ export function PtbProvider({
 
         const txData: any = res?.transaction?.data;
         const programmable = txData?.transaction;
+        const status: ExecutionStatus | undefined = res.effects?.status;
+
+        if (status) {
+          setLoadTxStatus({ status: status.status, error: status.error });
+        }
 
         if (!programmable || programmable.kind !== 'ProgrammableTransaction') {
           toastImpl({
@@ -770,9 +785,16 @@ export function PtbProvider({
         }
 
         // 4) Decode once with embed = { modules, objects }
-        const { graph: decoded } = decodeTx(programmable, {
+        const { graph: decoded, diags } = decodeTx(programmable, {
           modules: modsEmbed,
           objects: objectsEmbed,
+        });
+
+        diags.forEach(({ variant, message }) => {
+          toastImpl({
+            message,
+            variant,
+          });
         });
 
         // 5) Fix chain and prime caches
@@ -988,6 +1010,7 @@ export function PtbProvider({
 
       getOwnedObjects,
 
+      loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
@@ -1020,6 +1043,7 @@ export function PtbProvider({
       modules,
       getPackageModules,
       getOwnedObjects,
+      loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,

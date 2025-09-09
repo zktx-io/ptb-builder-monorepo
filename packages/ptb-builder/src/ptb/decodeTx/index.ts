@@ -27,6 +27,7 @@ import {
   firstInPorts,
   outPortsWithPrefix,
 } from './findPorts';
+import { ToastVariant } from '../../types';
 import {
   makeAddress,
   makeAddressVector,
@@ -362,7 +363,7 @@ export function decodeTx(
   },
 ): {
   graph: PTBGraph;
-  diags: { level: 'info' | 'warn' | 'error'; msg: string }[];
+  diags: { variant: ToastVariant; message: string }[];
 } {
   nodeMap.clear();
 
@@ -370,12 +371,15 @@ export function decodeTx(
     return {
       graph: { nodes: [], edges: [] },
       diags: [
-        { level: 'warn', msg: `Not ProgrammableTransaction: ${prog.kind}` },
+        {
+          variant: 'warning',
+          message: `Not ProgrammableTransaction: ${prog.kind}`,
+        },
       ],
     };
   }
 
-  const diags: { level: 'info' | 'warn' | 'error'; msg: string }[] = [];
+  const diags: { variant: ToastVariant; message: string }[] = [];
   const graph: PTBGraph = { nodes: [], edges: [] };
   const vt = new ValueTable();
 
@@ -745,8 +749,8 @@ export function decodeTx(
     }
 
     diags.push({
-      level: 'warn',
-      msg: `Unsupported tx at index ${idx}: ${Object.keys(tx)[0]}`,
+      variant: 'warning',
+      message: `Unsupported tx at index ${idx}: ${Object.keys(tx)[0]}`,
     });
   });
 
