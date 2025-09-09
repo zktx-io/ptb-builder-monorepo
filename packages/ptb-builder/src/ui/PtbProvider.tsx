@@ -847,8 +847,8 @@ export function PtbProvider({
       setActiveChain(doc.chain);
 
       // Overwrite caches from embeds
-      setModules(doc.modules);
-      setObjects(doc.objects);
+      setModules(doc.modules || {});
+      setObjects(doc.objects || {});
 
       // Replace graph (seed if invalid/empty)
       const g = doc.graph;

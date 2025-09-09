@@ -81,8 +81,8 @@ export interface PTBDoc {
   graph: PTBGraph;
 
   /** Required normalized embeds */
-  modules: PTBModulesEmbed;
-  objects: PTBObjectsEmbed;
+  modules?: PTBModulesEmbed;
+  objects?: PTBObjectsEmbed;
 
   /** Optional editor viewport state */
   view?: { x: number; y: number; zoom: number };
