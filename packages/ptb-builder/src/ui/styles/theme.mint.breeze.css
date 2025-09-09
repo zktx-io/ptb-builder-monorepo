@@ -1,0 +1,169 @@
+/* ============================================================
+   PTB MINT BREEZE THEME TOKENS (pastel green / light, airy)
+   ============================================================ */
+
+:root[data-ptb-theme="mint breeze"] {
+  /* -------- Canvas / Grid -------- */
+  --ptb-canvas-bg: #f7fff9;                 /* very light mint white */
+  --ptb-grid-fine:   #e0f2e9;               /* subtle mint-gray grid */
+  --ptb-grid-accent: #c7e6d6;
+
+  /* -------- Context menu -------- */
+  --ptb-menu-bg: #ffffff;
+  --ptb-menu-fg: #1f2a24;                   /* dark sage */
+  --ptb-menu-border: rgba(0,0,0,0.08);
+  --ptb-menu-hover-bg: #edf8f2;             /* soft mint hover */
+  --ptb-menu-submenu-bg: #ffffff;
+  --ptb-menu-separator: #d6ebe1;
+  --ptb-menu-disabled-opacity: 0.45;
+
+  /* -------- Flow (edges) -------- */
+  --ptb-flow-stroke: #9dc8a4;               /* sage green */
+
+  /* -------- IO edge colors (normal) -------- */
+  --ptb-io-address-stroke: #b49a30;         /* olive gold */
+  --ptb-io-number-stroke:  #e78c8c;         /* coral */
+  --ptb-io-bool-stroke:    #a790d8;         /* lavender */
+  --ptb-io-string-stroke:  #3eb489;         /* mint green */
+  --ptb-io-object-stroke:  #5aa9e6;         /* sky blue */
+  --ptb-io-id-stroke:      #4dc9c0;         /* aqua */
+  --ptb-io-unknown-stroke: #7b8f7b;         /* sage gray */
+
+  /* -------- IO edge colors (active) -------- */
+  --ptb-io-address-stroke-active: #d9b84f;
+  --ptb-io-number-stroke-active:  #f2a3a3;
+  --ptb-io-bool-stroke-active:    #b9a7e4;
+  --ptb-io-string-stroke-active:  #58cba0;
+  --ptb-io-object-stroke-active:  #7abcf0;
+  --ptb-io-id-stroke-active:      #73d9d1;
+  --ptb-io-unknown-stroke-active: #9cae9c;
+
+  /* ============================================================
+     Node surfaces (border/bg) — pastel translucency
+     ============================================================ */
+
+  /* Command */
+  --ptb-node-command-border:        #c2a878; /* sand beige */
+  --ptb-node-command-bg:            rgba(239, 229, 214, 0.55); /* light sand */
+  --ptb-node-command-border-hover:  #b18f5d; /* deeper sand */
+  --ptb-node-command-bg-hover:      rgba(239, 229, 214, 0.72);
+  --ptb-node-command-border-active: #8f7347; /* darkest sand */
+  --ptb-node-command-bg-active:     rgba(239, 229, 214, 0.90);
+
+  /* Address */
+  --ptb-node-address-border:        #8b7726;
+  --ptb-node-address-bg:            rgba(247,233,175,0.60);
+  --ptb-node-address-border-hover:  #b49a30;
+  --ptb-node-address-bg-hover:      rgba(247,233,175,0.75);
+  --ptb-node-address-border-active: #d9b84f;
+  --ptb-node-address-bg-active:     rgba(247,233,175,0.90);
+
+  /* Number */
+  --ptb-node-number-border:         #b46161;
+  --ptb-node-number-bg:             rgba(244,198,198,0.60);
+  --ptb-node-number-border-hover:   #e78c8c;
+  --ptb-node-number-bg-hover:       rgba(244,198,198,0.75);
+  --ptb-node-number-border-active:  #f2a3a3;
+  --ptb-node-number-bg-active:      rgba(244,198,198,0.90);
+
+  /* Bool */
+  --ptb-node-bool-border:           #8e79c8;
+  --ptb-node-bool-bg:               rgba(222,214,246,0.60);
+  --ptb-node-bool-border-hover:     #a790d8;
+  --ptb-node-bool-bg-hover:         rgba(222,214,246,0.75);
+  --ptb-node-bool-border-active:    #b9a7e4;
+  --ptb-node-bool-bg-active:        rgba(222,214,246,0.90);
+
+  /* String */
+  --ptb-node-string-border:         #2f8f70;
+  --ptb-node-string-bg:             rgba(185,239,214,0.60);
+  --ptb-node-string-border-hover:   #3eb489;
+  --ptb-node-string-bg-hover:       rgba(185,239,214,0.75);
+  --ptb-node-string-border-active:  #58cba0;
+  --ptb-node-string-bg-active:      rgba(185,239,214,0.90);
+
+  /* Object */
+  --ptb-node-object-border:         #346aa0;
+  --ptb-node-object-bg:             rgba(191,226,252,0.60);
+  --ptb-node-object-border-hover:   #5aa9e6;
+  --ptb-node-object-bg-hover:       rgba(191,226,252,0.75);
+  --ptb-node-object-border-active:  #7abcf0;
+  --ptb-node-object-bg-active:      rgba(191,226,252,0.90);
+
+  /* ID */
+  --ptb-node-id-border:             #2e8f87;
+  --ptb-node-id-bg:                 rgba(185,243,238,0.60);
+  --ptb-node-id-border-hover:       #4dc9c0;
+  --ptb-node-id-bg-hover:           rgba(185,243,238,0.75);
+  --ptb-node-id-border-active:      #73d9d1;
+  --ptb-node-id-bg-active:          rgba(185,243,238,0.90);
+
+  /* Unknown */
+  --ptb-node-unknown-border:        #6f8370;
+  --ptb-node-unknown-bg:            rgba(206,223,208,0.60);
+  --ptb-node-unknown-border-hover:  #7b8f7b;
+  --ptb-node-unknown-bg-hover:      rgba(206,223,208,0.75);
+  --ptb-node-unknown-border-active: #9cae9c;
+  --ptb-node-unknown-bg-active:     rgba(206,223,208,0.90);
+
+  /* Option */
+  --ptb-node-option-border:         #2d8db2;
+  --ptb-node-option-bg:             rgba(186,230,253,0.60);
+  --ptb-node-option-border-hover:   #3aa7c8;
+  --ptb-node-option-bg-hover:       rgba(186,230,253,0.75);
+  --ptb-node-option-border-active:  #54bedc;
+  --ptb-node-option-bg-active:      rgba(186,230,253,0.90);
+
+  /* ===== CodePip palette ===== */
+  --ptb-codepip-header-bg:  rgba(255,255,255,0.95);
+  --ptb-codepip-header-fg:  #1f2a24;
+  --ptb-codepip-body-bg:    rgba(246,252,248,0.98);
+  --ptb-codepip-border:     rgba(0,0,0,0.08);
+
+  /* Resizer */
+  --ptb-code-resizer-bg:        rgba(0,0,0,0.06);
+  --ptb-code-resizer-hover-bg:  rgba(0,0,0,0.14);
+  --ptb-code-resizer-grip:      rgba(0,0,0,0.35);
+
+  /* Buttons (neutral) */
+  --ptb-code-btn-neutral-bg:     #e3f0e9;
+  --ptb-code-btn-neutral-fg:     #1f2a24;
+  --ptb-code-btn-neutral-hover:  #f0f7f3;
+  --ptb-code-btn-neutral-active: #cfe4d8;
+
+  /* Run button */
+  --ptb-code-btn-run:            #3eb489;
+  --ptb-code-btn-run-hover:      #58cba0;
+  --ptb-code-btn-run-active:     #2f8f70;
+  --ptb-code-btn-run-disabled:   #9dc8a4;
+
+  /* Prism */
+  --ptb-code-fg: #1f2a24;
+  --ptb-code-bg: #f7fff9;
+
+  --ptb-code-comment:    #7b8f7b; /* sage gray */
+  --ptb-code-keyword:    #3a7e5f; /* deep mint/olive */
+  --ptb-code-string:     #2f8f70; /* teal mint */
+  --ptb-code-function:   #486c5a; /* dark sage */
+  --ptb-code-number:     #b46161; /* coral */
+  --ptb-code-operator:   #2a3a33; /* deep green gray */
+  --ptb-code-punctuation:#3e5147; /* semi-dark */
+  --ptb-code-class:      #7f6ac6; /* violet */
+  --ptb-code-attr:       #2d8db2; /* mint-sky */
+  --ptb-code-builtin:    #d06aa0; /* pink */
+  --ptb-code-boolean:    #b46161; /* coral */
+
+  /* ===== Modal ===== */
+  --ptb-modal-overlay:           rgba(0,0,0,0.40);
+  --ptb-modal-panel-bg:          #f5fbf7;
+  --ptb-modal-panel-fg:          #1f2a24;
+  --ptb-modal-panel-border:      rgba(0,0,0,0.10);
+  --ptb-modal-header-bg:         rgba(255,255,255,0.98);
+  --ptb-assets-row-hover:        rgba(0,0,0,0.04);
+  --ptb-assets-divider:          rgba(0,0,0,0.10);
+
+  --ptb-modal-btn-neutral-bg:     #e3f0e9;
+  --ptb-modal-btn-neutral-fg:     #1f2a24;
+  --ptb-modal-btn-neutral-hover:  #f0f7f3;
+  --ptb-modal-btn-neutral-active: #cfe4d8;
+}
