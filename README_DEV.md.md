@@ -1,86 +1,133 @@
-# PTB Builder — Developer Documentation
+PTB Builder — Developer Documentation
 
-This document is intended for contributors and maintainers.  
-It describes internal **policies**, **constraints**, and **TODOs** that govern PTB Builder development.
+This document is intended for contributors and maintainers. It describes internal architecture, policies, constraints, and TODOs that govern PTB Builder development.
 
-## 1. Architecture Overview
+Conventions
+	•	UI/logic separation is strict: Provider & Headless logic are not mutated from UI directly.
+	•	All network strings use the form sui:<network> where <network> ∈ mainnet|testnet|devnet.
 
-- **Runtime model**
-  - React Flow (RF) is the single source of truth while the editor is open.
-  - PTB Graph is a persisted snapshot. RF → PTB sync happens on debounce.
-  - PTB → RF sync happens only when `graphEpoch` changes.
+1) Architecture Overview
 
-- **Core modules**
-  - `PtbProvider`: Context, chain caches, execution options, persistence.
-  - `PTBFlow`: RF editing, validation, auto-layout, code generation trigger.
-  - `CodePip`: Code preview panel with copy, execute, and asset selector.
-  - `AssetsModal`: Queries on-chain objects (coins, modules, custom objects).
-  - `BaseCommand`, `MoveCallCommand`: Node implementations for commands.
+Runtime model
+	•	RF is authoritative while the editor is open.
+	•	PTB Graph is a persisted snapshot.
+	•	RF → PTB sync happens debounced (default: 250ms in PTBFlow, 400ms in provider graph autosave).
+	•	PTB → RF sync happens only when graphEpoch changes (programmatic rehydrate), guarded by rehydratingRef.
+	•	Feedback-loop guards
+	•	stableGraphSig(g) removes RF-only fields and builds an order-insensitive signature to ignore no-op updates.
+	•	suppressNotifyRef prevents autosave callbacks during bulk reloads (doc/chain loads).
+	•	replaceGraphImmediate() resets signature, bumps graphEpoch, and rehydrates RF once per load.
+	•	Monotonic IDs
+	•	createUniqueId() uses a nonce seeded by seedNonceFromGraph() to keep IDs stable across loads.
 
-## 2. Policies
+Core modules
+	•	PtbProvider: Context, chain/client management, caches, persistence, execution adapters, debounced notifies.
+	•	PTBFlow: RF editing, validation, pruning, auto-layout, code preview triggers, execute/dry-run integrations.
+	•	CodePip: Code preview panel (copy, optional export, assets, dry-run, execute, theme switch).
+	•	AssetsModal: Owner’s on-chain objects picker, feeds onAssetPick.
+	•	Headless (ptb/*): graph schema/types, type system, adapter (RF↔PTB), codegen, on-chain decoder.
 
-### Start / End nodes
-- Exactly one Start and one End node must exist.
-- `normalizeGraph` merges duplicates into canonical IDs.
-- These nodes cannot be deleted (UI and context menu restrictions).
+Network & Client
+	•	activeChain: Chain stored in Provider; SuiClient is (re)built via getFullnodeUrl(activeChain.split(':')[1]).
+	•	Editors should validate dropped docs with /^sui:(mainnet|testnet|devnet)$/ before switching networks.
+	•	Viewer (loadFromOnChainTx) fetches a local client per chain, preloads modules/objects, then replaces the graph in read-only mode.
 
-### Handles
-- **Flow handles**: strictly one-to-one, no fan-out.  
-- **IO handles**:  
-  - Fan-out allowed from source.  
-  - Target may only have one incoming edge.  
-- Use `extractHandles` for consistent RF ↔ PTB conversions.
+2) Policies
 
-### Vectors
-- Supported: scalars.  
-- Not supported: objects,coins, options.  
-- UI prevents creation of disallowed vectors.  
-- Code does not strictly forbid (kept open for future extension).
+Start / End nodes
+	•	Exactly one Start and one End must exist.
+	•	normalizeGraph coalesces duplicates to canonical IDs KNOWN_IDS.START/KNOWN_IDS.END.
+	•	These nodes cannot be deleted (guarded in UI change handlers & context menu).
 
-### Options
-- `tx.option` supported only for scalars.  
-- Objects and coins are not allowed inside `option`.
+Handles & Connections
+	•	Flow edges
+	•	Direction: out → in only, strictly 1:1 per handle.
+	•	No self-loops. createsLoop() blocks cycles.
+	•	Conflicts resolved by filterHandleConflictsForFlow().
+	•	IO edges
+	•	Source fan-out allowed; target is single.
+	•	Type-checked via isTypeCompatible(); unknown types are ignored (non-connecting).
+	•	Conflicts resolved by filterHandleConflictsForIO().
+	•	Pruning
+	•	pruneDanglingEdges() drops edges whose handles no longer exist after UI changes.
+	•	pruneIncompatibleIOEdges() drops IO edges that became type-incompatible.
 
-## 3. Constraints
+Vectors & Options
+	•	Vectors: scalars only (numbers/strings/bool/address). Objects/coins are not allowed.
+	•	Options: tx.option only for scalars. Objects/coins are not allowed.
+	•	UI prevents disallowed constructs; code paths are kept flexible for future extension (see TODOs).
 
-### Graph structure
-- No cycles are allowed. `createsLoop` enforces this on Flow edges.
-- Dangling or invalid edges are pruned automatically:
-  - `pruneDanglingEdges`: removes edges whose handles no longer exist.
-  - `pruneIncompatibleIOEdges`: removes IO edges with incompatible port types.
+3) Constraints
 
-### Code generation
-- If an IO edge has no source, skip variable declaration.
-- If an IO edge connects two commands, intermediate variable declaration is skipped.
-- Nodes not connected by flow edges are deferred (not included in code).
-- Generated code must remain minimal and deterministic.
+Graph structure
+	•	No cycles (enforced at connect time for flow edges).
+	•	Disconnected nodes (no Start→…→End path) are deferred from codegen.
 
-### UI
-- **Read-only mode**:
-  - No context menu.
-  - No new edge creation.
-- **Theme**:
-  - Initial theme can be configured via props.  
-  - Available themes: `light`, `dark`, `cobalt2`, `tokyo-night`, `cream`.  
-  - Users can change theme later from the workspace.
+Code generation
+	•	Deterministic, minimal output.
+	•	Skip declarations for IO edges without a concrete source.
+	•	Edges connecting two commands avoid redundant intermediate vars when possible.
+	•	Cast labels for IO edges are reflected as label = "as <type>" when inferCastTarget applies.
 
-## 4. TODOs
+UI & Modes
+	•	Read-only mode (e.g., viewer):
+	•	No context menu.
+	•	No new connections or edits; dragging allowed for inspection.
+	•	Themes
+	•	Initial theme via props; users can switch at runtime.
+	•	Supported: dark, light, cobalt2, tokyo night, cream, mint.breeze.
 
-- [ ] **MakeMoveVec node**
-  - Currently hidden / blocked in UI.
-  - Needs policy decision on how to safely construct vectors in codegen.
-  - Ensure compatibility with type checker and handle UI.
+4) Provider Details
 
-- [ ] **Vector of objects**
-  - Currently not allowed in UI (objects, coins are blocked inside vectors).
-  - Code does not enforce strictly (left open for future extension).
-  - Decide if `vector<object>` or `vector<coin>` should be explicitly supported.
+Props (internal)
+	•	initialTheme: Theme — initial theme injected to <html> via data-ptb-theme and dark class.
+	•	execOpts?: ExecOptions — { myAddress?: string; gasBudget?: number } used by codegen & tx build.
+	•	executeTx?: (chain, tx?) => Promise<{ digest?: string; error?: string }> — external runner.
+	•	toast?: ToastAdapter — if absent, falls back to console logging.
+	•	showExportButton?: boolean — UI feature flag consumed by CodePip to show/hide Export .ptb button. Default false.
 
-- [ ] **Option<object>**
-  - Currently disallowed (`tx.option` only valid for scalars).
-  - Evaluate if supporting `option<object>` has practical use cases.
+Context (selected highlights)
+	•	chain: Chain, theme: Theme, readOnly: boolean.
+	•	Caches: objects: PTBObjectsEmbed, modules: PTBModulesEmbed with loaders (getObjectData, getPackageModules).
+	•	Persistence: exportDoc({ sender? }), loadFromDoc(doc), loadFromOnChainTx(chain, digest).
+	•	Execution: dryRunTx(tx?) (build+simulate), runTx(tx?) (simulate then execute via executeTx).
+	•	Layout: registerFlowActions({ autoLayoutAndFit? }) to trigger layout from Provider-managed operations.
 
-- [ ] **Nested / multi-level vectors**
-  - e.g. `vector<vector<u64>>`.
-  - Currently unsupported; UI prevents creation.
-  - Need decision on whether to allow in PTB spec.
+Debounced notifications
+	•	Graph autosave: RF→PTB snapshot debounced (default 400ms), suppressed during reloads.
+	•	Doc autosave: PTBDoc-level autosave (default 1000ms), includes { chain, graph, modules, objects }.
+
+5) PTBFlow Details
+	•	RF state is the single source of truth; PTB snapshot is derived.
+	•	Rehydrate on graphEpoch only; rehydratingRef mutes RF callbacks during programmatic updates.
+	•	Auto‑layout writes positions only; performs a single fitView() after positions are ready to avoid flicker.
+	•	Code preview (CodePip) updates on RF diffs; empty graphs show EMPTY_CODE(chain).
+	•	Execute/Dry‑run are gated: disabled in read‑only; execute buttons honor a shared isRunning flag.
+
+6) CodePip Details
+	•	Features: Copy, optional Export, Asset picker, Dry‑run, Execute, Theme switch, Collapsible.
+	•	Export button visibility
+	•	Controlled by Provider flag showExportButton (from <PTBBuilder showExportButton />).
+	•	Default hidden; visible only when explicitly enabled by integrators.
+	•	Asset picker is hidden in read‑only mode.
+
+7) Testing Guidelines (Minimum)
+	•	Validator: Allowed/denied connections incl. type and role rules.
+	•	Round‑trip: Graph ↔ Export ↔ Import equivalence (structural & semantic).
+	•	Plan Builder: Start→End ordering; disconnected node deferral behavior.
+	•	Parser: On‑chain sample → Graph reconstruction.
+	•	Editor (UI): Drag/connect/context‑menu/drop/validation snapshots.
+	•	Adapters: web/localStorage, vscode/postMessage mocking.
+
+8) TODOs / Open Decisions
+	•	MakeMoveVec node
+	•	Currently limited in UI.
+	•	Define codegen policy and typechecking, including expanded vs. vector handles.
+	•	Vector of objects/coins
+	•	Disallowed in UI; code paths are flexible. Decide feasibility & safety constraints.
+	•	Option
+	•	Currently disallowed; evaluate real‑world demand and safety.
+	•	Nested vectors (e.g., vector<vector<u64>>)
+	•	Unsupported; keep UI prevention. Decide long‑term spec.
+	•	UI feature flags
+	•	Generalize to uiOptions (e.g., { export: true, assets: true, dryRun: true }) if more toggles appear.
