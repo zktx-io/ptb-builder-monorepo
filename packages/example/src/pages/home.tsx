@@ -1,12 +1,17 @@
-import { ConnectButton, useCurrentWallet } from '@mysten/dapp-kit';
+import {
+  ConnectButton,
+  useCurrentWallet,
+  useSuiClientContext,
+} from '@mysten/dapp-kit';
 import { useNavigate } from 'react-router-dom';
 
 import '@mysten/dapp-kit/dist/index.css';
-import { NETWORK } from '../network';
+import { NETWORKS, NetworkType } from '../network';
 
 export const Home = () => {
   const { connectionStatus } = useCurrentWallet();
   const navigate = useNavigate();
+  const { network, selectNetwork } = useSuiClientContext();
 
   return (
     <div
@@ -32,8 +37,28 @@ export const Home = () => {
     >
       <img src="/logo-sui.svg" alt="sui" className="logo" />
       <h1 className="title">PTB Builder</h1>
+
       <ConnectButton />
-      <p style={{ color: 'white' }}>{`${NETWORK.toUpperCase()}`}</p>
+
+      <select
+        value={network}
+        onChange={(e) => selectNetwork(e.target.value as NetworkType)}
+        style={{
+          marginTop: '12px',
+          marginBottom: '12px',
+          padding: '6px 12px',
+          borderRadius: '6px',
+          fontSize: '16px',
+          color: 'black',
+        }}
+      >
+        {NETWORKS.map((n) => (
+          <option key={n} value={n}>
+            {n.toUpperCase()}
+          </option>
+        ))}
+      </select>
+
       <div className="button-container">
         {connectionStatus === 'connected' && (
           <>

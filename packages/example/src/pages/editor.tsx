@@ -1,37 +1,38 @@
-import { useEffect } from 'react';
-
 import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
 import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 
 import { DragAndDrop } from '../components/DragAndDrop';
-import { NETWORK } from '../network';
+
+type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
+type SuiChain = `sui:${SuiNetwork}`;
 
 export const Editor = () => {
-  const ctx = useSuiClientContext();
+  const { network, selectNetwork } = useSuiClientContext();
   const account = useCurrentAccount();
   const { loadFromDoc } = usePTB();
 
+  // Safe parser for "sui:<network>"
+  const parseNetwork = (chain?: string): SuiNetwork | undefined => {
+    const m = chain?.match(/^sui:(mainnet|testnet|devnet)$/);
+    return m?.[1] as SuiNetwork | undefined;
+  };
+
   const handleDrop = (file: PTBDoc) => {
-    ctx.selectNetwork((file.chain || NETWORK).split(':')[1]);
+    // Only switch if the dropped file has a valid chain
+    const target = parseNetwork(file.chain);
+    if (target && target !== network) {
+      selectNetwork(target);
+    }
     loadFromDoc(file);
   };
 
   const handleChancel = () => {
     loadFromDoc({
       version: PTB_VERSION,
-      chain: NETWORK,
+      chain: `sui:${network}` as SuiChain,
       graph: { nodes: [], edges: [] },
     });
   };
-
-  useEffect(() => {
-    loadFromDoc({
-      version: PTB_VERSION,
-      chain: NETWORK,
-      graph: { nodes: [], edges: [] },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
