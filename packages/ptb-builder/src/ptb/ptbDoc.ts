@@ -194,18 +194,17 @@ export function buildDoc(opts: {
   graph: PTBGraph;
   sender?: string;
   view?: { x: number; y: number; zoom: number };
-  modules: PTBModulesEmbed;
-  objects: PTBObjectsEmbed;
+  modules: PTBModulesEmbed | unknown;
+  objects: PTBObjectsEmbed | unknown;
 }): PTBDoc {
-  const { chain, graph, sender, view, modules, objects } = opts;
+  const { chain, graph, sender, view } = opts;
 
-  // Optional runtime checks to fail-fast in dev paths
-  if (!isPTBModulesEmbed(modules)) {
-    throw new Error('Invalid modules shape');
-  }
-  if (!isPTBObjectsEmbed(objects)) {
-    throw new Error('Invalid objects shape');
-  }
+  const modules: PTBModulesEmbed = isPTBModulesEmbed(opts.modules)
+    ? (opts.modules as PTBModulesEmbed)
+    : {};
+  const objects: PTBObjectsEmbed = isPTBObjectsEmbed(opts.objects)
+    ? (opts.objects as PTBObjectsEmbed)
+    : {};
 
   const doc: PTBDoc = {
     version: PTB_VERSION,

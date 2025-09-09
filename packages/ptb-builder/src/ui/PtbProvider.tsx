@@ -888,8 +888,8 @@ export function PtbProvider({
         chain: activeChain,
         graph,
         sender,
-        modules,
-        objects,
+        modules: modules ?? {},
+        objects: objects ?? {},
       });
     },
     [activeChain, graph, modules, objects],

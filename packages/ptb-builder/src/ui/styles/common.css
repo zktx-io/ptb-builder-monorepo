@@ -574,33 +574,44 @@
 }
 .ptb-codepip__btn:active { transform: translateY(0.5px); }
 
-/* Neutral: copy / assets */
-.ptb-codepip__btn--copy,
-.ptb-codepip__btn--assets {
-  background: var(--ptb-code-btn-neutral-bg);
-  color: var(--ptb-code-btn-neutral-fg);
-  transition: background 120ms ease, transform 40ms ease-in-out;
+/* Base */
+.ptb-codepip__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out, background 120ms ease;
 }
-.ptb-codepip__btn--copy:hover,
-.ptb-codepip__btn--assets:hover {
-  background: var(--ptb-code-btn-neutral-hover);
-}
-.ptb-codepip__btn--copy:active,
-.ptb-codepip__btn--assets:active {
-  background: var(--ptb-code-btn-neutral-active);
-  transform: translateY(0.5px);
+.ptb-codepip__btn:active { transform: translateY(0.5px); }
+.ptb-codepip__btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 60%, transparent);
+  outline-offset: 2px;
 }
 
-/* Run */
-.ptb-codepip__btn--run {
+/* Variant: neutral (Copy / Save / Assets / Dry-run etc) */
+.ptb-codepip__btn--neutral {
+  background: var(--ptb-code-btn-neutral-bg);
+  color: var(--ptb-code-btn-neutral-fg);
+}
+.ptb-codepip__btn--neutral:hover  { background: var(--ptb-code-btn-neutral-hover); }
+.ptb-codepip__btn--neutral:active { background: var(--ptb-code-btn-neutral-active); transform: translateY(0.5px); }
+.ptb-codepip__btn--neutral[disabled],
+.ptb-codepip__btn--neutral[aria-busy="true"] {
+  opacity: .7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Variant: primary (Run) */
+.ptb-codepip__btn--primary {
   background: var(--ptb-code-btn-run);
   color: #fff;
-  transition: background 120ms ease, transform 40ms ease-in-out;
 }
-.ptb-codepip__btn--run:hover  { background: var(--ptb-code-btn-run-hover); }
-.ptb-codepip__btn--run:active { background: var(--ptb-code-btn-run-active); transform: translateY(0.5px); }
-.ptb-codepip__btn--run[disabled],
-.ptb-codepip__btn--run[aria-busy="true"] {
+.ptb-codepip__btn--primary:hover  { background: var(--ptb-code-btn-run-hover); }
+.ptb-codepip__btn--primary:active { background: var(--ptb-code-btn-run-active); transform: translateY(0.5px); }
+.ptb-codepip__btn--primary[disabled],
+.ptb-codepip__btn--primary[aria-busy="true"] {
   background: var(--ptb-code-btn-run-disabled);
   opacity: .7;
   cursor: not-allowed;

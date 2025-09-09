@@ -1,7 +1,7 @@
 // src/ui/CodePip.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Copy, FlaskConical, PackageSearch, Play } from 'lucide-react';
+import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
 import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
 
@@ -110,7 +110,7 @@ export function CodePip({
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
-  const { readOnly, setTheme, theme, execOpts } = usePtb();
+  const { readOnly, setTheme, theme, execOpts, exportDoc } = usePtb();
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = useMemo(() => code ?? '', [code]);
@@ -150,16 +150,41 @@ export function CodePip({
       }
 
       show('Copied');
-    } catch {
-      show('Copy failed');
+    } catch (e: any) {
+      show(e?.message ? `Copy failed: ${e.message}` : 'Copy failed');
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const doc = exportDoc?.();
+      if (!doc) throw new Error('Nothing to export');
+      const filename = 'export.ptb';
+      // eslint-disable-next-line no-restricted-syntax
+      const blob = new Blob([JSON.stringify(doc, null, 2)], {
+        type: 'application/x-ptb+json',
+      });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      show('Saved');
+    } catch (e: any) {
+      show(e?.message ? `Save failed: ${e.message}` : 'Save failed');
     }
   };
 
   const handleOpenAssets = () => {
     try {
       setAssetsOpen(true);
-    } catch {
-      show('Failed to open Assets');
+    } catch (e: any) {
+      show(e?.message ? `Open failed: ${e.message}` : 'Failed to open Assets');
     }
   };
 
@@ -167,6 +192,8 @@ export function CodePip({
     setCollapsed(!checked);
     onCollapsedChange?.(!checked);
   };
+
+  const runButtonsDisabled = !!isRunning || !canRunning;
 
   return (
     <>
@@ -206,6 +233,7 @@ export function CodePip({
               value={theme}
               onChange={(e) => setTheme?.(e.target.value as Theme)}
               className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
+              title="Switch editor theme"
             >
               {THEMES.map((t) => (
                 <option key={t} value={t}>
@@ -241,22 +269,36 @@ export function CodePip({
         {/* Footer (actions) */}
         {!collapsed && (
           <div className="ptb-codepip__footer flex items-center justify-end gap-2 px-2 py-1">
+            {/* Copy */}
             <button
               type="button"
               onClick={handleCopy}
-              className="ptb-codepip__btn ptb-codepip__btn--copy"
-              title="Copy"
+              className="ptb-codepip__btn ptb-codepip__btn--neutral"
+              title="Copy code to clipboard"
+              aria-label="Copy code to clipboard"
             >
               <Copy size={16} />
             </button>
 
+            {/* Save */}
+            <button
+              type="button"
+              onClick={handleSave}
+              className="ptb-codepip__btn ptb-codepip__btn--neutral"
+              title="Export document as .ptb"
+              aria-label="Export document as .ptb"
+            >
+              <Save size={16} />
+            </button>
+
+            {/* Assets */}
             {onAssetPick && !readOnly && (
               <button
                 type="button"
                 onClick={handleOpenAssets}
                 disabled={!onAssetPick}
-                className="ptb-codepip__btn ptb-codepip__btn--assets disabled:cursor-not-allowed"
-                title="Assets"
+                className="ptb-codepip__btn ptb-codepip__btn--neutral disabled:cursor-not-allowed"
+                title="Open your owned assets"
                 aria-label="Open Assets"
               >
                 <PackageSearch size={16} />
@@ -268,26 +310,36 @@ export function CodePip({
               <button
                 type="button"
                 onClick={onDryRun}
-                disabled={!!isRunning || !canRunning}
-                aria-disabled={!!isRunning || !canRunning}
+                disabled={runButtonsDisabled}
+                aria-disabled={runButtonsDisabled}
                 aria-busy={!!isRunning}
-                className="ptb-codepip__btn ptb-codepip__btn--assets disabled:cursor-not-allowed"
-                title="Dry run"
+                className="ptb-codepip__btn ptb-codepip__btn--neutral disabled:cursor-not-allowed"
+                title={
+                  runButtonsDisabled
+                    ? 'Dry run (disabled while running or unavailable)'
+                    : 'Dry run the transaction'
+                }
+                aria-label="Dry run the transaction"
               >
                 <FlaskConical size={16} />
               </button>
             )}
 
-            {/* Execute */}
+            {/* Execute (Primary) */}
             {onExecute && !readOnly && (
               <button
                 type="button"
                 onClick={onExecute}
-                disabled={!!isRunning || !canRunning}
-                aria-disabled={!!isRunning || !canRunning}
+                disabled={runButtonsDisabled}
+                aria-disabled={runButtonsDisabled}
                 aria-busy={!!isRunning}
-                className="ptb-codepip__btn ptb-codepip__btn--run disabled:cursor-not-allowed"
-                title="Run"
+                className="ptb-codepip__btn ptb-codepip__btn--primary disabled:cursor-not-allowed"
+                title={
+                  runButtonsDisabled
+                    ? 'Run (disabled while running or unavailable)'
+                    : 'Execute the transaction'
+                }
+                aria-label="Execute the transaction"
               >
                 <Play size={16} />
               </button>
