@@ -1,0 +1,826 @@
+/* ============================================================
+   PTB COMMON STYLES (theme-agnostic; uses CSS variables)
+   ============================================================ */
+
+/* ---------- Root tokens (geometry/widths/animation/global) ---------- */
+:root {
+  /* Flow */
+  --ptb-flow-width: 2.75;
+  --ptb-flow-dash: 5 5;
+
+  /* IO edge widths/dash (colors live in theme files) */
+  --ptb-io-address-width: 2.5;
+  --ptb-io-number-width:  2.5;
+  --ptb-io-bool-width:    2.5;
+  --ptb-io-string-width:  2.5;
+  --ptb-io-object-width:  2.5;
+  --ptb-io-id-width:      2.5;
+
+  --ptb-io-unknown-width: 2;
+  --ptb-io-unknown-dash:  4 4;
+
+  /* Assets / Modal list */
+  --ptb-assets-list-h: 58vh;
+
+  /* Mode */
+  --ptb-node-backdrop-filter: blur(1px);
+
+  /* Fallbacks - Prism code tokens (themes may override) */
+  --ptb-code-fg: #111827;
+  --ptb-code-bg: #fafafa;
+
+  --ptb-code-comment:  #6b7280;
+  --ptb-code-keyword:  #2563eb;
+  --ptb-code-string:   #047857;
+  --ptb-code-function: #b45309;
+  --ptb-code-number:   #b91c1c;
+  --ptb-code-operator: #374151;
+  --ptb-code-punctuation: #374151;
+  --ptb-code-class:    #7c3aed;
+  --ptb-code-attr:     #0d9488;
+  --ptb-code-builtin:  #db2777;
+  --ptb-code-boolean:  #b91c1c;
+
+  /* Optional: selection & inline-code backgrounds (Prism) */
+  --ptb-code-selection-bg: color-mix(in srgb, var(--ptb-code-fg) 10%, transparent);
+  --ptb-code-highlight-bg: color-mix(in srgb, var(--ptb-code-fg) 6%, transparent);
+}
+
+@keyframes ptb-flow-dash { to { stroke-dashoffset: -50; } }
+
+/* ============================================================
+   Context menu (consumes theme tokens)
+   ============================================================ */
+
+.ptb-menu {
+  background: var(--ptb-menu-bg);
+  color: var(--ptb-menu-fg);
+  border: 1px solid var(--ptb-menu-border);
+}
+
+.ptb-menu__list {
+  color: var(--ptb-menu-fg);
+}
+
+.ptb-menu__item {
+  background: var(--ptb-menu-bg);
+  color: var(--ptb-menu-fg);
+}
+
+.ptb-menu__item:hover {
+  background: var(--ptb-menu-hover-bg);
+}
+
+.ptb-menu__submenu {
+  background: var(--ptb-menu-submenu-bg);
+  border: 1px solid var(--ptb-menu-border);
+}
+
+.ptb-menu__sep {
+  border-top: 1px solid var(--ptb-menu-separator);
+}
+
+.ptb-menu__item--disabled {
+  opacity: var(--ptb-menu-disabled-opacity);
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Edges
+   ============================================================ */
+
+/* Flow (dashed, animated when Start→End path exists) */
+.ptb-flow-edge {
+  stroke: var(--ptb-flow-stroke);
+  stroke-width: var(--ptb-flow-width);
+  stroke-dasharray: var(--ptb-flow-dash);
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  transform: translateZ(0);
+  stroke-opacity: 1;
+  will-change: stroke-dashoffset;
+}
+.ptb-flow-active .ptb-flow-edge { animation: ptb-flow-dash 1.8s linear infinite; }
+.ptb-flow-edge.is-selected { filter: drop-shadow(0 0 2px rgba(0,0,0,0.25)); }
+
+/* IO (solid) */
+.ptb-io-edge {
+  stroke-dasharray: none !important;
+  animation: none !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 1;
+
+  /* Safe defaults */
+  --xy-edge-stroke: var(--ptb-io-unknown-stroke);
+  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
+}
+
+/* Category → stroke vars + width */
+.ptb-io-edge--address { --xy-edge-stroke: var(--ptb-io-address-stroke);  --xy-edge-stroke-selected: var(--ptb-io-address-stroke-active);  stroke-width: var(--ptb-io-address-width); }
+.ptb-io-edge--number  { --xy-edge-stroke: var(--ptb-io-number-stroke);   --xy-edge-stroke-selected: var(--ptb-io-number-stroke-active);   stroke-width: var(--ptb-io-number-width);  }
+.ptb-io-edge--bool    { --xy-edge-stroke: var(--ptb-io-bool-stroke);     --xy-edge-stroke-selected: var(--ptb-io-bool-stroke-active);     stroke-width: var(--ptb-io-bool-width);    }
+.ptb-io-edge--string  { --xy-edge-stroke: var(--ptb-io-string-stroke);   --xy-edge-stroke-selected: var(--ptb-io-string-stroke-active);   stroke-width: var(--ptb-io-string-width);  }
+.ptb-io-edge--object  { --xy-edge-stroke: var(--ptb-io-object-stroke);   --xy-edge-stroke-selected: var(--ptb-io-object-stroke-active);   stroke-width: var(--ptb-io-object-width);  }
+.ptb-io-edge--id      { --xy-edge-stroke: var(--ptb-io-id-stroke);       --xy-edge-stroke-selected: var(--ptb-io-id-stroke-active);       stroke-width: var(--ptb-io-id-width);      }
+.ptb-io-edge--unknown { --xy-edge-stroke: var(--ptb-io-unknown-stroke);  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);  stroke-width: var(--ptb-io-unknown-width); stroke-dasharray: var(--ptb-io-unknown-dash); }
+
+/* Ensure base state uses our variable even on older XYFlow builds */
+.react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke); }
+
+/* Hover brighten (falls back to selected if no hover var is provided) */
+.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge {
+  stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected));
+}
+
+/* Keep pointer affordance and hit-test behavior */
+.react-flow__edge, .react-flow__edge-path { cursor: pointer; }
+.react-flow__edge-path { pointer-events: stroke; }
+
+/* ============================================================
+   Nodes
+   ============================================================ */
+
+/* Optional theme-driven backdrop blur for all nodes */
+.react-flow__node {
+  backdrop-filter: var(--ptb-node-backdrop-filter, none);
+  -webkit-backdrop-filter: var(--ptb-node-backdrop-filter, none);
+}
+
+.ptb-node-shell {
+  position: relative;
+  border-width: 2px;
+  z-index: 0;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  will-change: border-color, background-color;
+  animation: ptb-fade-in 140ms ease-out;
+}
+
+/* Remove default shadow; keep ring */
+.react-flow__node.dragging .ptb-node-shell,
+.react-flow__node.selected .ptb-node-shell { box-shadow: none; }
+
+.react-flow__node.dragging .ptb-node-shell::after,
+.react-flow__node.selected  .ptb-node-shell::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--ptb-active-ring, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Active ring color per type */
+.ptb-node--command { --ptb-active-ring: var(--ptb-node-command-border-active); }
+.ptb-node--address { --ptb-active-ring: var(--ptb-node-address-border-active); }
+.ptb-node--number  { --ptb-active-ring: var(--ptb-node-number-border-active); }
+.ptb-node--bool    { --ptb-active-ring: var(--ptb-node-bool-border-active); }
+.ptb-node--string  { --ptb-active-ring: var(--ptb-node-string-border-active); }
+.ptb-node--object  { --ptb-active-ring: var(--ptb-node-object-border-active); }
+.ptb-node--id      { --ptb-active-ring: var(--ptb-node-id-border-active); }
+.ptb-node--unknown { --ptb-active-ring: var(--ptb-node-unknown-border-active); }
+/* Option */
+.ptb-node--option  { --ptb-active-ring: var(--ptb-node-option-border-active); }
+
+/* Base surfaces per type */
+.ptb-node--command .ptb-node-shell { border-color: var(--ptb-node-command-border); background: var(--ptb-node-command-bg); }
+.ptb-node--address .ptb-node-shell { border-color: var(--ptb-node-address-border); background: var(--ptb-node-address-bg); }
+.ptb-node--number  .ptb-node-shell { border-color: var(--ptb-node-number-border);  background: var(--ptb-node-number-bg); }
+.ptb-node--bool    .ptb-node-shell { border-color: var(--ptb-node-bool-border);    background: var(--ptb-node-bool-bg); }
+.ptb-node--string  .ptb-node-shell { border-color: var(--ptb-node-string-border);  background: var(--ptb-node-string-bg); }
+.ptb-node--object  .ptb-node-shell { border-color: var(--ptb-node-object-border);  background: var(--ptb-node-object-bg); }
+.ptb-node--id      .ptb-node-shell { border-color: var(--ptb-node-id-border);      background: var(--ptb-node-id-bg); }
+.ptb-node--unknown .ptb-node-shell { border-color: var(--ptb-node-unknown-border); background: var(--ptb-node-unknown-bg); }
+/* Option */
+.ptb-node--option  .ptb-node-shell { border-color: var(--ptb-node-option-border);  background: var(--ptb-node-option-bg); }
+
+/* Hover (brighter) */
+.react-flow__node:has(.ptb-node--command):hover .ptb-node-shell { border-color: var(--ptb-node-command-border-hover); background: var(--ptb-node-command-bg-hover); }
+.react-flow__node:has(.ptb-node--address):hover .ptb-node-shell { border-color: var(--ptb-node-address-border-hover); background: var(--ptb-node-address-bg-hover); }
+.react-flow__node:has(.ptb-node--number):hover  .ptb-node-shell { border-color: var(--ptb-node-number-border-hover);  background: var(--ptb-node-number-bg-hover); }
+.react-flow__node:has(.ptb-node--bool):hover    .ptb-node-shell { border-color: var(--ptb-node-bool-border-hover);    background: var(--ptb-node-bool-bg-hover); }
+.react-flow__node:has(.ptb-node--string):hover  .ptb-node-shell { border-color: var(--ptb-node-string-border-hover);  background: var(--ptb-node-string-bg-hover); }
+.react-flow__node:has(.ptb-node--object):hover  .ptb-node-shell { border-color: var(--ptb-node-object-border-hover);  background: var(--ptb-node-object-bg-hover); }
+.react-flow__node:has(.ptb-node--id):hover      .ptb-node-shell { border-color: var(--ptb-node-id-border-hover);      background: var(--ptb-node-id-bg-hover); }
+.react-flow__node:has(.ptb-node--unknown):hover .ptb-node-shell { border-color: var(--ptb-node-unknown-border-hover); background: var(--ptb-node-unknown-bg-hover); }
+/* Option */
+.react-flow__node:has(.ptb-node--option):hover  .ptb-node-shell { border-color: var(--ptb-node-option-border-hover);  background: var(--ptb-node-option-bg-hover); }
+
+/* Selected/Active (brightest) */
+.react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell { border-color: var(--ptb-node-command-border-active); background: var(--ptb-node-command-bg-active); }
+.react-flow__node.selected:has(.ptb-node--address) .ptb-node-shell { border-color: var(--ptb-node-address-border-active); background: var(--ptb-node-address-bg-active); }
+.react-flow__node.selected:has(.ptb-node--number)  .ptb-node-shell { border-color: var(--ptb-node-number-border-active);  background: var(--ptb-node-number-bg-active); }
+.react-flow__node.selected:has(.ptb-node--bool)    .ptb-node-shell { border-color: var(--ptb-node-bool-border-active);    background: var(--ptb-node-bool-bg-active); }
+.react-flow__node.selected:has(.ptb-node--string)  .ptb-node-shell { border-color: var(--ptb-node-string-border-active);  background: var(--ptb-node-string-bg-active); }
+.react-flow__node.selected:has(.ptb-node--object)  .ptb-node-shell { border-color: var(--ptb-node-object-border-active);  background: var(--ptb-node-object-bg-active); }
+.react-flow__node.selected:has(.ptb-node--id)      .ptb-node-shell { border-color: var(--ptb-node-id-border-active);      background: var(--ptb-node-id-bg-active); }
+.react-flow__node.selected:has(.ptb-node--unknown) .ptb-node-shell { border-color: var(--ptb-node-unknown-border-active); background: var(--ptb-node-unknown-bg-active); }
+/* Option */
+.react-flow__node.selected:has(.ptb-node--option)  .ptb-node-shell { border-color: var(--ptb-node-option-border-active);  background: var(--ptb-node-option-bg-active); }
+
+/* Subtle appear animation */
+@keyframes ptb-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Handles & Labels
+   ============================================================ */
+
+/* Base handle: no outline/shadow; color=inherit */
+.ptb-handle {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background-color: currentColor;
+  box-sizing: border-box;
+  box-shadow: none;
+  color: inherit;
+  pointer-events: all;
+  overflow: visible;
+  z-index: 10;
+  transition: filter .12s ease;
+}
+
+.ptb-handle:focus-visible {
+  outline: 2px solid var(--ptb-active-ring);
+  outline-offset: 2px;
+}
+
+/* Flow handle */
+.ptb-handle--flow {
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ptb-flow-stroke);
+  background: var(--ptb-flow-stroke);
+  border-color: var(--ptb-flow-stroke);
+}
+/* Follow Command node border color */
+.react-flow__node:has(.ptb-node--command) .ptb-handle--flow {
+  color: var(--ptb-node-command-border);
+  background: var(--ptb-node-command-border);
+  border-color: var(--ptb-node-command-border);
+}
+.react-flow__node:has(.ptb-node--command):hover .ptb-handle--flow {
+  color: var(--ptb-node-command-border-hover);
+  background: var(--ptb-node-command-border-hover);
+  border-color: var(--ptb-node-command-border-hover);
+}
+.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--flow {
+  color: var(--ptb-node-command-border-active);
+  background: var(--ptb-node-command-border-active);
+  border-color: var(--ptb-node-command-border-active);
+}
+
+/* Shapes */
+.ptb-handle--scalar { border-radius: 9999px; }      /* circle  */
+.ptb-handle--vector { background-color: transparent; border-color: transparent; border-radius: 2px; }
+.ptb-handle--option { border-radius: 2px; background-color: currentColor; border: 0; }
+
+/* Glyph layer */
+.ptb-handle-glyph {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ptb-handle-glyph--vector {
+  width: 100%;
+  height: 100%;
+  background-color: transparent;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  transform-origin: center center;
+}
+
+/* IO handle color = node border color */
+.ptb-handle--io { color: inherit !important; }
+
+.ptb-handle-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #111827; /* fallback */
+}
+.dark .ptb-handle-label { color: #e5e7eb; } /* fallback */
+.ptb-handle-label--left  { left:  calc(100% + 8px); text-align: left; }
+.ptb-handle-label--right { right: calc(100% + 8px); text-align: right; }
+
+/* Map IO handle colors to node state */
+.react-flow__node:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border); }
+.react-flow__node:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border); }
+.react-flow__node:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border); }
+.react-flow__node:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border); }
+.react-flow__node:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border); }
+.react-flow__node:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border); }
+.react-flow__node:has(.ptb-node--id)      .ptb-handle--io { color: var(--ptb-node-id-border); }
+.react-flow__node:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border); }
+.react-flow__node:has(.ptb-node--option)  .ptb-handle--io { color: var(--ptb-node-option-border); }
+
+/* Hover / Selected mapping */
+.react-flow__node:has(.ptb-node--command):hover .ptb-handle--io { color: var(--ptb-node-command-border-hover); }
+.react-flow__node.selected:has(.ptb-node--command) .ptb-handle--io { color: var(--ptb-node-command-border-active); }
+
+.react-flow__node:has(.ptb-node--address):hover .ptb-handle--io { color: var(--ptb-node-address-border-hover); }
+.react-flow__node.selected:has(.ptb-node--address) .ptb-handle--io { color: var(--ptb-node-address-border-active); }
+
+.react-flow__node:has(.ptb-node--number):hover  .ptb-handle--io { color: var(--ptb-node-number-border-hover); }
+.react-flow__node.selected:has(.ptb-node--number)  .ptb-handle--io { color: var(--ptb-node-number-border-active); }
+
+.react-flow__node:has(.ptb-node--bool):hover    .ptb-handle--io { color: var(--ptb-node-bool-border-hover); }
+.react-flow__node.selected:has(.ptb-node--bool)    .ptb-handle--io { color: var(--ptb-node-bool-border-active); }
+
+.react-flow__node:has(.ptb-node--string):hover  .ptb-handle--io { color: var(--ptb-node-string-border-hover); }
+.react-flow__node.selected:has(.ptb-node--string)  .ptb-handle--io { color: var(--ptb-node-string-border-active); }
+
+.react-flow__node:has(.ptb-node--object):hover  .ptb-handle--io { color: var(--ptb-node-object-border-hover); }
+.react-flow__node.selected:has(.ptb-node--object)  .ptb-handle--io { color: var(--ptb-node-object-border-active); }
+
+.react-flow__node:has(.ptb-node--id):hover .ptb-handle--io { color: var(--ptb-node-id-border-hover); }
+.react-flow__node.selected:has(.ptb-node--id) .ptb-handle--io { color: var(--ptb-node-id-border-active); }
+
+.react-flow__node:has(.ptb-node--unknown):hover .ptb-handle--io { color: var(--ptb-node-unknown-border-hover); }
+.react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io { color: var(--ptb-node-unknown-border-active); }
+
+.react-flow__node:has(.ptb-node--option):hover .ptb-handle--io { color: var(--ptb-node-option-border-hover); }
+.react-flow__node.selected:has(.ptb-node--option) .ptb-handle--io { color: var(--ptb-node-option-border-active); }
+
+/* Subtle hover affordance on the handle icon itself */
+.react-flow__handle:hover,
+.ptb-handle:hover { filter: brightness(1.05); }
+
+/* ============================================================
+   Context-menu variable markers (match IO colors)
+   ============================================================ */
+
+.ptb-marker {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  border-radius: 9999px; /* scalar */
+  vertical-align: middle;
+  color: var(--ptb-io-unknown-stroke); /* safe default */
+}
+/* vector = diamond */
+.ptb-marker.ptb-marker--vector {
+  border-radius: 2px !important;
+  transform: rotate(45deg);
+  transform-origin: center center;
+}
+/* category → color */
+.ptb-marker--address { color: var(--ptb-io-address-stroke); }
+.ptb-marker--number  { color: var(--ptb-io-number-stroke);  }
+.ptb-marker--bool    { color: var(--ptb-io-bool-stroke);    }
+.ptb-marker--string  { color: var(--ptb-io-string-stroke);  }
+.ptb-marker--object  { color: var(--ptb-io-object-stroke);  }
+.ptb-marker--id      { color: var(--ptb-io-id-stroke);      }
+/* option marker */
+.ptb-marker--option  { color: var(--ptb-node-option-border); }
+
+/* ============================================================
+   Option node extras (UI controls used in VarNode when kind=Option)
+   ============================================================ */
+
+.ptb-title {
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .2px;
+}
+
+.ptb-option-editor {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0,0,0,0.12);
+}
+.dark .ptb-option-editor { border-top-color: rgba(255,255,255,0.12); }
+
+.ptb-option-toggle {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db; /* fallback */
+  background: #ffffff;
+  color: #111827;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.ptb-option-toggle:hover { background: #f9fafb; } /* gray-50 */
+.dark .ptb-option-toggle {
+  border-color: #4b5563; /* fallback */
+  background: #0b0e12;
+  color: #e5e7eb;
+}
+.dark .ptb-option-toggle:hover { background: #111827; }
+
+.ptb-option-toggle.is-some {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 25%, transparent);
+}
+.ptb-option-toggle.is-none { opacity: .9; }
+
+.ptb-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: rgba(167,139,250,0.18); /* fallback */
+  border: 1px solid var(--ptb-node-option-border);
+  color: inherit;
+}
+
+/* Vector list inside option/vector */
+.ptb-vec-list {
+  display: grid;
+  gap: 6px;
+}
+.ptb-vec-list .ptb-text-input,
+.ptb-vec-list .ptb-select-bool {
+  width: 100%;
+}
+
+/* Mini stepper near header */
+.ptb-mini-stepper { margin-left: 6px; }
+
+/* Inputs inside node (fallbacks for non-tokenized controls) */
+.ptb-text-input {
+  display: block;
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.ptb-text-input:focus {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 22%, transparent);
+}
+.dark .ptb-text-input {
+  border-color: #4b5563;
+  background: #0b0e12;
+  color: #e5e7eb;
+}
+.dark .ptb-text-input:focus {
+  border-color: var(--ptb-node-option-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ptb-node-option-border) 28%, transparent);
+}
+
+/* ============================================================
+   CodePip
+   ============================================================ */
+
+.ptb-codepip {
+  pointer-events: auto;
+  user-select: text;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  border-radius: 10px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.ptb-codepip .ptb-codepip__body pre[class*="language-"],
+.ptb-codepip .ptb-codepip__body code[class*="language-"] {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+               "Liberation Mono", "Courier New", monospace;
+  line-height: 1.45;
+}
+
+.ptb-codepip__header {
+  background: var(--ptb-codepip-header-bg);
+  color: var(--ptb-codepip-header-fg);
+  border-bottom: 1px solid var(--ptb-codepip-border);
+}
+
+.ptb-codepip__body {
+  background: var(--ptb-codepip-body-bg);
+}
+
+.ptb-codepip__footer {
+  background: var(--ptb-codepip-header-bg);
+  color: var(--ptb-codepip-header-fg);
+  border-top: 1px solid var(--ptb-codepip-border);
+}
+
+/* Theme dropdown */
+.ptb-codepip__theme {
+  background: transparent;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--ptb-codepip-header-fg) 20%, transparent);
+}
+
+/* Resizable LEFT handle */
+.ptb-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  background: var(--ptb-code-resizer-bg);
+  transition: background 120ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+.ptb-resize-handle::after {
+  content: '';
+  width: 2px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--ptb-code-resizer-grip);
+  box-shadow:
+    -3px 0 0 0 var(--ptb-code-resizer-grip),
+     3px 0 0 0 var(--ptb-code-resizer-grip);
+  opacity: .9;
+}
+.ptb-resize-handle:hover {
+  background: var(--ptb-code-resizer-hover-bg);
+}
+.ptb-codepip .resizable-handle-left {
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 5;
+}
+.ptb-codepip .resizable-handle-left:hover {
+  background: var(--ptb-code-resizer-hover-bg);
+}
+
+/* Buttons */
+.ptb-codepip__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out;
+}
+.ptb-codepip__btn:active { transform: translateY(0.5px); }
+
+/* Base */
+.ptb-codepip__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out, background 120ms ease;
+}
+.ptb-codepip__btn:active { transform: translateY(0.5px); }
+.ptb-codepip__btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Variant: neutral (Copy / Save / Assets / Dry-run etc) */
+.ptb-codepip__btn--neutral {
+  background: var(--ptb-code-btn-neutral-bg);
+  color: var(--ptb-code-btn-neutral-fg);
+}
+.ptb-codepip__btn--neutral:hover  { background: var(--ptb-code-btn-neutral-hover); }
+.ptb-codepip__btn--neutral:active { background: var(--ptb-code-btn-neutral-active); transform: translateY(0.5px); }
+.ptb-codepip__btn--neutral[disabled],
+.ptb-codepip__btn--neutral[aria-busy="true"] {
+  opacity: .7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Variant: primary (Run) */
+.ptb-codepip__btn--primary {
+  background: var(--ptb-code-btn-run);
+  color: #fff;
+}
+.ptb-codepip__btn--primary:hover  { background: var(--ptb-code-btn-run-hover); }
+.ptb-codepip__btn--primary:active { background: var(--ptb-code-btn-run-active); transform: translateY(0.5px); }
+.ptb-codepip__btn--primary[disabled],
+.ptb-codepip__btn--primary[aria-busy="true"] {
+  background: var(--ptb-code-btn-run-disabled);
+  opacity: .7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Focus ring for accessibility */
+.ptb-codepip__btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   AssetsModal
+   ============================================================ */
+
+.ptb-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ptb-modal-overlay);
+}
+
+.ptb-modal__panel {
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  width: 820px;
+  max-width: 94vw;
+  max-height: 82vh;
+  overflow: hidden;
+  border: 1px solid var(--ptb-modal-panel-border);
+  background: var(--ptb-modal-panel-bg);
+  color: var(--ptb-modal-panel-fg);
+}
+
+/* Header */
+.ptb-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--ptb-modal-header-bg);
+  border-bottom: 1px solid var(--ptb-modal-panel-border);
+}
+.ptb-modal__title { font-weight: 600; }
+.ptb-modal__subtitle { font-size: 12px; opacity: .7; }
+
+/* Body */
+.ptb-modal__body { padding: 12px; }
+.ptb-modal__list {
+  border: 1px solid var(--ptb-modal-panel-border);
+  border-radius: 6px;
+  height: var(--ptb-assets-list-h);
+  overflow: auto;
+}
+.ptb-modal__list-empty,
+.ptb-modal__list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  opacity: .7;
+  font-size: 14px;
+}
+.ptb-modal__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.ptb-modal__item:hover { background: var(--ptb-assets-row-hover); }
+.ptb-modal__item-id   { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptb-modal__item-type { font-size: 11px; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Footer (pagination) */
+.ptb-modal__footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ptb-modal__btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: background 120ms ease, opacity 120ms ease, transform 40ms ease-in-out;
+  background: var(--ptb-modal-btn-neutral-bg);
+  color: var(--ptb-modal-btn-neutral-fg);
+}
+.ptb-modal__btn:hover  { background: var(--ptb-modal-btn-neutral-hover); }
+.ptb-modal__btn:active { background: var(--ptb-modal-btn-neutral-active); transform: translateY(0.5px); }
+.ptb-modal__btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+/* ============================================================
+   Canvas background (container uses this var)
+   ============================================================ */
+
+.ptb-canvas {
+  background: var(--ptb-canvas-bg);
+}
+
+/* ============================================================
+   Prism (syntax highlighting driven by CSS vars)
+   - Uses --ptb-code-* tokens set by each theme.
+   - Works with Prism core + line-numbers plugin.
+   ============================================================ */
+
+/* Base mapping for code blocks inside CodePip */
+.ptb-codepip__body pre[class*="language-"],
+.ptb-codepip__body code[class*="language-"] {
+  background: var(--ptb-code-bg) !important;
+  color: var(--ptb-code-fg) !important;
+  text-shadow: none !important;
+}
+
+/* Token colors */
+.ptb-codepip__body .token.comment,
+.ptb-codepip__body .token.block-comment,
+.ptb-codepip__body .token.prolog,
+.ptb-codepip__body .token.doctype,
+.ptb-codepip__body .token.cdata {
+  color: var(--ptb-code-comment) !important;
+}
+
+.ptb-codepip__body .token.punctuation {
+  color: var(--ptb-code-punctuation) !important;
+}
+
+.ptb-codepip__body .token.property,
+.ptb-codepip__body .token.tag,
+.ptb-codepip__body .token.boolean,
+.ptb-codepip__body .token.number,
+.ptb-codepip__body .token.constant,
+.ptb-codepip__body .token.symbol {
+  color: var(--ptb-code-number) !important;
+}
+
+.ptb-codepip__body .token.selector,
+.ptb-codepip__body .token.attr-name,
+.ptb-codepip__body .token.string,
+.ptb-codepip__body .token.char,
+.ptb-codepip__body .token.builtin,
+.ptb-codepip__body .token.inserted {
+  color: var(--ptb-code-string) !important;
+}
+
+.ptb-codepip__body .token.operator,
+.ptb-codepip__body .token.entity,
+.ptb-codepip__body .token.url,
+.ptb-codepip__body .language-css .token.string,
+.ptb-codepip__body .style .token.string {
+  color: var(--ptb-code-operator) !important;
+}
+
+.ptb-codepip__body .token.atrule,
+.ptb-codepip__body .token.keyword {
+  color: var(--ptb-code-keyword) !important;
+}
+
+.ptb-codepip__body .token.function {
+  color: var(--ptb-code-function) !important;
+}
+
+.ptb-codepip__body .token.regex,
+.ptb-codepip__body .token.important,
+.ptb-codepip__body .token.variable {
+  color: var(--ptb-code-attr) !important;
+}
+
+.ptb-codepip__body .token.deleted {
+  color: var(--ptb-code-number) !important;
+}
+
+.ptb-codepip__body .token.class-name {
+  color: var(--ptb-code-class) !important;
+}
+
+.ptb-codepip__body .token.bold { font-weight: 700; }
+.ptb-codepip__body .token.italic { font-style: italic; }
+
+/* Selection & highlight lines */
+.ptb-codepip__body pre[class*="language-"] ::selection,
+.ptb-codepip__body pre[class*="language-"] ::-moz-selection {
+  background: var(--ptb-code-selection-bg);
+}
+.ptb-codepip__body pre[class*="language-"] > code > .line-highlight {
+  background: var(--ptb-code-highlight-bg);
+}
+
+/* Line numbers plugin */
+.ptb-codepip__body pre[class*="language-"].line-numbers {
+  padding-left: 3.2em;
+}
+.ptb-codepip__body pre[class*="language-"].line-numbers .line-numbers-rows {
+  border-right: 1px solid color-mix(in srgb, var(--ptb-code-fg) 18%, transparent);
+}
+.ptb-codepip__body pre[class*="language-"].line-numbers .line-numbers-rows > span:before {
+  color: color-mix(in srgb, var(--ptb-code-fg) 55%, transparent);
+}
+
+/* Optional: inline code (if you ever render it within CodePip header/help) */
+.ptb-codepip__body code:not([class*="language-"]) {
+  background: color-mix(in srgb, var(--ptb-code-fg) 6%, transparent);
+  color: var(--ptb-code-fg);
+  border-radius: 4px;
+  padding: 0 4px;
+}

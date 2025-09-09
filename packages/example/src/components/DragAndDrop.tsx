@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 
-import { PTB_SCHEME } from '@zktx.io/ptb-builder';
+import { PTBDoc } from '@zktx.io/ptb-builder';
 
 export const DragAndDrop = ({
   onDrop,
   onChancel,
 }: {
-  onDrop: (data: PTB_SCHEME) => void;
+  onDrop: (data: PTBDoc) => void;
   onChancel: () => void;
 }) => {
   const [isVisible, setIsVisible] = useState(true);

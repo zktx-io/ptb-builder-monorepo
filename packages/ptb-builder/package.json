@@ -1,6 +1,6 @@
 {
   "name": "@zktx.io/ptb-builder",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Sui programmable transaction blocks builder",
   "type": "module",
   "main": "dist/index.cjs.js",
@@ -51,9 +51,10 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@mysten/sui": "^1.18.0",
-    "@xyflow/react": "^12.3.6",
+    "@mysten/sui": "^1.37.2",
+    "@xyflow/react": "^12.8.2",
     "elkjs": "^0.9.3",
+    "lucide-react": "^0.541.0",
     "prismjs": "^1.29.0",
     "re-resizable": "^6.10.3"
   }

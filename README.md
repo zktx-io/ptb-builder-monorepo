@@ -1,53 +1,124 @@
 # Programmable Transaction Blocks Builder (PTB Builder)
 
-**PTB Builder** is a visual development tool for **Programmable Transaction Blocks (PTBs)**, a core technology of the Sui blockchain. Designed to create a powerful synergy with Sui’s PTB capabilities, this tool allows both developers and non-developers to easily construct and manage complex transactions, maximizing the potential of this advanced technology and making it more accessible to a broader audience.
+**PTB Builder** is a graphical toolkit for building, simulating, and executing **Programmable Transaction Blocks (PTBs)** on the Sui blockchain. It provides an intuitive drag‑and‑drop interface, automatic code generation, and on‑chain execution support — bridging the gap between developers and non‑developers.
 
 ![ptb-builder-editor.png](https://docs.zktx.io/images/ptb-builder-editor.png)
-
-https://github.com/user-attachments/assets/0e7a3d47-451a-4cea-a36d-9df23d931cf2
 
 ## Demo
 
 - [https://ptb.wal.app/](https://ptb.wal.app/)
 
-## Key Use Cases
+## Features
 
-1. Transaction Construction and Pre-Testing:
-   - Intuitive UI: Visually construct transactions through a drag-and-drop graphical interface.
-   - Code Generation and Review: Verify automatically generated code from the constructed transactions and utilize it for dApp development.
-   - Pre-Simulation: Simulate transaction behavior before actual execution to check expected results.
-1. Executing Transactions Without Coding:
-   - Non-Developer Friendly: Users without coding knowledge can construct and execute transactions, enabling individuals from various fields to utilize blockchain technology.
-   - Real-Time Feedback: Provides real-time errors or warnings during transaction construction to help create correct transactions.
-1. Saving and Sharing Graphs:
-   - Save and Load Files: Save constructed transaction graphs as files and load them when needed.
-   - Collaboration Features: Share saved graphs with team members or the community to promote collaboration, allowing transactions to be executed even without a dApp.
-1. Transaction Visualization and Verification:
-   - Visualization of Execution Results: Visually represent the results of executed programmable transactions for easy understanding.
-   - Debugging Support: Provides debugging tools to trace and modify transaction flows when issues arise.
+### 1. Transaction Construction and Pre‑Testing
 
-## Main Features
+* **Visual Editor**: Construct PTBs through a drag‑and‑drop graphical interface (React Flow–based).
+* **Code Generation**: Automatically generate clean TypeScript code for the Sui TS SDK.
+* **Simulation**: Pre‑simulate PTBs before execution to validate expected results.
 
-- Drag-and-Drop Interface: Easily construct transactions with a user-friendly interface.
-- Automatic Code Generation: Automatically generates Move language code based on the transaction graph.
-- Real-Time Error Detection: Instantly notifies errors occurring during construction to help create correct transactions.
-- Multi-Language Support: Offers interfaces in various languages for convenient use by users worldwide.
-- Extensibility: Expand functionality through plugins or modules, allowing for a customized tool.
+### 2. Execute Transactions Without Coding
 
-## User Benefits
+* **Accessible**: Non‑developers can create and run PTBs without writing code.
+* **Real‑Time Feedback**: Errors and warnings are shown instantly during graph construction.
 
-- Enhanced Development Efficiency: Reduce development time by constructing complex transactions quickly and accurately.
-- Eased Learning Curve: Create and understand transactions without deep knowledge of the Move language.
-- Cost Reduction: Decrease errors during development, reducing costs associated with debugging and fixing.
-- Strengthened Collaboration: Promote team collaboration through graph sharing and joint work.
+### 3. Save and Share
+
+* **Graph Persistence**: Save PTB graphs locally and reload them later.
+* **Collaboration**: Share saved graphs with team members or the community.
+
+### 4. Visualization and Debugging
+
+* **Execution Visualization**: View executed PTBs in a clear, visual format.
+* **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
+
+### 5. On‑Chain Transaction Loading
+
+* **Load from Digest**: Import an existing on‑chain transaction by digest and visualize its structure.
+
+### 6. Use On-Chain Assets as Objects
+
+* **Asset Browser**: Open a modal to browse all objects owned by your address (coins, Move objects, modules, etc.).
+* **One-Click Insert**: Select an object to instantly insert it as an **Object node** in the graph.
+* **Seamless Integration**: Use registered assets directly in commands like `TransferObjects`, `MergeCoins`, or `MoveCall`.
+
+### 7. Themes
+
+* **Initial Theme Selection**: Choose your preferred theme (`dark`, `light`, `cobalt2`, `tokyo.night`, `cream`).
+* **Switch Anytime**: Change themes dynamically from the workspace.
+
+## Supported Commands
+
+The following PTB commands are currently supported:
+
+* **SplitCoins** — split a coin object into multiple parts.
+* **MergeCoins** — merge multiple coins into one.
+* **TransferObjects** — transfer owned objects to a recipient.
+* **MoveCall** — call any Move function from an on‑chain package.
+* **MakeMoveVec** — create vectors from scalar values.
+
+(Additional commands can be added via registry extensions.)
+
+## Supported Inputs
+
+Inputs follow `tx.option` conventions from the Sui TS SDK:
+
+* **Scalars**: numbers, booleans, addresses, strings ✅
+* **Objects**: supported for direct ownership/transfer ✅
+  (includes `Coin<T>` objects)
+  _Objects can also be selected from your owned assets via the **Assets modal**._
+* **Vectors**: scalars only ✅
+  (❌ objects, including coins, are not supported in vectors)
+* **Options**: available for scalars ✅
+  (❌ not supported for objects)
+
+## Provider Public API
+
+When embedding PTB Builder into a dApp, only a minimal, stable API is exposed.
+
+```ts
+import { PTBBuilder, usePTB } from '@zktx.io/ptb-builder';
+
+// Inside your React app:
+<PTBBuilder
+  theme="dark"            // initial theme (dark | light | cobalt2 | tokyo.night | cream)
+  address={myAddress}      // sender address
+  gasBudget={500_000_000}  // optional gas budget
+  executeTx={execAdapter}  // adapter to execute transactions
+  onDocChange={saveDoc}    // callback to persist PTBDoc
+>
+  <YourAppComponents />
+</PTBBuilder>
+```
+
+### Public Hook
+
+```ts
+const { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme } = usePTB();
+
+// Export current PTB as a document
+const doc = exportDoc({ sender: myAddress });
+
+// Load a saved PTB document
+loadFromDoc(doc);
+
+// Load a PTB from an on‑chain transaction digest
+await loadFromOnChainTx('sui:testnet', '0x1234…');
+
+// Switch theme
+setTheme('tokyo.night');
+```
+
+## Document Format
+
+Internally, PTB Builder persists graphs as `PTBDoc` objects, which include:
+
+* **graph**: nodes and edges of the PTB
+* **modules**: embedded Move module metadata (for function signatures)
+* **objects**: embedded object metadata (for owned assets)
+* **chain**: target Sui network
+
+This allows saving, sharing, and reloading graphs consistently across environments.
 
 ## Roadmap
 
-1. Current Status:
-   - Providing PoC Version: Offering an initial version equipped with basic transaction construction and execution features.
-   - Collecting User Feedback: Improving the tool by incorporating users’ opinions.
-1. Future Plans:
-   - VS Code Integration: Plan to integrate PTB Builder into Sui’s VS Code development tool, Sui Extension, allowing developers to create and test transactions in a familiar environment.
-   - Adding Advanced Features:
-     - Version Control: Enable tracking and restoring changes through version control of transaction graphs.
-     - Integrated Testing Environment: Provide a testing environment similar to the actual network to verify transaction behavior more accurately.
+* Expanded sharing and collaboration features

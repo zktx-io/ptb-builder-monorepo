@@ -1,10 +1,13 @@
-import { useState } from 'react';
-
-import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit';
-import { getFullnodeUrl } from '@mysten/sui/client';
+import {
+  ConnectButton,
+  useCurrentAccount,
+  useSignAndExecuteTransaction,
+} from '@mysten/dapp-kit';
+import { Transaction } from '@mysten/sui/transactions';
+import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
+import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
-import { NETWORK } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -25,25 +28,80 @@ const router = createBrowserRouter([
 ]);
 
 function App() {
-  const [activeNetwork, setActiveNetwork] = useState<
-    'testnet' | 'mainnet' | 'devnet'
-  >(NETWORK);
+  const account = useCurrentAccount();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+
+  const handleToast = ({
+    message,
+    variant,
+  }: {
+    message: string;
+    variant?: ToastVariant;
+  }) => {
+    enqueueSnackbar(message, { variant });
+  };
+
+  const executeTx = (
+    chain: Chain,
+    transaction: Transaction | undefined,
+  ): Promise<{ digest?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      if (account && transaction) {
+        transaction
+          .toJSON()
+          .then((jsonTx) => {
+            signAndExecuteTransaction(
+              {
+                transaction: jsonTx,
+                chain,
+              },
+              {
+                onSuccess: (result) => {
+                  resolve({ digest: result.digest });
+                },
+                onError: (error) => {
+                  resolve({
+                    error: error.message || 'Transaction execution failed',
+                  });
+                },
+              },
+            );
+          })
+          .catch((error) => {
+            resolve({
+              error: error.message || 'Transaction serialization failed',
+            });
+          });
+      }
+    });
+  };
+
   return (
-    <SuiClientProvider
-      networks={{
-        mainnet: { url: getFullnodeUrl('mainnet') },
-        testnet: { url: getFullnodeUrl('testnet') },
-        devnet: { url: getFullnodeUrl('devnet') },
-      }}
-      defaultNetwork={activeNetwork as 'mainnet' | 'testnet' | 'devnet'}
-      onNetworkChange={(network) => {
-        setActiveNetwork(network);
-      }}
-    >
-      <WalletProvider autoConnect>
-        <RouterProvider router={router} />;
-      </WalletProvider>
-    </SuiClientProvider>
+    <div style={{ width: '100vw', height: '100vh' }}>
+      {!account && (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#011829',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            flexDirection: 'column',
+            position: 'relative',
+          }}
+        >
+          <ConnectButton />
+        </div>
+      )}
+      <PTBBuilder
+        toast={handleToast}
+        executeTx={executeTx}
+        address={account?.address}
+      >
+        <RouterProvider router={router} />
+      </PTBBuilder>
+    </div>
   );
 }
 
