@@ -159,15 +159,18 @@
   --ptb-status-success-bg: #29e0a9; /* teal/green */
   --ptb-status-success-fg: #0e2230;
   --ptb-status-failure-bg: #ff6e6e; /* coral red */
-  --ptb-status-failure-fg: #122738;
+  --ptb-status-failure-fg: #ffffff;
   --ptb-status-abort-bg:   #ffc600; /* cobalt yellow */
   --ptb-status-abort-fg:   #122738;
+
+  /* Elevation tokens */
+  --ptb-elev-1: 0 14px 36px rgba(8,24,36,.52), 0 6px 16px rgba(8,24,36,.42);
 }
 
 :root[data-ptb-theme="cobalt2"] .ptb-codepip,
 :root[data-ptb-theme="cobalt2"] .ptb-statusbar,
 :root[data-ptb-theme="cobalt2"] .ptb-modal__panel {
-  box-shadow: 0 14px 36px rgba(8, 24, 36, .52), 0 6px 16px rgba(8,24,36,.42);
+  box-shadow: var(--ptb-elev-1);
 }
 
 :root[data-ptb-theme="cobalt2"] .ptb-flow-edge.is-selected {

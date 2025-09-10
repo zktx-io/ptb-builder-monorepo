@@ -154,12 +154,15 @@
   --ptb-status-failure-fg: #1a1b26;
   --ptb-status-abort-bg:   #e0af68; /* amber */
   --ptb-status-abort-fg:   #1a1b26;
+
+  /* Elevation tokens */
+  --ptb-elev-1: 0 16px 40px rgba(10, 12, 22, .6), 0 6px 18px rgba(10,12,22,.5);
 }
 
 :root[data-ptb-theme="tokyo night"] .ptb-codepip,
 :root[data-ptb-theme="tokyo night"] .ptb-statusbar,
 :root[data-ptb-theme="tokyo night"] .ptb-modal__panel {
-  box-shadow: 0 16px 40px rgba(10, 12, 22, .6), 0 6px 18px rgba(10,12,22,.5);
+  box-shadow: var(--ptb-elev-1);
 }
 
 :root[data-ptb-theme="tokyo night"] .ptb-flow-edge.is-selected {

@@ -174,12 +174,15 @@
   --ptb-status-failure-fg: #1f2a24;
   --ptb-status-abort-bg:   #d9b84f; /* warm amber (matches palette) */
   --ptb-status-abort-fg:   #1f2a24;
+
+  /* Elevation tokens */
+  --ptb-elev-1: 0 12px 28px rgba(46, 88, 70, .18), 0 4px 10px rgba(46,88,70,.12);
 }
 
 :root[data-ptb-theme="mint breeze"] .ptb-codepip,
 :root[data-ptb-theme="mint breeze"] .ptb-statusbar,
 :root[data-ptb-theme="mint breeze"] .ptb-modal__panel {
-  box-shadow: 0 12px 28px rgba(46, 88, 70, .18), 0 4px 10px rgba(46,88,70,.12);
+  box-shadow: var(--ptb-elev-1);
 }
 
 :root[data-ptb-theme="mint breeze"] .ptb-flow-edge.is-selected {

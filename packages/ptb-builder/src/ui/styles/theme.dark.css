@@ -176,12 +176,15 @@
   --ptb-status-failure-fg: #ffffff;
   --ptb-status-abort-bg:   #daaa3f; /* amber */
   --ptb-status-abort-fg:   #0b0f14; /* dark text on bright chip */
+
+  /* Elevation tokens */
+  --ptb-elev-1: 0 14px 36px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.45);
 }
 
 :root[data-ptb-theme="dark"] .ptb-codepip,
 :root[data-ptb-theme="dark"] .ptb-statusbar,
 :root[data-ptb-theme="dark"] .ptb-modal__panel {
-  box-shadow: 0 14px 36px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.45);
+  box-shadow: var(--ptb-elev-1);
 }
 
 :root[data-ptb-theme="dark"] .ptb-flow-edge.is-selected {

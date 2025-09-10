@@ -176,12 +176,15 @@
   --ptb-status-failure-fg: #ffffff;
   --ptb-status-abort-bg:   #f59e0b; /* amber-500 */
   --ptb-status-abort-fg:   #111827; /* gray-900 */
+
+  /* Elevation tokens */
+  --ptb-elev-1: 0 10px 30px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.08);
 }
 
 :root[data-ptb-theme="light"] .ptb-codepip,
 :root[data-ptb-theme="light"] .ptb-statusbar,
 :root[data-ptb-theme="light"] .ptb-modal__panel {
-  box-shadow: 0 10px 30px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.08);
+  box-shadow: var(--ptb-elev-1);
 }
 
 :root[data-ptb-theme="light"] .ptb-flow-edge.is-selected {
