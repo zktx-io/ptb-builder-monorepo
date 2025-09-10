@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 
 import './index.css';
 import App from './App.tsx';
+import { loadNetwork } from './network.ts';
 
 const queryClient = new QueryClient();
 
@@ -24,7 +25,7 @@ createRoot(document.getElementById('root')!).render(
             testnet: { url: getFullnodeUrl('testnet') },
             devnet: { url: getFullnodeUrl('devnet') },
           }}
-          defaultNetwork={'testnet'}
+          defaultNetwork={loadNetwork()}
         >
           <WalletProvider autoConnect>
             <App />

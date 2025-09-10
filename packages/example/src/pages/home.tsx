@@ -6,7 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import '@mysten/dapp-kit/dist/index.css';
-import { NETWORKS, NetworkType } from '../network';
+import { NETWORKS, NetworkType, saveNetwork } from '../network';
 
 export const Home = () => {
   const { connectionStatus } = useCurrentWallet();
@@ -42,7 +42,10 @@ export const Home = () => {
 
       <select
         value={network}
-        onChange={(e) => selectNetwork(e.target.value as NetworkType)}
+        onChange={(e) => {
+          selectNetwork(e.target.value as NetworkType)
+          saveNetwork(e.target.value as NetworkType);
+        }}
         style={{
           marginTop: '12px',
           marginBottom: '12px',

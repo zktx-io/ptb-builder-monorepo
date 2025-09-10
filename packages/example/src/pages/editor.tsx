@@ -2,9 +2,7 @@ import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
 import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 
 import { DragAndDrop } from '../components/DragAndDrop';
-
-type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
-type SuiChain = `sui:${SuiNetwork}`;
+import { SuiChain, SuiNetwork } from '../network';
 
 export const Editor = () => {
   const { network, selectNetwork } = useSuiClientContext();
