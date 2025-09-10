@@ -861,8 +861,13 @@ export function PTBFlow() {
           style={{ backgroundColor: 'transparent' }}
         />
 
-        <MiniMap />
-        <Controls className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+        <MiniMap
+          className="ptb-minimap"
+          maskColor="transparent"
+          nodeColor={() => 'var(--ptb-minimap-node)'}
+          nodeStrokeColor="var(--ptb-minimap-node-stroke)"
+        />
+        <Controls className="ptb-controls" />
 
         {/* Code preview lives inside */}
         <Panel position="top-right" style={{ pointerEvents: 'none' }}>

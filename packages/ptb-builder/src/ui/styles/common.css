@@ -722,6 +722,26 @@
   background: var(--ptb-canvas-bg);
 }
 
+/* MiniMap */
+.ptb-minimap { 
+  background: var(--ptb-minimap-bg) !important; 
+}
+.ptb-minimap .react-flow__minimap-node {
+  fill: var(--ptb-minimap-node) !important;
+  stroke: var(--ptb-minimap-node-stroke) !important;
+}
+
+/* Controls */
+.ptb-controls button {
+  background: var(--ptb-controls-bg);
+  color: var(--ptb-controls-fg);
+  border-radius: 6px;
+  border: 1px solid var(--ptb-controls-border);
+  transition: background 120ms ease, filter 120ms ease;
+}
+.ptb-controls button:hover { background: var(--ptb-controls-hover); }
+.ptb-controls button svg { color: currentColor; }
+
 /* ============================================================
    Prism (syntax highlighting driven by CSS vars)
    - Uses --ptb-code-* tokens set by each theme.

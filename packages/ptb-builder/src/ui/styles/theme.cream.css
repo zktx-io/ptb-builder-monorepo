@@ -178,6 +178,17 @@
   --ptb-status-abort-bg:   #d29b0b; /* warm amber */
   --ptb-status-abort-fg:   #2b211c;
 
+  /* Controls */
+  --ptb-controls-bg: #eae2d3;
+  --ptb-controls-fg: #2f2b25;
+  --ptb-controls-hover: #f4eee3;
+  --ptb-controls-border: rgba(0,0,0,0.10);
+
+  /* MiniMap */
+  --ptb-minimap-bg: var(--ptb-controls-bg);
+  --ptb-minimap-node: #b7aa95;                 /* taupe (darker) */
+  --ptb-minimap-node-stroke: #5a4b3b;          /* darkest brown */
+
   /* Elevation tokens */
   --ptb-elev-1: 0 12px 28px rgba(92, 72, 48, .16), 0 4px 10px rgba(92,72,48,.10);
 }

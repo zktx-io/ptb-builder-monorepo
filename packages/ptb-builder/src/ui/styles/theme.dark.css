@@ -176,6 +176,17 @@
   --ptb-status-abort-bg:   #daaa3f; /* amber */
   --ptb-status-abort-fg:   #0b0f14; /* dark text on bright chip */
 
+  /* Controls */
+  --ptb-controls-bg: #2d333b;
+  --ptb-controls-fg: #adbac7;
+  --ptb-controls-hover: #37424d;
+  --ptb-controls-border: #444c56;
+
+  /* MiniMap */
+  --ptb-minimap-bg: var(--ptb-controls-bg);
+  --ptb-minimap-node: #768390;                /* neutral gray */
+  --ptb-minimap-node-stroke: #adbac7;
+
   /* Elevation tokens */
   --ptb-elev-1: 0 14px 36px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.45);
 }

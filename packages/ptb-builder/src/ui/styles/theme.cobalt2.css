@@ -162,6 +162,17 @@
   --ptb-status-abort-bg:   #ffc600; /* cobalt yellow */
   --ptb-status-abort-fg:   #122738;
 
+  /* Controls */
+  --ptb-controls-bg: #122738;
+  --ptb-controls-fg: #e6f3ff;
+  --ptb-controls-hover: #18405a;
+  --ptb-controls-border: rgba(255,255,255,0.22);
+
+  /* MiniMap */
+  --ptb-minimap-bg: var(--ptb-controls-bg);
+  --ptb-minimap-node: #4aa8ff;                 /* bright cobalt */
+  --ptb-minimap-node-stroke: #e6f3ff;          /* light stroke */
+
   /* Elevation tokens */
   --ptb-elev-1: 0 14px 36px rgba(8,24,36,.52), 0 6px 16px rgba(8,24,36,.42);
 }
