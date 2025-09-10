@@ -1,53 +1,281 @@
 # Programmable Transaction Blocks Builder (PTB Builder)
 
-**PTB Builder** is a visual development tool for **Programmable Transaction Blocks (PTBs)**, a core technology of the Sui blockchain. Designed to create a powerful synergy with Sui’s PTB capabilities, this tool allows both developers and non-developers to easily construct and manage complex transactions, maximizing the potential of this advanced technology and making it more accessible to a broader audience.
+**PTB Builder** is a graphical toolkit for building, simulating, and executing **Programmable Transaction Blocks (PTBs)** on the Sui blockchain. It provides an intuitive drag‑and‑drop interface, automatic code generation, and on‑chain execution support — bridging the gap between developers and non‑developers.
 
 ![ptb-builder-editor.png](https://docs.zktx.io/images/ptb-builder-editor.png)
 
-https://github.com/user-attachments/assets/0e7a3d47-451a-4cea-a36d-9df23d931cf2
-
 ## Demo
 
-- [https://ptb.wal.app/](https://ptb.wal.app/)
+* [https://ptb.wal.app/](https://ptb.wal.app/)
 
-## Key Use Cases
+## Features
 
-1. Transaction Construction and Pre-Testing:
-   - Intuitive UI: Visually construct transactions through a drag-and-drop graphical interface.
-   - Code Generation and Review: Verify automatically generated code from the constructed transactions and utilize it for dApp development.
-   - Pre-Simulation: Simulate transaction behavior before actual execution to check expected results.
-1. Executing Transactions Without Coding:
-   - Non-Developer Friendly: Users without coding knowledge can construct and execute transactions, enabling individuals from various fields to utilize blockchain technology.
-   - Real-Time Feedback: Provides real-time errors or warnings during transaction construction to help create correct transactions.
-1. Saving and Sharing Graphs:
-   - Save and Load Files: Save constructed transaction graphs as files and load them when needed.
-   - Collaboration Features: Share saved graphs with team members or the community to promote collaboration, allowing transactions to be executed even without a dApp.
-1. Transaction Visualization and Verification:
-   - Visualization of Execution Results: Visually represent the results of executed programmable transactions for easy understanding.
-   - Debugging Support: Provides debugging tools to trace and modify transaction flows when issues arise.
+### 1. Transaction Construction and Pre‑Testing
 
-## Main Features
+* **Visual Editor**: Construct PTBs via a drag‑and‑drop UI (React Flow-based).
+* **Code Generation**: Automatically generate clean TypeScript for the Sui TS SDK.
+* **Simulation**: Dry‑run PTBs before execution to validate behavior.
 
-- Drag-and-Drop Interface: Easily construct transactions with a user-friendly interface.
-- Automatic Code Generation: Automatically generates Move language code based on the transaction graph.
-- Real-Time Error Detection: Instantly notifies errors occurring during construction to help create correct transactions.
-- Multi-Language Support: Offers interfaces in various languages for convenient use by users worldwide.
-- Extensibility: Expand functionality through plugins or modules, allowing for a customized tool.
+### 2. Execute Transactions Without Coding
 
-## User Benefits
+* **Accessible**: Non‑developers can create and run PTBs without writing code.
+* **Real‑Time Feedback**: Errors/warnings surface instantly during graph construction.
 
-- Enhanced Development Efficiency: Reduce development time by constructing complex transactions quickly and accurately.
-- Eased Learning Curve: Create and understand transactions without deep knowledge of the Move language.
-- Cost Reduction: Decrease errors during development, reducing costs associated with debugging and fixing.
-- Strengthened Collaboration: Promote team collaboration through graph sharing and joint work.
+### 3. Save and Share
+
+* **Graph Persistence**: Save PTB graphs locally and reload them later.
+* **Collaboration**: Share saved graphs with teammates or the community.
+* **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
+
+### 4. Visualization and Debugging
+
+* **Execution Visualization**: Visualize executed PTBs as readable graphs.
+* **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
+
+### 5. On‑Chain Transaction Loading
+
+* **Load from Digest**: Import an on‑chain transaction by digest and visualize its structure.
+
+### 6. Use On‑Chain Assets as Objects
+
+* **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
+* **One‑Click Insert**: Insert an object as an **Object node** in one click.
+* **Seamless Integration**: Use assets directly in commands like `TransferObjects`, `MergeCoins`, `MoveCall`.
+
+### 7. Themes
+
+* **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo night`, `cream`, `mint.breeze`.
+* **Switch Anytime**: Change themes dynamically from the workspace.
+
+## Supported Commands
+
+The following PTB commands are currently supported:
+
+* **SplitCoins** — split a coin object into multiple parts.
+* **MergeCoins** — merge multiple coins into one.
+* **TransferObjects** — transfer owned objects to a recipient.
+* **MoveCall** — call any Move function from an on‑chain package.
+* **MakeMoveVec** — create vectors from scalar values.
+
+(Additional commands can be added via registry extensions.)
+
+## Supported Inputs
+
+Inputs follow `tx.option` conventions from the Sui TS SDK:
+
+* **Scalars**: numbers, booleans, addresses, strings ✅
+* **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
+  * *Objects can also be selected from your owned assets via the **Assets modal**.*
+* **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
+* **Options**: available for scalars ✅ (❌ not supported for objects)
+
+## Quick Start (dApp Integration)
+
+Below snippets mirror a typical setup using **@mysten/dapp‑kit** with PTB Builder.
+
+### `App.tsx`
+
+```tsx
+import { PTBBuilder, Chain, ToastVariant } from '@zktx.io/ptb-builder';
+import { Transaction } from '@mysten/sui/transactions';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
+import { enqueueSnackbar } from 'notistack';
+
+function App() {
+  const account = useCurrentAccount();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+
+  // Toast adapter
+  const handleToast = ({ message, variant }: { message: string; variant?: ToastVariant }) => {
+    enqueueSnackbar(message, { variant });
+  };
+
+  // Execute adapter
+  const executeTx = async (
+    chain: Chain,
+    transaction: Transaction | undefined,
+  ): Promise<{ digest?: string; error?: string }> => {
+    if (!account || !transaction) return { error: 'No account or transaction' };
+    try {
+      const jsonTx = await transaction.toJSON();
+      return new Promise((resolve) => {
+        signAndExecuteTransaction(
+          { transaction: jsonTx, chain },
+          {
+            onSuccess: (result) => resolve({ digest: result.digest }),
+            onError: (error) => resolve({ error: error.message }),
+          },
+        );
+      });
+    } catch (e: any) {
+      return { error: e.message || 'Serialization failed' };
+    }
+  };
+
+  return (
+    <PTBBuilder
+      toast={handleToast}
+      executeTx={executeTx}
+      address={account?.address}
+      showExportButton
+    />
+  );
+}
+
+export default App;
+```
+
+### `pages/editor.tsx`
+
+```tsx
+import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
+import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
+import { DragAndDrop } from '../components/DragAndDrop';
+
+type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
+type SuiChain = `sui:${SuiNetwork}`;
+
+export const Editor = () => {
+  const { network, selectNetwork } = useSuiClientContext();
+  const account = useCurrentAccount();
+  const { loadFromDoc } = usePTB();
+
+  // Safe parser for "sui:<network>"
+  const parseNetwork = (chain?: string): SuiNetwork | undefined => {
+    const m = chain?.match(/^sui:(mainnet|testnet|devnet)$/);
+    return m?.[1] as SuiNetwork | undefined;
+  };
+
+  const handleDrop = (file: PTBDoc) => {
+    // Align dapp-kit network only if valid and different
+    const target = parseNetwork(file.chain);
+    if (target && target !== network) selectNetwork(target);
+    loadFromDoc(file);
+  };
+
+  const handleChancel = () => {
+    // Reset with an empty doc bound to current network
+    loadFromDoc({
+      version: PTB_VERSION,
+      chain: `sui:${network}` as SuiChain,
+      graph: { nodes: [], edges: [] },
+    });
+  };
+
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      {account && <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />}
+    </div>
+  );
+};
+```
+
+### `pages/viewer.tsx`
+
+```tsx
+import { useEffect, useRef, useState } from 'react';
+import { usePTB } from '@zktx.io/ptb-builder';
+import queryString from 'query-string';
+import { useLocation } from 'react-router-dom';
+
+export const Viewer = () => {
+  const initialized = useRef<boolean>(false);
+  const { loadFromOnChainTx } = usePTB();
+  const location = useLocation();
+  const [txHash, setTxHash] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const parsed = queryString.parse(location.search);
+    if (parsed.tx && !initialized.current) {
+      loadFromOnChainTx('sui:testnet', parsed.tx as string);
+      initialized.current = true;
+    } else {
+      setTxHash('');
+    }
+  }, [loadFromOnChainTx, location.search, txHash]);
+
+  return null;
+};
+```
+
+## Public API (Provider + Hook)
+
+### Provider (component)
+
+```tsx
+import { PTBBuilder } from '@zktx.io/ptb-builder';
+
+<PTBBuilder
+  theme="dark"            // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze)
+  address={myAddress}      // sender address
+  gasBudget={500_000_000}  // optional gas budget
+  executeTx={execAdapter}  // adapter to execute transactions
+  onDocChange={saveDoc}    // PTBDoc autosave callback (debounced)
+  showExportButton         // optional: show Export .ptb button (default: hidden)
+>
+  {/* your app here */}
+</PTBBuilder>
+```
+
+### Hook (public)
+
+```tsx
+import { usePTB } from '@zktx.io/ptb-builder';
+
+const { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme } = usePTB();
+
+// Export current PTB document
+const doc = exportDoc({ sender: myAddress });
+
+// Load document from memory or disk
+loadFromDoc(doc);
+
+// Load graph from on-chain transaction digest
+await loadFromOnChainTx('sui:testnet', '0x1234…');
+
+// Switch theme at runtime
+setTheme('tokyo night');
+```
+
+---
+
+## Props Reference (`<PTBBuilder />`)
+
+| Prop               | Type                                                                                  | Default  | Description                                                   |
+| ------------------ | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
+| `theme`            | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo night` \| `cream` \| `mint.breeze`) | `"dark"` | Initial UI theme.                                             |
+| `address`          | `string`                                                                              | –        | Sender address for generated transactions.                    |
+| `gasBudget`        | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
+| `executeTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
+| `toast`            | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
+| `onDocChange`      | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
+| `docChangeDelay`   | `number` (ms)                                                                         | `1000`   | Debounce for `onDocChange`.                                   |
+| `showExportButton` | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
+| `children`         | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
+
+---
+
+## Document Format
+
+PTB Builder persists graphs as `PTBDoc` objects containing:
+
+* **graph** — nodes and edges of the PTB
+* **modules** — embedded Move module metadata (for function signatures)
+* **objects** — embedded object metadata (for owned assets)
+* **chain** — target Sui network (e.g., `sui:testnet`)
+
+This enables saving, sharing, and reloading graphs consistently across environments.
+
+---
+
+## Notes on Network Sync
+
+* Use `useSuiClientContext()` from **@mysten/dapp‑kit** to read/change the active Sui network.
+* Keep PTB `doc.chain` in the form `sui:<network>`, e.g., `sui:testnet`.
+* On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
+
+---
 
 ## Roadmap
 
-1. Current Status:
-   - Providing PoC Version: Offering an initial version equipped with basic transaction construction and execution features.
-   - Collecting User Feedback: Improving the tool by incorporating users’ opinions.
-1. Future Plans:
-   - VS Code Integration: Plan to integrate PTB Builder into Sui’s VS Code development tool, Sui Extension, allowing developers to create and test transactions in a familiar environment.
-   - Adding Advanced Features:
-     - Version Control: Enable tracking and restoring changes through version control of transaction graphs.
-     - Integrated Testing Environment: Provide a testing environment similar to the actual network to verify transaction behavior more accurately.
+* Expanded sharing and collaboration features
