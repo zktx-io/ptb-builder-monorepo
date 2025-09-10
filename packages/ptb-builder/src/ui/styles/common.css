@@ -23,7 +23,7 @@
   --ptb-assets-list-h: 58vh;
 
   /* Mode */
-  --ptb-node-backdrop-filter: blur(1px);
+  --ptb-node-backdrop-filter: none; 
 
   /* Fallbacks - Prism code tokens (themes may override) */
   --ptb-code-fg: #111827;
@@ -126,7 +126,7 @@
 .ptb-io-edge--unknown { --xy-edge-stroke: var(--ptb-io-unknown-stroke);  --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);  stroke-width: var(--ptb-io-unknown-width); stroke-dasharray: var(--ptb-io-unknown-dash); }
 
 /* Ensure base state uses our variable even on older XYFlow builds */
-.react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke); }
+.react-flow__edge .react-flow__edge-path.ptb-io-edge { stroke: var(--xy-edge-stroke) !important; }
 
 /* Hover brighten (falls back to selected if no hover var is provided) */
 .react-flow__edge:hover .react-flow__edge-path.ptb-io-edge {
@@ -561,16 +561,9 @@
   background: var(--ptb-code-resizer-hover-bg);
 }
 
-/* Buttons */
-.ptb-codepip__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  padding: 0.2rem 0.4rem;
-  transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out;
-}
-.ptb-codepip__btn:active { transform: translateY(0.5px); }
+/* =======================
+   CodePip Buttons
+   ======================= */
 
 /* Base */
 .ptb-codepip__btn {
@@ -581,7 +574,28 @@
   padding: 0.2rem 0.4rem;
   transition: filter .12s ease, opacity .12s ease, transform .04s ease-in-out, background 120ms ease;
 }
-.ptb-codepip__btn:active { transform: translateY(0.5px); }
+
+.ptb-codepip__btn[disabled],
+.ptb-codepip__btn[aria-busy="true"] {
+  background: transparent !important;
+  cursor: not-allowed;
+}
+
+.ptb-codepip__btn[disabled] *,
+.ptb-codepip__btn[aria-busy="true"] * {
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.ptb-codepip__btn[disabled] svg,
+.ptb-codepip__btn[aria-busy="true"] svg {
+  opacity: 0.4;
+}
+
+.ptb-codepip__btn:hover:not([disabled]):not([aria-busy="true"]) { filter: brightness(1.02); }
+.ptb-codepip__btn:active:not([disabled]):not([aria-busy="true"]) { transform: translateY(0.5px); }
+
+/* Focus ring */
 .ptb-codepip__btn:focus-visible {
   outline: 2px solid color-mix(in srgb, currentColor 60%, transparent);
   outline-offset: 2px;
@@ -592,13 +606,11 @@
   background: var(--ptb-code-btn-neutral-bg);
   color: var(--ptb-code-btn-neutral-fg);
 }
-.ptb-codepip__btn--neutral:hover  { background: var(--ptb-code-btn-neutral-hover); }
-.ptb-codepip__btn--neutral:active { background: var(--ptb-code-btn-neutral-active); transform: translateY(0.5px); }
-.ptb-codepip__btn--neutral[disabled],
-.ptb-codepip__btn--neutral[aria-busy="true"] {
-  opacity: .7;
-  cursor: not-allowed;
-  transform: none;
+.ptb-codepip__btn--neutral:hover:not([disabled]):not([aria-busy="true"]) {
+  background: var(--ptb-code-btn-neutral-hover);
+}
+.ptb-codepip__btn--neutral:active:not([disabled]):not([aria-busy="true"]) {
+  background: var(--ptb-code-btn-neutral-active);
 }
 
 /* Variant: primary (Run) */
@@ -606,20 +618,15 @@
   background: var(--ptb-code-btn-run);
   color: #fff;
 }
-.ptb-codepip__btn--primary:hover  { background: var(--ptb-code-btn-run-hover); }
-.ptb-codepip__btn--primary:active { background: var(--ptb-code-btn-run-active); transform: translateY(0.5px); }
-.ptb-codepip__btn--primary[disabled],
-.ptb-codepip__btn--primary[aria-busy="true"] {
-  background: var(--ptb-code-btn-run-disabled);
-  opacity: .7;
-  cursor: not-allowed;
-  transform: none;
+.ptb-codepip__btn--primary[disabled] svg,
+.ptb-codepip__btn--primary[aria-busy="true"] svg {
+  color: var(--ptb-code-btn-neutral-fg);
 }
-
-/* Focus ring for accessibility */
-.ptb-codepip__btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 60%, transparent);
-  outline-offset: 2px;
+.ptb-codepip__btn--primary:hover:not([disabled]):not([aria-busy="true"]) {
+  background: var(--ptb-code-btn-run-hover);
+}
+.ptb-codepip__btn--primary:active:not([disabled]):not([aria-busy="true"]) {
+  background: var(--ptb-code-btn-run-active);
 }
 
 /* ============================================================
@@ -824,4 +831,8 @@
 
 .ptb-statusbar {
   transition: box-shadow .2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ptb-flow-active .ptb-flow-edge { animation: none; }
 }

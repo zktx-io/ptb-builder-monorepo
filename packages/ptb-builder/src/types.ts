@@ -12,18 +12,18 @@ export type ToastAdapter = (msg: ToastMessage) => void;
 export type Theme =
   | 'light'
   | 'cream'
-  | 'mint breeze'
+  | 'mint-breeze'
   | 'dark'
   | 'cobalt2'
-  | 'tokyo night';
+  | 'tokyo-night';
 
 export const THEMES: Theme[] = [
   'light',
   'cream',
-  'mint breeze',
+  'mint-breeze',
   'dark',
   'cobalt2',
-  'tokyo night',
+  'tokyo-night',
 ];
 
 /**
@@ -34,11 +34,11 @@ export function toColorMode(theme: Theme): 'light' | 'dark' {
   switch (theme) {
     case 'light':
     case 'cream':
-    case 'mint breeze':
+    case 'mint-breeze':
       return 'light';
     case 'dark':
     case 'cobalt2':
-    case 'tokyo night':
+    case 'tokyo-night':
       return 'dark';
     default:
       return 'light';

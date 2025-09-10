@@ -2,7 +2,7 @@
    PTB MINT BREEZE THEME TOKENS (pastel green / light, airy)
    ============================================================ */
 
-:root[data-ptb-theme="mint breeze"] {
+:root[data-ptb-theme="mint-breeze"] {
   /* -------- Canvas / Grid -------- */
   --ptb-canvas-bg: #f7fff9;                 /* very light mint white */
   --ptb-grid-fine:   #e0f2e9;               /* subtle mint-gray grid */
@@ -135,7 +135,6 @@
   --ptb-code-btn-run:            #3eb489;
   --ptb-code-btn-run-hover:      #58cba0;
   --ptb-code-btn-run-active:     #2f8f70;
-  --ptb-code-btn-run-disabled:   #9dc8a4;
 
   /* Prism */
   --ptb-code-fg: #1f2a24;

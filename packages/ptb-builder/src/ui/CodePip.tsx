@@ -238,7 +238,7 @@ export function CodePip({
             >
               {THEMES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {t.replace('-', ' ')}
                 </option>
               ))}
             </select>
