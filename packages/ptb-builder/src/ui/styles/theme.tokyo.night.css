@@ -146,4 +146,24 @@
   --ptb-modal-btn-neutral-fg: #c0caf5;
   --ptb-modal-btn-neutral-hover: #333a5e;
   --ptb-modal-btn-neutral-active: #3e456d;
+
+  /* StatusBar */
+  --ptb-status-success-bg: #9ece6a; /* green */
+  --ptb-status-success-fg: #1a1b26;
+  --ptb-status-failure-bg: #f7768e; /* red/rose */
+  --ptb-status-failure-fg: #1a1b26;
+  --ptb-status-abort-bg:   #e0af68; /* amber */
+  --ptb-status-abort-fg:   #1a1b26;
+}
+
+:root[data-ptb-theme="tokyo night"] .ptb-codepip,
+:root[data-ptb-theme="tokyo night"] .ptb-statusbar,
+:root[data-ptb-theme="tokyo night"] .ptb-modal__panel {
+  box-shadow: 0 16px 40px rgba(10, 12, 22, .6), 0 6px 18px rgba(10,12,22,.5);
+}
+
+:root[data-ptb-theme="tokyo night"] .ptb-flow-edge.is-selected {
+  filter:
+    drop-shadow(0 0 1px rgba(169,177,214,0.40))
+    drop-shadow(0 0 3px rgba(0,0,0,0.48));
 }

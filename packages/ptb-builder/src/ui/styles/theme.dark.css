@@ -168,4 +168,25 @@
   --ptb-modal-btn-neutral-fg: #adbac7;
   --ptb-modal-btn-neutral-hover: #37424d;
   --ptb-modal-btn-neutral-active: #444c56;
+
+  /* StatusBar */
+  --ptb-status-success-bg: #238636; /* green */
+  --ptb-status-success-fg: #ffffff;
+  --ptb-status-failure-bg: #da3633; /* red */
+  --ptb-status-failure-fg: #ffffff;
+  --ptb-status-abort-bg:   #daaa3f; /* amber */
+  --ptb-status-abort-fg:   #0b0f14; /* dark text on bright chip */
+}
+
+:root[data-ptb-theme="dark"] .ptb-codepip,
+:root[data-ptb-theme="dark"] .ptb-statusbar,
+:root[data-ptb-theme="dark"] .ptb-modal__panel {
+  box-shadow: 0 14px 36px rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.45);
+}
+
+:root[data-ptb-theme="dark"] .ptb-flow-edge.is-selected {
+  /* subtle bright rim + deep inner glow */
+  filter:
+    drop-shadow(0 0 1px rgba(205,217,229,0.35))
+    drop-shadow(0 0 3px rgba(0,0,0,0.45));
 }

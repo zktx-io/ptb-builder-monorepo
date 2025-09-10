@@ -886,10 +886,12 @@ export function PTBFlow() {
         </Panel>
         <Panel position="top-left" style={{ pointerEvents: 'none' }}>
           {loadTxStatus && (
-            <StatusBar
-              status={loadTxStatus.status}
-              error={loadTxStatus.error}
-            />
+            <div style={{ pointerEvents: 'auto' }}>
+              <StatusBar
+                status={loadTxStatus.status}
+                error={loadTxStatus.error}
+              />
+            </div>
           )}
         </Panel>
       </ReactFlow>

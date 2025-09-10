@@ -168,4 +168,23 @@
   --ptb-modal-btn-neutral-fg: #111827;      /* gray-900 */
   --ptb-modal-btn-neutral-hover: #f3f4f6;   /* gray-100 */
   --ptb-modal-btn-neutral-active: #d1d5db;  /* gray-300 */
+
+  /* StatusBar */
+  --ptb-status-success-bg: #10b981; /* emerald-500 */
+  --ptb-status-success-fg: #ffffff;
+  --ptb-status-failure-bg: #ef4444; /* red-500 */
+  --ptb-status-failure-fg: #ffffff;
+  --ptb-status-abort-bg:   #f59e0b; /* amber-500 */
+  --ptb-status-abort-fg:   #111827; /* gray-900 */
+}
+
+:root[data-ptb-theme="light"] .ptb-codepip,
+:root[data-ptb-theme="light"] .ptb-statusbar,
+:root[data-ptb-theme="light"] .ptb-modal__panel {
+  box-shadow: 0 10px 30px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.08);
+}
+
+:root[data-ptb-theme="light"] .ptb-flow-edge.is-selected {
+  filter:
+    drop-shadow(0 0 2px rgba(0,0,0,0.25));
 }
