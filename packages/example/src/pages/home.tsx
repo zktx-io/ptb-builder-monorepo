@@ -43,7 +43,7 @@ export const Home = () => {
       <select
         value={network}
         onChange={(e) => {
-          selectNetwork(e.target.value as NetworkType)
+          selectNetwork(e.target.value as NetworkType);
           saveNetwork(e.target.value as NetworkType);
         }}
         style={{

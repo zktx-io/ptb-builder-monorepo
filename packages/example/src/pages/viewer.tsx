@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { useSuiClientContext } from '@mysten/dapp-kit';
 import { usePTB } from '@zktx.io/ptb-builder';
 import queryString from 'query-string';
 import { useLocation } from 'react-router-dom';
-import { useSuiClientContext } from '@mysten/dapp-kit';
+
 import { SuiChain } from '../network';
 
 export const Viewer = () => {
@@ -17,7 +18,6 @@ export const Viewer = () => {
   useEffect(() => {
     const parsed = queryString.parse(location.search);
     if (parsed.tx && !initialized.current) {
-      console.log('Loading from tx:', parsed.tx, 'on', network);
       loadFromOnChainTx(`sui:${network}` as SuiChain, parsed.tx as string);
       initialized.current = true;
     } else {
