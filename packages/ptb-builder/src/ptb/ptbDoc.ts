@@ -85,7 +85,7 @@ export interface PTBDoc {
   objects?: PTBObjectsEmbed;
 
   /** Optional editor viewport state */
-  view?: { x: number; y: number; zoom: number };
+  view: { x: number; y: number; zoom: number };
 }
 
 // ----- validation (strict: new format only) ----------------------------------
@@ -193,7 +193,7 @@ export function buildDoc(opts: {
   chain: Chain;
   graph: PTBGraph;
   sender?: string;
-  view?: { x: number; y: number; zoom: number };
+  view: { x: number; y: number; zoom: number };
   modules: PTBModulesEmbed | unknown;
   objects: PTBObjectsEmbed | unknown;
 }): PTBDoc {

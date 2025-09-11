@@ -8,14 +8,13 @@
 // - Hide all rich internal APIs inside the provider/flow layer.
 //
 // Public Props (PTBBuilderProps)
-// - initialTheme   : initial theme (managed by provider afterwards)
-// - executeTx      : adapter for executing transactions
-// - address        : optional sender for codegen/exec
-// - gasBudget      : optional gas budget for tx build
-// - toast          : toast adapter; if absent, provider falls back to console
-// - onDocChange    : PTBDoc-level autosave callback (heavier than graph diff)
-// - docChangeDelay : debounce ms for onDocChange
-// - children       : optional React children
+// - theme           : initial theme (managed by provider afterwards)
+// - executeTx       : adapter for executing transactions
+// - address         : optional sender for codegen/exec
+// - gasBudget       : optional gas budget for tx build
+// - toast           : toast adapter; if absent, provider falls back to console
+// - onDocChange     : PTBDoc-level autosave callback
+// - children        : optional React children
 //
 // Public Hook (usePTB)
 // - Exposes ONLY 4 methods: { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme }
@@ -23,6 +22,9 @@
 // Internals
 // - Wraps <PtbProvider> + <PTBFlow> with <ReactFlowProvider>.
 // - PublicBridge maps internal usePtb() → minimal PublicPTBApi.
+//
+// Note
+// - No debouncing is performed at this layer.
 // -----------------------------------------------------------------------------
 
 import React, { createContext, useContext, useMemo } from 'react';
@@ -48,12 +50,11 @@ export type PTBBuilderProps = {
   gasBudget?: number;
   toast?: ToastAdapter;
   onDocChange?: (doc: PTBDoc) => void;
-  docChangeDelay?: number;
   children?: React.ReactNode;
 };
 
 export type PublicPTBApi = {
-  exportDoc: (opts?: { sender?: string }) => PTBDoc;
+  exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
   loadFromDoc: (doc: PTBDoc) => void;
   loadFromOnChainTx: (chain: Chain, digest: string) => Promise<void>;
   setTheme: (t: Theme) => void;
@@ -96,7 +97,6 @@ export function PTBBuilder({
   gasBudget,
   toast,
   onDocChange,
-  docChangeDelay,
   children,
   showExportButton,
 }: PTBBuilderProps) {
@@ -119,9 +119,8 @@ export function PTBBuilder({
         toast={toast}
         // execution opts for codegen / tx builder
         execOpts={execOpts}
-        // public autosave (doc-level only)
+        // public autosave (doc-level callback)
         onDocChange={onDocChange}
-        onDocDebounceMs={docChangeDelay ?? 1000}
       >
         <PublicBridge>
           <PTBFlow />

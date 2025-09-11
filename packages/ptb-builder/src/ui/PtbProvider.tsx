@@ -1,17 +1,18 @@
 // src/ui/PtbProvider.tsx
 // -----------------------------------------------------------------------------
 // Provider that owns persistence, chain caches, and RF/PTB synchronization.
-// Fixes feedback loops by:
-//  1) Applying a stable structural signature (stableGraphSig) and ignoring
-//     no-op updates after normalizeGraph.
-//  2) Introducing graphEpoch so that "doc/chain load → RF inject" is
-//     separated from normal "edit → save (RF→PTB)".
+// Stability tactics:
+//  1) Use a structural signature (stableGraphSig) to ignore RF no-ops after
+//     normalizeGraph.
+//  2) Use graphEpoch so that "doc/chain load → RF inject" is separated from
+//     normal "edit → save (RF→PTB)".
 //
 // Model
 // - RF is authoritative while the editor is open.
-// - PTB is a persisted snapshot: loaded once to hydrate RF, then updated
-//   by the canvas through `setGraph(ptb)` (debounced).
-// - We only push PTB back to RF when the *document identity* changes.
+// - PTB is a persisted snapshot: loaded once to hydrate RF, then updated by
+//   the canvas (PTBFlow) immediately on every edit.
+// - We only inject PTB back to RF when the *document identity* changes.
+// - PTBDoc autosave (onDocChange) fires immediately on any change.
 // -----------------------------------------------------------------------------
 
 import React, {
@@ -63,9 +64,10 @@ type TxStatus = {
 export type PtbContextValue = {
   graph: PTBGraph;
   setGraph: (g: PTBGraph) => void;
+  setViewExternal: (v: { x: number; y: number; zoom: number }) => void;
 
   // Runtime flags
-  chain: Chain;
+  chain?: Chain;
   readOnly: boolean;
 
   // UI theme
@@ -106,7 +108,7 @@ export type PtbContextValue = {
   loadFromDoc: (doc: PTBDoc) => void;
 
   // Persistence
-  exportDoc: (opts?: { sender?: string }) => PTBDoc;
+  exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
 
   // Monotonic ID generator
   createUniqueId: (prefix?: string) => string;
@@ -124,7 +126,12 @@ export type PtbContextValue = {
   isWellKnownAvailable: (k: WellKnownId) => boolean;
   setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
 
-  registerFlowActions: (a: { autoLayoutAndFit?: () => void }) => void;
+  registerFlowActions: (a: {
+    fitToContent?: (opt: {
+      view?: { x: number; y: number; zoom: number };
+      autoLayout?: boolean;
+    }) => void;
+  }) => void;
 
   graphEpoch: number;
 
@@ -137,11 +144,7 @@ const PtbContext = createContext<PtbContextValue | undefined>(undefined);
 
 export type PtbProviderProps = {
   children: React.ReactNode;
-  onChange?: (g: PTBGraph) => void;
-  onChangeDebounceMs?: number;
-
   onDocChange?: (doc: PTBDoc) => void;
-  onDocDebounceMs?: number;
 
   initialTheme: Theme;
   execOpts?: ExecOptions;
@@ -153,9 +156,6 @@ export type PtbProviderProps = {
   toast?: ToastAdapter;
   showExportButton?: boolean;
 };
-
-const DEFAULT_GRAPH_DEBOUNCE = 400;
-const DEFAULT_DOC_DEBOUNCE = 1000;
 
 // ===== tiny utils =============================================================
 
@@ -184,38 +184,38 @@ function seedNonceFromGraph(g: PTBGraph | undefined): number {
 
 /** Build an order-insensitive, structural signature for a PTB graph. */
 function stableGraphSig(g: PTBGraph): string {
-  // Normalize node payloads to PTB-meaningful fields only (no RF fields!)
+  const round = (v: any) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : v;
+
   const nodes = [...(g.nodes || [])]
     .map((n) => {
-      // ports: keep id/role/direction/dataType only
       const ports = [...(n.ports || [])]
         .map((p) => ({
           id: p.id,
           role: p.role,
           direction: p.direction,
-          // stringify to make deep-equal deterministic
           dataType: p.dataType ? JSON.stringify(p.dataType) : undefined,
         }))
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-      // optional fields depending on node kind
       const extra: Record<string, unknown> = {};
       const anyN = n as any;
-      if (anyN.command !== undefined) extra.command = anyN.command; // Command node
-      if (anyN.params !== undefined) extra.params = anyN.params; // Command node params (ui etc.)
-      if (anyN.varType !== undefined) extra.varType = anyN.varType; // Variable node
-      if (anyN.value !== undefined) extra.value = anyN.value; // Variable node value
+      if (anyN.command !== undefined) extra.command = anyN.command;
+      if (anyN.params !== undefined) extra.params = anyN.params;
+      if (anyN.varType !== undefined) extra.varType = anyN.varType;
+      if (anyN.value !== undefined) extra.value = anyN.value;
 
-      return {
-        id: n.id,
-        kind: n.kind,
-        ports,
-        ...extra,
-      };
+      const pos =
+        anyN.position &&
+        typeof anyN.position.x === 'number' &&
+        typeof anyN.position.y === 'number'
+          ? { x: round(anyN.position.x), y: round(anyN.position.y) }
+          : undefined;
+
+      return { id: n.id, kind: n.kind, ports, pos, ...extra };
     })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  // Normalize edges to PTB fields only
   const edges = [...(g.edges || [])]
     .map((e) => ({
       id: e.id,
@@ -224,7 +224,6 @@ function stableGraphSig(g: PTBGraph): string {
       target: e.target,
       sourceHandle: e.sourceHandle ?? undefined,
       targetHandle: e.targetHandle ?? undefined,
-      // PTBEdge has no .data/.label in the type — exclude RF-only fields
     }))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
@@ -235,10 +234,7 @@ function stableGraphSig(g: PTBGraph): string {
 
 export function PtbProvider({
   children,
-  onChange,
-  onChangeDebounceMs = DEFAULT_GRAPH_DEBOUNCE,
   onDocChange,
-  onDocDebounceMs = DEFAULT_DOC_DEBOUNCE,
 
   initialTheme,
   execOpts: execOptsProp = {},
@@ -261,22 +257,36 @@ export function PtbProvider({
   }, [theme, applyTheme]);
 
   // Flow actions
-  const flowActionsRef = React.useRef<{ autoLayoutAndFit?: () => void }>({});
+  const flowActionsRef = React.useRef<{
+    fitToContent?: (opt: {
+      view?: { x: number; y: number; zoom: number };
+      autoLayout?: boolean;
+    }) => void;
+  }>({});
 
   const registerFlowActions = React.useCallback(
-    (a: { autoLayoutAndFit?: () => void }) => {
+    (a: {
+      fitToContent?: (opt: {
+        view?: { x: number; y: number; zoom: number };
+        autoLayout?: boolean;
+      }) => void;
+    }) => {
       flowActionsRef.current = { ...flowActionsRef.current, ...a };
     },
     [],
   );
 
-  // Editor mode (derived)
+  // Editor mode
   const [readOnly, setReadOnly] = useState<boolean>(false);
 
   // Chain & client
-  const [activeChain, setActiveChain] = useState<Chain>('sui:devnet');
+  const [activeChain, setActiveChain] = useState<Chain | undefined>(undefined);
   const clientRef = useRef<SuiClient | undefined>(undefined);
   useLayoutEffect(() => {
+    if (!activeChain) {
+      clientRef.current = undefined;
+      return;
+    }
     clientRef.current = new SuiClient({
       url: getFullnodeUrl(activeChain.split(':')[1] as any),
     });
@@ -284,6 +294,9 @@ export function PtbProvider({
 
   // Persisted PTB snapshot (RF → PTB)
   const [graph, setGraphState] = useState<PTBGraph>({ nodes: [], edges: [] });
+  const [view, setView] = useState<
+    { x: number; y: number; zoom: number } | undefined
+  >(undefined);
 
   // Well-known presence
   const [wellKnown, setWellKnown] = useState<Record<WellKnownId, boolean>>(() =>
@@ -307,7 +320,7 @@ export function PtbProvider({
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => ({}));
   const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
 
-  // Toast (no-op / console fallback)
+  // Toast
   const toastImpl: ToastAdapter = useMemo(() => {
     if (toastProp) return toastProp;
     return ({ message, variant }) => {
@@ -344,7 +357,7 @@ export function PtbProvider({
   // Build + dry-run + execute
   const runTx = useCallback(
     async (tx?: Transaction) => {
-      if (!tx) return { error: 'No transaction to run' };
+      if (!tx || !activeChain) return { error: 'No transaction to run' };
       const client = clientRef.current;
       if (!client) {
         toastImpl({
@@ -406,15 +419,11 @@ export function PtbProvider({
       }
 
       try {
-        // 1) Build tx bytes using the current client (fills gas/price where needed)
         const bytes = await tx.build({ client });
-
-        // 2) Run simulation
         const sim = (await client.dryRunTransactionBlock({
           transactionBlock: bytes,
         })) as DryRunTransactionBlockResponse;
 
-        // 3) Normalize status / error
         const status =
           (sim as any)?.effects?.status?.status ??
           (sim as any)?.effects?.status ??
@@ -442,148 +451,64 @@ export function PtbProvider({
     [toastImpl],
   );
 
-  // ---- debounced graph autosave ---------------------------------------------
-
-  const onChangeRef = useRef(onChange);
-  const graphTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
-  const lastGraphRef = useRef<PTBGraph | undefined>(undefined);
-  onChangeRef.current = onChange;
-
-  // NEW: suppress flag to avoid notifies during reload
-  const suppressNotifyRef = useRef<boolean>(false);
-
-  const flushGraphNotify = useCallback(() => {
-    if (graphTimerRef.current !== undefined) {
-      clearTimeout(graphTimerRef.current);
-      graphTimerRef.current = undefined;
-    }
-    const payload = lastGraphRef.current;
-    if (payload && onChangeRef.current) onChangeRef.current(payload);
-    lastGraphRef.current = undefined;
-  }, []);
-
-  // NEW: cancel (no-callback) version for reloads
-  const cancelGraphNotify = useCallback(() => {
-    if (graphTimerRef.current !== undefined) {
-      clearTimeout(graphTimerRef.current);
-      graphTimerRef.current = undefined;
-    }
-    lastGraphRef.current = undefined;
-  }, []);
-
-  const scheduleGraphNotify = useCallback(
-    (g: PTBGraph) => {
-      if (!onChangeRef.current || suppressNotifyRef.current) return;
-      lastGraphRef.current = g;
-      if (graphTimerRef.current !== undefined)
-        clearTimeout(graphTimerRef.current);
-      graphTimerRef.current = setTimeout(() => {
-        const payload = lastGraphRef.current;
-        if (payload && onChangeRef.current) onChangeRef.current(payload);
-        graphTimerRef.current = undefined;
-        lastGraphRef.current = undefined;
-      }, onChangeDebounceMs);
-    },
-    [onChangeDebounceMs],
-  );
-
   // Keep a stable signature to prevent feedback loops on normalizeGraph
   const lastGraphSigRef = useRef<string>(
     stableGraphSig({ nodes: [], edges: [] }),
   );
 
-  const setGraph = useCallback(
-    (g: PTBGraph) => {
-      const norm = normalizeGraph(g);
-      const nextSig = stableGraphSig(norm);
-      if (nextSig === lastGraphSigRef.current) {
-        // No structural change → stop the loop early
-        return;
-      }
-
-      lastGraphSigRef.current = nextSig;
-      setGraphState(norm);
-      setWellKnown(computeWellKnownPresence(norm));
-      scheduleGraphNotify(norm);
-      // Advance nonce if external ids introduce larger numeric suffixes
-      setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(norm)));
-    },
-    [scheduleGraphNotify],
-  );
+  const setGraph = useCallback((g: PTBGraph) => {
+    const norm = normalizeGraph(g);
+    const nextSig = stableGraphSig(norm);
+    if (nextSig === lastGraphSigRef.current) {
+      return;
+    }
+    lastGraphSigRef.current = nextSig;
+    setGraphState(norm);
+    setWellKnown(computeWellKnownPresence(norm));
+    setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(norm)));
+  }, []);
 
   const replaceGraphImmediate = useCallback((g: PTBGraph) => {
-    if (graphTimerRef.current !== undefined) {
-      clearTimeout(graphTimerRef.current);
-      graphTimerRef.current = undefined;
-    }
-    lastGraphRef.current = undefined;
-
     const norm = normalizeGraph(g);
-    // Reset signature on full replacement
     lastGraphSigRef.current = stableGraphSig(norm);
-
     setGraphState(norm);
     setWellKnown(computeWellKnownPresence(norm));
     setIdNonce(seedNonceFromGraph(norm));
-    setGraphEpoch((e) => e + 1); // bump epoch so RF rehydrates once per load
+    setGraphEpoch((e) => e + 1); // rehydrate RF once per load
   }, []);
 
-  // ---- debounced PTBDoc autosave --------------------------------------------
+  // ---- PTBDoc: immediate emit on any change ---------------------------------
 
   const onDocChangeRef = useRef(onDocChange);
-  const docTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   onDocChangeRef.current = onDocChange;
 
-  const flushDocNotify = useCallback(() => {
-    if (docTimerRef.current !== undefined) {
-      clearTimeout(docTimerRef.current);
-      docTimerRef.current = undefined;
-    }
-    if (!onDocChangeRef.current) return;
-    const doc = buildDoc({
-      chain: activeChain,
-      graph,
-      modules,
-      objects,
-    });
-    onDocChangeRef.current?.(doc);
-  }, [activeChain, graph, modules, objects]);
-
-  // NEW: cancel (no-callback) version for reloads
-  const cancelDocNotify = useCallback(() => {
-    if (docTimerRef.current !== undefined) {
-      clearTimeout(docTimerRef.current);
-      docTimerRef.current = undefined;
-    }
-  }, []);
-
-  const scheduleDocNotify = useCallback(() => {
-    if (!onDocChangeRef.current || suppressNotifyRef.current) return;
-    if (docTimerRef.current !== undefined) clearTimeout(docTimerRef.current);
-    docTimerRef.current = setTimeout(() => {
-      if (!onDocChangeRef.current) return;
+  useLayoutEffect(() => {
+    if (!onDocChangeRef.current || !activeChain || !view) return;
+    try {
       const doc = buildDoc({
         chain: activeChain,
         graph,
-        modules,
-        objects,
+        view,
+        modules: modules ?? {},
+        objects: objects ?? {},
       });
-      onDocChangeRef.current?.(doc);
-      docTimerRef.current = undefined;
-    }, onDocDebounceMs ?? DEFAULT_DOC_DEBOUNCE);
-  }, [onDocDebounceMs, activeChain, graph, modules, objects]);
+      onDocChangeRef.current({ ...doc, view });
+    } catch {
+      // Swallow to avoid breaking the edit loop
+    }
+  }, [graph, modules, objects, activeChain, view]);
 
-  React.useEffect(() => {
-    scheduleDocNotify();
-  }, [graph, scheduleDocNotify]);
-
-  React.useEffect(() => {
-    scheduleDocNotify();
-  }, [modules, activeChain, scheduleDocNotify]);
-
-  React.useEffect(() => {
-    scheduleDocNotify();
-  }, [objects, scheduleDocNotify]);
+  const setViewExternal = useCallback(
+    (v: { x: number; y: number; zoom: number }) => {
+      if (!onDocChangeRef.current || !activeChain) return;
+      setView((prev) =>
+        prev && prev.x === v.x && prev.y === v.y && prev.zoom === v.zoom
+          ? prev
+          : v,
+      );
+    },
+    [activeChain],
+  );
 
   // ---- chain helpers ---------------------------------------------------------
 
@@ -673,7 +598,6 @@ export function PtbProvider({
         });
         const normalized = toPTBModuleData(raw);
         setModules((prev) => ({ ...prev, [id]: normalized }));
-        scheduleDocNotify();
         return {
           names: Object.keys(normalized),
           modules: Object.fromEntries(
@@ -694,7 +618,7 @@ export function PtbProvider({
         return undefined;
       }
     },
-    [modules, clientRef, toastImpl, scheduleDocNotify],
+    [modules, clientRef, toastImpl],
   );
 
   const getOwnedObjects = useCallback<PtbContextValue['getOwnedObjects']>(
@@ -724,15 +648,9 @@ export function PtbProvider({
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
-      // START RELOAD: cancel old notifies and suppress during state churn
-      cancelGraphNotify();
-      cancelDocNotify();
-      suppressNotifyRef.current = true;
-
       const digest = (txDigest || '').trim();
       if (!digest) {
         toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
-        suppressNotifyRef.current = false; // end suppression even on early-return
         return;
       }
 
@@ -764,7 +682,6 @@ export function PtbProvider({
             message: 'Only ProgrammableTransaction is supported.',
             variant: 'warning',
           });
-          suppressNotifyRef.current = false;
           return;
         }
 
@@ -782,7 +699,6 @@ export function PtbProvider({
             const m = await localClient.getNormalizedMoveModulesByPackage({
               package: pkg,
             });
-            // reset-and-fill: we build a fresh embed, not merging
             modsEmbed[pkg] = toPTBModuleData(m);
           } catch {
             // ignore per-package failures
@@ -804,7 +720,7 @@ export function PtbProvider({
           }
         }
 
-        // 3) Fetch object metadata via getObjectData (using localClient)
+        // 3) Fetch object metadata (best effort)
         const fetched = await Promise.all(
           [...candidateIds].map((oid) =>
             getObjectData(oid, { clientOverride: localClient }),
@@ -822,10 +738,7 @@ export function PtbProvider({
         });
 
         diags.forEach(({ variant, message }) => {
-          toastImpl({
-            message,
-            variant,
-          });
+          toastImpl({ message, variant });
         });
 
         // 5) Fix chain and prime caches (overwrite → no carry-over)
@@ -837,50 +750,28 @@ export function PtbProvider({
         replaceGraphImmediate(decoded);
         setReadOnly(true);
 
-        // END RELOAD: emit a single notify for the fresh state
-        suppressNotifyRef.current = false;
-        scheduleGraphNotify(decoded);
-        scheduleDocNotify();
-
         setCodePipOpenTick(0);
 
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            flowActionsRef.current.autoLayoutAndFit?.();
+            flowActionsRef.current.fitToContent?.({ autoLayout: true });
           });
         });
       } catch (e: any) {
-        suppressNotifyRef.current = false;
         toastImpl({
           message: e?.message || 'Failed to load transaction from chain.',
           variant: 'error',
         });
       }
     },
-    [
-      toastImpl,
-      replaceGraphImmediate,
-      scheduleGraphNotify,
-      scheduleDocNotify,
-      getObjectData,
-      cancelGraphNotify,
-      cancelDocNotify,
-    ],
+    [toastImpl, replaceGraphImmediate, getObjectData],
   );
 
   // ---- document loader (editor) ---------------------------------------------
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (doc) => {
-      // START RELOAD: cancel old notifies and suppress during state churn
-      cancelGraphNotify();
-      cancelDocNotify();
-      suppressNotifyRef.current = true;
-
-      // Fix network
       setActiveChain(doc.chain);
-
-      // Overwrite caches from embeds (full replace → no carry-over)
       setModules(doc.modules || {});
       setObjects(doc.objects || {});
 
@@ -889,50 +780,41 @@ export function PtbProvider({
       const valid =
         g && Array.isArray(g.nodes) && Array.isArray(g.edges) && g.nodes.length;
       const base = valid ? g : seedDefaultGraph();
-
+      setView(doc.view || { x: 0, y: 0, zoom: 1 });
       replaceGraphImmediate(base);
       setReadOnly(false);
 
-      // END RELOAD: emit a single notify for the fresh state
-      suppressNotifyRef.current = false;
-      scheduleGraphNotify(base);
-      scheduleDocNotify();
       setCodePipOpenTick((t) => t + 1);
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          flowActionsRef.current.autoLayoutAndFit?.();
+          flowActionsRef.current.fitToContent?.({ view: doc.view });
         });
       });
     },
-    [
-      replaceGraphImmediate,
-      scheduleGraphNotify,
-      scheduleDocNotify,
-      cancelGraphNotify,
-      cancelDocNotify,
-    ],
+    [replaceGraphImmediate],
   );
 
   // ---- export doc ------------------------------------------------------------
 
   const exportDoc = useCallback<PtbContextValue['exportDoc']>(
     (opts) => {
+      if (!activeChain || !view) return undefined;
       const sender = opts?.sender;
       return buildDoc({
         chain: activeChain,
         graph,
+        view,
         sender,
         modules: modules ?? {},
         objects: objects ?? {},
       });
     },
-    [activeChain, graph, modules, objects],
+    [activeChain, graph, modules, objects, view],
   );
 
   // ---- well-known helpers ----------------------------------------------------
 
-  /** Build a presence map for well-known IDs on a graph. */
   function computeWellKnownPresence(g: PTBGraph): Record<WellKnownId, boolean> {
     const set = new Set((g.nodes || []).map((n) => n.id));
     return {
@@ -946,20 +828,10 @@ export function PtbProvider({
     };
   }
 
-  /**
-   * Normalize a graph so that Start/End ids are canonical and edges are
-   * rewritten accordingly. Must be idempotent.
-   */
+  /** Idempotent graph normalization (coalesce Start/End ids & rewrite edges). */
   function normalizeGraph(g: PTBGraph): PTBGraph {
     const nodes = [...(g.nodes || [])];
     const edges = [...(g.edges || [])];
-
-    // NOTE:
-    // Flow-handle base IDs are assumed to be:
-    //   - 'prev' for the inbound/target handle (previous)
-    //   - 'next' for the outbound/source handle (next)
-    // PTBHandleFlow must keep these base IDs stable.
-    // If you change handle IDs in UI, update normalizeGraph() accordingly.
 
     const coalesce = (
       matchKind: PTBGraph['nodes'][number]['kind'],
@@ -1030,6 +902,7 @@ export function PtbProvider({
     () => ({
       graph,
       setGraph,
+      setViewExternal,
 
       chain: activeChain,
       readOnly: !!readOnly,
@@ -1071,6 +944,7 @@ export function PtbProvider({
     [
       graph,
       setGraph,
+      setViewExternal,
       activeChain,
       readOnly,
       theme,
@@ -1097,10 +971,6 @@ export function PtbProvider({
       codePipOpenTick,
     ],
   );
-
-  // Ensure pending debounced notifies flush on unmount
-  React.useEffect(() => () => flushGraphNotify(), [flushGraphNotify]);
-  React.useEffect(() => () => flushDocNotify(), [flushDocNotify]);
 
   return <PtbContext.Provider value={ctx}>{children}</PtbContext.Provider>;
 }

@@ -19,9 +19,29 @@ import { AssetsModal } from './AssetsModal';
 import { usePtb } from './PtbProvider';
 import { type Theme, THEMES } from '../types';
 
-export const EMPTY_CODE = (
-  net: string,
-) => `// PTB Code Preview (network: ${net})
+export const EMPTY_CODE = (net?: string) => {
+  if (!net) {
+    return `// PTB Code Preview
+// ⚠ No network is selected yet.
+// - Load a document (loadFromDoc) or load a chain transaction (loadFromOnChainTx)
+//   to set the active network.
+// - Dry-run / Execute are disabled until a network is selected.
+//
+// Add and connect nodes (Start → … → End) to generate ts-sdk code here.
+
+import { Transaction } from '@mysten/sui/transactions';
+
+const tx = new Transaction();
+// tx.setSenderIfNotSet('<your-address>');
+// tx.setGasBudgetIfNotSet(500_000_000);
+
+// ...code for your graph will be generated here...
+
+export { tx };
+`;
+  }
+
+  return `// PTB Code Preview (network: ${net})
 // No commands yet.
 // Connect nodes (Start → … → End) to generate ts-sdk code.
 // Tip: add a MoveCall or SplitCoins node and wire inputs/outputs.
@@ -36,6 +56,7 @@ const tx = new Transaction();
 
 export { tx };
 `;
+};
 
 type CodePipProps = {
   code: string;

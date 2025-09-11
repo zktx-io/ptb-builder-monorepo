@@ -1,11 +1,9 @@
 // src/ui/PTBFlow.tsx
 // -----------------------------------------------------------------------------
 // RF is the *source of truth* while the editor is open.
-// We inject PTB → RF only when provider.graphEpoch changes.
-// Programmatic rehydrate is muted from onChange handlers to avoid feedback.
-// We also avoid redundant setRF by comparing edge signatures.
-// Auto layout: apply positions only (do not replace nodes).
-// After offscreen spawn, we enable fitView only once layout is ready to avoid flicker.
+// We rehydrate PTB → RF only when provider.graphEpoch changes.
+// RF mutations persist to PTB *after commit* in a single effect (no debounce).
+// Only text inputs inside node UI are debounced (not handled here).
 // -----------------------------------------------------------------------------
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,8 +20,14 @@ import {
   type Edge as RFEdge,
   type Node as RFNode,
   useReactFlow,
+  useViewport,
 } from '@xyflow/react';
-import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
+import type {
+  Connection,
+  EdgeChange,
+  NodeChange,
+  Viewport,
+} from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
 import './styles/tailwind.css';
@@ -60,6 +64,7 @@ import {
 import {
   parseHandleTypeSuffix,
   type Port,
+  PTBGraph,
   type PTBNode,
   type PTBType,
   type VariableNode,
@@ -68,7 +73,7 @@ import { buildCommandPorts } from '../ptb/registry';
 import { toColorMode } from '../types';
 import { StatusBar } from './StatusBar';
 
-const DEBOUNCE_MS = 250;
+// ===== pure helpers (file-scope) =============================================
 
 /** DFS loop check for flow edges (prevents cycles). */
 function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
@@ -190,10 +195,19 @@ function edgesSig(edges: RFEdge<RFEdgeData>[]): string {
   return JSON.stringify(arr);
 }
 
+/** Defer a state change to a microtask (or macrotask fallback). */
+function deferSetState(fn: () => void) {
+  if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+  else setTimeout(fn, 0);
+}
+
+// ===== component =============================================================
+
 export function PTBFlow() {
   const {
     graph,
     setGraph,
+    setViewExternal,
     readOnly,
     theme,
     chain,
@@ -213,126 +227,131 @@ export function PTBFlow() {
     setIdGenerator(createUniqueId);
   }, [createUniqueId]);
 
-  /** Generated source (updated on connect / node change). */
+  // Code preview
   const [code, setCode] = useState<string>(EMPTY_CODE(chain));
 
-  /** Flow animation flag: true iff a Start → End path exists. */
+  // Flow state flags
   const [flowActive, setFlowActive] = useState(false);
-
-  /** Fit control: enable fitView only after positions are laid out. */
   const [layoutReady, setLayoutReady] = useState(false);
 
-  // ----- Node-level patchers injected into RF nodes --------------------------
+  // Persisted PTB snapshot ref (for RF→PTB diffs)
+  const baseGraphRef = useRef(graph);
+
+  // Rehydrate guard
+  const rehydratingRef = useRef(false);
+  const lastEpochRef = useRef<number>(-1);
+
+  // Patch callback refs (avoid TDZ during initial render)
+  const patchUIRef = useRef<
+    (id: string, patch: Record<string, unknown>) => void
+  >(() => {});
+  const patchVarRef = useRef<
+    (id: string, patch: Partial<VariableNode>) => void
+  >(() => {});
+  const loadTypeRef = useRef<(typeTag: string) => void>(() => {});
+
+  /** Optional loader used by nodes (no-op here). */
+  const onLoadTypeTag = useCallback((_typeTag: string) => {}, []);
+
+  /** Inject callbacks into every RF node's data payload (via refs). */
+  const withCallbacks = useCallback(
+    (nodes: RFNode<RFNodeData>[]) =>
+      nodes.map((n) => ({
+        ...n,
+        data: {
+          ...(n.data || {}),
+          onPatchUI: (id: string, patch: Record<string, unknown>) =>
+            patchUIRef.current(id, patch),
+          onPatchVar: (id: string, patch: Partial<VariableNode>) =>
+            patchVarRef.current(id, patch),
+          onLoadTypeTag: (typeTag: string) => loadTypeRef.current(typeTag),
+        },
+      })),
+    [],
+  );
+
+  // ----- Node-level patchers (deferred to avoid setState in render) -----------
 
   /** Patch Command node UI params and keep ports consistent with UI. */
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
-      setRF((prev) => {
-        // 1) Build a fresh PTB snapshot from current RF
-        const currentPTB = rfToPTB(
-          prev.rfNodes,
-          prev.rfEdges,
-          baseGraphRef.current,
-        );
+      deferSetState(() => {
+        setRF((prev) => {
+          const currentPTB = rfToPTB(
+            prev.rfNodes,
+            prev.rfEdges,
+            baseGraphRef.current,
+          );
+          const node = currentPTB.nodes.find((n) => n.id === nodeId);
+          if (!node || node.kind !== 'Command') return prev;
 
-        // 2) Locate the target Command node
-        const node = currentPTB.nodes.find((n) => n.id === nodeId);
-        if (!node || node.kind !== 'Command') return prev;
+          const prevUI =
+            ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
+          const nextUI: Record<string, unknown> = { ...prevUI };
+          for (const k of Object.keys(patch)) {
+            const v = (patch as any)[k];
+            if (typeof v === 'undefined') delete nextUI[k];
+            else nextUI[k] = v;
+          }
+          node.params = { ...(node.params ?? {}), ui: nextUI };
+          node.ports = buildCommandPorts((node as any).command, nextUI as any);
 
-        // 3) Shallow-merge UI (delete keys when value is `undefined`)
-        const prevUI =
-          ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
-        const nextUI: Record<string, unknown> = { ...prevUI };
-        for (const k of Object.keys(patch)) {
-          const v = (patch as any)[k];
-          if (typeof v === 'undefined') delete nextUI[k];
-          else nextUI[k] = v;
-        }
-        node.params = { ...(node.params ?? {}), ui: nextUI };
+          const { nodes: freshRFNodes, edges: freshRFEdges } =
+            ptbToRF(currentPTB);
+          const injected = withCallbacks(freshRFNodes);
+          let pruned = pruneDanglingEdges(injected, freshRFEdges);
+          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
-        // 4) Re-materialize ports based on the updated UI
-        node.ports = buildCommandPorts((node as any).command, nextUI as any);
-
-        // 5) Convert back to RF, inject callbacks, and prune invalid edges
-        const { nodes: freshRFNodes, edges: freshRFEdges } =
-          ptbToRF(currentPTB);
-        const injected = withCallbacks(
-          freshRFNodes,
-          onPatchUI,
-          onPatchVar,
-          onLoadTypeTag,
-        );
-        let pruned = pruneDanglingEdges(injected, freshRFEdges);
-        pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
-
-        // 6) Update flow-active flag and commit state
-        setFlowActive(hasStartToEnd(injected, pruned));
-        return { rfNodes: injected, rfEdges: pruned };
+          setFlowActive(hasStartToEnd(injected, pruned));
+          return { rfNodes: injected, rfEdges: pruned };
+        });
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [withCallbacks],
   );
 
   /** Patch a Variable node (value and/or varType). */
   const onPatchVar = useCallback(
     (nodeId: string, patch: Partial<VariableNode>) => {
-      setRF((prev) => {
-        const currentPTB = rfToPTB(
-          prev.rfNodes,
-          prev.rfEdges,
-          baseGraphRef.current,
-        );
-        const node = currentPTB.nodes.find((n) => n.id === nodeId);
-        if (!node || node.kind !== 'Variable') return prev;
+      deferSetState(() => {
+        setRF((prev) => {
+          const currentPTB = rfToPTB(
+            prev.rfNodes,
+            prev.rfEdges,
+            baseGraphRef.current,
+          );
+          const node = currentPTB.nodes.find((n) => n.id === nodeId);
+          if (!node || node.kind !== 'Variable') return prev;
 
-        const v = node as VariableNode;
-        if ('value' in patch) (v as any).value = (patch as any).value;
-        if ('varType' in patch && patch.varType !== undefined) {
-          v.varType = patch.varType;
-        }
+          const v = node as VariableNode;
+          if ('value' in patch) (v as any).value = (patch as any).value;
+          if ('varType' in patch && patch.varType !== undefined)
+            v.varType = patch.varType;
 
-        const { nodes: freshRFNodes, edges: freshRFEdges } =
-          ptbToRF(currentPTB);
-        const injected = withCallbacks(
-          freshRFNodes,
-          onPatchUI,
-          onPatchVar,
-          onLoadTypeTag,
-        );
-        let pruned = pruneDanglingEdges(injected, freshRFEdges);
-        pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+          const { nodes: freshRFNodes, edges: freshRFEdges } =
+            ptbToRF(currentPTB);
+          const injected = withCallbacks(freshRFNodes);
+          let pruned = pruneDanglingEdges(injected, freshRFEdges);
+          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
-        setFlowActive(hasStartToEnd(injected, pruned));
-        return { rfNodes: injected, rfEdges: pruned };
+          setFlowActive(hasStartToEnd(injected, pruned));
+          return { rfNodes: injected, rfEdges: pruned };
+        });
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [withCallbacks],
   );
 
-  /** Optional type loader for object.typeTag — kept as a no-op here. */
-  const onLoadTypeTag = useCallback((_typeTag: string) => {}, []);
-
-  /** Inject callbacks into every RF node's data payload. */
-  const withCallbacks = useCallback(
-    (
-      nodes: RFNode<RFNodeData>[],
-      patchUI: typeof onPatchUI,
-      patchVar: typeof onPatchVar,
-      loadType: (typeTag: string) => void,
-    ) =>
-      nodes.map((n) => ({
-        ...n,
-        data: {
-          ...(n.data || {}),
-          onPatchUI: patchUI,
-          onPatchVar: patchVar,
-          onLoadTypeTag: loadType,
-        },
-      })),
-    [],
-  );
+  // Keep refs pointing to latest patchers/loaders
+  useEffect(() => {
+    patchUIRef.current = onPatchUI;
+  }, [onPatchUI]);
+  useEffect(() => {
+    patchVarRef.current = onPatchVar;
+  }, [onPatchVar]);
+  useEffect(() => {
+    loadTypeRef.current = onLoadTypeTag;
+  }, [onLoadTypeTag]);
 
   // ----- RF state (authoritative while editing) -------------------------------
 
@@ -341,26 +360,20 @@ export function PTBFlow() {
     rfEdges: RFEdge<RFEdgeData>[];
   }>(() => {
     const { nodes, edges } = ptbToRF(graph);
-    const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
+    const injected = withCallbacks(nodes);
     const pruned = pruneDanglingEdges(injected, edges);
     return { rfNodes: injected, rfEdges: pruned };
   });
 
-  /** Keep the last *persisted* PTB snapshot to help RF → PTB diffs. */
-  const baseGraphRef = useRef(graph);
+  // ----- Rehydrate from provider on epoch bump --------------------------------
 
-  /** Mute onChange handlers while rehydrating from provider. */
-  const rehydratingRef = useRef(false);
-
-  /** Rehydrate RF only when the persisted PTB identity (epoch) changes. */
-  const lastEpochRef = useRef<number>(-1);
   useEffect(() => {
     if (graphEpoch === lastEpochRef.current) return;
     lastEpochRef.current = graphEpoch;
 
     rehydratingRef.current = true;
     const { nodes, edges } = ptbToRF(graph);
-    const injected = withCallbacks(nodes, onPatchUI, onPatchVar, onLoadTypeTag);
+    const injected = withCallbacks(nodes);
     let pruned = pruneDanglingEdges(injected, edges);
     pruned = pruneIncompatibleIOEdges(graph.nodes, pruned);
 
@@ -375,9 +388,10 @@ export function PTBFlow() {
     requestAnimationFrame(() => {
       rehydratingRef.current = false;
     });
-  }, [graphEpoch, graph, onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks]);
+  }, [graphEpoch, graph, withCallbacks]);
 
-  /** Safety net: whenever rfNodes change, re-prune edges (ports may change). */
+  // ----- Safety net: re-prune edges whenever nodes change --------------------
+
   useEffect(() => {
     setRF((prev) => {
       let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
@@ -387,6 +401,27 @@ export function PTBFlow() {
       return { ...prev, rfEdges: pruned };
     });
   }, [rfNodes]);
+
+  // ----- Persist RF → PTB after commit (single place) ------------------------
+
+  const isDraggingRef = useRef(false);
+
+  useEffect(() => {
+    if (rehydratingRef.current) return;
+    if (isDraggingRef.current) return;
+    deferSetState(() => {
+      const nextPTB = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
+      setGraph(nextPTB);
+      baseGraphRef.current = nextPTB;
+    });
+  }, [rfNodes, rfEdges, setGraph]);
+
+  const onMoveEnd = useCallback(
+    (_: any, vp: Viewport) => {
+      setViewExternal(vp);
+    },
+    [setViewExternal],
+  );
 
   // ----- Context menu ---------------------------------------------------------
 
@@ -431,17 +466,12 @@ export function PTBFlow() {
     (node: PTBNode) => {
       const rfNode = ptbNodeToRF(node);
       setRF((prev) => {
-        const nodes = withCallbacks(
-          [...prev.rfNodes, rfNode],
-          onPatchUI,
-          onPatchVar,
-          onLoadTypeTag,
-        );
+        const nodes = withCallbacks([...prev.rfNodes, rfNode]);
         const edges = pruneDanglingEdges(nodes, prev.rfEdges);
         return { rfNodes: nodes, rfEdges: edges };
       });
     },
-    [onPatchUI, onPatchVar, onLoadTypeTag, withCallbacks],
+    [withCallbacks],
   );
 
   const deleteNode = useCallback((id: string) => {
@@ -467,19 +497,26 @@ export function PTBFlow() {
 
   // ----- RF change handlers ---------------------------------------------------
 
-  const recomputeFlowActive = useCallback(
-    (nodes: RFNode[], edges: RFEdge[]) => {
-      setFlowActive(hasStartToEnd(nodes, edges));
-    },
-    [],
-  );
-
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       // During programmatic rehydrate, ignore RF's callbacks to avoid loop.
       if (rehydratingRef.current) return;
 
-      // In read-only, allow only position/selection/dimensions updates.
+      // During dragging, defer updates until drag ends.
+      const hasDragOn = changes.some(
+        (c) => c.type === 'position' && (c as any).dragging === true,
+      );
+      const hasDragOff = changes.some(
+        (c) => c.type === 'position' && (c as any).dragging === false,
+      );
+
+      if (hasDragOn) {
+        isDraggingRef.current = true;
+      }
+      if (!hasDragOn && hasDragOff) {
+        isDraggingRef.current = false;
+      }
+
       const effective = readOnly
         ? changes.filter(
             (ch) =>
@@ -517,11 +554,11 @@ export function PTBFlow() {
           return prev;
         }
 
-        recomputeFlowActive(nextNodes, nextEdges);
+        setFlowActive(hasStartToEnd(nextNodes, nextEdges));
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
-    [readOnly, recomputeFlowActive],
+    [readOnly],
   );
 
   const onEdgesChange = useCallback(
@@ -537,11 +574,11 @@ export function PTBFlow() {
         const nextEdges = applyEdgeChanges(effective, prev.rfEdges);
         const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
         if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
-        recomputeFlowActive(prev.rfNodes, pruned);
+        setFlowActive(hasStartToEnd(prev.rfNodes, pruned));
         return { ...prev, rfEdges: pruned };
       });
     },
-    [readOnly, recomputeFlowActive],
+    [readOnly],
   );
 
   /** Connection rules (flow & IO). */
@@ -622,25 +659,11 @@ export function PTBFlow() {
     [readOnly, createUniqueId],
   );
 
-  // ----- Debounced persist: RF → PTB -----------------------------------------
-
-  useEffect(() => {
-    let t = window.setTimeout(() => {
-      const next = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      setGraph(next); // persist snapshot
-      baseGraphRef.current = next; // advance baseline (prevents false rehydrate)
-      t = undefined as any;
-    }, DEBOUNCE_MS);
-
-    return () => {
-      if (t) window.clearTimeout(t);
-    };
-  }, [rfNodes, rfEdges, setGraph]);
-
   // ----- Code preview generation ---------------------------------------------
 
   useEffect(() => {
     try {
+      if (!chain) return;
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
       const src = buildTsSdkCode(ptb, chain, execOpts);
       setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
@@ -650,10 +673,12 @@ export function PTBFlow() {
   }, [rfNodes, rfEdges, chain, execOpts]);
 
   // ----- Execute --------------------------------------------------------------
+
   const [isRunning, setIsRunning] = useState(false);
 
   const onDryRun = useCallback(async () => {
     try {
+      if (!chain) return;
       setIsRunning(true);
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
       const tx = buildTransaction(ptb, chain, execOpts);
@@ -667,6 +692,7 @@ export function PTBFlow() {
 
   const onExecute = useCallback(async () => {
     try {
+      if (!chain) return;
       setIsRunning(true);
       const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
       const tx = buildTransaction(ptb, chain, execOpts);
@@ -679,9 +705,8 @@ export function PTBFlow() {
   }, [rfNodes, rfEdges, chain, execOpts, runTx, toast]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition, setViewport } = useReactFlow();
   const retryFlag = useRef(false);
-
   // eslint-disable-next-line no-restricted-syntax
   const containerRef = useRef<HTMLDivElement | null>(null);
   const getViewportCenterFlow = useCallback(() => {
@@ -693,7 +718,7 @@ export function PTBFlow() {
   }, [screenToFlowPosition]);
 
   const onAutoLayout = useCallback(async () => {
-    // Guard 1: if rehydrating, defer
+    // Guard 1: rehydrate in progress → defer
     if (rehydratingRef.current) {
       if (!retryFlag.current) {
         retryFlag.current = true;
@@ -705,7 +730,7 @@ export function PTBFlow() {
       return;
     }
 
-    // Guard 2: if nodes are not ready, defer up to a few frames
+    // Guard 2: nodes not ready yet → retry a few frames
     if (!rfNodes || rfNodes.length === 0) {
       let tries = 0;
       const retry = () => {
@@ -723,7 +748,7 @@ export function PTBFlow() {
       targetCenter: getViewportCenterFlow(),
     });
 
-    // If still empty (edge-case), do one fallback retry next frame
+    // Fallback: retry next frame if layout returned empty
     if (!positions || Object.keys(positions).length === 0) {
       requestAnimationFrame(async () => {
         const pos2: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
@@ -790,11 +815,26 @@ export function PTBFlow() {
       }
       setLayoutReady(true);
     });
-  }, [rfNodes, rfEdges, fitView, getViewportCenterFlow]);
+  }, [rfNodes, rfEdges, getViewportCenterFlow, fitView]);
+
+  const fitToContent = useCallback(
+    (opt: {
+      view?: { x: number; y: number; zoom: number };
+      autoLayout?: boolean;
+    }) => {
+      if (opt.view) {
+        setViewport(opt.view);
+      }
+      if (opt.autoLayout) {
+        onAutoLayout();
+      }
+    },
+    [onAutoLayout, setViewport],
+  );
 
   useEffect(() => {
-    registerFlowActions({ autoLayoutAndFit: onAutoLayout });
-  }, [registerFlowActions, onAutoLayout]);
+    registerFlowActions({ fitToContent });
+  }, [registerFlowActions, fitToContent]);
 
   const onAssetPick = useCallback(
     (obj: { objectId: string; typeTag: string }) => {
@@ -841,6 +881,7 @@ export function PTBFlow() {
         onConnect={onConnect}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onMoveEnd={onMoveEnd}
       >
         {/* Background grid layers */}
         <Background
@@ -881,7 +922,7 @@ export function PTBFlow() {
               language="typescript"
               title="ts-sdk preview"
               emptyText={EMPTY_CODE(chain)}
-              canRunning={!readOnly && flowActive}
+              canRunning={!!chain && !readOnly && flowActive}
               isRunning={isRunning}
               onDryRun={onDryRun}
               onExecute={onExecute}
