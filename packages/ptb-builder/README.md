@@ -154,12 +154,8 @@ export const Editor = () => {
   };
 
   const handleChancel = () => {
-    // Reset with an empty doc bound to current network
-    loadFromDoc({
-      version: PTB_VERSION,
-      chain: `sui:${network}` as SuiChain,
-      graph: { nodes: [], edges: [] },
-    });
+    // Reset with a current network
+    loadFromDoc(`sui:${network}` as SuiChain);
   };
 
   return (
