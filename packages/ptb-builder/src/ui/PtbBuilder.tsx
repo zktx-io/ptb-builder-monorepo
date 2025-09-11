@@ -55,7 +55,7 @@ export type PTBBuilderProps = {
 
 export type PublicPTBApi = {
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
-  loadFromDoc: (doc: PTBDoc) => void;
+  loadFromDoc: (data: PTBDoc | Chain) => void;
   loadFromOnChainTx: (chain: Chain, digest: string) => Promise<void>;
   setTheme: (t: Theme) => void;
 };

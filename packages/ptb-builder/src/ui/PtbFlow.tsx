@@ -20,7 +20,6 @@ import {
   type Edge as RFEdge,
   type Node as RFNode,
   useReactFlow,
-  useViewport,
 } from '@xyflow/react';
 import type {
   Connection,
@@ -705,10 +704,12 @@ export function PTBFlow() {
   }, [rfNodes, rfEdges, chain, execOpts, runTx, toast]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
-  const { fitView, screenToFlowPosition, setViewport } = useReactFlow();
+  const { fitView, screenToFlowPosition, setViewport, getViewport } =
+    useReactFlow();
   const retryFlag = useRef(false);
   // eslint-disable-next-line no-restricted-syntax
   const containerRef = useRef<HTMLDivElement | null>(null);
+
   const getViewportCenterFlow = useCallback(() => {
     const el = containerRef.current;
     if (!el) return { x: 0, y: 0 };
@@ -817,24 +818,24 @@ export function PTBFlow() {
     });
   }, [rfNodes, rfEdges, getViewportCenterFlow, fitView]);
 
-  const fitToContent = useCallback(
-    (opt: {
-      view?: { x: number; y: number; zoom: number };
-      autoLayout?: boolean;
-    }) => {
-      if (opt.view) {
-        setViewport(opt.view);
-      }
-      if (opt.autoLayout) {
-        onAutoLayout();
+  const fitToContent = useCallback(() => {
+    onAutoLayout();
+  }, [onAutoLayout]);
+
+  const updateViewport = useCallback(
+    (v?: { x: number; y: number; zoom: number }) => {
+      if (v) {
+        setViewport(v);
+      } else {
+        setViewExternal(getViewport());
       }
     },
-    [onAutoLayout, setViewport],
+    [getViewport, setViewExternal, setViewport],
   );
 
   useEffect(() => {
-    registerFlowActions({ fitToContent });
-  }, [registerFlowActions, fitToContent]);
+    registerFlowActions({ fitToContent, updateViewport });
+  }, [registerFlowActions, fitToContent, updateViewport]);
 
   const onAssetPick = useCallback(
     (obj: { objectId: string; typeTag: string }) => {

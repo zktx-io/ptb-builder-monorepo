@@ -105,7 +105,7 @@ export type PtbContextValue = {
   // Loaders
   loadTxStatus: TxStatus | undefined;
   loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
-  loadFromDoc: (doc: PTBDoc) => void;
+  loadFromDoc: (data: PTBDoc | Chain) => void;
 
   // Persistence
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
@@ -127,10 +127,8 @@ export type PtbContextValue = {
   setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
 
   registerFlowActions: (a: {
-    fitToContent?: (opt: {
-      view?: { x: number; y: number; zoom: number };
-      autoLayout?: boolean;
-    }) => void;
+    fitToContent?: () => void;
+    updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
   }) => void;
 
   graphEpoch: number;
@@ -258,18 +256,14 @@ export function PtbProvider({
 
   // Flow actions
   const flowActionsRef = React.useRef<{
-    fitToContent?: (opt: {
-      view?: { x: number; y: number; zoom: number };
-      autoLayout?: boolean;
-    }) => void;
+    fitToContent?: () => void;
+    updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
   }>({});
 
   const registerFlowActions = React.useCallback(
     (a: {
-      fitToContent?: (opt: {
-        view?: { x: number; y: number; zoom: number };
-        autoLayout?: boolean;
-      }) => void;
+      fitToContent?: () => void;
+      updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
     }) => {
       flowActionsRef.current = { ...flowActionsRef.current, ...a };
     },
@@ -479,11 +473,16 @@ export function PtbProvider({
 
   // ---- PTBDoc: immediate emit on any change ---------------------------------
 
+  const canUpdate = useRef(false);
   const onDocChangeRef = useRef(onDocChange);
   onDocChangeRef.current = onDocChange;
 
   useLayoutEffect(() => {
     if (!onDocChangeRef.current || !activeChain || !view) return;
+    if (!canUpdate.current) {
+      canUpdate.current = true;
+      return;
+    }
     try {
       const doc = buildDoc({
         chain: activeChain,
@@ -754,7 +753,8 @@ export function PtbProvider({
 
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            flowActionsRef.current.fitToContent?.({ autoLayout: true });
+            flowActionsRef.current.fitToContent?.();
+            canUpdate.current = true;
           });
         });
       } catch (e: any) {
@@ -770,27 +770,34 @@ export function PtbProvider({
   // ---- document loader (editor) ---------------------------------------------
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
-    (doc) => {
-      setActiveChain(doc.chain);
-      setModules(doc.modules || {});
-      setObjects(doc.objects || {});
-
-      // Replace graph (seed if invalid/empty)
-      const g = doc.graph;
-      const valid =
-        g && Array.isArray(g.nodes) && Array.isArray(g.edges) && g.nodes.length;
-      const base = valid ? g : seedDefaultGraph();
-      setView(doc.view || { x: 0, y: 0, zoom: 1 });
-      replaceGraphImmediate(base);
-      setReadOnly(false);
-
-      setCodePipOpenTick((t) => t + 1);
-
-      requestAnimationFrame(() => {
+    (value) => {
+      if (typeof value !== 'string') {
+        setActiveChain(value.chain);
+        setModules(value.modules);
+        setObjects(value.objects);
+        replaceGraphImmediate(value.graph);
+        setReadOnly(false);
+        setCodePipOpenTick((t) => t + 1);
         requestAnimationFrame(() => {
-          flowActionsRef.current.fitToContent?.({ view: doc.view });
+          requestAnimationFrame(() => {
+            flowActionsRef.current.updateViewport?.(value.view);
+            canUpdate.current = false;
+          });
         });
-      });
+      } else {
+        setActiveChain(value);
+        setModules({});
+        setObjects({});
+        replaceGraphImmediate(seedDefaultGraph());
+        setReadOnly(false);
+        setCodePipOpenTick((t) => t + 1);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flowActionsRef.current.updateViewport?.();
+            canUpdate.current = true;
+          });
+        });
+      }
     },
     [replaceGraphImmediate],
   );
