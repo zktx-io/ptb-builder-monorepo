@@ -1,5 +1,5 @@
 import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
-import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
+import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 
 import { DragAndDrop } from '../components/DragAndDrop';
 import { SuiChain, SuiNetwork } from '../network';
@@ -25,11 +25,7 @@ export const Editor = () => {
   };
 
   const handleChancel = () => {
-    loadFromDoc({
-      version: PTB_VERSION,
-      chain: `sui:${network}` as SuiChain,
-      graph: { nodes: [], edges: [] },
-    });
+    loadFromDoc(`sui:${network}` as SuiChain);
   };
 
   return (
