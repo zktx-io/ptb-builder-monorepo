@@ -68,10 +68,7 @@ export function makeCommandNode(
   const key = countKeyOf(kind);
   const def = countDefaultOf(kind);
   const seededUI: CommandUIParams | undefined = (() => {
-    // 1) starting from caller-provided ui (if any)
     const base = opts?.ui ? { ...opts.ui } : undefined;
-
-    // 2) if this command has a countKey and caller didn't set it, seed default
     if (key && typeof def === 'number') {
       if (!base || typeof (base as any)[key] !== 'number') {
         return { ...(base ?? {}), [key]: def } as CommandUIParams;

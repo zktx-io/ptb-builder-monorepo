@@ -98,13 +98,13 @@ const mergeCoinsSpec: CommandSpec = {
 /** TransferObjects:
  *  inputs :
  *    - in_recipient: address (single)
- *    - in_object_0..N-1: object (expanded, count = objectsCount, default 1)
+ *    - in_object_0..N-1: object (expanded, count = objectsCount, default 2)
  *  outputs: none
  */
 const transferObjectsSpec: CommandSpec = {
   label: 'TransferObjects',
   buildIO(ui) {
-    const count = Math.max(1, Math.floor(ui?.objectsCount ?? 1));
+    const count = Math.max(1, Math.floor(ui?.objectsCount ?? 2));
     const ports: Port[] = [];
 
     // Recipient first (UX)
@@ -316,7 +316,7 @@ export function countDefaultOf(cmdKind?: string): number | undefined {
     case 'mergeCoins':
       return 2;
     case 'transferObjects':
-      return 1;
+      return 2;
     case 'makeMoveVec':
       return 2;
     default:

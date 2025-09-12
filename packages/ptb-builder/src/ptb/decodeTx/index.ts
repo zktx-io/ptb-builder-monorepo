@@ -166,7 +166,6 @@ function makeVarByType(
     if (t.typeTag === '0x2::clock::Clock') {
       return makeClockObject();
     }
-    // use concrete typeTag if present to get "object<typeTag>" label
     const v = makeObject(t.typeTag, { name: opts.name, value: opts.value });
     return v;
   }
@@ -199,7 +198,6 @@ function makeVarByType(
         case 'string':
           return makeStringVector({ name: opts.name, value: opts.value });
         case 'number':
-          // width information is not preserved in inferPureType; default to number vector
           return makeNumberVector({ name: opts.name, value: opts.value });
         case 'id':
           return makeIdVector({ name: opts.name, value: opts.value });
@@ -218,9 +216,7 @@ const nodeMap = new Map<string, PTBNode>();
 
 // Spawn offscreen to prevent initial viewport flicker; layout will reposition.
 function pushNode(graph: PTBGraph, n: PTBNode) {
-  // Force-spawn offscreen so initial render does not flicker in the viewport.
   n.position = { ...OFFSCREEN_POS };
-
   graph.nodes.push(n);
   nodeMap.set(n.id, n);
 }
@@ -267,21 +263,13 @@ function ensureFlowPorts(node: PTBNode) {
   (node as any).ports = list;
 }
 
-/** Command constructor (ports via registry). */
-function makeCommand(kind: string, ui?: Record<string, unknown>): PTBNode {
-  const node = makeCommandNode(kind as any, { ui: ui as CommandUIParams });
-  // Registry already materializes ports; enforce flow ports defensively.
-  ensureFlowPorts(node as any);
-  return node as any as PTBNode;
-}
-
 /** (nodeId, portId) → RF handle id (includes optional serialized type suffix). */
 function handleIdBy(nodeId: string, portId: string): string {
   const n = nodeMap.get(nodeId);
   const p = ((n as any)?.ports as Port[] | undefined)?.find(
     (pp) => pp.id === portId,
   );
-  return p ? buildHandleId(p) : portId; // fallback: raw id (best-effort)
+  return p ? buildHandleId(p) : portId;
 }
 
 /** Push a FLOW edge (prev → next). Uses flow handle ids directly. */
@@ -394,7 +382,7 @@ export function decodeTx(
   pushNode(graph, gasVar);
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
-  // Inputs → Variable nodes (use embed.objects to enrich object types)
+  // Inputs → Variable nodes
   (prog.inputs ?? []).forEach((arg, i) => {
     let t: PTBType;
     let init: unknown;
@@ -417,11 +405,9 @@ export function decodeTx(
       (node as any).id = `input-${i}`;
     }
     const existing = graph.nodes.find((n) => n.id === (node as any).id);
-    if (!existing) {
-      pushNode(graph, node);
-    } else {
-      nodeMap.set(existing.id, existing);
-    }
+    if (!existing) pushNode(graph, node);
+    else nodeMap.set(existing.id, existing);
+
     vt.set(`in#${i}`, { nodeId: (existing ?? node).id, portId: VAR_OUT, t });
   });
 
@@ -437,10 +423,14 @@ export function decodeTx(
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
-      const node = makeCommand('splitCoins', {
-        amountsCount: Math.max(1, amounts.length || 2),
+      // unify with factories: use makeCommandNode with ui seed
+      const node = makeCommandNode('splitCoins', {
+        ui: {
+          amountsCount: Math.max(1, amounts.length || 1),
+        } as CommandUIParams,
       });
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -457,20 +447,16 @@ export function decodeTx(
         if (inCoin) pushIoEdgeToPort(graph, coinRef, node.id, inCoin, 'coin');
       }
 
-      // amounts: respect original form strictly
+      // amounts
       if (amounts.length > 0) {
         const isSingleVector =
           amounts.length === 1 && (amounts[0].t as any)?.kind === 'vector';
 
         if (isSingleVector) {
-          // Single vector<u64> input → connect to the *first expanded scalar* port.
-          // NOTE: Registry has no 'in_amounts' vector port by policy.
           const firstAmount =
             findInPortWithFallback(node, 'in_amount_0', 'in_amount_', 0) ||
-            // last resort: any first io/in
             findInPortWithFallback(node, 'in_amount_0');
           if (firstAmount) {
-            // Tag clarifies that a vector is being fed into the first expanded slot
             pushIoEdgeToPort(
               graph,
               amounts[0],
@@ -480,7 +466,6 @@ export function decodeTx(
             );
           }
         } else {
-          // Multiple scalars → connect to expanded ports only (no packing)
           amounts.forEach((s, i) => {
             const inI = findInPortWithFallback(
               node,
@@ -515,10 +500,13 @@ export function decodeTx(
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
-      const node = makeCommand('mergeCoins', {
-        sourcesCount: Math.max(1, sources.length || 1),
+      const node = makeCommandNode('mergeCoins', {
+        ui: {
+          sourcesCount: Math.max(1, sources.length || 1),
+        } as CommandUIParams,
       });
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -556,10 +544,11 @@ export function decodeTx(
         .filter(Boolean) as SourceRef[];
       const recp = vt.get(vkey(recipientArg)!);
 
-      const node = makeCommand('transferObjects', {
-        objectsCount: Math.max(1, objs.length || 1),
+      const node = makeCommandNode('transferObjects', {
+        ui: { objectsCount: Math.max(1, objs.length || 1) } as CommandUIParams,
       });
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -591,19 +580,17 @@ export function decodeTx(
     }
 
     // ---- makeMoveVec --------------------------------------------------------
-    // elemsCount comes from actual element sources length (fallback 1).
-    // Result type uses the first source's type as element type (fallback object).
-    // NOTE: Model keeps vector<object> for decode; UI creation may disallow it.
     if ('MakeMoveVec' in tx) {
       const [_maybeTp, elems] = tx.MakeMoveVec as [any, any[]];
       const srcs = (elems ?? [])
         .map((a) => vt.get(vkey(a)!))
         .filter(Boolean) as SourceRef[];
 
-      const node = makeCommand('makeMoveVec', {
-        elemsCount: Math.max(1, srcs.length || 1),
+      const node = makeCommandNode('makeMoveVec', {
+        ui: { elemsCount: Math.max(1, srcs.length || 1) } as CommandUIParams,
       });
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -684,7 +671,7 @@ export function decodeTx(
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
 
-      // (Optional) Inline type arguments as string variables to in_targ_*
+      // (Optional) Inline type arguments to in_targ_*
       const tpPorts = ((node as any)?.ports as Port[] | undefined)?.filter(
         (p) => p.id.startsWith('in_targ_'),
       );
@@ -719,7 +706,7 @@ export function decodeTx(
         if (tgt) pushIoEdgeToPort(graph, s, node.id, tgt, `arg_${i}`);
       });
 
-      // Register results as vt keys (use out_ret_*; ensure at least one)
+      // Register results (use out_ret_*)
       const outs = outPortsWithPrefix(node, 'out_ret_');
       const outCount = Math.max(outs.length || 0, 1);
       for (let i = 0; i < outCount; i++) {
@@ -731,8 +718,9 @@ export function decodeTx(
 
     // ---- publish / upgrade --------------------------------------------------
     if ('Publish' in tx) {
-      const node = makeCommand('publish');
+      const node = makeCommandNode('publish');
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -740,8 +728,9 @@ export function decodeTx(
     }
 
     if ('Upgrade' in tx) {
-      const node = makeCommand('upgrade');
+      const node = makeCommandNode('upgrade');
       (node as any).id = `cmd-${idx}`;
+      ensureFlowPorts(node as any);
       pushNode(graph, node);
       pushFlow(graph, prevCmdId, node.id);
       prevCmdId = node.id;
@@ -754,7 +743,7 @@ export function decodeTx(
     });
   });
 
-  // Post-pass: upgrade object type from embed.objects (label is untouched)
+  // Post-pass: specialize object type from embed.objects
   if (objects) {
     for (const n of graph.nodes) {
       if (n.kind !== 'Variable') continue;
@@ -764,7 +753,6 @@ export function decodeTx(
       if (typeof val === 'string' && val.startsWith('0x')) {
         const meta = objects[val];
         if (meta?.typeTag) {
-          // Only specialize type; keep label type-only ("object")
           if (!v.varType || v.varType.kind !== 'object' || !v.varType.typeTag) {
             v.varType = O(meta.typeTag);
           }
