@@ -1,11 +1,16 @@
 // src/codegen/buildTsSdkCode.ts
-
-// Auto-generated TS code emitter for PTB Program.
-// - Emits raw numeric and argument literals without tx.pure.* wrapping.
-// - The runtime builder (buildTransaction) is responsible for wrapping u64-like inputs.
+// -----------------------------------------------------------------------------
+// Emit TypeScript code mirroring buildTransaction 1:1.
+// - ONLY moveCall.arguments are rendered with pure(...) according to ParamKind.
+// - splitCoins/mergeCoins/transferObjects/makeMoveVec are raw.
+// - splitCoins outputs destructured into N names.
+// - moveCall returns: 0 -> no binding, 1 -> const x = call, N -> const [a,b]=call
+// - {kind:'undef'} rendered as `undefined`.
+// -----------------------------------------------------------------------------
 
 import { PTBGraph } from '../ptb/graph/types';
 import { Chain } from '../types';
+import { renderMoveArgCode } from './argPolicy';
 import { preprocess } from './preprocess';
 import { ExecOptions, Program, PValue } from './types';
 
@@ -28,27 +33,28 @@ class W {
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-function renderValue(v: PValue): string {
-  // treat 'myAddress' / 'sender' as identifiers (no quotes)
-  const isSentinel = (s: string) => s === 'myAddress' || s === 'sender';
-
+/** Render PValue for non-serialized contexts (raw). */
+function renderRawValue(v: PValue): string {
   switch (v.kind) {
+    case 'undef':
+      return 'undefined';
+    case 'ref':
+      return v.name;
     case 'scalar': {
-      if (typeof v.value === 'string') {
-        return isSentinel(v.value) ? v.value : `'${v.value}'`;
-      }
+      if (typeof v.value === 'string') return `'${esc(v.value)}'`;
       return String(v.value);
     }
     case 'move_numeric':
       return String(v.value);
-    case 'object':
-      if (v.special)
-        return v.special === 'gas' ? 'tx.gas' : `tx.object.${v.special}`;
-      return `tx.object('${v.id ?? ''}')`;
+    case 'object': {
+      if (v.special === 'gas') return 'tx.gas';
+      if (v.special === 'system') return 'tx.object.system';
+      if (v.special === 'clock') return 'tx.object.clock';
+      if (v.special === 'random') return 'tx.object.random';
+      return `tx.object('${esc(v.id ?? '')}')`;
+    }
     case 'vector':
-      return `[${v.items.map(renderValue).join(', ')}]`;
-    case 'ref':
-      return v.name;
+      return `[${v.items.map(renderRawValue).join(', ')}]`;
   }
 }
 
@@ -59,14 +65,10 @@ function generate(p: Program, opts?: ExecOptions): string {
 
   header.w(`// Auto-generated from PTB Program (chain: ${p.chain})`);
   header.w(`import { Transaction } from '@mysten/sui/transactions';`);
-  if (p.header.usedSuiTypeConst) header.w(`const SUI = '0x2::sui::SUI';`);
   header.w('');
 
-  if (opts?.myAddress) {
-    header.w(`const myAddress = '${opts.myAddress}';`);
-  } else if (p.header.usedMyAddress) {
-    header.w(`// const myAddress = '0x...';`);
-  }
+  if (opts?.myAddress) header.w(`const myAddress = '${opts.myAddress}';`);
+  else if (p.header.usedMyAddress) header.w(`// const myAddress = '0x...';`);
 
   header.w(`const tx = new Transaction();`);
   if (opts?.myAddress) header.w(`tx.setSenderIfNotSet(myAddress);`);
@@ -76,82 +78,82 @@ function generate(p: Program, opts?: ExecOptions): string {
         ? `// tx.setSenderIfNotSet(myAddress);`
         : `// tx.setSenderIfNotSet('<your-address>');`,
     );
+
   if (typeof opts?.gasBudget === 'number')
     header.w(`tx.setGasBudgetIfNotSet(${opts.gasBudget});`);
   else header.w(`// tx.setGasBudgetIfNotSet(500_000_000);`);
   header.w('');
 
-  // vars
-  for (const v of p.vars) vars.w(`const ${v.name} = ${renderValue(v.init)};`);
+  // Variables (raw)
+  for (const v of p.vars)
+    vars.w(`const ${v.name} = ${renderRawValue(v.init)};`);
   if (p.vars.length) vars.w('');
 
-  // ops
+  // Ops
   for (const op of p.ops) {
     switch (op.kind) {
       case 'splitCoins': {
-        const coin = renderValue(op.coin);
-        const amounts =
-          op.amounts.length === 1 && op.amounts[0].kind === 'vector'
-            ? renderValue(op.amounts[0])
-            : `[${op.amounts.map(renderValue).join(', ')}]`;
-        if (op.out.mode === 'destructure') {
+        const coin = renderRawValue(op.coin);
+        const list = `[${op.amounts.map(renderRawValue).join(', ')}]`;
+        if (op.out.names.length === 1) {
           body.w(
-            `const [${op.out.names.join(', ')}] = tx.splitCoins(${coin}, ${amounts});`,
+            `const [${op.out.names[0]}] = tx.splitCoins(${coin}, ${list});`,
           );
         } else {
-          body.w(`const ${op.out.name} = tx.splitCoins(${coin}, ${amounts});`);
+          body.w(
+            `const [${op.out.names.join(', ')}] = tx.splitCoins(${coin}, ${list});`,
+          );
         }
         break;
       }
+
       case 'mergeCoins': {
-        const dest = renderValue(op.destination);
-        const srcs =
-          op.sources.length === 1 && op.sources[0].kind === 'vector'
-            ? renderValue(op.sources[0])
-            : `[${op.sources.map(renderValue).join(', ')}]`;
+        const dest = renderRawValue(op.destination);
+        const srcs = `[${op.sources.map(renderRawValue).join(', ')}]`;
         body.w(`tx.mergeCoins(${dest}, ${srcs});`);
         break;
       }
+
       case 'transferObjects': {
-        const objs =
-          op.objects.length === 1 && op.objects[0].kind === 'vector'
-            ? renderValue(op.objects[0])
-            : `[${op.objects.map(renderValue).join(', ')}]`;
-        const rcpt = renderValue(op.recipient);
+        const objs = `[${op.objects.map(renderRawValue).join(', ')}]`;
+        const rcpt = renderRawValue(op.recipient); // RAW (no pure)
         body.w(`tx.transferObjects(${objs}, ${rcpt});`);
         break;
       }
+
       case 'makeMoveVec': {
-        const elems =
-          op.elements.length === 1 && op.elements[0].kind === 'vector'
-            ? renderValue(op.elements[0])
-            : `[${op.elements.map(renderValue).join(', ')}]`;
-        const out = op.out;
+        const elems = `[${op.elements.map(renderRawValue).join(', ')}]`;
         body.w(
-          `const ${out} = tx.makeMoveVec({ type: undefined, elements: ${elems} });`,
+          `const ${op.out} = tx.makeMoveVec({ type: undefined, elements: ${elems} });`,
         );
-        // NOTE: We omit concrete type for simplicity; runtime will rely on elements.
         break;
       }
-      case 'moveCall': {
-        // >>> Multiline pretty-print
-        const hasTypeArgs = op.typeArgs.length > 0;
-        const hasArgs = op.args.length > 0;
 
-        body.w(`tx.moveCall({`);
-        body.push();
-        body.w(`target: '${esc(op.target)}',`);
-        if (hasTypeArgs) {
-          body.w(
-            `typeArguments: [${op.typeArgs.map(renderValue).join(', ')}],`,
-          );
+      case 'moveCall': {
+        const targs = op.typeArgs.length
+          ? `[${op.typeArgs.map(renderRawValue).join(', ')}]`
+          : '';
+        const argsRendered = op.args.map((a, i) =>
+          renderMoveArgCode(renderRawValue(a), op.paramKinds[i] ?? 'other'),
+        );
+        const args = argsRendered.length ? `[${argsRendered.join(', ')}]` : '';
+
+        const callExprLines: string[] = [];
+        callExprLines.push(`target: '${esc(op.target)}',`);
+        if (targs) callExprLines.push(`typeArguments: ${targs},`);
+        if (args) callExprLines.push(`arguments: ${args},`);
+
+        const callExpr = `tx.moveCall({\n${'  '.repeat(body['i'] + 1)}${callExprLines.join(
+          `\n${'  '.repeat(body['i'] + 1)}`,
+        )}\n${'  '.repeat(body['i'])}})`;
+
+        if (op.rets.mode === 'none') {
+          body.w(callExpr + `;`);
+        } else if (op.rets.mode === 'single') {
+          body.w(`const ${op.rets.name} = ${callExpr};`);
+        } else {
+          body.w(`const [${op.rets.names.join(', ')}] = ${callExpr};`);
         }
-        if (hasArgs) {
-          body.w(`arguments: [${op.args.map(renderValue).join(', ')}],`);
-        }
-        body.pop();
-        body.w(`});`);
-        // <<< Multiline pretty-print
         break;
       }
     }

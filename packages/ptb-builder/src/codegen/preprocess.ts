@@ -1,8 +1,13 @@
 // src/codegen/preprocess.ts
-
-// POLICY NOTE:
-// - Vectors/Options do not support object elements at the UI level (creation blocked).
-// - The preprocessing layer stays permissive to support future extensions and decoding.
+// -----------------------------------------------------------------------------
+// Preprocess PTB graph into Program IR with strict policy:
+// - splitCoins: amounts are multiple scalars (no vectors); outputs always N names
+// - mergeCoins/transferObjects: multiple scalars (no vectors), recipient RAW
+// - makeMoveVec: elements as-is (no pure), produce single out handle name
+// - moveCall: build paramKinds from port dataType; derive rets from OUT ports
+// - When an input port has no connection, we insert { kind: 'undef' } explicitly
+//   (no nulls anywhere).
+// -----------------------------------------------------------------------------
 
 import {
   type CommandNode,
@@ -12,9 +17,16 @@ import {
   type VariableNode,
 } from '../ptb/graph/types';
 import type { Chain } from '../types';
-import { POp, Program, PValue, PVar } from './types';
+import {
+  type ParamKind,
+  type POp,
+  type Program,
+  type PValue,
+  type PVar,
+} from './types';
 
-// --- Shared helpers (graph-only; no tx/code awareness) ---
+// --- Helpers (naming, flow) --------------------------------------------------
+
 const PLURAL = (base: string) =>
   /(list|array|vec|ids|coins|addresses|objects|values|amounts)$/i.test(base)
     ? base
@@ -24,7 +36,6 @@ const PLURAL = (base: string) =>
         ? base
         : base + 's';
 
-// Reserved identifiers and words we should not emit verbatim
 const RESERVED = new Set([
   'var',
   'let',
@@ -75,19 +86,12 @@ class NamePool {
   private used = new Set<string>();
   constructor(reserved: string[] = []) {
     reserved.forEach((n) => this.used.add(n));
-    RESERVED.forEach((n) => this.used.add(n)); // avoid claiming exact reserved names
+    RESERVED.forEach((n) => this.used.add(n));
   }
   claim(raw: string) {
-    // sanitize
     let base = (raw || 'val').replace(/[^A-Za-z0-9_]/g, '_') || 'val';
-
-    // avoid reserved exact match by suffixing _id
     if (RESERVED.has(base)) base = `${base}_id`;
-
-    // enforce numbered style: ensure trailing _\d+ always exists
     if (!/_\d+$/.test(base)) base = `${base}_0`;
-
-    // allocate unique by bumping the trailing number
     while (this.used.has(base)) {
       base = base.replace(/_(\d+)$/, (_, n) => `_${Number(n) + 1}`);
     }
@@ -149,7 +153,6 @@ export function orderActive(graph: PTBGraph, active: Set<string>) {
         indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
       }
     }
-  // start first
   const q: string[] = [];
   for (const id of active) {
     const n = idToNode.get(id);
@@ -184,7 +187,8 @@ export function buildIoIndex(edges: PTBGraph['edges']) {
   return { byTarget, ioEdges: io };
 }
 
-// ---- variable & value builders (no tx, no code) ----
+// --- Variable nodes -> initial PValue ---------------------------------------
+
 function isMyWalletVariable(v: VariableNode) {
   if (v.varType?.kind !== 'scalar' || v.varType.name !== 'address')
     return false;
@@ -200,7 +204,8 @@ function isMyWalletVariable(v: VariableNode) {
 function toPValueFromVar(v: VariableNode): PValue {
   const t = v.varType;
   const val = (v as any).value;
-  if (!t) return { kind: 'scalar', value: '' };
+  if (!t) return { kind: 'undef' };
+
   switch (t.kind) {
     case 'scalar':
       if (t.name === 'address')
@@ -214,15 +219,14 @@ function toPValueFromVar(v: VariableNode): PValue {
       if (t.name === 'number')
         return { kind: 'move_numeric', value: Number(val ?? 0) };
       if (t.name === 'id') return { kind: 'scalar', value: String(val ?? '') };
-      return { kind: 'scalar', value: '' };
+      return { kind: 'undef' };
+
     case 'move_numeric':
       return { kind: 'move_numeric', value: Number(val ?? 0) };
+
     case 'object': {
       const name = (v.name || '').toLowerCase();
-      let tag = '';
-      if (t.kind === 'object') {
-        tag = (t.typeTag ?? '').toLowerCase();
-      }
+      let tag = (t.typeTag ?? '').toLowerCase();
       const s = (v as any).value as string | undefined;
       if (name.includes('gas') || s === 'gas')
         return { kind: 'object', special: 'gas' };
@@ -234,9 +238,8 @@ function toPValueFromVar(v: VariableNode): PValue {
         return { kind: 'object', special: 'random' };
       return { kind: 'object', id: String(s ?? '') };
     }
+
     case 'vector': {
-      // NOTE: UI prevents creating vector<object> (and option<object>) for now.
-      // The serializer remains permissive for forward compatibility / decode paths.
       const items = Array.isArray(val) ? val : [];
       return {
         kind: 'vector',
@@ -254,6 +257,7 @@ function toPValueFromVar(v: VariableNode): PValue {
         }),
       };
     }
+
     case 'tuple':
       return {
         kind: 'vector',
@@ -262,10 +266,38 @@ function toPValueFromVar(v: VariableNode): PValue {
           value: x as any,
         })),
       };
+
     default:
-      return { kind: 'scalar', value: '' };
+      return { kind: 'undef' };
   }
 }
+
+// --- ParamKind inference from port dataType ---------------------------------
+
+function kindFromDataType(dt: any): ParamKind {
+  if (!dt) return 'other';
+  if (dt.kind === 'object') return 'txarg';
+  if (dt.kind === 'scalar') {
+    if (dt.name === 'address') return 'addr';
+    if (dt.name === 'bool') return 'bool';
+    if (dt.name === 'number' || dt.name === 'id') return 'num';
+    if (dt.name === 'string') return 'other';
+  }
+  if (dt.kind === 'move_numeric') return 'num';
+  if (dt.kind === 'vector') {
+    const e = dt.elem;
+    if (
+      e?.kind === 'move_numeric' ||
+      (e?.kind === 'scalar' &&
+        (e.name === 'bool' || e.name === 'address' || e.name === 'number'))
+    )
+      return 'array-prim';
+    return 'other';
+  }
+  return 'other';
+}
+
+// --- Preprocess --------------------------------------------------------------
 
 export function preprocess(graph: PTBGraph, chain: Chain): Program {
   const header = { usedMyAddress: false, usedSuiTypeConst: false };
@@ -300,7 +332,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
     const sym = names.claim(base);
 
     const init = toPValueFromVar(v);
-    if (init.kind === 'scalar' && init.value === 'myAddress')
+    if (init.kind === 'scalar' && (init as any).value === 'myAddress')
       header.usedMyAddress = true;
 
     vars.push({ name: sym, init });
@@ -312,12 +344,13 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
     }
   }
 
-  // helper: collect IN-port inputs as symbol refs or literals
+  // helper: collect IN-port inputs as symbol refs or literals; fill undef if missing
   const collect = (node: PTBNode) => {
     const byPort = new Map<string, PValue[]>();
     const inPorts = (node.ports || []).filter(
       (p) => p.role === 'io' && p.direction === 'in',
     );
+
     for (const p of inPorts) {
       const edges = byTarget.get(node.id)?.get(p.id) ?? [];
       const arr: PValue[] = [];
@@ -328,6 +361,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
         const syms = portSyms.get(srcKey) ?? [];
         for (const s of syms) arr.push({ kind: 'ref', name: s });
       }
+      if (arr.length === 0) arr.push({ kind: 'undef' }); // explicit undefined for unconnected port
       byPort.set(p.id, arr);
     }
     return byPort;
@@ -344,13 +378,25 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
     switch (c.command) {
       case 'splitCoins': {
         splitSeq += 1;
+
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
+
+        // coin: take first IN port's first value (could be undef); default to undef (no gas fallback)
         const coin = (inPorts.length
           ? (byPortVals.get(inPorts[0].id) ?? [])
-          : [])[0] ?? { kind: 'object', special: 'gas' };
+          : [])[0] ?? { kind: 'undef' };
+
+        // amounts:
+        // - if a grouped "amounts" port exists:
+        //   - if connected: use its values (but filter out vectors)
+        //   - if disconnected: generate N = number of OUT ports undefineds
+        // - else (multiple scalar amount ports): align 1:1 with each port; fill undef for missing
         let amounts: PValue[] = [];
+        const outs = (c.ports || []).filter(
+          (p) => p.role === 'io' && p.direction === 'out',
+        );
         const grouped = (c.ports || []).find(
           (p) =>
             p.role === 'io' &&
@@ -359,46 +405,47 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
               p.id === 'amounts' ||
               p.id.startsWith('in_amount_')),
         )?.id;
+
         if (grouped) {
-          amounts = byPortVals.get(grouped) ?? [];
-          if (!amounts.length && inPorts.length > 1) {
-            amounts = inPorts
-              .slice(1)
-              .flatMap((p) => byPortVals.get(p.id) ?? []);
+          const got = (byPortVals.get(grouped) ?? []).filter(
+            (x) => x.kind !== 'vector',
+          );
+          if (got.length > 0) {
+            amounts = got;
+          } else {
+            // fill as many undefineds as OUT ports
+            amounts = outs.map(() => ({ kind: 'undef' }) as PValue);
           }
         } else {
-          amounts = inPorts.slice(1).flatMap((p) => byPortVals.get(p.id) ?? []);
+          // treat every inPort after the first as an amount slot (fill with undef if missing)
+          amounts = inPorts.slice(1).map((p) => {
+            const vals = (byPortVals.get(p.id) ?? []).filter(
+              (x) => x.kind !== 'vector',
+            );
+            return vals[0] ?? ({ kind: 'undef' } as PValue);
+          });
+          if (amounts.length === 0) {
+            // if there are no explicit amount ports, still align with outs
+            amounts = outs.map(() => ({ kind: 'undef' }) as PValue);
+          }
         }
 
-        const outs = (c.ports || []).filter(
-          (p) => p.role === 'io' && p.direction === 'out',
+        // outputs: always N names where N = amounts.length
+        const namesOut = amounts.map((_, i) =>
+          names.claim(`out_${splitSeq}_${i}`),
         );
-        if (outs.length > 1) {
-          const namesOut = outs.map((_, i) =>
-            names.claim(`out_${splitSeq}_${i}`),
-          );
-          ops.push({
-            kind: 'splitCoins',
-            coin,
-            amounts,
-            out: { mode: 'destructure', names: namesOut },
-          });
-          outs.forEach((p, i) =>
-            portSyms.set(`${c.id}:${p.id}`, [namesOut[i]]),
-          );
-        } else {
-          const arrName = names.claim('out');
-          ops.push({
-            kind: 'splitCoins',
-            coin,
-            amounts,
-            out: { mode: 'vector', name: arrName },
-          });
-          const out0 = (c.ports || []).find(
-            (p) => p.role === 'io' && p.direction === 'out',
-          );
-          if (out0) portSyms.set(`${c.id}:${out0.id}`, [arrName]);
-        }
+        ops.push({
+          kind: 'splitCoins',
+          coin,
+          amounts,
+          out: { mode: 'destructure', names: namesOut },
+        });
+
+        // wire outputs to OUT ports by index
+        outs.forEach((p, i) => {
+          const nm = namesOut[i] ?? namesOut[namesOut.length - 1];
+          portSyms.set(`${c.id}:${p.id}`, [nm]);
+        });
         break;
       }
 
@@ -408,10 +455,14 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
         );
         const destination = (inPorts.length
           ? (byPortVals.get(inPorts[0].id) ?? [])
-          : [])[0] ?? { kind: 'object', special: 'gas' };
-        const sources = inPorts
-          .slice(1)
-          .flatMap((p) => byPortVals.get(p.id) ?? []);
+          : [])[0] ?? { kind: 'undef' };
+
+        // every subsequent IN port corresponds to a source slot; fill with undef if missing.
+        let sources = inPorts.slice(1).map((p) => {
+          const vals = byPortVals.get(p.id) ?? [];
+          return vals[0] ?? ({ kind: 'undef' } as PValue);
+        });
+        // If no explicit source ports exist, keep empty array (caller policy).
         ops.push({ kind: 'mergeCoins', destination, sources });
         break;
       }
@@ -422,35 +473,33 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
         );
 
         const HINTS = ['recipient', 'to', 'addr', 'address', 'owner'];
-
         const objects: PValue[] = [];
         let recipient: PValue | undefined;
 
-        // 1) Name/label-based detection first
+        // name/label-based recipient detection
         for (const p of inPorts) {
           const vals = byPortVals.get(p.id) ?? [];
           const name = ((p.label || p.id || '') + '').toLowerCase();
           const hinted = HINTS.some((h) => name.includes(h));
-          if (hinted && !recipient && vals.length) {
-            recipient = vals[0];
-            continue;
+          if (hinted && !recipient) {
+            recipient = vals[0] ?? { kind: 'undef' };
           }
         }
 
-        // 2) Type-based (address-typed IN port)
+        // type-based recipient fallback
         if (!recipient) {
           for (const p of inPorts) {
             const vals = byPortVals.get(p.id) ?? [];
             const isAddressPort =
               p.dataType?.kind === 'scalar' && p.dataType.name === 'address';
-            if (isAddressPort && !recipient && vals.length) {
-              recipient = vals[0];
+            if (isAddressPort) {
+              recipient = vals[0] ?? { kind: 'undef' };
               break;
             }
           }
         }
 
-        // 3) Everything not the recipient is objects
+        // everything else are objects (align by port; fill undef if missing)
         for (const p of inPorts) {
           const vals = byPortVals.get(p.id) ?? [];
           const name = ((p.label || p.id || '') + '').toLowerCase();
@@ -458,7 +507,6 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
           const isAddressPort =
             p.dataType?.kind === 'scalar' && p.dataType.name === 'address';
 
-          // skip the one we already took as recipient
           if (
             (hinted || isAddressPort) &&
             recipient &&
@@ -467,23 +515,24 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
           ) {
             continue;
           }
-          objects.push(...vals);
+          objects.push(vals[0] ?? ({ kind: 'undef' } as PValue));
         }
 
-        // 4) Fallback to myAddress sentinel only if still missing
-        if (!recipient) {
-          recipient = { kind: 'scalar', value: 'myAddress' };
-          header.usedMyAddress = true;
-        }
+        if (!recipient) recipient = { kind: 'undef' }; // no myAddress fallback
 
         ops.push({ kind: 'transferObjects', objects, recipient });
         break;
       }
 
       case 'makeMoveVec': {
+        // align 1:1 with IN ports; any missing -> undef
         const elements = (c.ports || [])
           .filter((p) => p.role === 'io' && p.direction === 'in')
-          .flatMap((p) => byPortVals.get(p.id) ?? []);
+          .map((p) => {
+            const vals = byPortVals.get(p.id) ?? [];
+            return vals[0] ?? ({ kind: 'undef' } as PValue);
+          });
+
         const out = names.claim('out');
         ops.push({
           kind: 'makeMoveVec',
@@ -507,20 +556,62 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
             ? `${uiAny.pkgId}::${uiAny.module}::${uiAny.func}`
             : '/* pkg::module::function */');
 
-        const typeArgs: PValue[] = [];
-        const args: PValue[] = [];
-        for (const p of c.ports || []) {
-          if (p.role !== 'io' || p.direction !== 'in') continue;
+        // Gather args in port order; fill undef if missing
+        const inPorts = (c.ports || []).filter(
+          (p) => p.role === 'io' && p.direction === 'in',
+        );
+        const args: PValue[] = inPorts.map((p) => {
           const incoming = byPortVals.get(p.id) ?? [];
-          if (p.id.startsWith('in_targ_')) typeArgs.push(...incoming);
-          else args.push(...incoming);
+          return incoming[0] ?? ({ kind: 'undef' } as PValue);
+        });
+        // Derive param kinds from each port dataType
+        const paramKinds: ParamKind[] = inPorts.map((p) =>
+          kindFromDataType(p.dataType),
+        );
+
+        // Type args come from dedicated in_targ_* ports (if present)
+        const typeArgs: PValue[] = [];
+        (c.ports || []).forEach((p) => {
+          if (p.role !== 'io' || p.direction !== 'in') return;
+          if (String(p.id).startsWith('in_targ_')) {
+            const vals = byPortVals.get(p.id) ?? [];
+            typeArgs.push(...vals);
+          }
+        });
+
+        // Return binding policy from OUT ports
+        const outs = (c.ports || []).filter(
+          (p) => p.role === 'io' && p.direction === 'out',
+        );
+        let rets:
+          | { mode: 'none' }
+          | { mode: 'single'; name: string }
+          | { mode: 'destructure'; names: string[] };
+
+        if (outs.length === 0) {
+          rets = { mode: 'none' };
+        } else if (outs.length === 1) {
+          const nm = names.claim('result');
+          rets = { mode: 'single', name: nm };
+          portSyms.set(`${c.id}:${outs[0].id}`, [nm]);
+        } else {
+          const nms = outs.map((_, i) => names.claim(`result_${i}`));
+          rets = { mode: 'destructure', names: nms };
+          outs.forEach((p, i) => portSyms.set(`${c.id}:${p.id}`, [nms[i]]));
         }
-        ops.push({ kind: 'moveCall', target, typeArgs, args });
+
+        ops.push({
+          kind: 'moveCall',
+          target,
+          typeArgs,
+          args,
+          paramKinds,
+          rets,
+        });
         break;
       }
 
       default:
-        // ignore
         break;
     }
   }

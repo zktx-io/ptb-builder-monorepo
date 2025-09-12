@@ -1,82 +1,98 @@
 // src/codegen/types.ts
+// -----------------------------------------------------------------------------
+// Core IR types for PTB codegen/runtime builders.
+// - MoveCall return policy is represented by PMoveCallRets (none/single/destructure).
+// - Undefined support: PUndefined explicitly represents "no value provided" and
+//   is preserved through preprocess/builders (no nulls allowed).
+// -----------------------------------------------------------------------------
 
 import type { Chain } from '../types';
 
+/** Explicit undefined literal */
+export type PUndefined = { kind: 'undef' };
+
 /** A value literal or reference that can appear in variables & arguments */
 export type PValue =
-  | { kind: 'scalar'; value: string | number | boolean } // strings, booleans, or address literal sentinel 'myAddress'
-  | {
-      kind: 'move_numeric';
-      value: number | string | bigint;
-      // NOTE: Runtime builder (buildTransaction) wraps numeric-like inputs with tx.pure.u64 as needed.
-      // The TS code generator (buildTsSdkCode) emits raw values and does NOT wrap them.
-    }
+  | { kind: 'scalar'; value: string | number | boolean } // includes address literal or sentinel 'myAddress'
+  | { kind: 'move_numeric'; value: number | string | bigint }
   | {
       kind: 'object';
-      special?: 'gas' | 'system' | 'clock' | 'random'; // special Sui objects
-      id?: string; // object ID
+      special?: 'gas' | 'system' | 'clock' | 'random';
+      id?: string;
     }
-  | {
-      kind: 'vector';
-      items: PValue[];
-      // POLICY: Object elements in vectors are forbidden at the UI layer.
-      // The schema remains permissive for future extension and decoding purposes.
-    }
-  | { kind: 'ref'; name: string }; // reference to a previously-emitted symbol
+  | { kind: 'vector'; items: PValue[] }
+  | { kind: 'ref'; name: string }
+  | PUndefined;
 
 /** A declared variable with its initialization value */
 export type PVar = { name: string; init: PValue };
 
-/** SplitCoins output modes */
-export type POutVector = { mode: 'vector'; name: string };
+/** SplitCoins output: always destructure into N names */
 export type POutDestructure = { mode: 'destructure'; names: string[] };
 
 /** SplitCoins operation */
 export type PSplitCoins = {
   kind: 'splitCoins';
-  coin: PValue; // reference or tx helper
-  amounts: PValue[]; // refs or literals; if a single vector, use as-is
-  out: POutVector | POutDestructure;
+  coin: PValue; // handle or undefined
+  amounts: PValue[]; // scalars/undef only; no vectors
+  out: POutDestructure; // N names for N amounts
 };
 
 /** MergeCoins operation */
 export type PMergeCoins = {
   kind: 'mergeCoins';
-  destination: PValue; // destination coin
-  sources: PValue[]; // list of source coins
+  destination: PValue; // handle or undefined (no gas default)
+  sources: PValue[]; // handles or undefined placeholders
 };
 
 /** TransferObjects operation */
 export type PTransferObjects = {
   kind: 'transferObjects';
-  objects: PValue[]; // objects to transfer
-  recipient: PValue; // recipient, allows 'myAddress' sentinel
+  objects: PValue[]; // handles or undefined placeholders
+  recipient: PValue; // address scalar or undefined; never pure here
 };
 
 /** MakeMoveVec operation */
 export type PMakeMoveVec = {
   kind: 'makeMoveVec';
-  elements: PValue[]; // elements of the vector
-  out: string; // output variable name
+  elements: PValue[]; // handles or primitive literals/undef
+  out: string;
   elemType?: {
-    kind: 'scalar' | 'move_numeric' | 'object'; // element type
-    name?: string; // optional name
-    width?: string; // numeric width (e.g., u64)
+    kind: 'scalar' | 'move_numeric' | 'object';
+    name?: string;
+    width?: string;
     typeTag?: string;
-    // NOTE: Currently informational. Neither buildTransaction nor buildTsSdkCode
-    // passes a concrete type to tx.makeMoveVec (we use { type: undefined }).
   };
 };
+
+/** MoveCall param kind (drives pure policy at runtime/codegen) */
+export type ParamKind =
+  | 'txarg' // handle/ref
+  | 'addr' // Sui address
+  | 'num' // u64-like number/bigint/decstr
+  | 'bool' // boolean
+  | 'array-prim' // array of primitives (rare; if UI exposes)
+  | 'other'; // fallback (no pure)
+
+/** MoveCall return binding policy */
+export type PMoveCallRets =
+  | { mode: 'none' }
+  | { mode: 'single'; name: string }
+  | { mode: 'destructure'; names: string[] };
 
 /** MoveCall operation */
 export type PMoveCall = {
   kind: 'moveCall';
-  target: string; // fully qualified function e.g., '0x...::module::func'
-  typeArgs: PValue[]; // type arguments (string literal or ref)
-  args: PValue[]; // positional arguments
+  target: string;
+  typeArgs: PValue[];
+  args: PValue[];
+  /** param kinds aligned with args length */
+  paramKinds: ParamKind[];
+  /** return binding policy derived from OUT ports (0/1/N) */
+  rets: PMoveCallRets;
 };
 
-/** All possible operation kinds */
+/** All operations */
 export type POp =
   | PSplitCoins
   | PMergeCoins
@@ -84,16 +100,16 @@ export type POp =
   | PMakeMoveVec
   | PMoveCall;
 
-/** A full PTB program representation */
+/** Full program IR */
 export type Program = {
   chain: Chain;
-  header: { usedMyAddress: boolean; usedSuiTypeConst: boolean }; // usage metadata
-  vars: PVar[]; // declared variables
-  ops: POp[]; // sequence of operations
+  header: { usedMyAddress: boolean; usedSuiTypeConst: boolean };
+  vars: PVar[];
+  ops: POp[];
 };
 
-/** Options for transaction execution */
+/** Options for execution/codegen */
 export type ExecOptions = {
-  myAddress?: string; // optional address sentinel
-  gasBudget?: number; // optional gas budget
+  myAddress?: string;
+  gasBudget?: number;
 };
