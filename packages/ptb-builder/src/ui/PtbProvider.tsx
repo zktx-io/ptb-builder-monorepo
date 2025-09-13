@@ -314,6 +314,16 @@ export function PtbProvider({
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => ({}));
   const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
 
+  // Reset caches on chain change
+  const resetBeforeLoad = () => {
+    canUpdate.current = false;
+    setActiveChain(undefined);
+    setObjects({});
+    setModules({});
+    setView(undefined);
+    setCodePipOpenTick(0);
+  };
+
   // Toast
   const toastImpl: ToastAdapter = useMemo(() => {
     if (toastProp) return toastProp;
@@ -647,7 +657,7 @@ export function PtbProvider({
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
-      setView(undefined);
+      resetBeforeLoad();
       const digest = (txDigest || '').trim();
       if (!digest) {
         toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
@@ -772,7 +782,7 @@ export function PtbProvider({
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (value) => {
-      setView(undefined);
+      resetBeforeLoad();
       if (typeof value !== 'string') {
         setActiveChain(value.chain);
         setModules(value.modules);
@@ -788,8 +798,6 @@ export function PtbProvider({
         });
       } else {
         setActiveChain(value);
-        setModules({});
-        setObjects({});
         replaceGraphImmediate(seedDefaultGraph());
         setReadOnly(false);
         setCodePipOpenTick((t) => t + 1);
