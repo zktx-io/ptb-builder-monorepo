@@ -478,12 +478,12 @@ export function PtbProvider({
   onDocChangeRef.current = onDocChange;
 
   useLayoutEffect(() => {
-    if (!onDocChangeRef.current || !activeChain || !view) return;
-    if (!canUpdate.current) {
-      canUpdate.current = true;
-      return;
-    }
     try {
+      if (!onDocChangeRef.current || !activeChain || !view) return;
+      if (!canUpdate.current) {
+        canUpdate.current = true;
+        return;
+      }
       const doc = buildDoc({
         chain: activeChain,
         graph,
@@ -647,6 +647,7 @@ export function PtbProvider({
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
+      setView(undefined);
       const digest = (txDigest || '').trim();
       if (!digest) {
         toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
@@ -771,6 +772,7 @@ export function PtbProvider({
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (value) => {
+      setView(undefined);
       if (typeof value !== 'string') {
         setActiveChain(value.chain);
         setModules(value.modules);
