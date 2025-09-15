@@ -6,56 +6,56 @@
 
 ## Demo
 
-* [https://ptb.wal.app/](https://ptb.wal.app/)
+- [https://ptb.wal.app/](https://ptb.wal.app/)
 
 ## Features
 
 ### 1. Transaction Construction and Pre‑Testing
 
-* **Visual Editor**: Construct PTBs via a drag‑and‑drop UI (React Flow-based).
-* **Code Generation**: Automatically generate clean TypeScript for the Sui TS SDK.
-* **Simulation**: Dry‑run PTBs before execution to validate behavior.
+- **Visual Editor**: Construct PTBs via a drag‑and‑drop UI (React Flow-based).
+- **Code Generation**: Automatically generate clean TypeScript for the Sui TS SDK.
+- **Simulation**: Dry‑run PTBs before execution to validate behavior.
 
 ### 2. Execute Transactions Without Coding
 
-* **Accessible**: Non‑developers can create and run PTBs without writing code.
-* **Real‑Time Feedback**: Errors/warnings surface instantly during graph construction.
+- **Accessible**: Non‑developers can create and run PTBs without writing code.
+- **Real‑Time Feedback**: Errors/warnings surface instantly during graph construction.
 
 ### 3. Save and Share
 
-* **Graph Persistence**: Save PTB graphs locally and reload them later.
-* **Collaboration**: Share saved graphs with teammates or the community.
-* **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
+- **Graph Persistence**: Save PTB graphs locally and reload them later.
+- **Collaboration**: Share saved graphs with teammates or the community.
+- **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
 
 ### 4. Visualization and Debugging
 
-* **Execution Visualization**: Visualize executed PTBs as readable graphs.
-* **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
+- **Execution Visualization**: Visualize executed PTBs as readable graphs.
+- **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
 
 ### 5. On‑Chain Transaction Loading
 
-* **Load from Digest**: Import an on‑chain transaction by digest and visualize its structure.
+- **Load from Digest**: Import an on‑chain transaction by digest and visualize its structure.
 
 ### 6. Use On‑Chain Assets as Objects
 
-* **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
-* **One‑Click Insert**: Insert an object as an **Object node** in one click.
-* **Seamless Integration**: Use assets directly in commands like `TransferObjects`, `MergeCoins`, `MoveCall`.
+- **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
+- **One‑Click Insert**: Insert an object as an **Object node** in one click.
+- **Seamless Integration**: Use assets directly in commands like `TransferObjects`, `MergeCoins`, `MoveCall`.
 
 ### 7. Themes
 
-* **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo night`, `cream`, `mint.breeze`.
-* **Switch Anytime**: Change themes dynamically from the workspace.
+- **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo night`, `cream`, `mint.breeze`.
+- **Switch Anytime**: Change themes dynamically from the workspace.
 
 ## Supported Commands
 
 The following PTB commands are currently supported:
 
-* **SplitCoins** — split a coin object into multiple parts.
-* **MergeCoins** — merge multiple coins into one.
-* **TransferObjects** — transfer owned objects to a recipient.
-* **MoveCall** — call any Move function from an on‑chain package.
-* **MakeMoveVec** — create vectors from scalar values.
+- **SplitCoins** — split a coin object into multiple parts.
+- **MergeCoins** — merge multiple coins into one.
+- **TransferObjects** — transfer owned objects to a recipient.
+- **MoveCall** — call any Move function from an on‑chain package.
+- **MakeMoveVec** — create vectors from scalar values.
 
 (Additional commands can be added via registry extensions.)
 
@@ -63,11 +63,11 @@ The following PTB commands are currently supported:
 
 Inputs follow `tx.option` conventions from the Sui TS SDK:
 
-* **Scalars**: numbers, booleans, addresses, strings ✅
-* **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
-  * *Objects can also be selected from your owned assets via the **Assets modal**.*
-* **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
-* **Options**: available for scalars ✅ (❌ not supported for objects)
+- **Scalars**: numbers, booleans, addresses, strings ✅
+- **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
+  - _Objects can also be selected from your owned assets via the **Assets modal**._
+- **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
+- **Options**: available for scalars ✅ (❌ not supported for objects)
 
 ## Quick Start (dApp Integration)
 
@@ -78,7 +78,10 @@ Below snippets mirror a typical setup using **@mysten/dapp‑kit** with PTB Buil
 ```tsx
 import { PTBBuilder, Chain, ToastVariant } from '@zktx.io/ptb-builder';
 import { Transaction } from '@mysten/sui/transactions';
-import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
+import {
+  useCurrentAccount,
+  useSignAndExecuteTransaction,
+} from '@mysten/dapp-kit';
 import { enqueueSnackbar } from 'notistack';
 
 function App() {
@@ -86,7 +89,13 @@ function App() {
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
   // Toast adapter
-  const handleToast = ({ message, variant }: { message: string; variant?: ToastVariant }) => {
+  const handleToast = ({
+    message,
+    variant,
+  }: {
+    message: string;
+    variant?: ToastVariant;
+  }) => {
     enqueueSnackbar(message, { variant });
   };
 
@@ -202,15 +211,15 @@ export const Viewer = () => {
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 <PTBBuilder
-  theme="dark"            // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze)
-  address={myAddress}      // sender address
-  gasBudget={500_000_000}  // optional gas budget
-  executeTx={execAdapter}  // adapter to execute transactions
-  onDocChange={saveDoc}    // PTBDoc autosave callback (debounced)
-  showExportButton         // optional: show Export .ptb button (default: hidden)
+  theme="dark" // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze)
+  address={myAddress} // sender address
+  gasBudget={500_000_000} // optional gas budget
+  executeTx={execAdapter} // adapter to execute transactions
+  onDocChange={saveDoc} // PTBDoc autosave callback (debounced)
+  showExportButton // optional: show Export .ptb button (default: hidden)
 >
   {/* your app here */}
-</PTBBuilder>
+</PTBBuilder>;
 ```
 
 ### Hook (public)
@@ -255,10 +264,10 @@ setTheme('tokyo night');
 
 PTB Builder persists graphs as `PTBDoc` objects containing:
 
-* **graph** — nodes and edges of the PTB
-* **modules** — embedded Move module metadata (for function signatures)
-* **objects** — embedded object metadata (for owned assets)
-* **chain** — target Sui network (e.g., `sui:testnet`)
+- **graph** — nodes and edges of the PTB
+- **modules** — embedded Move module metadata (for function signatures)
+- **objects** — embedded object metadata (for owned assets)
+- **chain** — target Sui network (e.g., `sui:testnet`)
 
 This enables saving, sharing, and reloading graphs consistently across environments.
 
@@ -266,12 +275,12 @@ This enables saving, sharing, and reloading graphs consistently across environme
 
 ## Notes on Network Sync
 
-* Use `useSuiClientContext()` from **@mysten/dapp‑kit** to read/change the active Sui network.
-* Keep PTB `doc.chain` in the form `sui:<network>`, e.g., `sui:testnet`.
-* On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
+- Use `useSuiClientContext()` from **@mysten/dapp‑kit** to read/change the active Sui network.
+- Keep PTB `doc.chain` in the form `sui:<network>`, e.g., `sui:testnet`.
+- On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
 
 ---
 
 ## Roadmap
 
-* Expanded sharing and collaboration features
+- Expanded sharing and collaboration features

@@ -1,17 +1,17 @@
 /* ============================================================
    PTB TOKYO NIGHT THEME TOKENS
    ============================================================ */
-:root[data-ptb-theme="tokyo-night"] {
+:root[data-ptb-theme='tokyo-night'] {
   --ptb-canvas-bg: #1a1b26;
   --ptb-grid-fine: #2f3549;
   --ptb-grid-accent: #3b4261;
 
   --ptb-menu-bg: #1f2335;
   --ptb-menu-fg: #c0caf5;
-  --ptb-menu-border: rgba(86,95,137,.45);
+  --ptb-menu-border: rgba(86, 95, 137, 0.45);
   --ptb-menu-hover-bg: #2a2f4a;
   --ptb-menu-submenu-bg: #1f2335;
-  --ptb-menu-separator: rgba(86,95,137,.55);
+  --ptb-menu-separator: rgba(86, 95, 137, 0.55);
   --ptb-menu-disabled-opacity: 0.5;
 
   --ptb-flow-stroke: #565f89;
@@ -34,67 +34,67 @@
 
   /* Node surfaces */
   --ptb-node-command-border: #565f89;
-  --ptb-node-command-bg: rgba(86,95,137,0.25);
+  --ptb-node-command-bg: rgba(86, 95, 137, 0.25);
   --ptb-node-command-border-hover: #a9b1d6;
-  --ptb-node-command-bg-hover: rgba(86,95,137,0.35);
+  --ptb-node-command-bg-hover: rgba(86, 95, 137, 0.35);
   --ptb-node-command-border-active: #c0caf5;
-  --ptb-node-command-bg-active: rgba(86,95,137,0.50);
+  --ptb-node-command-bg-active: rgba(86, 95, 137, 0.5);
 
   --ptb-node-address-border: #9a6b2f;
-  --ptb-node-address-bg: rgba(224,175,104,0.22);
+  --ptb-node-address-bg: rgba(224, 175, 104, 0.22);
   --ptb-node-address-border-hover: #e0af68;
-  --ptb-node-address-bg-hover: rgba(224,175,104,0.35);
+  --ptb-node-address-bg-hover: rgba(224, 175, 104, 0.35);
   --ptb-node-address-border-active: #ffcb6b;
-  --ptb-node-address-bg-active: rgba(224,175,104,0.48);
+  --ptb-node-address-bg-active: rgba(224, 175, 104, 0.48);
 
   --ptb-node-number-border: #7a2e3b;
-  --ptb-node-number-bg: rgba(247,118,142,0.22);
+  --ptb-node-number-bg: rgba(247, 118, 142, 0.22);
   --ptb-node-number-border-hover: #f7768e;
-  --ptb-node-number-bg-hover: rgba(247,118,142,0.35);
+  --ptb-node-number-bg-hover: rgba(247, 118, 142, 0.35);
   --ptb-node-number-border-active: #ff98a4;
-  --ptb-node-number-bg-active: rgba(247,118,142,0.48);
+  --ptb-node-number-bg-active: rgba(247, 118, 142, 0.48);
 
   --ptb-node-bool-border: #6a4aa9;
-  --ptb-node-bool-bg: rgba(187,154,247,0.22);
+  --ptb-node-bool-bg: rgba(187, 154, 247, 0.22);
   --ptb-node-bool-border-hover: #bb9af7;
-  --ptb-node-bool-bg-hover: rgba(187,154,247,0.35);
+  --ptb-node-bool-bg-hover: rgba(187, 154, 247, 0.35);
   --ptb-node-bool-border-active: #c9aaf7;
-  --ptb-node-bool-bg-active: rgba(187,154,247,0.48);
+  --ptb-node-bool-bg-active: rgba(187, 154, 247, 0.48);
 
   --ptb-node-string-border: #4a7641;
-  --ptb-node-string-bg: rgba(158,206,106,0.22);
+  --ptb-node-string-bg: rgba(158, 206, 106, 0.22);
   --ptb-node-string-border-hover: #9ece6a;
-  --ptb-node-string-bg-hover: rgba(158,206,106,0.35);
+  --ptb-node-string-bg-hover: rgba(158, 206, 106, 0.35);
   --ptb-node-string-border-active: #b1e07a;
-  --ptb-node-string-bg-active: rgba(158,206,106,0.48);
+  --ptb-node-string-bg-active: rgba(158, 206, 106, 0.48);
 
   --ptb-node-object-border: #2e4f86;
-  --ptb-node-object-bg: rgba(122,162,247,0.22);
+  --ptb-node-object-bg: rgba(122, 162, 247, 0.22);
   --ptb-node-object-border-hover: #7aa2f7;
-  --ptb-node-object-bg-hover: rgba(122,162,247,0.35);
+  --ptb-node-object-bg-hover: rgba(122, 162, 247, 0.35);
   --ptb-node-object-border-active: #89b4fa;
-  --ptb-node-object-bg-active: rgba(122,162,247,0.48);
+  --ptb-node-object-bg-active: rgba(122, 162, 247, 0.48);
 
   --ptb-node-id-border: #1f5662;
-  --ptb-node-id-bg: rgba(42,195,222,0.22);
+  --ptb-node-id-bg: rgba(42, 195, 222, 0.22);
   --ptb-node-id-border-hover: #2ac3de;
-  --ptb-node-id-bg-hover: rgba(42,195,222,0.35);
+  --ptb-node-id-bg-hover: rgba(42, 195, 222, 0.35);
   --ptb-node-id-border-active: #41d9f9;
-  --ptb-node-id-bg-active: rgba(42,195,222,0.48);
+  --ptb-node-id-bg-active: rgba(42, 195, 222, 0.48);
 
   --ptb-node-unknown-border: #3f4464;
-  --ptb-node-unknown-bg: rgba(115,122,162,0.22);
+  --ptb-node-unknown-bg: rgba(115, 122, 162, 0.22);
   --ptb-node-unknown-border-hover: #737aa2;
-  --ptb-node-unknown-bg-hover: rgba(115,122,162,0.35);
+  --ptb-node-unknown-bg-hover: rgba(115, 122, 162, 0.35);
   --ptb-node-unknown-border-active: #a3a9d9;
-  --ptb-node-unknown-bg-active: rgba(115,122,162,0.48);
+  --ptb-node-unknown-bg-active: rgba(115, 122, 162, 0.48);
 
   --ptb-node-option-border: #6a4aa9;
-  --ptb-node-option-bg: rgba(187,154,247,0.22);
+  --ptb-node-option-bg: rgba(187, 154, 247, 0.22);
   --ptb-node-option-border-hover: #bb9af7;
-  --ptb-node-option-bg-hover: rgba(187,154,247,0.35);
+  --ptb-node-option-bg-hover: rgba(187, 154, 247, 0.35);
   --ptb-node-option-border-active: #c9aaf7;
-  --ptb-node-option-bg-active: rgba(187,154,247,0.48);
+  --ptb-node-option-bg-active: rgba(187, 154, 247, 0.48);
 
   /* Node backdrop blur (optional, subtle) */
   --ptb-node-backdrop-filter: saturate(110%) blur(3px);
@@ -103,11 +103,11 @@
   --ptb-codepip-header-bg: #1f2335;
   --ptb-codepip-header-fg: #c0caf5;
   --ptb-codepip-body-bg: #1a1b26;
-  --ptb-codepip-border: rgba(86,95,137,.45);
+  --ptb-codepip-border: rgba(86, 95, 137, 0.45);
 
-  --ptb-code-resizer-bg: rgba(255,255,255,0.10);
-  --ptb-code-resizer-hover-bg: rgba(255,255,255,0.20);
-  --ptb-code-resizer-grip: rgba(255,255,255,0.55);
+  --ptb-code-resizer-bg: rgba(255, 255, 255, 0.1);
+  --ptb-code-resizer-hover-bg: rgba(255, 255, 255, 0.2);
+  --ptb-code-resizer-grip: rgba(255, 255, 255, 0.55);
 
   --ptb-code-btn-neutral-bg: #2a2f4a;
   --ptb-code-btn-neutral-fg: #c0caf5;
@@ -122,27 +122,27 @@
   --ptb-code-fg: #c0caf5;
   --ptb-code-bg: #1a1b26;
 
-  --ptb-code-comment:  #565f89;
-  --ptb-code-keyword:  #7aa2f7;
-  --ptb-code-string:   #9ece6a;
+  --ptb-code-comment: #565f89;
+  --ptb-code-keyword: #7aa2f7;
+  --ptb-code-string: #9ece6a;
   --ptb-code-function: #bb9af7;
-  --ptb-code-number:   #ff9e64;
+  --ptb-code-number: #ff9e64;
   --ptb-code-operator: #a9b1d6;
   --ptb-code-punctuation: #a9b1d6;
-  --ptb-code-class:    #bb9af7;
-  --ptb-code-attr:     #2ac3de;
-  --ptb-code-builtin:  #c0caf5;
-  --ptb-code-boolean:  #ff9e64;
+  --ptb-code-class: #bb9af7;
+  --ptb-code-attr: #2ac3de;
+  --ptb-code-builtin: #c0caf5;
+  --ptb-code-boolean: #ff9e64;
 
   /* Modal */
-  --ptb-modal-overlay: rgba(0,0,0,0.6);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.6);
   --ptb-modal-panel-bg: #1f2335;
   --ptb-modal-panel-fg: #c0caf5;
-  --ptb-modal-panel-border: rgba(86,95,137,.45);
+  --ptb-modal-panel-border: rgba(86, 95, 137, 0.45);
   --ptb-modal-header-bg: #1f2335;
 
-  --ptb-assets-row-hover: rgba(255,255,255,0.06);
-  --ptb-assets-divider: rgba(255,255,255,0.12);
+  --ptb-assets-row-hover: rgba(255, 255, 255, 0.06);
+  --ptb-assets-divider: rgba(255, 255, 255, 0.12);
 
   --ptb-modal-btn-neutral-bg: #2a2f4a;
   --ptb-modal-btn-neutral-fg: #c0caf5;
@@ -154,32 +154,32 @@
   --ptb-status-success-fg: #1a1b26;
   --ptb-status-failure-bg: #f7768e; /* red/rose */
   --ptb-status-failure-fg: #1a1b26;
-  --ptb-status-abort-bg:   #e0af68; /* amber */
-  --ptb-status-abort-fg:   #1a1b26;
+  --ptb-status-abort-bg: #e0af68; /* amber */
+  --ptb-status-abort-fg: #1a1b26;
 
   /* Controls */
   --ptb-controls-bg: #2a2f4a;
   --ptb-controls-fg: #c0caf5;
   --ptb-controls-hover: #333a5e;
-  --ptb-controls-border: rgba(86,95,137,.55);
+  --ptb-controls-border: rgba(86, 95, 137, 0.55);
 
   /* MiniMap */
   --ptb-minimap-bg: var(--ptb-controls-bg);
-  --ptb-minimap-node: #565f89;                 /* darker indigo */
-  --ptb-minimap-node-stroke: #c0caf5;          /* light stroke */
+  --ptb-minimap-node: #565f89; /* darker indigo */
+  --ptb-minimap-node-stroke: #c0caf5; /* light stroke */
 
   /* Elevation tokens */
-  --ptb-elev-1: 0 16px 40px rgba(10, 12, 22, .6), 0 6px 18px rgba(10,12,22,.5);
+  --ptb-elev-1: 0 16px 40px rgba(10, 12, 22, 0.6),
+    0 6px 18px rgba(10, 12, 22, 0.5);
 }
 
-:root[data-ptb-theme="tokyo-night"] .ptb-codepip,
-:root[data-ptb-theme="tokyo-night"] .ptb-statusbar,
-:root[data-ptb-theme="tokyo-night"] .ptb-modal__panel {
+:root[data-ptb-theme='tokyo-night'] .ptb-codepip,
+:root[data-ptb-theme='tokyo-night'] .ptb-statusbar,
+:root[data-ptb-theme='tokyo-night'] .ptb-modal__panel {
   box-shadow: var(--ptb-elev-1);
 }
 
-:root[data-ptb-theme="tokyo-night"] .ptb-flow-edge.is-selected {
-  filter:
-    drop-shadow(0 0 1px rgba(169,177,214,0.40))
-    drop-shadow(0 0 3px rgba(0,0,0,0.48));
+:root[data-ptb-theme='tokyo-night'] .ptb-flow-edge.is-selected {
+  filter: drop-shadow(0 0 1px rgba(169, 177, 214, 0.4))
+    drop-shadow(0 0 3px rgba(0, 0, 0, 0.48));
 }
