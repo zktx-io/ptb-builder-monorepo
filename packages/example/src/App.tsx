@@ -8,6 +8,7 @@ import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
+import { usePtbUndo } from './components/usePtbUndo';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
 function App() {
   const account = useCurrentAccount();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const { set: onDocChange } = usePtbUndo();
 
   const handleToast = ({
     message,
@@ -98,6 +100,8 @@ function App() {
         toast={handleToast}
         executeTx={executeTx}
         address={account?.address}
+        showExportButton
+        onDocChange={onDocChange}
       >
         <RouterProvider router={router} />
       </PTBBuilder>

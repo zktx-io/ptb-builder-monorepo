@@ -1,13 +1,16 @@
 import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
 import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 import { DragAndDrop } from '../components/DragAndDrop';
+import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
 
 export const Editor = () => {
   const { network, selectNetwork } = useSuiClientContext();
   const account = useCurrentAccount();
   const { loadFromDoc } = usePTB();
+  const { reset, undo, redo } = usePtbUndo();
 
   // Safe parser for "sui:<network>"
   const parseNetwork = (chain?: string): SuiNetwork | undefined => {
@@ -22,11 +25,37 @@ export const Editor = () => {
       selectNetwork(target);
     }
     loadFromDoc(file);
+    reset();
   };
 
   const handleChancel = () => {
     loadFromDoc(`sui:${network}` as SuiChain);
+    reset();
   };
+
+  useHotkeys(
+    'meta+z,ctrl+z',
+    () => {
+      const doc = undo();
+      if (doc) {
+        loadFromDoc(doc);
+      }
+    },
+    { enableOnFormTags: true, preventDefault: false },
+    [undo],
+  );
+
+  useHotkeys(
+    'meta+shift+z,ctrl+shift+z,ctrl+y',
+    () => {
+      const doc = redo();
+      if (doc) {
+        loadFromDoc(doc);
+      }
+    },
+    { enableOnFormTags: true, preventDefault: false },
+    [redo],
+  );
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
