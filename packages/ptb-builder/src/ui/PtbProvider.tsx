@@ -784,6 +784,7 @@ export function PtbProvider({
     (value) => {
       resetBeforeLoad();
       if (typeof value !== 'string') {
+        setView(value.view);
         setActiveChain(value.chain);
         setModules(value.modules);
         setObjects(value.objects);
@@ -793,7 +794,7 @@ export function PtbProvider({
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             flowActionsRef.current.updateViewport?.(value.view);
-            canUpdate.current = false;
+            canUpdate.current = true;
           });
         });
       } else {
