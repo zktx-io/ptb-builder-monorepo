@@ -449,7 +449,11 @@ export function PTBFlow() {
       if (kind === 'Start' || kind === 'End') return;
     }
 
-    setMenu({ open: true, type, x: e.clientX, y: e.clientY, id });
+    const rect = containerRef.current?.getBoundingClientRect();
+    const left = (e as MouseEvent).clientX - (rect?.left ?? 0);
+    const top = (e as MouseEvent).clientY - (rect?.top ?? 0);
+
+    setMenu({ open: true, type, x: left, y: top, id });
   };
 
   /** Helper: get RF node kind from node.data. */

@@ -11,7 +11,14 @@
 //
 // Resource submenu keeps singleton gating (wallet/gas/clock/random/system).
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { useViewport } from '@xyflow/react';
 
@@ -148,20 +155,34 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       );
   }, [onClose]);
 
-  /** Prevent the menu from clipping off-screen. */
-  const { safeTop, safeLeft } = useMemo(() => {
+  const [pos, setPos] = useState<{ top: number; left: number }>(() => ({
+    top: position.top,
+    left: position.left,
+  }));
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+
+    // Temporarily position at the requested location to get real size.
+    el.style.top = `${position.top}px`;
+    el.style.left = `${position.left}px`;
+
+    const parent =
+      (el.offsetParent as HTMLElement) || el.parentElement || document.body;
+    const parentRect = parent.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     const MARGIN = 8;
-    const MENU_W = 260;
-    const MENU_H = 420;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const left = Math.min(
-      Math.max(MARGIN, position.left),
-      vw - MENU_W - MARGIN,
-    );
-    const top = Math.min(Math.max(MARGIN, position.top), vh - MENU_H - MARGIN);
-    return { safeTop: top, safeLeft: left };
-  }, [position.left, position.top]);
+
+    // Clamp within the parent (ReactFlow container) bounds.
+    const maxLeft = parentRect.width - rect.width - MARGIN;
+    const maxTop = parentRect.height - rect.height - MARGIN;
+
+    let nextLeft = Math.max(MARGIN, Math.min(position.left, maxLeft));
+    let nextTop = Math.max(MARGIN, Math.min(position.top, maxTop));
+
+    setPos({ top: nextTop, left: nextLeft });
+  }, [position.top, position.left, type]);
 
   // ---- Render helpers ----
 
@@ -356,8 +377,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       ref={rootRef}
       className="absolute rounded-md shadow-2xl ptb-menu"
       style={{
-        top: safeTop,
-        left: safeLeft,
+        top: pos.top,
+        left: pos.left,
         zIndex: 10000,
         minWidth: 240,
         pointerEvents: 'auto',
