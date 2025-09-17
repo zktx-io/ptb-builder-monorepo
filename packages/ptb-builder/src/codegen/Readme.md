@@ -15,6 +15,7 @@ The goal: **runtime and codegen must behave identically.**
 - **`transferObjects.recipient` never uses `pure`.**
 - **`makeMoveVec.elements` accept handles or primitive values, no `pure`.**
 - **Refs from prior commands are treated as transaction handles (pass-through).**
+- **Repeated `pure(...)` calls must be hoisted into a single `const` and reused.**
 
 ---
 
@@ -22,7 +23,7 @@ The goal: **runtime and codegen must behave identically.**
 
 - **Object handle**: `tx.object('0x...')`, `tx.gas`, `tx.object.system`, `tx.object.clock`, `tx.object.random`, or outputs from prior commands.
 - **Address literal**: `"0x..."`, or sentinel `myAddress` / `sender`.
-- **Numeric literal**: `number`, `bigint`, `"123"` (decimal string).
+- **Numeric literal**: `number`, `bigint`, `"123"` (decimal string), or `move_numeric`.
 - **Bool**: `true` / `false`.
 - **Other string**: not supported as Move values.
 
@@ -32,10 +33,10 @@ The goal: **runtime and codegen must behave identically.**
 
 ### splitCoins
 
-| Field     | Type            | Allowed? | Serialize?                | Notes                           |
-| --------- | --------------- | -------- | ------------------------- | ------------------------------- |
-| `coin`    | Object handle   | ✅       | No                        | Must be a handle.               |
-| `amounts` | Numeric literal | ✅       | **No (`pure` forbidden)** | Multiple scalars, not a vector. |
+| Field     | Type              | Allowed? | Serialize?                | Notes                           |
+| --------- | ----------------- | -------- | ------------------------- | ------------------------------- |
+| `coin`    | Object handle     | ✅       | No                        | Must be a handle.               |
+| `amounts` | Numeric literal / `move_numeric` | ✅ | **No (`pure` forbidden)** | Multiple scalars, not a vector. |
 
 **Output:** destructure into **N scalars** (one per amount).
 
@@ -61,11 +62,13 @@ The goal: **runtime and codegen must behave identically.**
 
 ### makeMoveVec
 
-| Field      | Type                    | Allowed? | Serialize? | Notes                 |
-| ---------- | ----------------------- | -------- | ---------- | --------------------- |
-| `elements` | Object handle           | ✅       | No         | Handles pass-through. |
-|            | Address / Number / Bool | ✅       | No         | Use raw literals.     |
-|            | Other string            | ❌       | —          | Not supported.        |
+| Field      | Type                    | Allowed? | Serialize? | Notes                                              |
+| ---------- | ----------------------- | -------- | ---------- | -------------------------------------------------- |
+| `elements` | Object handle           | ✅       | No         | Handles pass-through.                              |
+|            | Address / Number / Bool | ✅       | No         | Use raw literals.                                  |
+|            | Other string            | ❌       | —          | Not supported.                                     |
+
+**Additional rule:** `elemType` is mandatory. If missing, insert `{ kind: 'undef' }` and raise a warning (UI tooltip or toast).
 
 ---
 
@@ -78,7 +81,7 @@ The goal: **runtime and codegen must behave identically.**
 |                 | Numeric literal  | ✅       | **Yes → `tx.pure.u64`**     |                                      |
 |                 | Bool             | ✅       | **Yes → `tx.pure.bool`**    |                                      |
 |                 | Other string     | ❌       | —                           | Unsupported.                         |
-| `typeArguments` | string type tags | ✅       | No                          | Print as raw strings.                |
+| `typeArguments` | string type tags | ✅       | No                          | Always emit as raw string literal.   |
 
 ---
 
@@ -91,7 +94,7 @@ The goal: **runtime and codegen must behave identically.**
 | Field     | From prior cmd | Allowed? | Serialize?                | Notes             |
 | --------- | -------------- | -------- | ------------------------- | ----------------- |
 | `coin`    | Handle         | ✅       | No                        | Must be a handle. |
-| `amounts` | Primitive nums | ✅       | **No (`pure` forbidden)** |                   |
+| `amounts` | `move_numeric` | ✅       | **No (`pure` forbidden)** |                   |
 
 **Output:** destructure into N scalars.
 
@@ -136,17 +139,19 @@ The goal: **runtime and codegen must behave identically.**
 ## Mandatory Output & Wiring Rules
 
 - **splitCoins**
-
   - Call with `[a, b, c]` literal.
   - **Always destructure** results into separate vars.
 
-- **transferObjects**
+- **mergeCoins / transferObjects / makeMoveVec / moveCall**
+  - Every OUT port must bind to a new symbol in codegen/runtime.
+  - No dangling outputs are allowed.
 
+- **transferObjects**
   - `recipient` never uses `pure`.
 
 - **makeMoveVec**
-
   - No `pure` for elements.
+  - `elemType` must be present.
 
 - **moveCall**
   - Strict `pure` for non-handle args.
@@ -156,12 +161,10 @@ The goal: **runtime and codegen must behave identically.**
 ## MoveCall Return Value Policy
 
 - **0 return values**
-
   - No variables created.
   - Do not assign or generate placeholders.
 
 - **1 return value**
-
   - Assign to a single variable.
   - Example:
     ```ts
@@ -181,9 +184,14 @@ The goal: **runtime and codegen must behave identically.**
 
 - [ ] `splitCoins` → destructure outputs into N scalars.
 - [ ] `splitCoins.amounts` → multiple scalars, never a vector.
+- [ ] `splitCoins.amounts` → `move_numeric` treated as raw, never `pure`.
+- [ ] `makeMoveVec` → `elemType` mandatory, warn if missing.
 - [ ] `moveCall.arguments` → only place where `pure` is applied.
+- [ ] `moveCall.typeArguments` → always raw string literal.
 - [ ] `transferObjects.recipient` → no `pure`.
 - [ ] `makeMoveVec.elements` → no `pure`.
+- [ ] All Command OUT ports → must bind to a variable.
 - [ ] `moveCall` return values follow policy (0, 1, N).
-- [ ] Codegen and runtime share exact same rules.
-- [ ] Optional: hoist repeated `pure(...)` calls into a const for reuse.
+- [ ] Hoist repeated `pure(...)` calls into a single `const`.
+
+---

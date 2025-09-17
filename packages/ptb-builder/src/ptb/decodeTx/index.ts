@@ -38,14 +38,14 @@ import {
   makeGasObject,
   makeId,
   makeIdVector,
+  makeMoveNumericVector,
   makeNumber,
-  makeNumberVector,
   makeObject,
   makeString,
   makeStringVector,
   makeVariableNode,
 } from '../factories';
-import { O, S, V } from '../graph/typeHelpers';
+import { M, O, S, V } from '../graph/typeHelpers';
 import {
   buildHandleId,
   type CommandUIParams,
@@ -122,16 +122,19 @@ function inferPureType(input: SuiCallArg): PTBType {
     case 'u256':
       return S('number');
 
-    // vector<number> (u* vectors)
+    // vectors
     case 'vector<u8>':
+      return V(M('u8'));
     case 'vector<u16>':
+      return V(M('u16'));
     case 'vector<u32>':
+      return V(M('u32'));
     case 'vector<u64>':
+      return V(M('u64'));
     case 'vector<u128>':
+      return V(M('u128'));
     case 'vector<u256>':
-      return V(S('number'));
-
-    // other vectors
+      return V(M('u256'));
     case 'vector<address>':
       return V(S('address'));
     case 'vector<bool>':
@@ -148,7 +151,9 @@ function literalOfPure(input: SuiCallArg): unknown {
   if (input.type !== 'pure') return undefined;
   if (input.valueType === 'vector<u8>') {
     return typeof input.value === 'string'
-      ? Array.from(fromHex(input.value))
+      ? input.value.startsWith('0x')
+        ? Array.from(fromHex(input.value))
+        : Array.from(new TextEncoder().encode(input.value))
       : input.value;
   }
   return input.value;
@@ -157,16 +162,13 @@ function literalOfPure(input: SuiCallArg): unknown {
 // Choose a variable factory by PTBType so labels follow UI policy.
 // - Objects keep concrete typeTag in type (label remains "object").
 // - Model allows vector/object; UI creation may disallow object-in-vector.
-function makeVarByType(
-  t: PTBType,
-  opts: { name?: string; value?: unknown },
-): VariableNode {
+function makeVarByType(t: PTBType, opts: { value?: unknown }): VariableNode {
   // object
   if (t.kind === 'object') {
     if (t.typeTag === '0x2::clock::Clock') {
       return makeClockObject();
     }
-    const v = makeObject(t.typeTag, { name: opts.name, value: opts.value });
+    const v = makeObject(t.typeTag, { value: opts.value });
     return v;
   }
 
@@ -174,15 +176,15 @@ function makeVarByType(
   if (t.kind === 'scalar') {
     switch (t.name) {
       case 'address':
-        return makeAddress({ name: opts.name, value: opts.value });
+        return makeAddress({ value: opts.value });
       case 'bool':
-        return makeBool({ name: opts.name, value: opts.value });
+        return makeBool({ value: opts.value });
       case 'string':
-        return makeString({ name: opts.name, value: opts.value });
+        return makeString({ value: opts.value });
       case 'number':
-        return makeNumber({ name: opts.name, value: opts.value });
+        return makeNumber({ value: opts.value });
       case 'id':
-        return makeId({ name: opts.name, value: opts.value });
+        return makeId({ value: opts.value });
     }
   }
 
@@ -192,21 +194,23 @@ function makeVarByType(
     if (elem?.kind === 'scalar') {
       switch (elem.name) {
         case 'address':
-          return makeAddressVector({ name: opts.name, value: opts.value });
+          return makeAddressVector({ value: opts.value });
         case 'bool':
-          return makeBoolVector({ name: opts.name, value: opts.value });
+          return makeBoolVector({ value: opts.value });
         case 'string':
-          return makeStringVector({ name: opts.name, value: opts.value });
-        case 'number':
-          return makeNumberVector({ name: opts.name, value: opts.value });
+          return makeStringVector({ value: opts.value });
         case 'id':
-          return makeIdVector({ name: opts.name, value: opts.value });
+          return makeIdVector({ value: opts.value });
       }
+    } else if (elem?.kind === 'move_numeric') {
+      return makeMoveNumericVector(elem.width, {
+        value: opts.value,
+      });
     }
   }
 
   // fallback: keep whatever type but no custom label
-  return makeVariableNode(t, { name: opts.name, value: opts.value });
+  return makeVariableNode(t, { value: opts.value });
 }
 
 // ---- nodes/ports/handles ----------------------------------------------------
@@ -399,7 +403,7 @@ export function decodeTx(
       t = O();
       init = undefined;
     }
-    const node = makeVarByType(t, { name: `input_${i}`, value: init });
+    const node = makeVarByType(t, { value: init });
     const knownIds = new Set(Object.values(KNOWN_IDS));
     if (!knownIds.has((node as any).id)) {
       (node as any).id = `input-${i}`;
@@ -678,7 +682,6 @@ export function decodeTx(
       if (tpPorts?.length) {
         targs.forEach((targ, i) => {
           const v = makeVariableNode(S('string'), {
-            name: `type_${i}`,
             label: 'string',
             value: targ,
           }) as VariableNode;

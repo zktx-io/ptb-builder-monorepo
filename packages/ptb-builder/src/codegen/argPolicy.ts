@@ -1,10 +1,9 @@
 // src/codegen/argPolicy.ts
 // -----------------------------------------------------------------------------
 // Single source of truth for classification & serialization policy.
-// Policy summary:
-//   * ONLY moveCall.arguments are pure-serialized (u64/bool/address/array).
-//   * splitCoins / mergeCoins / transferObjects / makeMoveVec never use pure.
-//   * We accept explicit {kind:'undef'} at runtime/codegen and pass it through.
+// - Only moveCall.arguments are pure-serialized.
+// - ParamKind is derived from node port metadata (preprocess); no runtime probing.
+// - Vectors are serialized with tx.pure.vector('<elem>', arr) only for array-*.
 // -----------------------------------------------------------------------------
 
 import type { ParamKind } from './types';
@@ -31,7 +30,7 @@ export function injectMySentinel(raw: unknown, my?: string): unknown {
   return raw;
 }
 
-// ==== Runtime serializer for moveCall.arguments ==============================
+// ==== Runtime serializer for moveCall.arguments (no probing) =================
 
 /** Serialize a single argument according to ParamKind. */
 export function serializeMoveArgRuntime(
@@ -40,62 +39,87 @@ export function serializeMoveArgRuntime(
   kind: ParamKind,
   my?: string,
 ) {
-  // pass through explicit undefined
   if (typeof raw === 'undefined') return undefined;
 
   switch (kind) {
     case 'txarg':
-      return raw; // handles/refs produced by tx API
+      // Handles/Tx args must be passed through untouched.
+      return raw;
 
     case 'addr': {
-      if (typeof raw === 'string') {
-        const inj = injectMySentinel(raw, my);
-        if (isHexAddr(inj)) return tx.pure.address(inj);
-        // non-hex strings pass through (likely invalid at execution time)
-        return inj;
-      }
-      return raw;
+      // Always call pure.address; support 'myAddress'/'sender' sentinel.
+      if (typeof raw === 'string')
+        return tx.pure.address(injectMySentinel(raw, my));
+      return tx.pure.address(raw);
     }
 
     case 'num': {
-      if (typeof raw === 'number' || typeof raw === 'bigint')
-        return tx.pure.u64(raw);
-      if (typeof raw === 'string' && isDecString(raw)) return tx.pure.u64(raw);
-      return raw; // pass-through for refs/others
+      // Always serialize to u64; input may be number/bigint/decimal string.
+      return tx.pure.u64(raw);
     }
 
     case 'bool': {
-      if (typeof raw === 'boolean') return tx.pure.bool(raw);
-      return raw;
+      return tx.pure.bool(raw);
     }
 
-    case 'array-prim': {
-      if (Array.isArray(raw)) return tx.pure(raw);
-      return raw;
-    }
+    // Primitive vectors (element type is already fixed via ParamKind)
+    case 'array-addr':
+      return tx.pure.vector('address', raw);
+    case 'array-bool':
+      return tx.pure.vector('bool', raw);
+    case 'array-u8':
+      return tx.pure.vector('u8', raw);
+    case 'array-u16':
+      return tx.pure.vector('u16', raw);
+    case 'array-u32':
+      return tx.pure.vector('u32', raw);
+    case 'array-u64':
+      return tx.pure.vector('u64', raw);
+    case 'array-u128':
+      return tx.pure.vector('u128', raw);
+    case 'array-u256':
+      return tx.pure.vector('u256', raw);
 
     case 'other':
     default:
+      // No pure; pass raw through as-is.
       return raw;
   }
 }
 
-// ==== Codegen renderer for moveCall.arguments ================================
+// ==== Codegen renderer for moveCall.arguments (no probing) ===================
 
 export function renderMoveArgCode(expr: string, kind: ParamKind): string {
   switch (kind) {
     case 'txarg':
       return expr;
     case 'addr':
-      return `typeof ${expr} === 'string' ? tx.pure.address(${expr}) : ${expr}`;
+      return `tx.pure.address(${expr})`;
     case 'num':
-      return `typeof ${expr} === 'number' || typeof ${expr} === 'bigint' ? tx.pure.u64(${expr}) : (/^\\d+$/.test(String(${expr})) ? tx.pure.u64(${expr}) : ${expr})`;
+      return `tx.pure.u64(${expr})`;
     case 'bool':
-      return `typeof ${expr} === 'boolean' ? tx.pure.bool(${expr}) : ${expr}`;
-    case 'array-prim':
-      return `Array.isArray(${expr}) ? tx.pure(${expr}) : ${expr}`;
+      return `tx.pure.bool(${expr})`;
+
+    // vectors
+    case 'array-addr':
+      return `tx.pure.vector('address', ${expr})`;
+    case 'array-bool':
+      return `tx.pure.vector('bool', ${expr})`;
+    case 'array-u8':
+      return `tx.pure.vector('u8', ${expr})`;
+    case 'array-u16':
+      return `tx.pure.vector('u16', ${expr})`;
+    case 'array-u32':
+      return `tx.pure.vector('u32', ${expr})`;
+    case 'array-u64':
+      return `tx.pure.vector('u64', ${expr})`;
+    case 'array-u128':
+      return `tx.pure.vector('u128', ${expr})`;
+    case 'array-u256':
+      return `tx.pure.vector('u256', ${expr})`;
+
     case 'other':
     default:
-      return expr;
+      return expr; // raw
   }
 }

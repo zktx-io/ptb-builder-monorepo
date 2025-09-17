@@ -105,7 +105,6 @@ export function makeCommandNode(
 export function makeVariableNode(
   varType: PTBType,
   opts?: {
-    name?: string;
     label?: string;
     value?: unknown;
     position?: { x: number; y: number };
@@ -117,7 +116,7 @@ export function makeVariableNode(
     id,
     kind: 'Variable',
     label: opts?.label ?? 'var',
-    name: opts?.name ?? 'var',
+    name: 'var',
     varType,
     value: opts?.value,
     ports: [makeVarOut(varType)],
@@ -156,10 +155,6 @@ export const makeObject = (
 export const makeAddressVector = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
 ) => makeVariableNode(V(S('address')), { ...opts, label: 'vector<address>' });
-
-export const makeNumberVector = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(V(S('number')), { ...opts, label: 'vector<number>' });
 
 export const makeBoolVector = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
@@ -285,62 +280,4 @@ export function makeSystemObject(): VariableNode {
     ports: [makeVarOut(t)],
     position: { x: 0, y: 0 },
   };
-}
-
-// ------------------------------ Optional helpers -----------------------------
-/** Convenience: vector token → variable node (for menu/shortcuts). */
-export function makeFromVectorToken(
-  token:
-    | 'address'
-    | 'number'
-    | 'bool'
-    | 'string'
-    | 'id'
-    | 'u8'
-    | 'u16'
-    | 'u32'
-    | 'u64'
-    | 'u128'
-    | 'u256',
-): VariableNode {
-  switch (token) {
-    case 'address':
-      return makeAddressVector();
-    case 'number':
-      return makeNumberVector();
-    case 'bool':
-      return makeBoolVector();
-    case 'string':
-      return makeStringVector();
-    case 'id':
-      return makeIdVector();
-    // move numeric widths
-    case 'u8':
-    case 'u16':
-    case 'u32':
-    case 'u64':
-    case 'u128':
-    case 'u256':
-      return makeMoveNumericVector(token);
-  }
-}
-
-/** Convenience: scalar token → variable node. */
-export function makeFromScalarToken(
-  token: 'address' | 'number' | 'bool' | 'string' | 'id' | 'object',
-): VariableNode {
-  switch (token) {
-    case 'address':
-      return makeAddress();
-    case 'number':
-      return makeNumber();
-    case 'bool':
-      return makeBool();
-    case 'string':
-      return makeString();
-    case 'id':
-      return makeId();
-    case 'object':
-      return makeObject();
-  }
 }

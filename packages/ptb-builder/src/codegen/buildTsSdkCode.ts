@@ -1,11 +1,11 @@
 // src/codegen/buildTsSdkCode.ts
 // -----------------------------------------------------------------------------
-// Emit TypeScript code mirroring buildTransaction 1:1.
-// - ONLY moveCall.arguments are rendered with pure(...) according to ParamKind.
-// - splitCoins/mergeCoins/transferObjects/makeMoveVec are raw.
-// - splitCoins outputs destructured into N names.
-// - moveCall returns: 0 -> no binding, 1 -> const x = call, N -> const [a,b]=call
-// - {kind:'undef'} rendered as `undefined`.
+// Generate TypeScript code mirroring buildTransaction.
+// Policy:
+//   - Only moveCall.arguments use pure(...), driven solely by ParamKind.
+//   - splitCoins/mergeCoins/transferObjects/makeMoveVec use raw values.
+//   - Variables are emitted raw; ref-args are hoisted to consts to serialize once.
+//   - {kind:'undef'} is rendered as `undefined`.
 // -----------------------------------------------------------------------------
 
 import { PTBGraph } from '../ptb/graph/types';
@@ -33,7 +33,7 @@ class W {
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-/** Render PValue for non-serialized contexts (raw). */
+/** Render PValue as raw (no serialization). */
 function renderRawValue(v: PValue): string {
   switch (v.kind) {
     case 'undef':
@@ -59,15 +59,15 @@ function renderRawValue(v: PValue): string {
 }
 
 function generate(p: Program, opts?: ExecOptions): string {
-  const header = new W(),
-    vars = new W(),
-    body = new W();
+  const header = new W();
+  const vars = new W();
+  const body = new W();
 
   header.w(`// Auto-generated from PTB Program (chain: ${p.chain})`);
   header.w(`import { Transaction } from '@mysten/sui/transactions';`);
   header.w('');
 
-  if (opts?.myAddress) header.w(`const myAddress = '${opts.myAddress}';`);
+  if (opts?.myAddress) header.w(`const myAddress = '${esc(opts.myAddress)}';`);
   else if (p.header.usedMyAddress) header.w(`// const myAddress = '0x...';`);
 
   header.w(`const tx = new Transaction();`);
@@ -84,26 +84,20 @@ function generate(p: Program, opts?: ExecOptions): string {
   else header.w(`// tx.setGasBudgetIfNotSet(500_000_000);`);
   header.w('');
 
-  // Variables (raw)
+  // Emit variable declarations (raw)
   for (const v of p.vars)
     vars.w(`const ${v.name} = ${renderRawValue(v.init)};`);
   if (p.vars.length) vars.w('');
 
-  // Ops
+  // Emit operations
   for (const op of p.ops) {
     switch (op.kind) {
       case 'splitCoins': {
         const coin = renderRawValue(op.coin);
         const list = `[${op.amounts.map(renderRawValue).join(', ')}]`;
-        if (op.out.names.length === 1) {
-          body.w(
-            `const [${op.out.names[0]}] = tx.splitCoins(${coin}, ${list});`,
-          );
-        } else {
-          body.w(
-            `const [${op.out.names.join(', ')}] = tx.splitCoins(${coin}, ${list});`,
-          );
-        }
+        body.w(
+          `const [${op.out.names.join(', ')}] = tx.splitCoins(${coin}, ${list});`,
+        );
         break;
       }
 
@@ -133,27 +127,46 @@ function generate(p: Program, opts?: ExecOptions): string {
         const targs = op.typeArgs.length
           ? `[${op.typeArgs.map(renderRawValue).join(', ')}]`
           : '';
-        const argsRendered = op.args.map((a, i) =>
-          renderMoveArgCode(renderRawValue(a), op.paramKinds[i] ?? 'other'),
-        );
-        const args = argsRendered.length ? `[${argsRendered.join(', ')}]` : '';
+
+        const hoisted: string[] = [];
+        const renderedArgs: string[] = [];
+
+        op.args.forEach((a, i) => {
+          const rawExpr = renderRawValue(a);
+          const kind = op.paramKinds[i] ?? 'other';
+
+          if (kind === 'txarg') {
+            renderedArgs.push(rawExpr);
+            return;
+          }
+
+          const rendered = renderMoveArgCode(rawExpr, kind);
+
+          if (a.kind === 'ref') {
+            const ho = `__arg_${a.name}_${i}`;
+            if (!hoisted.includes(ho)) {
+              body.w(`const ${ho} = ${rendered};`);
+              hoisted.push(ho);
+            }
+            renderedArgs.push(ho);
+          } else {
+            renderedArgs.push(rendered);
+          }
+        });
+
+        const args = renderedArgs.length ? `[${renderedArgs.join(', ')}]` : '';
 
         const callExprLines: string[] = [];
         callExprLines.push(`target: '${esc(op.target)}',`);
         if (targs) callExprLines.push(`typeArguments: ${targs},`);
         if (args) callExprLines.push(`arguments: ${args},`);
 
-        const callExpr = `tx.moveCall({\n${'  '.repeat(body['i'] + 1)}${callExprLines.join(
-          `\n${'  '.repeat(body['i'] + 1)}`,
-        )}\n${'  '.repeat(body['i'])}})`;
+        const callExpr = `tx.moveCall({\n  ${callExprLines.join('\n  ')}\n})`;
 
-        if (op.rets.mode === 'none') {
-          body.w(callExpr + `;`);
-        } else if (op.rets.mode === 'single') {
+        if (op.rets.mode === 'none') body.w(callExpr + `;`);
+        else if (op.rets.mode === 'single')
           body.w(`const ${op.rets.name} = ${callExpr};`);
-        } else {
-          body.w(`const [${op.rets.names.join(', ')}] = ${callExpr};`);
-        }
+        else body.w(`const [${op.rets.names.join(', ')}] = ${callExpr};`);
         break;
       }
     }

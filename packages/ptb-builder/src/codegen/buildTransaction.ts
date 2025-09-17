@@ -1,11 +1,11 @@
 // src/codegen/buildTransaction.ts
 // -----------------------------------------------------------------------------
-// Build a Transaction from Program IR.
-// - ONLY moveCall.arguments are pure-serialized (per ParamKind).
-// - splitCoins/mergeCoins/transferObjects/makeMoveVec use raw values.
-// - splitCoins outputs are ALWAYS destructured into N env bindings.
-// - moveCall returns: 0 -> no binding, 1 -> single name, N -> destructure.
-// - Explicit {kind:'undef'} becomes JS undefined (no nulls).
+// Build a Transaction object from Program IR.
+// Policy:
+//   - Only moveCall.arguments are pure-serialized (ParamKind-driven).
+//   - splitCoins/mergeCoins/transferObjects/makeMoveVec use raw values.
+//   - Variable refs are cached to avoid re-serialization per-arg.
+//   - {kind:'undef'} becomes JS undefined.
 // -----------------------------------------------------------------------------
 
 import { Transaction } from '@mysten/sui/transactions';
@@ -16,13 +16,13 @@ import type { Chain } from '../types';
 import { serializeMoveArgRuntime } from './argPolicy';
 import { preprocess } from './preprocess';
 
-/** 1-level flatten: [a,[b,c],d] -> [a,b,c,d] */
+/** Flatten a single nested array one level: [ [a,b] ] -> [a,b] */
 function flatten1(xs: any[]): any[] {
   if (xs.length === 1 && Array.isArray(xs[0])) return xs[0];
   return xs;
 }
 
-/** Evaluate a PValue into a runtime value (handles/refs/literals/undefined). */
+/** Evaluate a PValue into a runtime value. */
 function evalValue(
   tx: Transaction,
   v: PValue,
@@ -59,15 +59,16 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
   if (typeof opts?.gasBudget === 'number')
     tx.setGasBudgetIfNotSet(opts.gasBudget);
 
-  const env = new Map<string, any>(); // symbol -> actual value
+  const env = new Map<string, any>();
+  const serializeCache = new Map<string, any>(); // key: `${refName}#${idx}`
 
-  // 1) Materialize variables
+  // Materialize declared variables (raw)
   for (const v of p.vars) {
     const val = evalValue(tx, v.init, env, opts?.myAddress);
     env.set(v.name, val);
   }
 
-  // 2) Execute ops
+  // Execute operations
   for (const op of p.ops) {
     switch (op.kind) {
       case 'splitCoins': {
@@ -77,7 +78,6 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
         );
         const amounts = flatten1(rawList); // raw numbers/undefined (no pure)
         const res = (tx as any).splitCoins(coin, amounts);
-        // N outputs = N amounts; bind by name
         op.out.names.forEach((nm, i) => env.set(nm, res[i]));
         break;
       }
@@ -121,14 +121,22 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
         const argsRaw = op.args.map((a) =>
           evalValue(tx, a, env, opts?.myAddress),
         );
-        const args = argsRaw.map((x, i) =>
-          serializeMoveArgRuntime(
-            tx,
-            x,
-            op.paramKinds[i] ?? 'other',
-            opts?.myAddress,
-          ),
-        );
+
+        const args = argsRaw.map((x, i) => {
+          const kind = op.paramKinds[i] ?? 'other';
+          const src = op.args[i];
+
+          if (kind === 'txarg') return x;
+
+          if (src.kind === 'ref') {
+            const key = `${src.name}#${i}`;
+            if (serializeCache.has(key)) return serializeCache.get(key);
+            const ser = serializeMoveArgRuntime(tx, x, kind, opts?.myAddress);
+            serializeCache.set(key, ser);
+            return ser;
+          }
+          return serializeMoveArgRuntime(tx, x, kind, opts?.myAddress);
+        });
 
         const call = (tx as any).moveCall({
           target: op.target,
@@ -136,13 +144,9 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
           ...(args.length ? { arguments: args } : {}),
         });
 
-        // return binding policy
-        if (op.rets.mode === 'single') {
-          env.set(op.rets.name, call);
-        } else if (op.rets.mode === 'destructure') {
+        if (op.rets.mode === 'single') env.set(op.rets.name, call);
+        else if (op.rets.mode === 'destructure')
           op.rets.names.forEach((nm, i) => env.set(nm, call[i]));
-        }
-        // mode 'none' -> no binding
         break;
       }
     }

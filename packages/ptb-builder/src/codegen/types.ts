@@ -1,9 +1,8 @@
 // src/codegen/types.ts
 // -----------------------------------------------------------------------------
 // Core IR types for PTB codegen/runtime builders.
-// - MoveCall return policy is represented by PMoveCallRets (none/single/destructure).
-// - Undefined support: PUndefined explicitly represents "no value provided" and
-//   is preserved through preprocess/builders (no nulls allowed).
+// - ParamKind encodes how to serialize moveCall arguments (no runtime probing).
+// - PUndefined explicitly represents "no value provided" (no nulls).
 // -----------------------------------------------------------------------------
 
 import type { Chain } from '../types';
@@ -65,14 +64,22 @@ export type PMakeMoveVec = {
   };
 };
 
-/** MoveCall param kind (drives pure policy at runtime/codegen) */
+/** MoveCall param kind (sole driver for pure policy; no runtime probing) */
 export type ParamKind =
   | 'txarg' // handle/ref
-  | 'addr' // Sui address
-  | 'num' // u64-like number/bigint/decstr
-  | 'bool' // boolean
-  | 'array-prim' // array of primitives (rare; if UI exposes)
-  | 'other'; // fallback (no pure)
+  | 'addr' // Sui address scalar
+  | 'num' // u64-like scalar
+  | 'bool' // boolean scalar
+  // primitive vectors (element width/kind comes from port metadata only)
+  | 'array-addr'
+  | 'array-bool'
+  | 'array-u8'
+  | 'array-u16'
+  | 'array-u32'
+  | 'array-u64'
+  | 'array-u128'
+  | 'array-u256'
+  | 'other'; // no pure
 
 /** MoveCall return binding policy */
 export type PMoveCallRets =
