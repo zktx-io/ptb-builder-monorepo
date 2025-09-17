@@ -15,7 +15,6 @@ export const Home = () => {
 
   return (
     <div
-      className="container"
       style={{
         position: 'fixed',
         top: 0,
