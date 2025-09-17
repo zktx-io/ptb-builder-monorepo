@@ -10,7 +10,12 @@ import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
 import { firstInPorts, outPortsWithPrefix } from '../../ptb/decodeTx/findPorts';
 import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
-import { NODE_SIZES } from '../nodes/nodeLayout';
+import {
+  BOTTOM_PADDING,
+  NODE_SIZES,
+  ROW_SPACING,
+  TITLE_TO_IO_GAP,
+} from '../nodes/nodeLayout';
 
 export type LayoutPositions = Record<string, { x: number; y: number }>;
 export type AutoLayoutOptions = {
@@ -67,69 +72,15 @@ const COL_GAP_X = 140;
 const ROW_Y = 0;
 const MARGIN_X = 40;
 
-const VAR_GAP_Y = 16;
-const VAR_PAD_TOP = 28;
+const VAR_PAD_TOP = 60;
 
 const TEXT_INPUT_H = 28;
 const VECTOR_EXTRA_H = 40;
 
-const TITLE_H = 28;
-const BODY_VPAD = 12;
 const PORT_ROW_H = 12;
 const GROUP_GAP_V = 6;
 
-const UI_SELECT_H = TEXT_INPUT_H;
-const UI_SELECT_GAP_V = 8;
-
 // ---- Height estimation (data → measured → heuristic) ------------------------
-
-/** Extract a semantic group key from a port id. */
-function groupKeyFromPortId(id: string, dir: 'in' | 'out'): string {
-  const norm = id.toLowerCase();
-  const m = norm.match(/^(in|out)_(.+)$/);
-  const body = m ? m[2] : norm;
-  const g = body.replace(/_(\d+).*$/, '');
-  const head = g.split('_')[0];
-
-  if (body.startsWith('ret')) return `${dir}:ret`;
-  if (body.startsWith('targ')) return `${dir}:targ`;
-  if (body.startsWith('arg')) return `${dir}:arg`;
-  return `${dir}:${head}`;
-}
-
-/** Count grouped rows for IO ports on a command node. */
-function countPortRowsAndGroups(n: RFNode<RFNodeData>) {
-  const p = ptbNode(n);
-  if (!p) return { rows: 0, groups: 0, hasAny: false };
-
-  const inPorts = firstInPorts(p as any);
-
-  const outRet = outPortsWithPrefix(p as any, 'out_ret_');
-  const outCoin = outPortsWithPrefix(p as any, 'out_coin_');
-  const outVec = outPortsWithPrefix(p as any, 'out_vec'); // makeMoveVec
-  const allOut = ((p.ports ?? []) as any[]).filter(
-    (q) => q.role === 'io' && q.direction === 'out',
-  );
-  // Remove the ones we already accounted for
-  const knownOutIds = new Set(
-    [...outRet, ...outCoin, ...outVec].map((q) => String(q.id)),
-  );
-  const otherOut = allOut.filter((q) => !knownOutIds.has(String(q.id)));
-
-  const outPorts = [...outRet, ...outCoin, ...outVec, ...otherOut];
-
-  const inGroups = new Set<string>();
-  const outGroups = new Set<string>();
-  inPorts.forEach((q) => inGroups.add(groupKeyFromPortId(String(q.id), 'in')));
-  outPorts.forEach((q) =>
-    outGroups.add(groupKeyFromPortId(String(q.id), 'out')),
-  );
-
-  const rows = inPorts.length + outPorts.length;
-  const groups = inGroups.size + outGroups.size;
-
-  return { rows, groups, hasAny: rows > 0 };
-}
 
 /** Estimate effective height purely from ptbNode data (ports only). */
 function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
@@ -160,20 +111,35 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
 
   // Commands (ports-only: title + paddings + rows + group gaps)
   if (kind === 'Command') {
-    const { rows, groups } = countPortRowsAndGroups(n);
-    const gaps = Math.max(0, groups - 1) * GROUP_GAP_V;
-    const rowsH = rows * PORT_ROW_H;
+    const pCmd = p as any;
+    const inPorts = firstInPorts(pCmd);
+    const outRet = outPortsWithPrefix(pCmd, 'out_ret_');
+    const outCoin = outPortsWithPrefix(pCmd, 'out_coin_');
+    const outVec = outPortsWithPrefix(pCmd, 'out_vec');
+    const allOut = ((pCmd.ports ?? []) as any[]).filter(
+      (q) => q.role === 'io' && q.direction === 'out',
+    );
+    const knownOutIds = new Set(
+      [...outRet, ...outCoin, ...outVec].map((q) => String(q.id)),
+    );
+    const otherOut = allOut.filter((q) => !knownOutIds.has(String(q.id)));
+    const outPorts = [...outRet, ...outCoin, ...outVec, ...otherOut];
 
-    let moveCallExtra = 0;
-    if (p?.command === 'moveCall') {
-      const selectCount = 3;
-      const selectBlockH =
-        selectCount * UI_SELECT_H +
-        Math.max(0, selectCount - 1) * UI_SELECT_GAP_V;
-      moveCallExtra = BODY_VPAD + selectBlockH;
-    }
+    const inRows = inPorts.length;
+    const outRows = outPorts.length;
 
-    return TITLE_H + BODY_VPAD + rowsH + gaps + moveCallExtra + BODY_VPAD;
+    // BaseCommand: right offset only for splitCoins
+    const rightOffsetRows = p?.command === 'splitCoins' ? 1 : 0;
+
+    // MoveCall: fixed controls offset (3 rows + extra)
+    const controlsOffset = p?.command === 'moveCall' ? 3 * ROW_SPACING + 24 : 0;
+
+    const rowCount = Math.max(inRows, outRows + rightOffsetRows);
+    const gaps = Math.max(0, rowCount - 1);
+
+    return (
+      TITLE_TO_IO_GAP + controlsOffset + gaps * ROW_SPACING + BOTTOM_PADDING
+    );
   }
 
   // Start / End
@@ -406,34 +372,20 @@ function layoutSingleRowPositions(
   pos[end.id] = { x: MARGIN_X + colW * col, y: ROW_Y };
   const endCol = col;
 
-  // --- baseline (flow-row max height) ---------------------------------------
-  // Prefer the tallest command that actually has a Variable→Command input edge.
-  const cmdIdsWithVarInputs = new Set<string>();
-  for (const e of edges) {
-    if (!isIo(e)) continue;
-    const src = nodeById.get(e.source);
-    const tgt = nodeById.get(e.target);
-    if (src && tgt && kindOf(src) === 'Variable' && kindOf(tgt) === 'Command') {
-      cmdIdsWithVarInputs.add(tgt.id);
+  // --- anchors (per-column) -------------------------------------------------
+  const anchorYFor = (n: RFNode<RFNodeData>) => ROW_Y + hOf(n) + VAR_PAD_TOP;
+
+  colAnchorY.set(startCol, anchorYFor(start));
+  for (const c of commands) {
+    const cCol = cmdColIndex.get(c.id)!;
+    const anchor = anchorYFor(c);
+    colAnchorY.set(cCol, anchor);
+    const varCol = cCol - 1;
+    if (!colAnchorY.has(varCol)) {
+      colAnchorY.set(varCol, anchor);
     }
   }
-  const cmdsWithInputs = commands.filter((c) => cmdIdsWithVarInputs.has(c.id));
-  const tallestCmdWithInputs =
-    cmdsWithInputs.length > 0
-      ? Math.max(...cmdsWithInputs.map(hOf))
-      : -Infinity;
-
-  const fallbackTallest = Math.max(hOf(start), hOf(end), ...commands.map(hOf));
-  const flowRowMaxH =
-    tallestCmdWithInputs > -Infinity
-      ? Math.max(hOf(start), hOf(end), tallestCmdWithInputs)
-      : fallbackTallest;
-
-  const commonAnchorY = ROW_Y + flowRowMaxH + VAR_PAD_TOP;
-  colAnchorY.set(startCol, commonAnchorY);
-  for (const c of commands)
-    colAnchorY.set(cmdColIndex.get(c.id)!, commonAnchorY);
-  colAnchorY.set(endCol, commonAnchorY);
+  colAnchorY.set(endCol, anchorYFor(end));
 
   // --- bucket variables by column + compute sort keys -----------------------
   type VItem = {
@@ -513,10 +465,14 @@ function layoutSingleRowPositions(
   // --- vertical stacking with heights --------------------------------------
   const stackY = new Map<number, number>();
   const nextY = (colIdx: number, n: RFNode<RFNodeData>) => {
-    const top = colAnchorY.get(colIdx) ?? commonAnchorY;
+    let top = colAnchorY.get(colIdx);
+    if (top === undefined) {
+      top = colAnchorY.get(startCol) ?? ROW_Y + VAR_PAD_TOP;
+      colAnchorY.set(colIdx, top);
+    }
     const cur = stackY.has(colIdx) ? stackY.get(colIdx)! : top;
     const y = cur;
-    stackY.set(colIdx, cur + hOf(n) + VAR_GAP_Y);
+    stackY.set(colIdx, cur + hOf(n));
     return y;
   };
 
