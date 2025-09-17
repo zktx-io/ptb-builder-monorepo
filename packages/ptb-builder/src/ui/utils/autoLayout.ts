@@ -73,14 +73,23 @@ const ROW_Y = 0;
 const MARGIN_X = 40;
 
 const VAR_PAD_TOP = 60;
-
 const TEXT_INPUT_H = 28;
-const VECTOR_EXTRA_H = 40;
-
-const PORT_ROW_H = 12;
-const GROUP_GAP_V = 6;
 
 // ---- Height estimation (data → measured → heuristic) ------------------------
+
+export function getLength(val: unknown): number {
+  if (val === undefined) return 0;
+  if (Array.isArray(val)) return val.length;
+  if (ArrayBuffer.isView(val) && !(val instanceof DataView)) {
+    return (val as unknown as ArrayLike<unknown>).length;
+  }
+  if (typeof (val as any)?.[Symbol.iterator] === 'function') {
+    let count = 0;
+    for (const _ of val as Iterable<unknown>) count++;
+    return count;
+  }
+  return 0;
+}
 
 /** Estimate effective height purely from ptbNode data (ports only). */
 function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
@@ -98,12 +107,7 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     }
 
     if (vt?.kind === 'vector') {
-      const value = (p as any).value;
-      const len = Array.isArray(value) ? value.length : undefined;
-      const visible = typeof len === 'number' ? Math.min(len, 6) : 0;
-      const extra =
-        visible > 0 ? visible * PORT_ROW_H + GROUP_GAP_V : VECTOR_EXTRA_H;
-      return base + extra;
+      return base + getLength((p as any).value) * TEXT_INPUT_H + 4;
     }
 
     return base;
