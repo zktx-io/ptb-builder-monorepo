@@ -12,6 +12,8 @@ import { usePtbUndo } from './components/usePtbUndo';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
+import { WalrusWallet } from '@zktx.io/walrus-wallet';
+import { loadNetwork } from './network';
 
 const router = createBrowserRouter([
   {
@@ -96,15 +98,20 @@ function App() {
           <ConnectButton />
         </div>
       )}
-      <PTBBuilder
-        toast={handleToast}
-        executeTx={executeTx}
-        address={account?.address}
-        showExportButton
-        onDocChange={onDocChange}
+      <WalrusWallet
+        network={loadNetwork()}
+        onEvent={handleToast}
       >
-        <RouterProvider router={router} />
-      </PTBBuilder>
+        <PTBBuilder
+          toast={handleToast}
+          executeTx={executeTx}
+          address={account?.address}
+          showExportButton
+          onDocChange={onDocChange}
+        >
+          <RouterProvider router={router} />
+        </PTBBuilder>
+      </WalrusWallet>
     </div>
   );
 }

@@ -33,10 +33,10 @@ The goal: **runtime and codegen must behave identically.**
 
 ### splitCoins
 
-| Field     | Type              | Allowed? | Serialize?                | Notes                           |
-| --------- | ----------------- | -------- | ------------------------- | ------------------------------- |
-| `coin`    | Object handle     | ✅       | No                        | Must be a handle.               |
-| `amounts` | Numeric literal / `move_numeric` | ✅ | **No (`pure` forbidden)** | Multiple scalars, not a vector. |
+| Field     | Type                             | Allowed? | Serialize?                | Notes                           |
+| --------- | -------------------------------- | -------- | ------------------------- | ------------------------------- |
+| `coin`    | Object handle                    | ✅       | No                        | Must be a handle.               |
+| `amounts` | Numeric literal / `move_numeric` | ✅       | **No (`pure` forbidden)** | Multiple scalars, not a vector. |
 
 **Output:** destructure into **N scalars** (one per amount).
 
@@ -62,11 +62,11 @@ The goal: **runtime and codegen must behave identically.**
 
 ### makeMoveVec
 
-| Field      | Type                    | Allowed? | Serialize? | Notes                                              |
-| ---------- | ----------------------- | -------- | ---------- | -------------------------------------------------- |
-| `elements` | Object handle           | ✅       | No         | Handles pass-through.                              |
-|            | Address / Number / Bool | ✅       | No         | Use raw literals.                                  |
-|            | Other string            | ❌       | —          | Not supported.                                     |
+| Field      | Type                    | Allowed? | Serialize? | Notes                 |
+| ---------- | ----------------------- | -------- | ---------- | --------------------- |
+| `elements` | Object handle           | ✅       | No         | Handles pass-through. |
+|            | Address / Number / Bool | ✅       | No         | Use raw literals.     |
+|            | Other string            | ❌       | —          | Not supported.        |
 
 **Additional rule:** `elemType` is mandatory. If missing, insert `{ kind: 'undef' }` and raise a warning (UI tooltip or toast).
 
@@ -139,17 +139,21 @@ The goal: **runtime and codegen must behave identically.**
 ## Mandatory Output & Wiring Rules
 
 - **splitCoins**
+
   - Call with `[a, b, c]` literal.
   - **Always destructure** results into separate vars.
 
 - **mergeCoins / transferObjects / makeMoveVec / moveCall**
+
   - Every OUT port must bind to a new symbol in codegen/runtime.
   - No dangling outputs are allowed.
 
 - **transferObjects**
+
   - `recipient` never uses `pure`.
 
 - **makeMoveVec**
+
   - No `pure` for elements.
   - `elemType` must be present.
 
@@ -161,10 +165,12 @@ The goal: **runtime and codegen must behave identically.**
 ## MoveCall Return Value Policy
 
 - **0 return values**
+
   - No variables created.
   - Do not assign or generate placeholders.
 
 - **1 return value**
+
   - Assign to a single variable.
   - Example:
     ```ts
