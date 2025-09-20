@@ -36,8 +36,14 @@ function evalValue(
       if (!env.has(v.name)) throw new Error(`Unbound symbol '${v.name}'`);
       return env.get(v.name);
     }
-    case 'scalar':
+    case 'scalar': {
+      if (typeof v.value === 'string') {
+        if ((v.value === 'myAddress' || v.value === 'sender') && my) {
+          return my;
+        }
+      }
       return v.value;
+    }
     case 'move_numeric':
       return v.value;
     case 'object': {
@@ -60,7 +66,7 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
     tx.setGasBudgetIfNotSet(opts.gasBudget);
 
   const env = new Map<string, any>();
-  const serializeCache = new Map<string, any>(); // key: `${refName}#${idx}`
+  const serializeCache = new Map<string, any>(); // key: `${opSeq}:${kind}:${refName}#${idx}`
 
   // Materialize declared variables (raw)
   for (const v of p.vars) {
@@ -69,7 +75,10 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
   }
 
   // Execute operations
+  let opSeq = 0;
   for (const op of p.ops) {
+    opSeq += 1;
+
     switch (op.kind) {
       case 'splitCoins': {
         const coin = evalValue(tx, op.coin, env, opts?.myAddress);
@@ -129,7 +138,7 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
           if (kind === 'txarg') return x;
 
           if (src.kind === 'ref') {
-            const key = `${src.name}#${i}`;
+            const key = `${opSeq}:${kind}:${src.name}#${i}`;
             if (serializeCache.has(key)) return serializeCache.get(key);
             const ser = serializeMoveArgRuntime(tx, x, kind, opts?.myAddress);
             serializeCache.set(key, ser);

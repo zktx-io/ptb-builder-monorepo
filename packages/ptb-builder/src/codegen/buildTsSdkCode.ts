@@ -41,7 +41,10 @@ function renderRawValue(v: PValue): string {
     case 'ref':
       return v.name;
     case 'scalar': {
-      if (typeof v.value === 'string') return `'${esc(v.value)}'`;
+      if (typeof v.value === 'string') {
+        if (v.value === 'myAddress' || v.value === 'sender') return 'myAddress';
+        return `'${esc(v.value)}'`;
+      }
       return String(v.value);
     }
     case 'move_numeric':
