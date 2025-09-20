@@ -98,10 +98,7 @@ function App() {
           <ConnectButton />
         </div>
       )}
-      <WalrusWallet
-        network={loadNetwork()}
-        onEvent={handleToast}
-      >
+      <WalrusWallet network={loadNetwork()} onEvent={handleToast}>
         <PTBBuilder
           toast={handleToast}
           executeTx={executeTx}
