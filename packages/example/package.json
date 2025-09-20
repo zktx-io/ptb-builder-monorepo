@@ -14,7 +14,7 @@
     "@mysten/sui": "^1.37.2",
     "@tanstack/react-query": "^5.62.11",
     "@zktx.io/ptb-builder": "^0.3.12",
-    "@zktx.io/walrus-wallet": "^0.3.1",
+    "@zktx.io/walrus-wallet": "^0.3.2",
     "notistack": "^3.0.1",
     "query-string": "^9.1.1",
     "react": "^18.3.1",
