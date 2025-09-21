@@ -11,10 +11,6 @@ import 'prismjs/components/prism-javascript';
 import 'prismjs/plugins/line-numbers/prism-line-numbers';
 import 'prismjs/plugins/normalize-whitespace/prism-normalize-whitespace';
 
-// Prism CSS (theme + line numbers)
-// import 'prismjs/themes/prism-tomorrow.css';
-import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
-
 import { AssetsModal } from './AssetsModal';
 import { usePtb } from './PtbProvider';
 import { type Theme, THEMES } from '../types';

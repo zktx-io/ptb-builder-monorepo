@@ -2,42 +2,49 @@ import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
-import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import postcss from 'rollup-plugin-postcss';
 
 export default {
   input: 'src/index.tsx',
   output: [
     {
-      file: 'dist/index.cjs.js',
-      format: 'cjs',
-      exports: 'named',
-    },
-    {
       file: 'dist/index.esm.js',
       format: 'esm',
     },
   ],
   plugins: [
-    peerDepsExternal(),
     resolve({
       browser: true,
       preferBuiltins: false,
     }),
-    resolve(),
     commonjs({
       include: /node_modules/,
     }),
     typescript({
       tsconfig: './tsconfig.json',
-      typescript: await import('typescript').then((ts) => ts.default),
     }),
     postcss({
       extensions: ['.css'],
+      extract: 'index.css',
+      minimize: true,
+      modules: false,
+      inject: false,
     }),
-    terser(),
+    terser({
+      compress: { passes: 2, pure_getters: true, drop_console: false },
+      mangle: { safari10: false },
+      format: { comments: false },
+    }),
   ],
-  external: ['react', 'react-dom'],
+  external: [
+    /^react(\/.*)?$/,
+    /^react-dom(\/.*)?$/,
+    /^@mysten\/sui(\/.*)?$/,
+    /^@xyflow\/react(\/.*)?$/,
+    /^elkjs(\/.*)?$/,
+    /^re-resizable(\/.*)?$/,
+    /^lucide-react(\/.*)?$/,
+  ],
   context: 'this',
   onwarn: (warning, warn) => {
     if (

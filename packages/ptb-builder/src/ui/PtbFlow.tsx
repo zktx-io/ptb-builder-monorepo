@@ -28,16 +28,6 @@ import type {
   Viewport,
 } from '@xyflow/react';
 
-import '@xyflow/react/dist/style.css';
-import './styles/tailwind.css';
-import './styles/theme.light.css';
-import './styles/theme.dark.css';
-import './styles/theme.cobalt2.css';
-import './styles/theme.tokyo.night.css';
-import './styles/theme.cream.css';
-import './styles/theme.mint.breeze.css';
-import './styles/common.css';
-
 import { CodePip, EMPTY_CODE } from './CodePip';
 import { EdgeTypes } from './edges';
 import { ContextMenu } from './menu/ContextMenu';
