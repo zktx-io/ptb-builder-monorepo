@@ -169,8 +169,8 @@
   --ptb-minimap-node-stroke: #c0caf5; /* light stroke */
 
   /* Elevation tokens */
-  --ptb-elev-1: 0 16px 40px rgba(10, 12, 22, 0.6),
-    0 6px 18px rgba(10, 12, 22, 0.5);
+  --ptb-elev-1:
+    0 16px 40px rgba(10, 12, 22, 0.6), 0 6px 18px rgba(10, 12, 22, 0.5);
 }
 
 :root[data-ptb-theme='tokyo-night'] .ptb-codepip,

@@ -139,21 +139,17 @@ The goal: **runtime and codegen must behave identically.**
 ## Mandatory Output & Wiring Rules
 
 - **splitCoins**
-
   - Call with `[a, b, c]` literal.
   - **Always destructure** results into separate vars.
 
 - **mergeCoins / transferObjects / makeMoveVec / moveCall**
-
   - Every OUT port must bind to a new symbol in codegen/runtime.
   - No dangling outputs are allowed.
 
 - **transferObjects**
-
   - `recipient` never uses `pure`.
 
 - **makeMoveVec**
-
   - No `pure` for elements.
   - `elemType` must be present.
 
@@ -165,12 +161,10 @@ The goal: **runtime and codegen must behave identically.**
 ## MoveCall Return Value Policy
 
 - **0 return values**
-
   - No variables created.
   - Do not assign or generate placeholders.
 
 - **1 return value**
-
   - Assign to a single variable.
   - Example:
     ```ts

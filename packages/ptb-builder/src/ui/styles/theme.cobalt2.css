@@ -174,8 +174,8 @@
   --ptb-minimap-node-stroke: #e6f3ff; /* light stroke */
 
   /* Elevation tokens */
-  --ptb-elev-1: 0 14px 36px rgba(8, 24, 36, 0.52),
-    0 6px 16px rgba(8, 24, 36, 0.42);
+  --ptb-elev-1:
+    0 14px 36px rgba(8, 24, 36, 0.52), 0 6px 16px rgba(8, 24, 36, 0.42);
 }
 
 :root[data-ptb-theme='cobalt2'] .ptb-codepip,

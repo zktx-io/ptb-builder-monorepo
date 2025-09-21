@@ -190,8 +190,8 @@
   --ptb-minimap-node-stroke: #5a4b3b; /* darkest brown */
 
   /* Elevation tokens */
-  --ptb-elev-1: 0 12px 28px rgba(92, 72, 48, 0.16),
-    0 4px 10px rgba(92, 72, 48, 0.1);
+  --ptb-elev-1:
+    0 12px 28px rgba(92, 72, 48, 0.16), 0 4px 10px rgba(92, 72, 48, 0.1);
 }
 
 :root[data-ptb-theme='cream'] .ptb-codepip,

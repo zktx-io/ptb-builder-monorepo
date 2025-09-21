@@ -84,6 +84,9 @@ import {
 } from '@mysten/dapp-kit';
 import { enqueueSnackbar } from 'notistack';
 
+import '@mysten/dapp-kit/dist/index.css';
+import '@zktx.io/ptb-builder/index.css';
+
 function App() {
   const account = useCurrentAccount();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();

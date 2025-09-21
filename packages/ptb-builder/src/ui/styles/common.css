@@ -762,8 +762,9 @@
 .ptb-codepip .ptb-codepip__body pre[class*='language-'],
 .ptb-codepip .ptb-codepip__body code[class*='language-'] {
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
   line-height: 1.45;
 }
 

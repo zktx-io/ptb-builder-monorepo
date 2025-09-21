@@ -186,8 +186,8 @@
   --ptb-minimap-node-stroke: #2f8f70; /* darkest mint */
 
   /* Elevation tokens */
-  --ptb-elev-1: 0 12px 28px rgba(46, 88, 70, 0.18),
-    0 4px 10px rgba(46, 88, 70, 0.12);
+  --ptb-elev-1:
+    0 12px 28px rgba(46, 88, 70, 0.18), 0 4px 10px rgba(46, 88, 70, 0.12);
 }
 
 :root[data-ptb-theme='mint-breeze'] .ptb-codepip,
