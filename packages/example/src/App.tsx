@@ -8,6 +8,9 @@ import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
+import '@mysten/dapp-kit/dist/index.css';
+import '@zktx.io/walrus-wallet/index.css';
+
 import { usePtbUndo } from './components/usePtbUndo';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';

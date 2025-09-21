@@ -5,7 +5,6 @@ import {
 } from '@mysten/dapp-kit';
 import { useNavigate } from 'react-router-dom';
 
-import '@mysten/dapp-kit/dist/index.css';
 import { NETWORKS, NetworkType, saveNetwork } from '../network';
 
 export const Home = () => {
