@@ -1,6 +1,6 @@
 {
   "name": "@zktx.io/ptb-builder",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Sui programmable transaction blocks builder",
   "type": "module",
   "exports": {
@@ -34,8 +34,12 @@
     "url": "https://github.com/zktx-io/ptb-builder-monorepo/issues"
   },
   "homepage": "https://github.com/zktx-io/ptb-builder-monorepo#readme",
-  "files": ["dist/"],
-  "sideEffects": ["dist/index.css"],
+  "files": [
+    "dist/"
+  ],
+  "sideEffects": [
+    "dist/index.css"
+  ],
   "peerDependencies": {
     "@mysten/sui": "^1.37.2",
     "@xyflow/react": "^12.8.2",
