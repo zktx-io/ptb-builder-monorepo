@@ -1,15 +1,14 @@
-import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
+import { useSuiClientContext } from '@mysten/dapp-kit';
 import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 import { DragAndDrop } from '../components/DragAndDrop';
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
-import { ConnectGate } from '../components/ConnectGate';
+import { ConnectScreen } from '../components/ConnectScreen';
 
 export const Editor = () => {
   const { network, selectNetwork } = useSuiClientContext();
-  const account = useCurrentAccount();
   const { loadFromDoc } = usePTB();
   const { reset, undo, redo } = usePtbUndo();
 
@@ -59,15 +58,14 @@ export const Editor = () => {
   );
 
   return (
-    <ConnectGate
+    <ConnectScreen
       title="PTB Builder"
       subtitle="Connect your wallet to open the Editor"
-    >
-      <div style={{ width: '100vw', height: '100vh' }}>
-        {account && (
+      connected={
+        <div style={{ width: '100vw', height: '100vh' }}>
           <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />
-        )}
-      </div>
-    </ConnectGate>
+        </div>
+      }
+    />
   );
 };

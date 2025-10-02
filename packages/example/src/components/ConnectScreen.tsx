@@ -1,21 +1,32 @@
-import { ConnectButton, useSuiClientContext } from '@mysten/dapp-kit';
-
+import { ReactNode } from 'react';
+import {
+  useCurrentWallet,
+  ConnectButton,
+  useSuiClientContext,
+} from '@mysten/dapp-kit';
 import { NETWORKS, NetworkType, saveNetwork } from '../network';
+import { useNavigate } from 'react-router-dom';
 
 type Props = {
   title?: string;
   subtitle?: string;
   showNetworkSelect?: boolean;
-  footer?: React.ReactNode;
+  connected?: ReactNode;
 };
 
 export function ConnectScreen({
   title = 'PTB Builder',
   subtitle = 'Connect your wallet to get started',
   showNetworkSelect = true,
-  footer,
+  connected,
 }: Props) {
+  const { connectionStatus } = useCurrentWallet();
+  const navigate = useNavigate();
   const { network, selectNetwork } = useSuiClientContext();
+
+  if (connectionStatus === 'connected' && connected) {
+    return <>{connected}</>;
+  }
 
   return (
     <div
@@ -24,19 +35,19 @@ export function ConnectScreen({
         inset: 0,
         width: '100vw',
         height: '100vh',
-        backgroundColor: '#011829',
+        backgroundColor: 'rgba(1, 24, 41, 0.2)',
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(6px)',
         color: 'white',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 9999,
-        fontSize: '24px',
         textAlign: 'center',
+        padding: 24,
+        gap: 20,
         userSelect: 'none',
-        transition: 'opacity 0.3s ease',
-        padding: '24px',
-        gap: '12px',
       }}
     >
       <img
@@ -51,7 +62,7 @@ export function ConnectScreen({
         <p style={{ fontSize: 16, opacity: 0.8, marginTop: 4 }}>{subtitle}</p>
       )}
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 8 }}>
         <ConnectButton />
       </div>
 
@@ -65,10 +76,15 @@ export function ConnectScreen({
           }}
           style={{
             marginTop: 12,
-            padding: '8px 12px',
-            borderRadius: 8,
+            padding: '10px 12px',
+            borderRadius: 10,
             fontSize: 16,
-            color: 'black',
+            color: '#011829',
+            backgroundColor: '#ffffff',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            minWidth: 200,
           }}
         >
           {NETWORKS.map((n) => (
@@ -80,13 +96,24 @@ export function ConnectScreen({
       )}
 
       <div
+        className="button-container"
+        style={{ display: 'flex', gap: 12, marginTop: 12 }}
+      >
+        <button className="action-button" onClick={() => navigate('/editor')}>
+          Editor
+        </button>
+        <button
+          className="action-button"
+          onClick={() => navigate('/viewer?tx=')}
+        >
+          Viewer
+        </button>
+      </div>
+
+      <div
         style={{ position: 'fixed', bottom: 20, opacity: 0.7, fontSize: 14 }}
       >
-        {footer ?? (
-          <>
-            Developed by <strong>zktx.io</strong>
-          </>
-        )}
+        Developed by <strong>zktx.io</strong>
       </div>
     </div>
   );

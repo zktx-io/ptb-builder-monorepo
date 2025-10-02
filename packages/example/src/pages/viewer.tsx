@@ -8,7 +8,7 @@ import { useLocation } from 'react-router-dom';
 
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain } from '../network';
-import { ConnectGate } from '../components/ConnectGate';
+import { ConnectScreen } from '../components/ConnectScreen';
 
 export const Viewer = () => {
   const initialized = useRef<boolean>(false);
@@ -55,11 +55,10 @@ export const Viewer = () => {
   );
 
   return (
-    <ConnectGate
+    <ConnectScreen
       title="PTB Builder"
       subtitle="Connect your wallet to view on-chain PTBs"
-    >
-      <div />
-    </ConnectGate>
+      connected={<></>}
+    />
   );
 };

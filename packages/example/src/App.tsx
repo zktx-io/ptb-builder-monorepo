@@ -1,5 +1,4 @@
 import {
-  ConnectButton,
   useCurrentAccount,
   useSignAndExecuteTransaction,
 } from '@mysten/dapp-kit';
@@ -86,22 +85,6 @@ function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      {!account && (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#011829',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            flexDirection: 'column',
-            position: 'relative',
-          }}
-        >
-          <ConnectButton />
-        </div>
-      )}
       <WalrusWallet network={loadNetwork()} onEvent={handleToast}>
         <PTBBuilder
           toast={handleToast}
