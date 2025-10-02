@@ -31,15 +31,12 @@ export function DragAndDrop({
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
-
     if (!file.name.endsWith('.ptb')) {
       setMessage('Invalid file. Please upload a .ptb file.');
       return;
     }
-
     const reader = new FileReader();
     reader.onload = (ev) => parseAndLoad(String(ev.target?.result ?? ''));
     reader.readAsText(file);
@@ -90,7 +87,9 @@ export function DragAndDrop({
         inset: 0,
         width: '100vw',
         height: '100vh',
-        backgroundColor: '#011829',
+        backgroundColor: 'rgba(1, 24, 41, 0.2)',
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(6px)',
         color: 'white',
         display: 'flex',
         flexDirection: 'column',
@@ -116,9 +115,13 @@ export function DragAndDrop({
           alignItems: 'center',
           justifyContent: 'center',
           padding: 24,
-          background: dragging ? 'rgba(127, 209, 255, 0.08)' : 'transparent',
+          background: dragging
+            ? 'rgba(255, 255, 255, 0.12)'
+            : 'rgba(255, 255, 255, 0.06)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
           cursor: 'pointer',
           transition: 'border-color 0.2s ease, background 0.2s ease',
+          backdropFilter: 'blur(4px)',
         }}
       >
         <p style={{ fontSize: 20, margin: 0 }}>
@@ -147,22 +150,17 @@ export function DragAndDrop({
           title={PRIMARY_BUTTON.tooltip}
           onClick={() => handlePickTemplate(PRIMARY_BUTTON.key)}
           style={{
-            padding: '10px 14px',
-            fontSize: 14,
+            padding: '12px 20px',
+            fontSize: 16,
+            fontWeight: 700,
             color: '#011829',
             backgroundColor: '#ffffff',
             border: 'none',
-            borderRadius: 10,
+            borderRadius: 12,
             cursor: 'pointer',
-            minWidth: 160,
-            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            minWidth: 200,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.92')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-          onMouseDown={(e) =>
-            (e.currentTarget.style.transform = 'translateY(1px)')
-          }
-          onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
         >
           {PRIMARY_BUTTON.label}
         </button>
