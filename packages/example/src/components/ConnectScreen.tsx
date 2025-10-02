@@ -43,7 +43,6 @@ export function ConnectScreen({
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 9999,
         textAlign: 'center',
         padding: 24,
         gap: 20,
