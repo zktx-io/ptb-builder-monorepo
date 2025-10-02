@@ -5,6 +5,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { DragAndDrop } from '../components/DragAndDrop';
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
+import { ConnectGate } from '../components/ConnectGate';
 
 export const Editor = () => {
   const { network, selectNetwork } = useSuiClientContext();
@@ -58,8 +59,15 @@ export const Editor = () => {
   );
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      {account && <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />}
-    </div>
+    <ConnectGate
+      title="PTB Builder"
+      subtitle="Connect your wallet to open the Editor"
+    >
+      <div style={{ width: '100vw', height: '100vh' }}>
+        {account && (
+          <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />
+        )}
+      </div>
+    </ConnectGate>
   );
 };

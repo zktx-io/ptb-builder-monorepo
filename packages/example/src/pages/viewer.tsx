@@ -8,15 +8,15 @@ import { useLocation } from 'react-router-dom';
 
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain } from '../network';
+import { ConnectGate } from '../components/ConnectGate';
 
 export const Viewer = () => {
   const initialized = useRef<boolean>(false);
-  const { loadFromOnChainTx } = usePTB();
+  const { loadFromOnChainTx, loadFromDoc } = usePTB();
 
   const location = useLocation();
   const { network } = useSuiClientContext();
   const [txHash, setTxHash] = useState<string | undefined>(undefined);
-  const { loadFromDoc } = usePTB();
   const { reset, undo, redo } = usePtbUndo();
 
   useEffect(() => {
@@ -54,5 +54,12 @@ export const Viewer = () => {
     [redo],
   );
 
-  return <></>;
+  return (
+    <ConnectGate
+      title="PTB Builder"
+      subtitle="Connect your wallet to view on-chain PTBs"
+    >
+      <div />
+    </ConnectGate>
+  );
 };

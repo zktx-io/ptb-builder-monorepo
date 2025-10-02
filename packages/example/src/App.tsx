@@ -5,6 +5,7 @@ import {
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
+import { WalrusWallet } from '@zktx.io/walrus-wallet';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
@@ -13,11 +14,10 @@ import '@zktx.io/walrus-wallet/index.css';
 import '@zktx.io/ptb-builder/index.css';
 
 import { usePtbUndo } from './components/usePtbUndo';
+import { loadNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
-import { WalrusWallet } from '@zktx.io/walrus-wallet';
-import { loadNetwork } from './network';
 
 const router = createBrowserRouter([
   {
