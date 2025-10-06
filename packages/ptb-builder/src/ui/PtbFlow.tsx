@@ -906,25 +906,34 @@ export function PTBFlow() {
         <Controls className="ptb-controls" />
 
         {/* Code preview lives inside */}
-        <Panel position="top-right" style={{ pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto' }}>
-            <CodePip
-              /* Re-mount when switching viewer/editor so defaultCollapsed is reapplied */
-              key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
-              /* Close the code pane in viewer mode (on-chain load sets readOnly=true) */
-              defaultCollapsed={readOnly || codePipOpenTick === 0}
-              code={code}
-              language="typescript"
-              title="ts-sdk preview"
-              emptyText={EMPTY_CODE(chain)}
-              canRunning={!!chain && !readOnly && flowActive}
-              isRunning={isRunning}
-              onDryRun={onDryRun}
-              onExecute={onExecute}
-              onAssetPick={onAssetPick}
-            />
+        <Panel
+          /* turn the panel into a full-portal; we’ll place content with the anchor */
+          position="top-left"
+          className="ptb-codepip-portal"
+          style={{ pointerEvents: 'none' }}
+        >
+          {/* Corner anchor → gutter (margin) → actual content */}
+          <div className="ptb-codepip-anchor">
+            <div className="ptb-codepip-gutter">
+              <div className="ptb-codepip-wrap">
+                <CodePip
+                  key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
+                  defaultCollapsed={readOnly || codePipOpenTick === 0}
+                  code={code}
+                  language="typescript"
+                  title="ts-sdk preview"
+                  emptyText={EMPTY_CODE(chain)}
+                  canRunning={!!chain && !readOnly && flowActive}
+                  isRunning={isRunning}
+                  onDryRun={onDryRun}
+                  onExecute={onExecute}
+                  onAssetPick={onAssetPick}
+                />
+              </div>
+            </div>
           </div>
         </Panel>
+
         <Panel position="top-left" style={{ pointerEvents: 'none' }}>
           {loadTxStatus && (
             <div style={{ pointerEvents: 'auto' }}>

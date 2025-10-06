@@ -52,6 +52,8 @@
     var(--ptb-code-fg) 6%,
     transparent
   );
+
+  --ptb-codepip-chrome-h: 90px;
 }
 
 @keyframes ptb-flow-dash {
@@ -1180,5 +1182,119 @@
 @media (prefers-reduced-motion: reduce) {
   .ptb-flow-active .ptb-flow-edge {
     animation: none;
+  }
+}
+
+/* ============================================================
+   CodePip – Corner anchor + gutter
+   ============================================================ */
+
+.ptb-codepip-portal.react-flow__panel {
+  position: absolute !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  transform: none !important;
+  pointer-events: none !important; /* children opt-in */
+}
+
+.ptb-codepip-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: auto;
+  bottom: auto;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.ptb-codepip-gutter {
+  margin: 16px 16px 0 0; /* top/right only */
+  padding: 0;
+}
+
+.ptb-codepip-wrap {
+  width: 380px;
+  max-width: 640px;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto;
+}
+
+.ptb-codepip {
+  display: block;
+  box-sizing: border-box;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ptb-codepip .ptb-codepip__body pre[class*='language-'],
+.ptb-codepip .ptb-codepip__body code[class*='language-'] {
+  font-size: 12px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  line-height: 1.45;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+  .ptb-codepip-anchor {
+    left: 0 !important;
+    right: 0 !important;
+  }
+
+  .ptb-codepip-gutter {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .ptb-codepip-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .ptb-codepip {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  /* 리사이즈 핸들 제거 */
+  .ptb-resize-handle,
+  .ptb-codepip .resizable-handle-left {
+    display: none !important;
+    pointer-events: none !important;
+  }
+
+  .ptb-codepip__body {
+    max-height: calc(100vh - var(--ptb-codepip-chrome-h, 90px)) !important;
+    max-height: calc(100svh - var(--ptb-codepip-chrome-h, 90px)) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ptb-codepip__header,
+  .ptb-codepip__footer {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  @media (max-width: 768px) {
+    .ptb-codepip-anchor {
+      padding-top: env(safe-area-inset-top, 0);
+    }
   }
 }

@@ -134,6 +134,18 @@ export function CodePip({
   const normalized = useMemo(() => code ?? '', [code]);
   const visibleCode = normalized.trim().length ? normalized : emptyText;
 
+  // --- Mobile detection to hard-disable resizing and pin width to 100% ---
+  // Note: Keep logic here minimal; CSS handles the visual layout.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    // Use matchMedia to react to viewport width changes
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = () => setIsMobile(mq.matches);
+    handler();
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   // Prism highlight when visible
   useEffect(() => {
     if (collapsed) return;
@@ -217,10 +229,15 @@ export function CodePip({
     <>
       <Resizable
         className="ptb-codepip"
-        defaultSize={{ width: defaultWidth, height: 'auto' }}
-        minWidth={280}
-        maxWidth={640}
-        enable={{ left: true }}
+        bounds="parent"
+        defaultSize={{
+          width: isMobile ? '100%' : defaultWidth,
+          height: 'auto',
+        }}
+        size={isMobile ? { width: '100%', height: 'auto' } : undefined}
+        minWidth={isMobile ? undefined : 280}
+        maxWidth={isMobile ? undefined : 640}
+        enable={isMobile ? {} : { left: true }}
         handleClasses={{ left: 'ptb-resize-handle' }}
       >
         {/* Header */}
