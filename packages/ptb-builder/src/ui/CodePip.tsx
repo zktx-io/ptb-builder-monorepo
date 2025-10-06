@@ -78,6 +78,10 @@ type CodePipProps = {
 
   onCopy?: (text: string) => Promise<void> | void;
   onAssetPick?: (obj: { objectId: string; typeTag: string }) => void;
+
+  /** Toggle MiniMap from header */
+  showMiniMap: boolean;
+  onToggleMiniMap: (checked: boolean) => void;
 };
 
 /** Inline transient hint label */
@@ -119,6 +123,9 @@ export function CodePip({
 
   onCopy,
   onAssetPick,
+
+  showMiniMap,
+  onToggleMiniMap,
 }: CodePipProps) {
   // eslint-disable-next-line no-restricted-syntax
   const preRef = useRef<HTMLPreElement | null>(null);
@@ -260,6 +267,19 @@ export function CodePip({
                 checked={!collapsed}
                 onChange={(e) => handleCheckbox(e.target.checked)}
                 aria-label="Toggle code preview"
+              />
+            </label>
+
+            <label
+              title="Toggle mini map"
+              className="flex items-center gap-1 cursor-pointer select-none opacity-90"
+            >
+              <span>Map</span>
+              <input
+                type="checkbox"
+                checked={!!showMiniMap}
+                onChange={(e) => onToggleMiniMap?.(e.target.checked)}
+                aria-label="Toggle mini map"
               />
             </label>
 

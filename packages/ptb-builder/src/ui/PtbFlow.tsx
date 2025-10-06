@@ -219,6 +219,9 @@ export function PTBFlow() {
   // Code preview
   const [code, setCode] = useState<string>(EMPTY_CODE(chain));
 
+  // UI toggles
+  const [showMiniMap, setShowMiniMap] = useState(true);
+
   // Flow state flags
   const [flowActive, setFlowActive] = useState(false);
   const [layoutReady, setLayoutReady] = useState(false);
@@ -897,12 +900,14 @@ export function PTBFlow() {
           style={{ backgroundColor: 'transparent' }}
         />
 
-        <MiniMap
-          className="ptb-minimap"
-          maskColor="transparent"
-          nodeColor={() => 'var(--ptb-minimap-node)'}
-          nodeStrokeColor="var(--ptb-minimap-node-stroke)"
-        />
+        {showMiniMap && (
+          <MiniMap
+            className="ptb-minimap"
+            maskColor="transparent"
+            nodeColor={() => 'var(--ptb-minimap-node)'}
+            nodeStrokeColor="var(--ptb-minimap-node-stroke)"
+          />
+        )}
         <Controls className="ptb-controls" />
 
         {/* Code preview lives inside */}
@@ -928,6 +933,8 @@ export function PTBFlow() {
                   onDryRun={onDryRun}
                   onExecute={onExecute}
                   onAssetPick={onAssetPick}
+                  showMiniMap={showMiniMap}
+                  onToggleMiniMap={setShowMiniMap}
                 />
               </div>
             </div>
