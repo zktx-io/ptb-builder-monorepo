@@ -59,6 +59,9 @@
   --ptb-codepip-radius: 10px;
   --ptb-codepip-max-w: 900px;
   --ptb-codepip-chrome-h: 90px;
+  --ptb-code-resizer-bg: transparent;
+  --ptb-code-resizer-hover-bg: color-mix(in srgb, currentColor 8%, transparent);
+  --ptb-code-resizer-grip: color-mix(in srgb, currentColor 45%, transparent);
 }
 
 @keyframes ptb-flow-dash {
