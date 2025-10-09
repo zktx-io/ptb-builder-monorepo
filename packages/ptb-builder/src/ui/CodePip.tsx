@@ -107,7 +107,7 @@ export function CodePip({
   code,
   language = 'typescript',
   title = 'Preview',
-  defaultWidth = 380,
+  defaultWidth = 420,
   maxHeight = 520,
 
   defaultCollapsed = false,
@@ -236,14 +236,13 @@ export function CodePip({
     <>
       <Resizable
         className="ptb-codepip"
-        bounds="parent"
         defaultSize={{
           width: isMobile ? '100%' : defaultWidth,
           height: 'auto',
         }}
         size={isMobile ? { width: '100%', height: 'auto' } : undefined}
-        minWidth={isMobile ? undefined : 280}
-        maxWidth={isMobile ? undefined : 640}
+        minWidth={isMobile ? undefined : 340}
+        maxWidth={isMobile ? undefined : 900}
         enable={isMobile ? {} : { left: true }}
         handleClasses={{ left: 'ptb-resize-handle' }}
       >
@@ -312,7 +311,7 @@ export function CodePip({
             >
               <code
                 ref={codeRef}
-                className={`language-${language} block min-w-max`}
+                className={`language-${language} block min-w-full md:min-w-max`}
                 key={language}
               >
                 {visibleCode}

@@ -911,33 +911,23 @@ export function PTBFlow() {
         <Controls className="ptb-controls" />
 
         {/* Code preview lives inside */}
-        <Panel
-          /* turn the panel into a full-portal; we’ll place content with the anchor */
-          position="top-left"
-          className="ptb-codepip-portal"
-          style={{ pointerEvents: 'none' }}
-        >
-          {/* Corner anchor → gutter (margin) → actual content */}
-          <div className="ptb-codepip-anchor">
-            <div className="ptb-codepip-gutter">
-              <div className="ptb-codepip-wrap">
-                <CodePip
-                  key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
-                  defaultCollapsed={readOnly || codePipOpenTick === 0}
-                  code={code}
-                  language="typescript"
-                  title="ts-sdk preview"
-                  emptyText={EMPTY_CODE(chain)}
-                  canRunning={!!chain && !readOnly && flowActive}
-                  isRunning={isRunning}
-                  onDryRun={onDryRun}
-                  onExecute={onExecute}
-                  onAssetPick={onAssetPick}
-                  showMiniMap={showMiniMap}
-                  onToggleMiniMap={setShowMiniMap}
-                />
-              </div>
-            </div>
+        <Panel position="top-right" className="ptb-codepip-pad">
+          <div className="ptb-codepip-wrap">
+            <CodePip
+              key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
+              defaultCollapsed={readOnly || codePipOpenTick === 0}
+              code={code}
+              language="typescript"
+              title="ts-sdk preview"
+              emptyText={EMPTY_CODE(chain)}
+              canRunning={!!chain && !readOnly && flowActive}
+              isRunning={isRunning}
+              onDryRun={onDryRun}
+              onExecute={onExecute}
+              onAssetPick={onAssetPick}
+              showMiniMap={showMiniMap}
+              onToggleMiniMap={setShowMiniMap}
+            />
           </div>
         </Panel>
 
