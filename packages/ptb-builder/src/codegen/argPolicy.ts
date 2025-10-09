@@ -62,6 +62,9 @@ export function serializeMoveArgRuntime(
       return tx.pure.bool(raw);
     }
 
+    case 'str':
+      return tx.pure.string(raw);
+
     // Primitive vectors (element type is already fixed via ParamKind)
     case 'array-addr':
       return tx.pure.vector('address', raw);
@@ -99,6 +102,8 @@ export function renderMoveArgCode(expr: string, kind: ParamKind): string {
       return `tx.pure.u64(${expr})`;
     case 'bool':
       return `tx.pure.bool(${expr})`;
+    case 'str':
+      return `tx.pure.string(${expr})`;
 
     // vectors
     case 'array-addr':

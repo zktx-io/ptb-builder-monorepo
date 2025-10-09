@@ -70,6 +70,7 @@ export type ParamKind =
   | 'addr' // Sui address scalar
   | 'num' // u64-like scalar
   | 'bool' // boolean scalar
+  | 'str' // string scalar
   // primitive vectors (element width/kind comes from port metadata only)
   | 'array-addr'
   | 'array-bool'

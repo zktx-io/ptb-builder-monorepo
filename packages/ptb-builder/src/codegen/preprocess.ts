@@ -287,7 +287,7 @@ function kindFromDataType(dt: any): ParamKind {
     if (dt.name === 'address') return 'addr';
     if (dt.name === 'bool') return 'bool';
     if (dt.name === 'number' || dt.name === 'id') return 'num';
-    if (dt.name === 'string') return 'other';
+    if (dt.name === 'string') return 'str';
     return 'other';
   }
 
