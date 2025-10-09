@@ -1,7 +1,7 @@
 {
   "name": "example",
   "private": true,
-  "version": "0.3.15",
+  "version": "0.3.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "@mysten/dapp-kit": "^0.18.0",
     "@mysten/sui": "^1.37.2",
     "@tanstack/react-query": "^5.62.11",
-    "@zktx.io/ptb-builder": "^0.3.15",
+    "@zktx.io/ptb-builder": "^0.3.16",
     "@zktx.io/walrus-wallet": "^0.3.10",
     "notistack": "^3.0.1",
     "query-string": "^9.1.1",
