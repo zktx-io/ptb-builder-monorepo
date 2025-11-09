@@ -1205,7 +1205,7 @@
 }
 
 .ptb-codepip-wrap {
-  pointer-events: auto;
+  pointer-events: none;
   width: 100%;
   min-width: 0;
   display: flex;
