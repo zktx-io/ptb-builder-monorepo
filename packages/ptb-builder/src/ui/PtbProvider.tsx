@@ -494,10 +494,6 @@ export function PtbProvider({
   useLayoutEffect(() => {
     try {
       if (!onDocChangeRef.current || !activeChain || !view) return;
-      if (!canUpdate.current) {
-        canUpdate.current = true;
-        return;
-      }
       const doc = buildDoc({
         chain: activeChain,
         graph,
@@ -505,6 +501,12 @@ export function PtbProvider({
         modules: modules ?? {},
         objects: objects ?? {},
       });
+      // First change after a load: mark ready and emit once to seed consumers (e.g., undo history).
+      if (!canUpdate.current) {
+        canUpdate.current = true;
+        onDocChangeRef.current({ ...doc, view });
+        return;
+      }
       onDocChangeRef.current({ ...doc, view });
     } catch {
       // Swallow to avoid breaking the edit loop
