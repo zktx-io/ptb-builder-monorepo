@@ -8,7 +8,7 @@ The goal: **runtime and codegen must behave identically.**
 ## Principles
 
 - **Pure serialization is applied _only_ inside `moveCall.arguments`.**  
-  (`tx.pure.address`, `tx.pure.u64`, `tx.pure.bool`, `tx.pure([...])` if needed)
+  (`tx.pure.address`, `tx.pure.bool`, `tx.pure.id`, `tx.pure.u8|u16|u32|u64|u128|u256`, `tx.pure.vector(...)`)
 - **`splitCoins.amounts` use raw numbers** (no `pure`).
 - **`splitCoins` outputs are destructured into N scalars** (never a single array).
 - **`mergeCoins` uses only object handles.**
@@ -23,7 +23,8 @@ The goal: **runtime and codegen must behave identically.**
 
 - **Object handle**: `tx.object('0x...')`, `tx.gas`, `tx.object.system`, `tx.object.clock`, `tx.object.random`, or outputs from prior commands.
 - **Address literal**: `"0x..."`, or sentinel `myAddress` / `sender`.
-- **Numeric literal**: `number`, `bigint`, `"123"` (decimal string), or `move_numeric`.
+- **Numeric literal**: `number`, `bigint`, `"123"` (decimal string), or `move_numeric` (width-aware where specified).
+- **ID literal**: `"0x..."` (object id), serialized with `tx.pure.id` for moveCall args.
 - **Bool**: `true` / `false`.
 - **Other string**: not supported as Move values.
 
@@ -78,7 +79,8 @@ The goal: **runtime and codegen must behave identically.**
 | --------------- | ---------------- | -------- | --------------------------- | ------------------------------------ |
 | `arguments`     | Object handle    | ✅       | No                          | Handles pass-through.                |
 |                 | Address literal  | ✅       | **Yes → `tx.pure.address`** | Inject `myAddress/sender` if needed. |
-|                 | Numeric literal  | ✅       | **Yes → `tx.pure.u64`**     |                                      |
+|                 | ID literal       | ✅       | **Yes → `tx.pure.id`**      |                                      |
+|                 | Numeric literal  | ✅       | **Yes → width-specific `tx.pure.u8|u16|u32|u64|u128|u256`** (falls back to `u64` when width unknown) | |
 |                 | Bool             | ✅       | **Yes → `tx.pure.bool`**    |                                      |
 |                 | Other string     | ❌       | —                           | Unsupported.                         |
 | `typeArguments` | string type tags | ✅       | No                          | Always emit as raw string literal.   |
@@ -187,6 +189,8 @@ The goal: **runtime and codegen must behave identically.**
 - [ ] `splitCoins.amounts` → `move_numeric` treated as raw, never `pure`.
 - [ ] `makeMoveVec` → `elemType` mandatory, warn if missing.
 - [ ] `moveCall.arguments` → only place where `pure` is applied.
+- [ ] `moveCall.arguments` → numeric widths honored (`u8|u16|u32|u64|u128|u256`), default to `u64` if unknown.
+- [ ] `moveCall.arguments` → ID literals use `tx.pure.id`.
 - [ ] `moveCall.typeArguments` → always raw string literal.
 - [ ] `transferObjects.recipient` → no `pure`.
 - [ ] `makeMoveVec.elements` → no `pure`.

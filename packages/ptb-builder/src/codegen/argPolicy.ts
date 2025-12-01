@@ -53,10 +53,23 @@ export function serializeMoveArgRuntime(
       return tx.pure.address(raw);
     }
 
-    case 'num': {
-      // Always serialize to u64; input may be number/bigint/decimal string.
+    case 'num':
+      return tx.pure.u64(raw); // fallback when width unknown
+    case 'num-u8':
+      return tx.pure.u8(raw);
+    case 'num-u16':
+      return tx.pure.u16(raw);
+    case 'num-u32':
+      return tx.pure.u32(raw);
+    case 'num-u64':
       return tx.pure.u64(raw);
-    }
+    case 'num-u128':
+      return tx.pure.u128(raw);
+    case 'num-u256':
+      return tx.pure.u256(raw);
+
+    case 'id':
+      return tx.pure.id(raw);
 
     case 'bool': {
       return tx.pure.bool(raw);
@@ -100,6 +113,20 @@ export function renderMoveArgCode(expr: string, kind: ParamKind): string {
       return `tx.pure.address(${expr})`;
     case 'num':
       return `tx.pure.u64(${expr})`;
+    case 'num-u8':
+      return `tx.pure.u8(${expr})`;
+    case 'num-u16':
+      return `tx.pure.u16(${expr})`;
+    case 'num-u32':
+      return `tx.pure.u32(${expr})`;
+    case 'num-u64':
+      return `tx.pure.u64(${expr})`;
+    case 'num-u128':
+      return `tx.pure.u128(${expr})`;
+    case 'num-u256':
+      return `tx.pure.u256(${expr})`;
+    case 'id':
+      return `tx.pure.id(${expr})`;
     case 'bool':
       return `tx.pure.bool(${expr})`;
     case 'str':

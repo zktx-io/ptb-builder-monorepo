@@ -286,13 +286,32 @@ function kindFromDataType(dt: any): ParamKind {
   if (dt.kind === 'scalar') {
     if (dt.name === 'address') return 'addr';
     if (dt.name === 'bool') return 'bool';
-    if (dt.name === 'number' || dt.name === 'id') return 'num';
+    if (dt.name === 'id') return 'id';
+    if (dt.name === 'number') return 'num-u64'; // default numeric width
     if (dt.name === 'string') return 'str';
     return 'other';
   }
 
   // move numeric scalar
-  if (dt.kind === 'move_numeric') return 'num';
+  if (dt.kind === 'move_numeric') {
+    const w = String(dt.width ?? '').toLowerCase();
+    switch (w) {
+      case 'u8':
+        return 'num-u8';
+      case 'u16':
+        return 'num-u16';
+      case 'u32':
+        return 'num-u32';
+      case 'u64':
+        return 'num-u64';
+      case 'u128':
+        return 'num-u128';
+      case 'u256':
+        return 'num-u256';
+      default:
+        return 'num';
+    }
+  }
 
   // vector
   if (dt.kind === 'vector') {

@@ -68,7 +68,14 @@ export type PMakeMoveVec = {
 export type ParamKind =
   | 'txarg' // handle/ref
   | 'addr' // Sui address scalar
-  | 'num' // u64-like scalar
+  | 'id' // object id scalar
+  | 'num' // numeric scalar (width unknown, default to u64)
+  | 'num-u8'
+  | 'num-u16'
+  | 'num-u32'
+  | 'num-u64'
+  | 'num-u128'
+  | 'num-u256'
   | 'bool' // boolean scalar
   | 'str' // string scalar
   // primitive vectors (element width/kind comes from port metadata only)

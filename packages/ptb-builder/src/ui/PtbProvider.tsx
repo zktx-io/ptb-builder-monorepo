@@ -53,6 +53,7 @@ import {
   type WellKnownId,
 } from '../ptb/seedGraph';
 import type { Chain, Theme, ToastAdapter } from '../types';
+import { toColorMode } from '../types';
 
 // ===== Context shape ==========================================================
 
@@ -246,7 +247,10 @@ export function PtbProvider({
 
   const applyTheme = React.useCallback((t: Theme) => {
     const root = document.documentElement;
-    t === 'dark' ? root.classList.add('dark') : root.classList.remove('dark');
+    const mode = toColorMode(t);
+    mode === 'dark'
+      ? root.classList.add('dark')
+      : root.classList.remove('dark');
     root.setAttribute('data-ptb-theme', t);
   }, []);
 
