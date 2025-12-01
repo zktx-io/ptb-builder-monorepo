@@ -1,6 +1,6 @@
 {
   "name": "@zktx.io/ptb-builder",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "description": "Sui programmable transaction blocks builder",
   "type": "module",
   "exports": {
