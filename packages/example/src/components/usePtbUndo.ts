@@ -9,19 +9,26 @@ export type HistoryState = {
 };
 
 const STATE: HistoryState = { past: [], present: undefined, future: [] };
+let suppressNext = false;
 
 export function usePtbUndo() {
   const reset = useCallback(() => {
     STATE.past = [];
     STATE.present = undefined;
     STATE.future = [];
+    suppressNext = false;
   }, []);
 
   const set = useCallback((doc: PTBDoc) => {
-    if (STATE.present && STATE.present === doc) return;
-    if (STATE.present) {
-      STATE.past = [STATE.present, ...STATE.past];
+    // Skip history churn when we're restoring via undo/redo load.
+    if (suppressNext) {
+      STATE.present = doc;
+      suppressNext = false;
+      return;
     }
+
+    if (STATE.present && STATE.present === doc) return;
+    if (STATE.present) STATE.past = [STATE.present, ...STATE.past];
     STATE.present = doc;
     STATE.future = [];
   }, []);
@@ -32,6 +39,7 @@ export function usePtbUndo() {
     STATE.past = STATE.past.slice(1);
     STATE.future = [STATE.present, ...STATE.future];
     STATE.present = present;
+    suppressNext = true; // prevent onDocChange from resetting future
     return STATE.present;
   }, []);
 
@@ -41,6 +49,7 @@ export function usePtbUndo() {
     STATE.future = STATE.future.slice(1);
     STATE.past = [STATE.present, ...STATE.past];
     STATE.present = present;
+    suppressNext = true; // prevent onDocChange from clearing redo stack
     return STATE.present;
   }, []);
 
