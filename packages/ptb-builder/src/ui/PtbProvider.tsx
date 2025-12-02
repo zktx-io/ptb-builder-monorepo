@@ -55,6 +55,8 @@ import {
 import type { Chain, Theme, ToastAdapter } from '../types';
 import { toColorMode } from '../types';
 
+const VIEW_CHANGE_DEBOUNCE_MS = 250;
+
 // ===== Context shape ==========================================================
 
 type TxStatus = {
@@ -289,12 +291,16 @@ export function PtbProvider({
       url: getFullnodeUrl(activeChain.split(':')[1] as any),
     });
   }, [activeChain]);
+  const activeChainRef = useRef(activeChain);
+  activeChainRef.current = activeChain;
 
   // Persisted PTB snapshot (RF → PTB)
   const [graph, setGraphState] = useState<PTBGraph>({ nodes: [], edges: [] });
   const [view, setView] = useState<
     { x: number; y: number; zoom: number } | undefined
   >(undefined);
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   // Well-known presence
   const [wellKnown, setWellKnown] = useState<Record<WellKnownId, boolean>>(() =>
@@ -317,6 +323,8 @@ export function PtbProvider({
   // Chain caches
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => ({}));
   const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
+  const docSlicesRef = useRef({ graph, modules, objects });
+  docSlicesRef.current = { graph, modules, objects };
 
   // Reset caches on chain change
   const resetBeforeLoad = () => {
@@ -485,33 +493,69 @@ export function PtbProvider({
     setGraphEpoch((e) => e + 1); // rehydrate RF once per load
   }, []);
 
-  // ---- PTBDoc: immediate emit on any change ---------------------------------
+  // ---- PTBDoc: emit immediately for graph edits, debounce viewport ----------
 
   const canUpdate = useRef(false);
   const onDocChangeRef = useRef(onDocChange);
   onDocChangeRef.current = onDocChange;
+  const viewDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
-  useLayoutEffect(() => {
+  const buildDocFromRefs = useCallback(() => {
+    const chain = activeChainRef.current;
+    const latestView = viewRef.current;
+    if (!chain || !latestView) return undefined;
+    const {
+      graph: graphSnap,
+      modules: modulesSnap,
+      objects: objectsSnap,
+    } = docSlicesRef.current;
+    return buildDoc({
+      chain,
+      graph: graphSnap,
+      view: latestView,
+      modules: modulesSnap ?? {},
+      objects: objectsSnap ?? {},
+    });
+  }, []);
+
+  const emitDocChange = useCallback(() => {
     try {
-      if (!onDocChangeRef.current || !activeChain || !view) return;
-      const doc = buildDoc({
-        chain: activeChain,
-        graph,
-        view,
-        modules: modules ?? {},
-        objects: objects ?? {},
-      });
-      // First change after a load: mark ready and emit once to seed consumers (e.g., undo history).
+      const doc = buildDocFromRefs();
+      if (!doc || !onDocChangeRef.current) return;
       if (!canUpdate.current) {
         canUpdate.current = true;
-        onDocChangeRef.current({ ...doc, view });
-        return;
       }
-      onDocChangeRef.current({ ...doc, view });
+      onDocChangeRef.current(doc);
     } catch {
       // Swallow to avoid breaking the edit loop
     }
-  }, [graph, modules, objects, activeChain, view]);
+  }, [buildDocFromRefs]);
+
+  useLayoutEffect(() => {
+    emitDocChange();
+  }, [graph, modules, objects, activeChain, emitDocChange]);
+
+  useLayoutEffect(() => {
+    if (viewDebounceRef.current) {
+      clearTimeout(viewDebounceRef.current);
+      viewDebounceRef.current = undefined;
+    }
+    if (!view || !onDocChangeRef.current) return;
+
+    viewDebounceRef.current = setTimeout(() => {
+      emitDocChange();
+      viewDebounceRef.current = undefined;
+    }, VIEW_CHANGE_DEBOUNCE_MS);
+
+    return () => {
+      if (viewDebounceRef.current) {
+        clearTimeout(viewDebounceRef.current);
+        viewDebounceRef.current = undefined;
+      }
+    };
+  }, [view, emitDocChange]);
 
   const setViewExternal = useCallback(
     (v: { x: number; y: number; zoom: number }) => {
