@@ -218,7 +218,7 @@ import '@zktx.io/ptb-builder/styles/themes-all.css';
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 <PTBBuilder
-  theme="dark" // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze)
+  theme="dark" // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze); defaults to "dark"
   address={myAddress} // sender address
   gasBudget={500_000_000} // optional gas budget
   executeTx={execAdapter} // adapter to execute transactions
@@ -249,6 +249,20 @@ await loadFromOnChainTx('sui:testnet', '0x1234…');
 setTheme('tokyo night');
 ```
 
+### Styling & Theme imports
+
+- `@zktx.io/ptb-builder/index.css` contains the structural styles for nodes, edges, and the builder chrome. It should be imported exactly once in your host app (or exposed by your bundler) regardless of the theme you choose.
+- `@zktx.io/ptb-builder/styles/themes-all.css` bundles every theme token file so you can switch themes at runtime with `setTheme`. Pulling in the whole pack adds roughly ~18 kB pre-gzip.
+- To minimize CSS for static deployments, import only the theme(s) you actually ship, e.g. `import '@zktx.io/ptb-builder/styles/theme-dark.css';`. Each theme file is ~3 kB pre-gzip, so picking a single one keeps the bundle lean while still allowing dynamic switching between the themes you explicitly include.
+- When you only ship a single theme file, pass the matching `theme` value (e.g., `theme="light"`) and set `showThemeSelector={false}` so the UI doesn’t expose choices that aren’t bundled.
+
+### Autosave, undo/redo & `onDocChange`
+
+- PTB Builder emits `onDocChange` immediately when the underlying PTB graph, modules, objects, or active chain changes. Viewport changes (pan/zoom) are debounced by 250 ms so autosave targets are not overwhelmed while the user drags the canvas.
+- Loading a document via `loadFromDoc`/`loadFromOnChainTx` resets the internal history cache, replays the snapshot once, and suppresses duplicate events until the user edits again.
+- The sample `usePtbUndo` hook keeps a stable signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. A single flag (`suppressNext`) prevents the ensuing `onDocChange` from being treated as a fresh edit.
+- When integrating your own autosave pipeline, expect `onDocChange` to fire often during graph edits but only after the debounce window for viewport-only motions.
+
 ---
 
 ## Props Reference (`<PTBBuilder />`)
@@ -256,12 +270,12 @@ setTheme('tokyo night');
 | Prop               | Type                                                                                  | Default  | Description                                                   |
 | ------------------ | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
 | `theme`            | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo night` \| `cream` \| `mint.breeze`) | `"dark"` | Initial UI theme.                                             |
+| `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
 | `address`          | `string`                                                                              | –        | Sender address for generated transactions.                    |
 | `gasBudget`        | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
 | `executeTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
 | `toast`            | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
 | `onDocChange`      | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
-| `docChangeDelay`   | `number` (ms)                                                                         | `1000`   | Debounce for `onDocChange`.                                   |
 | `showExportButton` | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
 | `children`         | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
 

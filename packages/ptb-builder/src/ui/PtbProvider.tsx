@@ -77,6 +77,7 @@ export type PtbContextValue = {
   // UI theme
   theme: Theme;
   setTheme: (t: Theme) => void;
+  showThemeSelector: boolean;
 
   // Chain caches & helpers (PTB-only)
   objects: PTBObjectsEmbed;
@@ -150,6 +151,7 @@ export type PtbProviderProps = {
 
   initialTheme: Theme;
   execOpts?: ExecOptions;
+  showThemeSelector?: boolean;
 
   executeTx?: (
     chain: Chain,
@@ -255,6 +257,7 @@ export function PtbProvider({
 
   initialTheme,
   execOpts: execOptsProp = {},
+  showThemeSelector = true,
 
   executeTx: executeTxProp,
   toast: toastProp,
@@ -1008,6 +1011,7 @@ export function PtbProvider({
 
       theme,
       setTheme,
+      showThemeSelector,
       showExportButton,
 
       objects,
@@ -1047,6 +1051,7 @@ export function PtbProvider({
       activeChain,
       readOnly,
       theme,
+      showThemeSelector,
       showExportButton,
       objects,
       getObjectData,

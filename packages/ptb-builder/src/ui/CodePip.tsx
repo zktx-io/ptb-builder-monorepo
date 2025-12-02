@@ -137,8 +137,15 @@ export function CodePip({
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
-  const { readOnly, setTheme, theme, execOpts, exportDoc, showExportButton } =
-    usePtb();
+  const {
+    readOnly,
+    setTheme,
+    theme,
+    execOpts,
+    exportDoc,
+    showExportButton,
+    showThemeSelector,
+  } = usePtb();
   const [prismReady, setPrismReady] = useState(false);
 
   // Normalize code for Prism; fallback to empty placeholder
@@ -313,26 +320,28 @@ export function CodePip({
               />
             </label>
 
-            <select
-              aria-label="Theme"
-              value={theme}
-              onChange={(e) => setTheme?.(e.target.value as Theme)}
-              onPointerDownCapture={stopFlowGestures}
-              onPointerUpCapture={stopFlowGestures}
-              onMouseDownCapture={stopFlowGestures}
-              onMouseUpCapture={stopFlowGestures}
-              onClickCapture={stopFlowGestures}
-              onTouchStartCapture={stopFlowGestures}
-              onTouchEndCapture={stopFlowGestures}
-              className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
-              title="Switch editor theme"
-            >
-              {THEMES.map((t) => (
-                <option key={t} value={t}>
-                  {t.replace('-', ' ')}
-                </option>
-              ))}
-            </select>
+            {showThemeSelector && (
+              <select
+                aria-label="Theme"
+                value={theme}
+                onChange={(e) => setTheme?.(e.target.value as Theme)}
+                onPointerDownCapture={stopFlowGestures}
+                onPointerUpCapture={stopFlowGestures}
+                onMouseDownCapture={stopFlowGestures}
+                onMouseUpCapture={stopFlowGestures}
+                onClickCapture={stopFlowGestures}
+                onTouchStartCapture={stopFlowGestures}
+                onTouchEndCapture={stopFlowGestures}
+                className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
+                title="Switch editor theme"
+              >
+                {THEMES.map((t) => (
+                  <option key={t} value={t}>
+                    {t.replace('-', ' ')}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 

@@ -42,6 +42,7 @@ import type { Chain, Theme, ToastAdapter } from '../types';
 export type PTBBuilderProps = {
   theme?: Theme;
   showExportButton?: boolean;
+  showThemeSelector?: boolean;
   executeTx?: (
     chain: Chain,
     tx: Transaction | undefined,
@@ -99,6 +100,7 @@ export function PTBBuilder({
   onDocChange,
   children,
   showExportButton,
+  showThemeSelector,
 }: PTBBuilderProps) {
   const execOpts = useMemo(
     () => ({
@@ -113,6 +115,7 @@ export function PTBBuilder({
       <PtbProvider
         // UI
         initialTheme={theme ?? 'dark'}
+        showThemeSelector={showThemeSelector}
         showExportButton={showExportButton}
         // flattened adapters
         executeTx={executeTx}
