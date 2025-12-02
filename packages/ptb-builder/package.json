@@ -8,7 +8,14 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.esm.js"
     },
-    "./index.css": "./dist/index.css"
+    "./index.css": "./dist/index.css",
+    "./styles/theme-dark.css": "./dist/styles/theme-dark.css",
+    "./styles/theme-light.css": "./dist/styles/theme-light.css",
+    "./styles/theme-cobalt2.css": "./dist/styles/theme-cobalt2.css",
+    "./styles/theme-tokyo-night.css": "./dist/styles/theme-tokyo-night.css",
+    "./styles/theme-cream.css": "./dist/styles/theme-cream.css",
+    "./styles/theme-mint-breeze.css": "./dist/styles/theme-mint-breeze.css",
+    "./styles/themes-all.css": "./dist/styles/themes-all.css"
   },
   "types": "dist/types/index.d.ts",
   "style": "dist/index.css",
@@ -38,7 +45,8 @@
     "dist/"
   ],
   "sideEffects": [
-    "dist/index.css"
+    "dist/index.css",
+    "dist/styles/*.css"
   ],
   "peerDependencies": {
     "@mysten/sui": "^1.37.2",

@@ -1,3 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind utilities are intentionally omitted to avoid pulling the full
+	framework into downstream bundles. If you need the original Tailwind
+	layers, import them manually in your host app. */

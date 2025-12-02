@@ -1,19 +1,20 @@
 // src/ui/CodePip.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
-import Prism from 'prismjs';
 import { Resizable } from 're-resizable';
-
-// Prism languages & plugins
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/plugins/line-numbers/prism-line-numbers';
-import 'prismjs/plugins/normalize-whitespace/prism-normalize-whitespace';
+import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 
 import { AssetsModal } from './AssetsModal';
 import { usePtb } from './PtbProvider';
 import { type Theme, THEMES } from '../types';
+import { loadPrism } from './utils/prismLoader';
 
 export const EMPTY_CODE = (net?: string) => {
   if (!net) {
@@ -131,11 +132,14 @@ export function CodePip({
   const preRef = useRef<HTMLPreElement | null>(null);
   // eslint-disable-next-line no-restricted-syntax
   const codeRef = useRef<HTMLElement | null>(null);
+  // eslint-disable-next-line no-restricted-syntax
+  const prismRef = useRef<any>(null);
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
   const { readOnly, setTheme, theme, execOpts, exportDoc, showExportButton } =
     usePtb();
+  const [prismReady, setPrismReady] = useState(false);
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = useMemo(() => code ?? '', [code]);
@@ -153,16 +157,33 @@ export function CodePip({
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadPrism()
+      .then((prism) => {
+        if (cancelled) return;
+        prismRef.current = prism;
+        setPrismReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setPrismReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Prism highlight when visible
   useEffect(() => {
     if (collapsed) return;
-    if (!codeRef.current) return;
+    if (!prismReady) return;
+    if (!codeRef.current || !prismRef.current) return;
     try {
-      Prism.highlightElement(codeRef.current);
+      prismRef.current.highlightElement(codeRef.current);
     } catch {
       // no-op
     }
-  }, [visibleCode, language, collapsed]);
+  }, [visibleCode, language, collapsed, prismReady]);
 
   const handleCopy = async () => {
     try {
@@ -231,6 +252,16 @@ export function CodePip({
   };
 
   const runButtonsDisabled = !!isRunning || !canRunning;
+  const stopFlowGestures = useCallback(
+    (evt: React.SyntheticEvent<HTMLSelectElement>) => {
+      evt.stopPropagation();
+      const nativeEvt = evt.nativeEvent as Event & {
+        stopImmediatePropagation?: () => void;
+      };
+      nativeEvt?.stopImmediatePropagation?.();
+    },
+    [],
+  );
 
   return (
     <>
@@ -286,6 +317,13 @@ export function CodePip({
               aria-label="Theme"
               value={theme}
               onChange={(e) => setTheme?.(e.target.value as Theme)}
+              onPointerDownCapture={stopFlowGestures}
+              onPointerUpCapture={stopFlowGestures}
+              onMouseDownCapture={stopFlowGestures}
+              onMouseUpCapture={stopFlowGestures}
+              onClickCapture={stopFlowGestures}
+              onTouchStartCapture={stopFlowGestures}
+              onTouchEndCapture={stopFlowGestures}
               className="ptb-codepip__theme px-1 py-[2px] rounded text-[12px]"
               title="Switch editor theme"
             >
