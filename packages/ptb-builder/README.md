@@ -213,7 +213,7 @@ export const Viewer = () => {
 ```tsx
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
-// 또는 필요한 테마만: import '@zktx.io/ptb-builder/styles/theme-light.css';
+// Or import a specific theme only: import '@zktx.io/ptb-builder/styles/theme-light.css';
 
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 
