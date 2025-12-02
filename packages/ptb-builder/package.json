@@ -20,7 +20,7 @@
   "types": "dist/types/index.d.ts",
   "style": "dist/index.css",
   "scripts": {
-    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{force:true,recursive:true}))\"",
+    "clean": "node -e \"require('fs').rmSync('dist',{force:true,recursive:true})\"",
     "build": "npm run clean && rollup -c",
     "lint": "npm run lint --prefix ../..",
     "format": "npm run format --prefix ../.."
