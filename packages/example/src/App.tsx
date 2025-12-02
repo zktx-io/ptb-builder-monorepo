@@ -11,6 +11,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import '@mysten/dapp-kit/dist/index.css';
 import '@zktx.io/walrus-wallet/index.css';
 import '@zktx.io/ptb-builder/index.css';
+import '@zktx.io/ptb-builder/styles/themes-all.css';
 
 import { usePtbUndo } from './components/usePtbUndo';
 import { loadNetwork } from './network';
