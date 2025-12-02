@@ -76,6 +76,10 @@ Below snippets mirror a typical setup using **@mysten/dapp‑kit** with PTB Buil
 ### `App.tsx`
 
 ```tsx
+import '@zktx.io/ptb-builder/index.css';
+import '@zktx.io/ptb-builder/styles/themes-all.css';
+// or only what you need, e.g. import '@zktx.io/ptb-builder/styles/theme-light.css';
+
 import { PTBBuilder, Chain, ToastVariant } from '@zktx.io/ptb-builder';
 import { Transaction } from '@mysten/sui/transactions';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
