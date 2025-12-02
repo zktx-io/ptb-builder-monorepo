@@ -6,7 +6,7 @@
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
-import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
+import type { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
 import { firstInPorts, outPortsWithPrefix } from '../../ptb/decodeTx/findPorts';
 import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
@@ -21,8 +21,6 @@ export type LayoutPositions = Record<string, { x: number; y: number }>;
 export type AutoLayoutOptions = {
   targetCenter?: { x: number; y: number }; // viewport center in flow coords
 };
-
-const elk = new ELK();
 
 // ---- Node helpers -----------------------------------------------------------
 
@@ -503,6 +501,19 @@ const elkLayoutOptions = {
   'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
 } as const;
 
+type ElkInstance = { layout: (graph: ElkNode) => Promise<ElkNode> };
+
+let elkInstancePromise: Promise<ElkInstance> | undefined;
+async function getElkInstance(): Promise<ElkInstance> {
+  if (!elkInstancePromise) {
+    elkInstancePromise = import('elkjs/lib/elk.bundled.js').then((mod) => {
+      const ElkCtor = (mod as any).default ?? mod;
+      return new ElkCtor();
+    });
+  }
+  return elkInstancePromise;
+}
+
 async function layoutElkPositions(
   nodes: RFNode<RFNodeData>[],
   edges: RFEdge<RFEdgeData>[],
@@ -528,6 +539,7 @@ async function layoutElkPositions(
     })),
   };
 
+  const elk = await getElkInstance();
   const laidOut = await elk.layout(elkGraph);
 
   const positions: LayoutPositions = {};

@@ -397,6 +397,7 @@ export function PTBFlow() {
   // ----- Persist RF → PTB after commit (single place) ------------------------
 
   const isDraggingRef = useRef(false);
+  const codegenFrameRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (rehydratingRef.current) return;
@@ -658,14 +659,48 @@ export function PTBFlow() {
   // ----- Code preview generation ---------------------------------------------
 
   useEffect(() => {
-    try {
-      if (!chain) return;
-      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const src = buildTsSdkCode(ptb, chain, execOpts);
-      setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
-    } catch {
-      setCode(EMPTY_CODE(chain));
+    const cancelScheduled = () => {
+      if (codegenFrameRef.current !== undefined) {
+        cancelAnimationFrame(codegenFrameRef.current);
+        codegenFrameRef.current = undefined;
+      }
+    };
+
+    const runCodegen = () => {
+      try {
+        if (!chain) {
+          setCode(EMPTY_CODE(chain));
+          return;
+        }
+        const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
+        const src = buildTsSdkCode(ptb, chain, execOpts);
+        setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
+      } catch {
+        setCode(EMPTY_CODE(chain));
+      }
+    };
+
+    cancelScheduled();
+
+    if (isDraggingRef.current) {
+      const tick = () => {
+        if (isDraggingRef.current) {
+          codegenFrameRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        codegenFrameRef.current = undefined;
+        runCodegen();
+      };
+      codegenFrameRef.current = requestAnimationFrame(tick);
+      return () => {
+        cancelScheduled();
+      };
     }
+
+    runCodegen();
+    return () => {
+      cancelScheduled();
+    };
   }, [rfNodes, rfEdges, chain, execOpts]);
 
   // ----- Execute --------------------------------------------------------------

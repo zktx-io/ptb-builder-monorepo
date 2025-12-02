@@ -19,6 +19,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -231,6 +232,21 @@ function stableGraphSig(g: PTBGraph): string {
   return JSON.stringify({ nodes, edges });
 }
 
+function stableDocSig(doc: PTBDoc): string {
+  const orderObject = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return value;
+    }
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = orderObject((value as Record<string, unknown>)[key]);
+        return acc;
+      }, {});
+  };
+  return JSON.stringify(orderObject(doc));
+}
+
 // ===== Provider ===============================================================
 
 export function PtbProvider({
@@ -282,7 +298,7 @@ export function PtbProvider({
   // Chain & client
   const [activeChain, setActiveChain] = useState<Chain | undefined>(undefined);
   const clientRef = useRef<SuiClient | undefined>(undefined);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!activeChain) {
       clientRef.current = undefined;
       return;
@@ -325,10 +341,12 @@ export function PtbProvider({
   const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
   const docSlicesRef = useRef({ graph, modules, objects });
   docSlicesRef.current = { graph, modules, objects };
+  const lastDocSigRef = useRef<string | undefined>(undefined);
 
   // Reset caches on chain change
   const resetBeforeLoad = () => {
     canUpdate.current = false;
+    lastDocSigRef.current = undefined;
     setActiveChain(undefined);
     setObjects({});
     setModules({});
@@ -523,21 +541,28 @@ export function PtbProvider({
   const emitDocChange = useCallback(() => {
     try {
       const doc = buildDocFromRefs();
-      if (!doc || !onDocChangeRef.current) return;
+      if (!doc) return;
       if (!canUpdate.current) {
         canUpdate.current = true;
       }
+      const nextSig = stableDocSig(doc);
+      if (!onDocChangeRef.current) {
+        lastDocSigRef.current = undefined;
+        return;
+      }
+      if (lastDocSigRef.current === nextSig) return;
+      lastDocSigRef.current = nextSig;
       onDocChangeRef.current(doc);
     } catch {
       // Swallow to avoid breaking the edit loop
     }
   }, [buildDocFromRefs]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     emitDocChange();
   }, [graph, modules, objects, activeChain, emitDocChange]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (viewDebounceRef.current) {
       clearTimeout(viewDebounceRef.current);
       viewDebounceRef.current = undefined;
@@ -557,9 +582,15 @@ export function PtbProvider({
     };
   }, [view, emitDocChange]);
 
+  useEffect(() => {
+    if (onDocChange) {
+      emitDocChange();
+    }
+  }, [onDocChange, emitDocChange]);
+
   const setViewExternal = useCallback(
     (v: { x: number; y: number; zoom: number }) => {
-      if (!onDocChangeRef.current || !activeChain) return;
+      if (!activeChain) return;
       setView((prev) =>
         prev && prev.x === v.x && prev.y === v.y && prev.zoom === v.zoom
           ? prev
