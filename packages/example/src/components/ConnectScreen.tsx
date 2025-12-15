@@ -1,11 +1,13 @@
 import { ReactNode } from 'react';
+
 import {
-  useCurrentWallet,
   ConnectButton,
+  useCurrentWallet,
   useSuiClientContext,
 } from '@mysten/dapp-kit';
-import { NETWORKS, NetworkType, saveNetwork } from '../network';
 import { useNavigate } from 'react-router-dom';
+
+import { NETWORKS, NetworkType, saveNetwork } from '../network';
 
 type Props = {
   title?: string;

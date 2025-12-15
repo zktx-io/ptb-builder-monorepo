@@ -4,8 +4,8 @@ import {
   useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import type { NETWORK } from '@zktx.io/walrus-connect';
 import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
+import type { NETWORK } from '@zktx.io/walrus-connect';
 import { WalrusWallet } from '@zktx.io/walrus-wallet';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -100,8 +100,7 @@ function App() {
       });
     } catch (error: unknown) {
       return {
-        error:
-          (error as Error).message || 'Transaction serialization failed',
+        error: (error as Error).message || 'Transaction serialization failed',
       };
     }
   };

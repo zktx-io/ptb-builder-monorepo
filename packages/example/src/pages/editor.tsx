@@ -2,10 +2,10 @@ import { useSuiClientContext } from '@mysten/dapp-kit';
 import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 import { useHotkeys } from 'react-hotkeys-hook';
 
+import { ConnectScreen } from '../components/ConnectScreen';
 import { DragAndDrop } from '../components/DragAndDrop';
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
-import { ConnectScreen } from '../components/ConnectScreen';
 
 export const Editor = () => {
   const { network, selectNetwork } = useSuiClientContext();

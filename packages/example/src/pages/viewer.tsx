@@ -6,11 +6,12 @@ import queryString from 'query-string';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocation } from 'react-router-dom';
 
+import { ConnectScreen } from '../components/ConnectScreen';
 import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
-import { ConnectScreen } from '../components/ConnectScreen';
 
 export const Viewer = () => {
+  // eslint-disable-next-line no-restricted-syntax
   const lastLoaded = useRef<string | null>(null);
   const { loadFromOnChainTx, loadFromDoc } = usePTB();
 

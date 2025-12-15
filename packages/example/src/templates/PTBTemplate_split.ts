@@ -209,5 +209,6 @@ export const PTBTemplate_split: PTBTemplateItem = {
   description: 'Sample split pipeline',
   defaultName: 'split.ptb',
   detail: 'Split a Coin into parts (SplitCoins).',
+  // eslint-disable-next-line no-restricted-syntax
   file: () => JSON.stringify(splitTemplateJson, null, 2),
 };

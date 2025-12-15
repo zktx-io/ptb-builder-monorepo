@@ -742,5 +742,6 @@ export const PTBTemplate_exchange_all_for_wal: PTBTemplateItem = {
   defaultName: 'exchange_all_for_wal.ptb',
   detail:
     'Exchange Sui for Wal. Works only on testnet. For mainnet, you must use the mainnet contract.',
+  // eslint-disable-next-line no-restricted-syntax
   file: () => JSON.stringify(exchange_all_for_wal, null, 2),
 };

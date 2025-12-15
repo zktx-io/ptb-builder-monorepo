@@ -23,6 +23,13 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=null]',
+          message: 'Do not use null. Use undefined instead.',
+        },
+      ],
     },
   },
 );

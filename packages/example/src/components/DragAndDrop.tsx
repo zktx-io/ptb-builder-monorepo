@@ -1,5 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
+
 import type { PTBDoc } from '@zktx.io/ptb-builder';
+
 import { PRIMARY_BUTTON, SECONDARY_BUTTONS, TEMPLATE_MAP } from '../templates';
 
 export function DragAndDrop({
@@ -12,6 +14,7 @@ export function DragAndDrop({
   const [isVisible, setIsVisible] = useState(true);
   const [message, setMessage] = useState('Drop File (*.ptb) here');
   const [dragging, setDragging] = useState(false);
+  // eslint-disable-next-line no-restricted-syntax
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const openFilePicker = useCallback(() => {
@@ -74,7 +77,7 @@ export function DragAndDrop({
     }
   };
 
-  if (!isVisible) return null;
+  if (!isVisible) return undefined;
 
   return (
     <div
