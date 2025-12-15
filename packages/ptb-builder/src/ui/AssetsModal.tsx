@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { Boxes, Coins, FileBox, Loader2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import { usePtb } from './PtbProvider';
 
@@ -117,7 +118,7 @@ export function AssetsModal({
 
   if (!open) return <></>;
 
-  return (
+  const modal = (
     <div
       className="ptb-modal"
       role="dialog"
@@ -199,6 +200,9 @@ export function AssetsModal({
       </div>
     </div>
   );
+
+  const canPortal = typeof document !== 'undefined' && !!document.body;
+  return canPortal ? createPortal(modal, document.body) : modal;
 }
 
 export default AssetsModal;
