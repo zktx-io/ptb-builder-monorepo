@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 
 import { usePtb } from './PtbProvider';
 
-type OwnedItem = { objectId: string; typeTag: string };
+type OwnedItem = { objectId: string; typeTag: string; imageUrl?: string };
 
 export type AssetsModalProps = {
   open: boolean;
@@ -44,6 +44,14 @@ export function AssetsModal({
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [prevStack, setPrevStack] = useState<string[]>([]);
   const [hasNext, setHasNext] = useState(false);
+  const [preview, setPreview] = useState<
+    | {
+        url: string;
+        x: number;
+        y: number;
+      }
+    | undefined
+  >(undefined);
 
   const canPrev = prevStack.length > 0;
 
@@ -57,7 +65,7 @@ export function AssetsModal({
       setLoading(true);
       const res: any = await getOwnedObjects?.({
         owner,
-        options: { showType: true, showContent: true },
+        options: { showType: true, showContent: true, showDisplay: true },
         cursor,
         limit: pageSize,
       });
@@ -65,11 +73,23 @@ export function AssetsModal({
       const list: OwnedItem[] = (res?.data ?? [])
         .map((r: any) => {
           const id = r?.data?.objectId as string | undefined;
+          const display = (r?.data as any)?.display?.data ?? {};
+          const imageUrl =
+            display?.image_url ??
+            display?.imageUrl ??
+            display?.img_url ??
+            display?.img;
           const type =
             r?.data?.content?.dataType === 'moveObject'
               ? (r?.data?.content?.type as string)
               : ((r?.data?.type as string) ?? '');
-          return id ? { objectId: id, typeTag: type || '' } : undefined;
+          return id
+            ? {
+                objectId: id,
+                typeTag: type || '',
+                imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
+              }
+            : undefined;
         })
         .filter(Boolean) as OwnedItem[];
 
@@ -105,6 +125,21 @@ export function AssetsModal({
     });
   };
 
+  const showPreview = (e: React.MouseEvent, url?: string) => {
+    if (!url) return;
+    setPreview({
+      url,
+      x: e.clientX + 14,
+      y: e.clientY + 14,
+    });
+  };
+
+  const movePreview = (e: React.MouseEvent) => {
+    setPreview((p) => (p ? { ...p, x: e.clientX + 14, y: e.clientY + 14 } : p));
+  };
+
+  const hidePreview = () => setPreview(undefined);
+
   useEffect(() => {
     if (open) {
       setItems([]);
@@ -113,8 +148,22 @@ export function AssetsModal({
       setHasNext(false);
       loadPage(undefined, false);
     }
+    if (!open) {
+      hidePreview();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, owner]);
+
+  const handleClose = () => {
+    hidePreview();
+    onClose();
+  };
+
+  const handlePick = (item: OwnedItem) => {
+    hidePreview();
+    onPick(item);
+    handleClose();
+  };
 
   if (!open) return <></>;
 
@@ -123,7 +172,7 @@ export function AssetsModal({
       className="ptb-modal"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div className="ptb-modal__panel" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -134,7 +183,7 @@ export function AssetsModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded hover:opacity-80"
             aria-label="Close"
           >
@@ -158,10 +207,10 @@ export function AssetsModal({
                   <li
                     key={it.objectId}
                     className="ptb-modal__item"
-                    onClick={() => {
-                      onPick(it);
-                      onClose();
-                    }}
+                    onMouseEnter={(e) => showPreview(e, it.imageUrl)}
+                    onMouseMove={movePreview}
+                    onMouseLeave={hidePreview}
+                    onClick={() => handlePick(it)}
                     title={it.typeTag}
                   >
                     <AssetIcon typeTag={it.typeTag} />
@@ -198,6 +247,14 @@ export function AssetsModal({
           </div>
         </div>
       </div>
+      {preview?.url && (
+        <div
+          className="ptb-modal__preview"
+          style={{ left: preview.x, top: preview.y }}
+        >
+          <img src={preview.url} alt="NFT preview" />
+        </div>
+      )}
     </div>
   );
 
