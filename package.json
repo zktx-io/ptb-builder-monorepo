@@ -19,13 +19,14 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.19.1",
     "@typescript-eslint/parser": "^8.19.1",
+    "baseline-browser-mapping": "^2.9.7",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-react": "^7.37.3",
     "eslint-plugin-react-hooks": "^5.1.0",
     "husky": "^9.1.6",
-    "lerna": "^8.1.9",
+    "lerna": "^9.0.3",
     "lint-staged": "^15.2.10",
     "prettier": "^3.4.2",
     "typescript-eslint": "^8.19.1"
