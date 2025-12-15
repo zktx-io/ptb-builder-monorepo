@@ -1,8 +1,10 @@
 import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
+  useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import type { NETWORK } from '@zktx.io/walrus-connect';
 import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
 import { WalrusWallet } from '@zktx.io/walrus-wallet';
 import { enqueueSnackbar } from 'notistack';
@@ -14,7 +16,7 @@ import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
 import { usePtbUndo } from './components/usePtbUndo';
-import { loadNetwork } from './network';
+import { loadNetwork, SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -36,8 +38,18 @@ const router = createBrowserRouter([
 
 function App() {
   const account = useCurrentAccount();
+  const { network } = useSuiClientContext();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
   const { set: onDocChange } = usePtbUndo();
+
+  const normalizeNetwork = (value?: string | null): SuiNetwork => {
+    if (value === 'mainnet' || value === 'testnet' || value === 'devnet') {
+      return value;
+    }
+    return loadNetwork();
+  };
+
+  const currentNetwork: NETWORK = normalizeNetwork(network);
 
   const handleToast = ({
     message,
@@ -49,44 +61,58 @@ function App() {
     enqueueSnackbar(message, { variant });
   };
 
-  const executeTx = (
+  const executeTx = async (
     chain: Chain,
     transaction: Transaction | undefined,
   ): Promise<{ digest?: string; error?: string }> => {
-    return new Promise((resolve) => {
-      if (account && transaction) {
-        transaction
-          .toJSON()
-          .then((jsonTx) => {
-            signAndExecuteTransaction(
-              {
-                transaction: jsonTx,
-                chain,
-              },
-              {
-                onSuccess: (result) => {
-                  resolve({ digest: result.digest });
-                },
-                onError: (error) => {
-                  resolve({
-                    error: error.message || 'Transaction execution failed',
-                  });
-                },
-              },
-            );
-          })
-          .catch((error) => {
-            resolve({
-              error: error.message || 'Transaction serialization failed',
-            });
+    if (!account) {
+      return { error: 'Wallet not connected' };
+    }
+    if (!transaction) {
+      return { error: 'No transaction to execute' };
+    }
+
+    try {
+      const jsonTx = await transaction.toJSON();
+
+      return await new Promise((resolve) => {
+        try {
+          signAndExecuteTransaction(
+            {
+              transaction: jsonTx,
+              chain,
+            },
+            {
+              onSuccess: (result) => resolve({ digest: result.digest }),
+              onError: (error) =>
+                resolve({
+                  error: error.message || 'Transaction execution failed',
+                }),
+            },
+          );
+        } catch (error: unknown) {
+          resolve({
+            error:
+              (error as Error).message ||
+              'Transaction execution failed (sync error)',
           });
-      }
-    });
+        }
+      });
+    } catch (error: unknown) {
+      return {
+        error:
+          (error as Error).message || 'Transaction serialization failed',
+      };
+    }
   };
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      <WalrusWallet network={loadNetwork()} onEvent={handleToast}>
+      <WalrusWallet
+        key={currentNetwork}
+        network={currentNetwork}
+        onEvent={handleToast}
+      >
         <PTBBuilder
           toast={handleToast}
           executeTx={executeTx}

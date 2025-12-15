@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useSuiClientContext } from '@mysten/dapp-kit';
 import { usePTB } from '@zktx.io/ptb-builder';
@@ -7,28 +7,51 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocation } from 'react-router-dom';
 
 import { usePtbUndo } from '../components/usePtbUndo';
-import { SuiChain } from '../network';
+import { SuiChain, SuiNetwork } from '../network';
 import { ConnectScreen } from '../components/ConnectScreen';
 
 export const Viewer = () => {
-  const initialized = useRef<boolean>(false);
+  const lastLoaded = useRef<string | null>(null);
   const { loadFromOnChainTx, loadFromDoc } = usePTB();
 
   const location = useLocation();
-  const { network } = useSuiClientContext();
-  const [txHash, setTxHash] = useState<string | undefined>(undefined);
+  const { network, selectNetwork } = useSuiClientContext();
   const { reset, undo, redo } = usePtbUndo();
 
   useEffect(() => {
     const parsed = queryString.parse(location.search);
-    if (parsed.tx && !initialized.current) {
-      loadFromOnChainTx(`sui:${network}` as SuiChain, parsed.tx as string);
-      reset();
-      initialized.current = true;
-    } else {
-      setTxHash('');
+    const rawTx = parsed.tx;
+    if (!rawTx) {
+      return;
     }
-  }, [loadFromOnChainTx, location.search, network, reset, txHash]);
+
+    const tx = Array.isArray(rawTx) ? rawTx[0] : rawTx;
+    if (!tx) {
+      return;
+    }
+
+    const match = tx.match(/^(?:sui:)?(mainnet|testnet|devnet):(.*)$/);
+    const targetNetwork = match?.[1] as SuiNetwork | undefined;
+    const txHash = (match?.[2] ?? tx).trim();
+
+    if (!txHash) {
+      return;
+    }
+
+    const effectiveNetwork = targetNetwork ?? network;
+    const loadKey = `${effectiveNetwork}:${txHash}`;
+    if (lastLoaded.current === loadKey) {
+      return;
+    }
+
+    if (targetNetwork && targetNetwork !== network) {
+      selectNetwork(targetNetwork);
+    }
+
+    loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
+    reset();
+    lastLoaded.current = loadKey;
+  }, [loadFromOnChainTx, location.search, network, reset, selectNetwork]);
 
   useHotkeys(
     'meta+z,ctrl+z',
