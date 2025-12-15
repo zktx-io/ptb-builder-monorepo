@@ -72,19 +72,23 @@ export function isPureScalarName(name: string | undefined): boolean {
   );
 }
 
+/** Maximum recursion depth for type checking to prevent stack overflow */
+const MAX_TYPE_DEPTH = 32;
+
 /** True if t is encodable by tx.pure (scalar/move_numeric/vector/option of pure) */
-export function isPureType(t?: PTBType): boolean {
+export function isPureType(t?: PTBType, depth = 0): boolean {
   if (!t) return false;
+  if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
   if (isUnknownType(t) || isTuple(t) || isObject(t)) return false;
 
   if (isScalar(t)) return isPureScalarName(t.name);
   if (isMoveNumeric(t)) return true;
 
   // vector<T>: allow any depth as long as inner is pure
-  if (isVector(t)) return isPureType(t.elem);
+  if (isVector(t)) return isPureType(t.elem, depth + 1);
 
   // option<T>: allow if inner is pure
-  if (isOption(t)) return isPureType(t.elem);
+  if (isOption(t)) return isPureType(t.elem, depth + 1);
 
   return false;
 }
@@ -129,7 +133,8 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
 }
 
 /* Structural equality (strict) */
-function isSameType(a: PTBType, b: PTBType): boolean {
+function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
+  if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
     case 'scalar':
@@ -139,14 +144,14 @@ function isSameType(a: PTBType, b: PTBType): boolean {
     case 'object':
       return (a.typeTag ?? '') === ((b as any).typeTag ?? '');
     case 'vector':
-      return isSameType(a.elem, (b as any).elem);
+      return isSameType(a.elem, (b as any).elem, depth + 1);
     case 'option':
-      return isSameType(a.elem, (b as any).elem);
+      return isSameType(a.elem, (b as any).elem, depth + 1);
     case 'tuple': {
       const bt = b as Extract<PTBType, { kind: 'tuple' }>;
       return (
         a.elems.length === bt.elems.length &&
-        a.elems.every((t, i) => isSameType(t, bt.elems[i]))
+        a.elems.every((t, i) => isSameType(t, bt.elems[i], depth + 1))
       );
     }
     case 'unknown':
@@ -155,8 +160,13 @@ function isSameType(a: PTBType, b: PTBType): boolean {
 }
 
 /* Compatibility policy (UI wiring) */
-export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
+export function isTypeCompatible(
+  src?: PTBType,
+  dst?: PTBType,
+  depth = 0,
+): boolean {
   if (!src || !dst) return false;
+  if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
   if (isUnknownType(src) || isUnknownType(dst)) return false;
 
   // option vs non-option are incompatible; option<X> ↔ option<Y> compares inner types
@@ -164,7 +174,7 @@ export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
     return (
       isOption(src) &&
       isOption(dst) &&
-      isTypeCompatible(src.elem, (dst as any).elem)
+      isTypeCompatible(src.elem, (dst as any).elem, depth + 1)
     );
   }
 
@@ -174,7 +184,7 @@ export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
 
   // vector<X> ↔ vector<Y> (one-level; inner rule applies)
   if (isVector(src) && isVector(dst)) {
-    return isTypeCompatible(src.elem, dst.elem);
+    return isTypeCompatible(src.elem, dst.elem, depth + 1);
   }
 
   // move_numeric ↔ move_numeric (same width)
@@ -191,15 +201,17 @@ export function isTypeCompatible(src?: PTBType, dst?: PTBType): boolean {
   }
 
   // exact match for remaining cases (scalars/tuples)
-  return isSameType(src, dst);
+  return isSameType(src, dst, depth);
 }
 
 /* Cast inference (number → move_numeric); bubbles through vectors */
 export function inferCastTarget(
   src?: PTBType,
   dst?: PTBType,
+  depth = 0,
 ): { to: NumericWidth } | undefined {
   if (!src || !dst) return undefined;
+  if (depth > MAX_TYPE_DEPTH) return undefined; // Prevent infinite recursion
 
   // number ↔ uXX
   if (isScalar(src) && src.name === 'number' && isMoveNumeric(dst)) {
@@ -211,12 +223,12 @@ export function inferCastTarget(
 
   // vector<T> ↔ vector<U> : bubble up inner cast
   if (isVector(src) && isVector(dst)) {
-    return inferCastTarget(src.elem, dst.elem);
+    return inferCastTarget(src.elem, dst.elem, depth + 1);
   }
 
   // option<T> ↔ option<U> : bubble up inner cast
   if (isOption(src) && isOption(dst)) {
-    return inferCastTarget(src.elem, dst.elem);
+    return inferCastTarget(src.elem, dst.elem, depth + 1);
   }
 
   return undefined;

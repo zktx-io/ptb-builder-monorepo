@@ -267,17 +267,17 @@ setTheme('tokyo-night');
 
 ## Props Reference (`<PTBBuilder />`)
 
-| Prop               | Type                                                                                  | Default  | Description                                                   |
-| ------------------ | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
+| Prop                | Type                                                                                  | Default  | Description                                                   |
+| ------------------- | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
 | `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
 | `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
-| `address`          | `string`                                                                              | –        | Sender address for generated transactions.                    |
-| `gasBudget`        | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
-| `executeTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
-| `toast`            | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
-| `onDocChange`      | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
-| `showExportButton` | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
-| `children`         | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
+| `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
+| `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
+| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
+| `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
+| `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
+| `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
+| `children`          | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
 
 ---
 

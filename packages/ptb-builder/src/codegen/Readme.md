@@ -75,15 +75,15 @@ The goal: **runtime and codegen must behave identically.**
 
 ### moveCall
 
-| Field           | Type             | Allowed? | Serialize?                  | Notes                                |
-| --------------- | ---------------- | -------- | --------------------------- | ------------------------------------ |
-| `arguments`     | Object handle    | ✅       | No                          | Handles pass-through.                |
-|                 | Address literal  | ✅       | **Yes → `tx.pure.address`** | Inject `myAddress/sender` if needed. |
-|                 | ID literal       | ✅       | **Yes → `tx.pure.id`**      |                                      |
-|                 | Numeric literal  | ✅       | **Yes → width-specific `tx.pure.u8|u16|u32|u64|u128|u256`** (falls back to `u64` when width unknown) | |
-|                 | Bool             | ✅       | **Yes → `tx.pure.bool`**    |                                      |
-|                 | Other string     | ❌       | —                           | Unsupported.                         |
-| `typeArguments` | string type tags | ✅       | No                          | Always emit as raw string literal.   |
+| Field           | Type             | Allowed? | Serialize?                           | Notes                                |
+| --------------- | ---------------- | -------- | ------------------------------------ | ------------------------------------ | --- | --- | ---- | ------------------------------------------------ | --- |
+| `arguments`     | Object handle    | ✅       | No                                   | Handles pass-through.                |
+|                 | Address literal  | ✅       | **Yes → `tx.pure.address`**          | Inject `myAddress/sender` if needed. |
+|                 | ID literal       | ✅       | **Yes → `tx.pure.id`**               |                                      |
+|                 | Numeric literal  | ✅       | \*\*Yes → width-specific `tx.pure.u8 | u16                                  | u32 | u64 | u128 | u256`** (falls back to `u64` when width unknown) |     |
+|                 | Bool             | ✅       | **Yes → `tx.pure.bool`**             |                                      |
+|                 | Other string     | ❌       | —                                    | Unsupported.                         |
+| `typeArguments` | string type tags | ✅       | No                                   | Always emit as raw string literal.   |
 
 ---
 

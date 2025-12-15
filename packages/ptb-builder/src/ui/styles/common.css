@@ -819,7 +819,7 @@
   background: var(--ptb-code-resizer-grip);
   box-shadow:
     -3px 0 0 0 var(--ptb-code-resizer-grip),
-     3px 0 0 0 var(--ptb-code-resizer-grip);
+    3px 0 0 0 var(--ptb-code-resizer-grip);
   opacity: 0.9;
 }
 .ptb-resize-handle:hover {

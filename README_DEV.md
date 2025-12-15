@@ -120,7 +120,22 @@ Debounced notifications
 	•	Editor (UI): Drag/connect/context‑menu/drop/validation snapshots.
 	•	Adapters: web/localStorage, vscode/postMessage mocking.
 
-8) TODOs / Open Decisions
+8) Security
+
+Input Validation
+	•	Address validation (isHexAddr): Limited to 64 hex chars (32 bytes) to prevent DoS attacks.
+	•	Decimal validation (isDecString): Limited to 78 digits (max u256 range).
+	•	Package ID validation (isValidPackageId): Same format as addresses, enforced length limit.
+
+Recursion Limits
+	•	Type checking functions (isPureType, isSameType, isTypeCompatible, inferCastTarget): MAX_TYPE_DEPTH = 32 to prevent stack overflow.
+	•	Serialized type unwrapping (unwrapToBase): Hardcoded limit of 8 wrapper levels.
+
+Known Constraints
+	•	Dependency vulnerabilities: 13 npm packages with known issues (tracked for Sui SDK gRPC migration).
+	•	Sui address checksums: Not yet validated (deferred to gRPC migration).
+
+9) TODOs / Open Decisions
 	•	MakeMoveVec node
 	•	Currently limited in UI.
 	•	Define codegen policy and typechecking, including expanded vs. vector handles.

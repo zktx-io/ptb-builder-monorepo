@@ -10,12 +10,23 @@ import type { ParamKind } from './types';
 
 /** Hex Sui address like 0x... */
 export function isHexAddr(s: unknown): s is string {
-  return typeof s === 'string' && /^0x[0-9a-fA-F]+$/.test(s);
+  if (typeof s !== 'string') return false;
+  // Sui addresses are 0x + up to 64 hex chars (32 bytes)
+  // This also covers package IDs and object IDs
+  return /^0x[0-9a-fA-F]{1,64}$/.test(s);
 }
 
 /** Decimal string like "123" */
 export function isDecString(s: unknown): s is string {
-  return typeof s === 'string' && /^\d+$/.test(s);
+  if (typeof s !== 'string') return false;
+  // Limit to 78 digits (max u256 is ~10^77)
+  return /^\d{1,78}$/.test(s);
+}
+
+/** Validate package ID (same format as addresses) */
+export function isValidPackageId(s: unknown): s is string {
+  if (typeof s !== 'string') return false;
+  return /^0x[0-9a-fA-F]{1,64}$/.test(s);
 }
 
 /** Special sender sentinel */
