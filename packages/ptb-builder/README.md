@@ -44,7 +44,7 @@
 
 ### 7. Themes
 
-- **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo night`, `cream`, `mint.breeze`.
+- **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo-night`, `cream`, `mint-breeze`.
 - **Switch Anytime**: Change themes dynamically from the workspace.
 
 ## Supported Commands
@@ -218,7 +218,7 @@ import '@zktx.io/ptb-builder/styles/themes-all.css';
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 <PTBBuilder
-  theme="dark" // initial theme (dark | light | cobalt2 | "tokyo night" | cream | mint.breeze); defaults to "dark"
+  theme="dark" // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
   address={myAddress} // sender address
   gasBudget={500_000_000} // optional gas budget
   executeTx={execAdapter} // adapter to execute transactions
@@ -246,7 +246,7 @@ loadFromDoc(doc);
 await loadFromOnChainTx('sui:testnet', '0x1234…');
 
 // Switch theme at runtime
-setTheme('tokyo night');
+setTheme('tokyo-night');
 ```
 
 ### Styling & Theme imports
@@ -269,7 +269,7 @@ setTheme('tokyo night');
 
 | Prop               | Type                                                                                  | Default  | Description                                                   |
 | ------------------ | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `theme`            | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo night` \| `cream` \| `mint.breeze`) | `"dark"` | Initial UI theme.                                             |
+| `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
 | `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
 | `address`          | `string`                                                                              | –        | Sender address for generated transactions.                    |
 | `gasBudget`        | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |

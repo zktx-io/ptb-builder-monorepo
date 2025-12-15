@@ -11,7 +11,7 @@ Conventions
 Runtime model
 	•	RF is authoritative while the editor is open.
 	•	PTB Graph is a persisted snapshot.
-	•	RF → PTB sync happens debounced (default: 250ms in PTBFlow, 400ms in provider graph autosave).
+	•	RF → PTB sync happens immediately (no debounce). Only viewport changes are debounced (250ms).
 	•	PTB → RF sync happens only when graphEpoch changes (programmatic rehydrate), guarded by rehydratingRef.
 	•	Feedback-loop guards
 	•	stableGraphSig(g) removes RF-only fields and builds an order-insensitive signature to ignore no-op updates.
@@ -75,12 +75,13 @@ UI & Modes
 	•	No new connections or edits; dragging allowed for inspection.
 	•	Themes
 	•	Initial theme via props; users can switch at runtime.
-	•	Supported: dark, light, cobalt2, tokyo night, cream, mint.breeze.
+	•	Supported: dark, light, cobalt2, tokyo-night, cream, mint-breeze.
 
 4) Provider Details
 
 Props (internal)
 	•	initialTheme: Theme — initial theme injected to <html> via data-ptb-theme and dark class.
+	•	showThemeSelector?: boolean — controls visibility of theme dropdown in CodePip. Default true.
 	•	execOpts?: ExecOptions — { myAddress?: string; gasBudget?: number } used by codegen & tx build.
 	•	executeTx?: (chain, tx?) => Promise<{ digest?: string; error?: string }> — external runner.
 	•	toast?: ToastAdapter — if absent, falls back to console logging.
@@ -94,8 +95,8 @@ Context (selected highlights)
 	•	Layout: registerFlowActions({ autoLayoutAndFit? }) to trigger layout from Provider-managed operations.
 
 Debounced notifications
-	•	Graph autosave: RF→PTB snapshot debounced (default 400ms), suppressed during reloads.
-	•	Doc autosave: PTBDoc-level autosave (default 1000ms), includes { chain, graph, modules, objects }.
+	•	Graph autosave: RF→PTB snapshot happens immediately (no debounce), suppressed during reloads.
+	•	Doc autosave: PTBDoc-level autosave fires immediately for graph/modules/objects/chain changes. Viewport changes are debounced (250ms).
 
 5) PTBFlow Details
 	•	RF state is the single source of truth; PTB snapshot is derived.
