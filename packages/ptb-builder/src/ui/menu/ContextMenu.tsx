@@ -67,8 +67,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const { x, y, zoom } = useViewport();
   const { isWellKnownAvailable } = usePtb();
-  // eslint-disable-next-line no-restricted-syntax
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | undefined>(undefined);
+  const setRootEl = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el ?? undefined;
+  }, []);
 
   /** Map menu actions → well-known singleton keys (wallet/gas/clock/random/system). */
   const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
@@ -374,7 +376,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   return (
     <div
-      ref={rootRef}
+      ref={setRootEl}
       className="absolute rounded-md shadow-2xl ptb-menu"
       style={{
         top: pos.top,

@@ -180,7 +180,6 @@ export const VarNode = memo(function VarNode({
 
     const s = val === undefined ? '' : String(val);
     setScalarBuf((prev) => (prev === s ? prev : s));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, v, isOption, isVector, arrShallowEqual]);
 
   // Default scalar<bool>=true once (non-helper)

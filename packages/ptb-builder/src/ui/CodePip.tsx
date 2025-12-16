@@ -128,12 +128,17 @@ export function CodePip({
   showMiniMap,
   onToggleMiniMap,
 }: CodePipProps) {
-  // eslint-disable-next-line no-restricted-syntax
-  const preRef = useRef<HTMLPreElement | null>(null);
-  // eslint-disable-next-line no-restricted-syntax
-  const codeRef = useRef<HTMLElement | null>(null);
-  // eslint-disable-next-line no-restricted-syntax
-  const prismRef = useRef<any>(null);
+  const preRef = useRef<HTMLPreElement | undefined>(undefined);
+  const setPreEl = useCallback((el: HTMLPreElement | null) => {
+    preRef.current = el ?? undefined;
+  }, []);
+
+  const codeRef = useRef<HTMLElement | undefined>(undefined);
+  const setCodeEl = useCallback((el: HTMLElement | null) => {
+    codeRef.current = el ?? undefined;
+  }, []);
+
+  const prismRef = useRef<any>(undefined);
   const [collapsed, setCollapsed] = useState<boolean>(!!defaultCollapsed);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
@@ -225,8 +230,7 @@ export function CodePip({
       const doc = exportDoc?.();
       if (!doc) throw new Error('Nothing to export');
       const filename = 'export.ptb';
-      // eslint-disable-next-line no-restricted-syntax
-      const blob = new Blob([JSON.stringify(doc, null, 2)], {
+      const blob = new Blob([JSON.stringify(doc, undefined, 2)], {
         type: 'application/x-ptb+json',
       });
       const url = URL.createObjectURL(blob);
@@ -352,12 +356,12 @@ export function CodePip({
             style={{ maxHeight, overflow: 'hidden' }}
           >
             <pre
-              ref={preRef}
+              ref={setPreEl}
               className="line-numbers m-0 p-[10px] px-[12px] text-[12px] whitespace-pre
                overflow-x-auto overflow-y-auto bg-[var(--ptb-code-bg)]"
             >
               <code
-                ref={codeRef}
+                ref={setCodeEl}
                 className={`language-${language} block min-w-full md:min-w-max`}
                 key={language}
               >

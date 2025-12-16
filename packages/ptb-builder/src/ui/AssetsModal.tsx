@@ -1,5 +1,5 @@
 // src/ui/AssetsModal.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { Boxes, Coins, FileBox, ImageOff, Loader2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -74,60 +74,63 @@ export function AssetsModal({
 
   const filteredItems = nftOnly ? items.filter(isNFT) : items;
 
-  const loadPage = async (cursor?: string, pushPrev?: boolean) => {
-    if (!open) return;
-    if (!owner) {
-      toast?.({ message: 'Owner address is missing.', variant: 'warning' });
-      return;
-    }
-    try {
-      setLoading(true);
-      const res: any = await getOwnedObjects?.({
-        owner,
-        options: { showType: true, showContent: true, showDisplay: true },
-        cursor,
-        limit: pageSize,
-      });
-
-      const list: OwnedItem[] = (res?.data ?? [])
-        .map((r: any) => {
-          const id = r?.data?.objectId as string | undefined;
-          const display = (r?.data as any)?.display?.data ?? {};
-          const imageUrl =
-            display?.image_url ??
-            display?.imageUrl ??
-            display?.img_url ??
-            display?.img;
-          const type =
-            r?.data?.content?.dataType === 'moveObject'
-              ? (r?.data?.content?.type as string)
-              : ((r?.data?.type as string) ?? '');
-          return id
-            ? {
-                objectId: id,
-                typeTag: type || '',
-                imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
-              }
-            : undefined;
-        })
-        .filter(Boolean) as OwnedItem[];
-
-      if (pushPrev && typeof cursor === 'string') {
-        setPrevStack((s) => [...s, cursor]);
+  const loadPage = useCallback(
+    async (cursor?: string, pushPrev?: boolean) => {
+      if (!open) return;
+      if (!owner) {
+        toast?.({ message: 'Owner address is missing.', variant: 'warning' });
+        return;
       }
+      try {
+        setLoading(true);
+        const res: any = await getOwnedObjects?.({
+          owner,
+          options: { showType: true, showContent: true, showDisplay: true },
+          cursor,
+          limit: pageSize,
+        });
 
-      setItems(list);
-      setNextCursor(res?.nextCursor ?? undefined);
-      setHasNext(!!res?.hasNextPage);
-    } catch {
-      toast?.({ message: 'Failed to load owned objects.', variant: 'error' });
-      setItems([]);
-      setNextCursor(undefined);
-      setHasNext(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+        const list: OwnedItem[] = (res?.data ?? [])
+          .map((r: any) => {
+            const id = r?.data?.objectId as string | undefined;
+            const display = (r?.data as any)?.display?.data ?? {};
+            const imageUrl =
+              display?.image_url ??
+              display?.imageUrl ??
+              display?.img_url ??
+              display?.img;
+            const type =
+              r?.data?.content?.dataType === 'moveObject'
+                ? (r?.data?.content?.type as string)
+                : ((r?.data?.type as string) ?? '');
+            return id
+              ? {
+                  objectId: id,
+                  typeTag: type || '',
+                  imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
+                }
+              : undefined;
+          })
+          .filter(Boolean) as OwnedItem[];
+
+        if (pushPrev && typeof cursor === 'string') {
+          setPrevStack((s) => [...s, cursor]);
+        }
+
+        setItems(list);
+        setNextCursor(res?.nextCursor ?? undefined);
+        setHasNext(!!res?.hasNextPage);
+      } catch {
+        toast?.({ message: 'Failed to load owned objects.', variant: 'error' });
+        setItems([]);
+        setNextCursor(undefined);
+        setHasNext(false);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [getOwnedObjects, open, owner, pageSize, toast],
+  );
 
   const onNext = () => {
     if (!hasNext || loading) return;
@@ -153,8 +156,7 @@ export function AssetsModal({
       setFailedImages(new Set());
       loadPage(undefined, false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, owner]);
+  }, [loadPage, open]);
 
   const handleClose = () => {
     onClose();

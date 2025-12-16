@@ -11,8 +11,7 @@ import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
 
 export const Viewer = () => {
-  // eslint-disable-next-line no-restricted-syntax
-  const lastLoaded = useRef<string | null>(null);
+  const lastLoaded = useRef<string | undefined>(undefined);
   const { loadFromOnChainTx, loadFromDoc } = usePTB();
 
   const location = useLocation();

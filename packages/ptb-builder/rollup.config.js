@@ -69,6 +69,7 @@ export default {
     }),
     emitThemeAssets(),
     terser({
+      maxWorkers: 1,
       compress: { passes: 2, pure_getters: true, drop_console: false },
       mangle: { safari10: false },
       format: { comments: false },

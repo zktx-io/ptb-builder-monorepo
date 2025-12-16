@@ -191,6 +191,5 @@ export const PTBTemplate_merge: PTBTemplateItem = {
   description: 'Sample merge pipeline',
   defaultName: 'merge.ptb',
   detail: 'Merge multiple Coins (MergeCoins).',
-  // eslint-disable-next-line no-restricted-syntax
-  file: () => JSON.stringify(mergeTemplateJson, null, 2),
+  file: () => JSON.stringify(mergeTemplateJson, undefined, 2),
 };

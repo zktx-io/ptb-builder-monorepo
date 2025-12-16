@@ -14,8 +14,10 @@ export function DragAndDrop({
   const [isVisible, setIsVisible] = useState(true);
   const [message, setMessage] = useState('Drop File (*.ptb) here');
   const [dragging, setDragging] = useState(false);
-  // eslint-disable-next-line no-restricted-syntax
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | undefined>(undefined);
+  const setInputEl = useCallback((el: HTMLInputElement | null) => {
+    inputRef.current = el ?? undefined;
+  }, []);
 
   const openFilePicker = useCallback(() => {
     inputRef.current?.click();
@@ -133,7 +135,7 @@ export function DragAndDrop({
           Drag & Drop your <code>.ptb</code> file here or click to choose
         </p>
         <input
-          ref={inputRef}
+          ref={setInputEl}
           type="file"
           accept=".ptb,application/json"
           hidden

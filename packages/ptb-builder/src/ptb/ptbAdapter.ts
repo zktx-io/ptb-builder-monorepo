@@ -24,6 +24,11 @@ import { parseHandleTypeSuffix, serializePTBType } from './graph/types';
 import { PORTS } from './portTemplates';
 import { extractHandles } from '../ui/handles/handleUtils';
 
+type RFEdgeCompat = RFEdge<RFEdgeData> & {
+  sourceHandleId?: string;
+  targetHandleId?: string;
+};
+
 /** UI node payload: only label and the SSOT PTB node */
 export interface RFNodeData extends Record<string, unknown> {
   label?: string;
@@ -99,16 +104,14 @@ export function ptbToRF(graph: PTBGraph): {
       ? serializePTBType(tPort.dataType)
       : undefined;
 
-    return {
+    const edge: RFEdgeCompat = {
       id: e.id,
       source: e.source,
       target: e.target,
       sourceHandle: sh,
       targetHandle: th,
       // v11/12 alias
-      // @ts-ignore
       sourceHandleId: sh,
-      // @ts-ignore
       targetHandleId: th,
       type: mapPTBEdgeToRFType(e),
       data: {
@@ -118,6 +121,7 @@ export function ptbToRF(graph: PTBGraph): {
       },
       label: (e as any).label,
     };
+    return edge;
   });
 
   return { nodes, edges };

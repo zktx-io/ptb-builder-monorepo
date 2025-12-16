@@ -739,8 +739,10 @@ export function PTBFlow() {
   const { fitView, screenToFlowPosition, setViewport, getViewport } =
     useReactFlow();
   const retryFlag = useRef(false);
-  // eslint-disable-next-line no-restricted-syntax
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | undefined>(undefined);
+  const setContainerEl = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el ?? undefined;
+  }, []);
 
   const getViewportCenterFlow = useCallback(() => {
     const el = containerRef.current;
@@ -885,7 +887,7 @@ export function PTBFlow() {
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerEl}
       style={{
         width: '100%',
         height: '100%',

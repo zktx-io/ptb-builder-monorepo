@@ -1,7 +1,9 @@
 {
   "name": "@zktx.io/ptb-builder-monorepo",
+  "private": true,
   "scripts": {
-    "lint": "eslint 'packages/**/*.{js,jsx,ts,tsx}' --fix",
+    "lint": "eslint 'packages/**/*.{js,jsx,ts,tsx}'",
+    "lint:fix": "eslint 'packages/**/*.{js,jsx,ts,tsx}' --fix",
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
     "dev": "npm run build && cd packages/example && npm run dev",
     "build": "cd packages/ptb-builder && npm run build",
