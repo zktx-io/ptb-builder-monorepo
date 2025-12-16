@@ -78,9 +78,22 @@ export type ParamKind =
   | 'num-u256'
   | 'bool' // boolean scalar
   | 'str' // string scalar
+  // options (pure.option)
+  | 'opt-addr'
+  | 'opt-id'
+  | 'opt-bool'
+  | 'opt-str'
+  | 'opt-u8'
+  | 'opt-u16'
+  | 'opt-u32'
+  | 'opt-u64'
+  | 'opt-u128'
+  | 'opt-u256'
   // primitive vectors (element width/kind comes from port metadata only)
   | 'array-addr'
   | 'array-bool'
+  | 'array-id'
+  | 'array-str'
   | 'array-u8'
   | 'array-u16'
   | 'array-u32'

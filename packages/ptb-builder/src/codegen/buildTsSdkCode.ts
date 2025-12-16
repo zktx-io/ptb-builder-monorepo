@@ -131,7 +131,7 @@ function generate(p: Program, opts?: ExecOptions): string {
           ? `[${op.typeArgs.map(renderRawValue).join(', ')}]`
           : '';
 
-        const hoisted: string[] = [];
+        const hoistedByKey = new Map<string, string>();
         const renderedArgs: string[] = [];
 
         op.args.forEach((a, i) => {
@@ -146,11 +146,17 @@ function generate(p: Program, opts?: ExecOptions): string {
           const rendered = renderMoveArgCode(rawExpr, kind);
 
           if (a.kind === 'ref') {
-            const ho = `__arg_${a.name}_${i}`;
-            if (!hoisted.includes(ho)) {
-              body.w(`const ${ho} = ${rendered};`);
-              hoisted.push(ho);
+            const key = `${kind}:${a.name}`;
+            const existing = hoistedByKey.get(key);
+            if (existing) {
+              renderedArgs.push(existing);
+              return;
             }
+
+            const safeKind = kind.replace(/[^a-zA-Z0-9_]/g, '_');
+            const ho = `__arg_${a.name}_${safeKind}`;
+            body.w(`const ${ho} = ${rendered};`);
+            hoistedByKey.set(key, ho);
             renderedArgs.push(ho);
           } else {
             renderedArgs.push(rendered);

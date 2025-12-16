@@ -282,6 +282,43 @@ function kindFromDataType(dt: any): ParamKind {
   // object handle
   if (dt.kind === 'object') return 'txarg';
 
+  // option<T> (pure.option only for pure-capable elem)
+  if (dt.kind === 'option') {
+    const e = dt.elem;
+    if (!e) return 'other';
+
+    if (e.kind === 'scalar') {
+      if (e.name === 'address') return 'opt-addr';
+      if (e.name === 'bool') return 'opt-bool';
+      if (e.name === 'id') return 'opt-id';
+      if (e.name === 'string') return 'opt-str';
+      // scalar('number') has no width; do not serialize
+      return 'other';
+    }
+
+    if (e.kind === 'move_numeric') {
+      const w = String(e.width ?? '').toLowerCase();
+      switch (w) {
+        case 'u8':
+          return 'opt-u8';
+        case 'u16':
+          return 'opt-u16';
+        case 'u32':
+          return 'opt-u32';
+        case 'u64':
+          return 'opt-u64';
+        case 'u128':
+          return 'opt-u128';
+        case 'u256':
+          return 'opt-u256';
+        default:
+          return 'other';
+      }
+    }
+
+    return 'other';
+  }
+
   // scalar
   if (dt.kind === 'scalar') {
     if (dt.name === 'address') return 'addr';
@@ -322,7 +359,9 @@ function kindFromDataType(dt: any): ParamKind {
     if (e.kind === 'scalar') {
       if (e.name === 'address') return 'array-addr';
       if (e.name === 'bool') return 'array-bool';
-      // vector<string>/vector<number>/vector<id> are not serialized unless width is explicit
+      if (e.name === 'id') return 'array-id';
+      if (e.name === 'string') return 'array-str';
+      // vector<number> has no width; do not serialize
       return 'other';
     }
 
@@ -377,6 +416,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
 
   const vars: PVar[] = [];
   const names = new NamePool(['tx', 'SUI', 'myAddress']);
+  const txArgSyms = new Set<string>();
 
   // Emit variables (raw)
   let varAuto = 1;
@@ -393,6 +433,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
       header.usedMyAddress = true;
 
     vars.push({ name: sym, init });
+    if (init.kind === 'object') txArgSyms.add(sym);
 
     for (const p of v.ports || []) {
       if (p.role === 'io' && p.direction === 'out') {
@@ -484,6 +525,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
         const namesOut = amounts.map((_, i) =>
           names.claim(`out_${splitSeq}_${i}`),
         );
+        namesOut.forEach((nm) => txArgSyms.add(nm));
         ops.push({
           kind: 'splitCoins',
           coin,
@@ -583,6 +625,7 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
           });
 
         const out = names.claim('out');
+        txArgSyms.add(out);
         ops.push({
           kind: 'makeMoveVec',
           elements,
@@ -599,35 +642,71 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
       case 'moveCall': {
         const uiAny = (c.params as any)?.ui ?? {};
         const rtAny = (c.params as any)?.runtime ?? {};
+        const mvAny = (c.params as any)?.moveCall ?? {};
         const target =
           rtAny.target ??
           (uiAny.pkgId && uiAny.module && uiAny.func
             ? `${uiAny.pkgId}::${uiAny.module}::${uiAny.func}`
-            : '/* pkg::module::function */');
+            : mvAny.package && mvAny.module && mvAny.function
+              ? `${mvAny.package}::${mvAny.module}::${mvAny.function}`
+              : (mvAny.target ?? '/* pkg::module::function */'));
 
-        // Gather args in port order; fill undef if missing
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
         );
-        const args: PValue[] = inPorts.map((p) => {
+
+        // Separate typeArguments (in_targ_*) from moveCall.arguments (in_arg_*)
+        const targPorts = inPorts
+          .filter((p) => String(p.id).startsWith('in_targ_'))
+          .slice()
+          .sort((a, b) => {
+            const ai = Number(String(a.id).slice('in_targ_'.length));
+            const bi = Number(String(b.id).slice('in_targ_'.length));
+            return (
+              (Number.isFinite(ai) ? ai : 0) - (Number.isFinite(bi) ? bi : 0)
+            );
+          });
+        const argPorts = inPorts.filter(
+          (p) => !String(p.id).startsWith('in_targ_'),
+        );
+
+        // Legacy fallback: some older docs stored type args in params (not via ports/edges).
+        const legacyTypeArgs: string[] = Array.isArray(mvAny.typeArgs)
+          ? mvAny.typeArgs
+          : Array.isArray(mvAny.typeArguments)
+            ? mvAny.typeArguments
+            : [];
+
+        // moveCall.arguments in port order; fill undef if missing
+        const args: PValue[] = argPorts.map((p) => {
           const incoming = byPortVals.get(p.id) ?? [];
           return incoming[0] ?? ({ kind: 'undef' } as PValue);
         });
 
-        // Param kinds strictly from dataType
-        const paramKinds: ParamKind[] = inPorts.map((p) =>
-          kindFromDataType(p.dataType),
-        );
-
-        // Type args from in_targ_* ports (if present)
-        const typeArgs: PValue[] = [];
-        (c.ports || []).forEach((p) => {
-          if (p.role !== 'io' || p.direction !== 'in') return;
-          if (String(p.id).startsWith('in_targ_')) {
-            const vals = byPortVals.get(p.id) ?? [];
-            typeArgs.push(...vals);
-          }
+        // Param kinds from destination dataType, except:
+        // - If the source is already a TransactionArgument (e.g. MoveCall result),
+        //   never re-serialize (pure.u64/pure.address/etc.). Pass through as txarg.
+        const paramKinds: ParamKind[] = argPorts.map((p, i) => {
+          const v = args[i];
+          if (v?.kind === 'ref' && txArgSyms.has(v.name)) return 'txarg';
+          return kindFromDataType(p.dataType);
         });
+
+        // moveCall.typeArguments from in_targ_* ports (aligned by index)
+        const typeArgs: PValue[] =
+          targPorts.length > 0
+            ? targPorts.map((p, i) => {
+                const incoming = byPortVals.get(p.id) ?? [];
+                const v = incoming[0] ?? ({ kind: 'undef' } as PValue);
+                if (v.kind !== 'undef') return v;
+                const legacy = legacyTypeArgs[i];
+                return typeof legacy === 'string' && legacy.trim()
+                  ? ({ kind: 'scalar', value: legacy } as PValue)
+                  : v;
+              })
+            : legacyTypeArgs
+                .filter((s) => typeof s === 'string' && s.trim().length > 0)
+                .map((s) => ({ kind: 'scalar', value: s }) as PValue);
 
         // Return binding policy from OUT ports
         const outs = (c.ports || []).filter(
@@ -642,10 +721,12 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
           rets = { mode: 'none' };
         } else if (outs.length === 1) {
           const nm = names.claim('result');
+          txArgSyms.add(nm);
           rets = { mode: 'single', name: nm };
           portSyms.set(`${c.id}:${outs[0].id}`, [nm]);
         } else {
           const nms = outs.map((_, i) => names.claim(`result_${i}`));
+          nms.forEach((nm) => txArgSyms.add(nm));
           rets = { mode: 'destructure', names: nms };
           outs.forEach((p, i) => portSyms.set(`${c.id}:${p.id}`, [nms[i]]));
         }

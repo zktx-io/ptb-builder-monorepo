@@ -66,7 +66,7 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
     tx.setGasBudgetIfNotSet(opts.gasBudget);
 
   const env = new Map<string, any>();
-  const serializeCache = new Map<string, any>(); // key: `${opSeq}:${kind}:${refName}#${idx}`
+  const serializeCache = new Map<string, any>(); // key: `${opSeq}:${kind}:${refName}`
 
   // Materialize declared variables (raw)
   for (const v of p.vars) {
@@ -138,7 +138,7 @@ function generate(p: Program, opts?: ExecOptions): Transaction {
           if (kind === 'txarg') return x;
 
           if (src.kind === 'ref') {
-            const key = `${opSeq}:${kind}:${src.name}#${i}`;
+            const key = `${opSeq}:${kind}:${src.name}`;
             if (serializeCache.has(key)) return serializeCache.get(key);
             const ser = serializeMoveArgRuntime(tx, x, kind, opts?.myAddress);
             serializeCache.set(key, ser);

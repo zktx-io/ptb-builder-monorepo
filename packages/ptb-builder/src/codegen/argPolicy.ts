@@ -50,7 +50,34 @@ export function serializeMoveArgRuntime(
   kind: ParamKind,
   my?: string,
 ) {
-  if (typeof raw === 'undefined') return undefined;
+  if (typeof raw === 'undefined') {
+    // Option<T> can be encoded as None with no input.
+    switch (kind) {
+      case 'opt-addr':
+        return tx.pure.option('address', undefined);
+      case 'opt-id':
+        return tx.pure.option('id', undefined);
+      case 'opt-bool':
+        return tx.pure.option('bool', undefined);
+      case 'opt-str':
+        return tx.pure.option('string', undefined);
+      case 'opt-u8':
+        return tx.pure.option('u8', undefined);
+      case 'opt-u16':
+        return tx.pure.option('u16', undefined);
+      case 'opt-u32':
+        return tx.pure.option('u32', undefined);
+      case 'opt-u64':
+        return tx.pure.option('u64', undefined);
+      case 'opt-u128':
+        return tx.pure.option('u128', undefined);
+      case 'opt-u256':
+        return tx.pure.option('u256', undefined);
+      default:
+        break;
+    }
+    return undefined;
+  }
 
   switch (kind) {
     case 'txarg':
@@ -63,6 +90,29 @@ export function serializeMoveArgRuntime(
         return tx.pure.address(injectMySentinel(raw, my));
       return tx.pure.address(raw);
     }
+
+    case 'opt-addr': {
+      const v = raw == undefined ? undefined : injectMySentinel(raw, my);
+      return tx.pure.option('address', v);
+    }
+    case 'opt-id':
+      return tx.pure.option('id', raw);
+    case 'opt-bool':
+      return tx.pure.option('bool', raw);
+    case 'opt-str':
+      return tx.pure.option('string', raw);
+    case 'opt-u8':
+      return tx.pure.option('u8', raw);
+    case 'opt-u16':
+      return tx.pure.option('u16', raw);
+    case 'opt-u32':
+      return tx.pure.option('u32', raw);
+    case 'opt-u64':
+      return tx.pure.option('u64', raw);
+    case 'opt-u128':
+      return tx.pure.option('u128', raw);
+    case 'opt-u256':
+      return tx.pure.option('u256', raw);
 
     case 'num':
       return tx.pure.u64(raw); // fallback when width unknown
@@ -94,6 +144,10 @@ export function serializeMoveArgRuntime(
       return tx.pure.vector('address', raw);
     case 'array-bool':
       return tx.pure.vector('bool', raw);
+    case 'array-id':
+      return tx.pure.vector('id', raw);
+    case 'array-str':
+      return tx.pure.vector('string', raw);
     case 'array-u8':
       return tx.pure.vector('u8', raw);
     case 'array-u16':
@@ -122,6 +176,26 @@ export function renderMoveArgCode(expr: string, kind: ParamKind): string {
       return expr;
     case 'addr':
       return `tx.pure.address(${expr})`;
+    case 'opt-addr':
+      return `tx.pure.option('address', ${expr})`;
+    case 'opt-id':
+      return `tx.pure.option('id', ${expr})`;
+    case 'opt-bool':
+      return `tx.pure.option('bool', ${expr})`;
+    case 'opt-str':
+      return `tx.pure.option('string', ${expr})`;
+    case 'opt-u8':
+      return `tx.pure.option('u8', ${expr})`;
+    case 'opt-u16':
+      return `tx.pure.option('u16', ${expr})`;
+    case 'opt-u32':
+      return `tx.pure.option('u32', ${expr})`;
+    case 'opt-u64':
+      return `tx.pure.option('u64', ${expr})`;
+    case 'opt-u128':
+      return `tx.pure.option('u128', ${expr})`;
+    case 'opt-u256':
+      return `tx.pure.option('u256', ${expr})`;
     case 'num':
       return `tx.pure.u64(${expr})`;
     case 'num-u8':
@@ -148,6 +222,10 @@ export function renderMoveArgCode(expr: string, kind: ParamKind): string {
       return `tx.pure.vector('address', ${expr})`;
     case 'array-bool':
       return `tx.pure.vector('bool', ${expr})`;
+    case 'array-id':
+      return `tx.pure.vector('id', ${expr})`;
+    case 'array-str':
+      return `tx.pure.vector('string', ${expr})`;
     case 'array-u8':
       return `tx.pure.vector('u8', ${expr})`;
     case 'array-u16':

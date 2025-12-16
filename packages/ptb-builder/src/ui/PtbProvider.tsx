@@ -868,16 +868,56 @@ export function PtbProvider({
     (value) => {
       resetBeforeLoad();
       if (typeof value !== 'string') {
-        setView(value.view);
-        setActiveChain(value.chain);
-        setModules(value.modules);
-        setObjects(value.objects);
-        replaceGraphImmediate(value.graph);
+        const doc: any = value as any;
+
+        const normalizeChain = (c: unknown): Chain | undefined => {
+          if (typeof c !== 'string') return undefined;
+          const s = c.trim();
+          if (/^sui:(mainnet|testnet|devnet)$/.test(s)) return s as Chain;
+          if (/^(mainnet|testnet|devnet)$/.test(s)) return `sui:${s}` as Chain;
+          return undefined;
+        };
+
+        const nextView =
+          doc?.view &&
+          typeof doc.view?.x === 'number' &&
+          typeof doc.view?.y === 'number' &&
+          typeof doc.view?.zoom === 'number'
+            ? doc.view
+            : { x: 0, y: 0, zoom: 1 };
+
+        const nextChain =
+          normalizeChain(doc?.chain) ??
+          normalizeChain(doc?.network) ??
+          normalizeChain(doc?.activeChain);
+
+        if (!nextChain) {
+          toastImpl({
+            message:
+              'Invalid or missing chain in document; defaulting to sui:testnet.',
+            variant: 'warning',
+          });
+        }
+
+        const nextGraph =
+          doc?.graph &&
+          Array.isArray(doc.graph?.nodes) &&
+          Array.isArray(doc.graph?.edges)
+            ? doc.graph
+            : Array.isArray(doc?.nodes) && Array.isArray(doc?.edges)
+              ? { nodes: doc.nodes, edges: doc.edges }
+              : seedDefaultGraph();
+
+        setView(nextView);
+        setActiveChain((nextChain ?? 'sui:testnet') as Chain);
+        setModules((doc?.modules ?? {}) as any);
+        setObjects((doc?.objects ?? {}) as any);
+        replaceGraphImmediate(nextGraph);
         setReadOnly(false);
         setCodePipOpenTick((t) => t + 1);
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            flowActionsRef.current.updateViewport?.(value.view);
+            flowActionsRef.current.updateViewport?.(nextView);
             canUpdate.current = true;
           });
         });
@@ -894,7 +934,7 @@ export function PtbProvider({
         });
       }
     },
-    [replaceGraphImmediate],
+    [replaceGraphImmediate, toastImpl],
   );
 
   // ---- export doc ------------------------------------------------------------
