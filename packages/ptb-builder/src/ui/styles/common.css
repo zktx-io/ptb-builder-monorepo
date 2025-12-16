@@ -943,34 +943,11 @@
   font-size: 12px;
   opacity: 0.7;
 }
-.ptb-modal__preview {
-  position: fixed;
-  z-index: 60;
-  pointer-events: none;
-  width: 200px;
-  max-width: 46vw;
-  max-height: 220px;
-  border-radius: 10px;
-  border: 1px solid var(--ptb-modal-panel-border);
-  background: var(--ptb-modal-panel-bg);
-  box-shadow: var(--ptb-elev-1);
-  overflow: hidden;
-}
-.ptb-modal__preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: var(--ptb-modal-panel-bg);
-}
-
 /* Body */
 .ptb-modal__body {
   padding: 12px;
 }
 .ptb-modal__list {
-  border: 1px solid var(--ptb-modal-panel-border);
-  border-radius: 6px;
   height: var(--ptb-assets-list-h);
   overflow: auto;
 }
@@ -1008,10 +985,101 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ptb-modal__minw-0 {
+  min-width: 0;
+}
+.ptb-modal__item-img-wrapper {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ptb-modal__item-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ptb-modal__item-img-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ptb-modal-panel-border);
+  opacity: 0.5;
+}
+
+/* Grid view (NFT thumbnails) */
+.ptb-modal__grid {
+  height: var(--ptb-assets-list-h);
+  overflow: auto;
+}
+.ptb-modal__grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.ptb-modal__grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 100ms ease;
+  background: var(--ptb-modal-panel-bg);
+  border: 1px solid var(--ptb-modal-panel-border);
+}
+.ptb-modal__grid-item:hover {
+  background: var(--ptb-assets-row-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--ptb-elev-1);
+}
+.ptb-modal__grid-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--ptb-modal-panel-bg);
+}
+.ptb-modal__grid-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 6px;
+  background: var(--ptb-modal-panel-border);
+  opacity: 0.5;
+}
+.ptb-modal__grid-no-image {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.ptb-modal__grid-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  opacity: 0.8;
+}
 
 /* Footer (pagination) */
 .ptb-modal__footer {
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ptb-modal-panel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;

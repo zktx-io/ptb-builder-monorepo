@@ -955,7 +955,9 @@ export function PTBFlow() {
               language="typescript"
               title="ts-sdk preview"
               emptyText={EMPTY_CODE(chain)}
-              canRunning={!!chain && !readOnly && flowActive}
+              canRunning={
+                !!chain && !readOnly && flowActive && !!execOpts.myAddress
+              }
               isRunning={isRunning}
               onDryRun={onDryRun}
               onExecute={onExecute}
