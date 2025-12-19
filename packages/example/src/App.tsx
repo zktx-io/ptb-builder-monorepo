@@ -1,22 +1,17 @@
 import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
-  useSuiClientContext,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
-import type { NETWORK } from '@zktx.io/walrus-connect';
-import { WalrusWallet } from '@zktx.io/walrus-wallet';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import '@mysten/dapp-kit/dist/index.css';
-import '@zktx.io/walrus-wallet/index.css';
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
 import { usePtbUndo } from './components/usePtbUndo';
-import { loadNetwork, SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -38,18 +33,8 @@ const router = createBrowserRouter([
 
 function App() {
   const account = useCurrentAccount();
-  const { network } = useSuiClientContext();
   const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
   const { set: onDocChange } = usePtbUndo();
-
-  const normalizeNetwork = (value?: string | null): SuiNetwork => {
-    if (value === 'mainnet' || value === 'testnet' || value === 'devnet') {
-      return value;
-    }
-    return loadNetwork();
-  };
-
-  const currentNetwork: NETWORK = normalizeNetwork(network);
 
   const handleToast = ({
     message,
@@ -107,21 +92,15 @@ function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      <WalrusWallet
-        key={currentNetwork}
-        network={currentNetwork}
-        onEvent={handleToast}
+      <PTBBuilder
+        toast={handleToast}
+        executeTx={executeTx}
+        address={account?.address}
+        showExportButton
+        onDocChange={onDocChange}
       >
-        <PTBBuilder
-          toast={handleToast}
-          executeTx={executeTx}
-          address={account?.address}
-          showExportButton
-          onDocChange={onDocChange}
-        >
-          <RouterProvider router={router} />
-        </PTBBuilder>
-      </WalrusWallet>
+        <RouterProvider router={router} />
+      </PTBBuilder>
     </div>
   );
 }
