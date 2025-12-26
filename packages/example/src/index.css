@@ -5,6 +5,19 @@ html {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  font-family: var(--app-font-family);
+}
+
+:root {
+  --app-font-family: 'Inter Tight', system-ui, sans-serif;
+  --dapp-kit-typography-fontFamily: var(--app-font-family);
+  --ptb-typography-fontFamily: var(--app-font-family);
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  font-family: var(--app-font-family);
 }
 
 .container {
@@ -16,7 +29,7 @@ html {
   justify-content: center;
   align-items: center;
   position: relative;
-  font-family: 'InterTight', sans-serif;
+  font-family: var(--app-font-family);
 }
 
 .logo {
