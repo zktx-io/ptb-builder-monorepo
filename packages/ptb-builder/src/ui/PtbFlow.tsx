@@ -888,6 +888,7 @@ export function PTBFlow() {
   return (
     <div
       ref={setContainerEl}
+      data-ptb-builder
       style={{
         width: '100%',
         height: '100%',

@@ -2,6 +2,11 @@
 export default {
   darkMode: 'class',
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
+  important: '[data-ptb-builder]',
+  corePlugins: {
+    preflight: false,
+    container: false,
+  },
   theme: {
     extend: {
       fontSize: {

@@ -172,6 +172,7 @@ export function AssetsModal({
   const modal = (
     <div
       className="ptb-modal"
+      data-ptb-builder
       role="dialog"
       aria-modal="true"
       onClick={handleClose}
