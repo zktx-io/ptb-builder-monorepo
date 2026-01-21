@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSuiClientContext } from '@mysten/dapp-kit';
 import { usePTB } from '@zktx.io/ptb-builder';
@@ -6,38 +6,68 @@ import queryString from 'query-string';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocation } from 'react-router-dom';
 
-import { ConnectScreen } from '../components/ConnectScreen';
 import { usePtbUndo } from '../components/usePtbUndo';
-import { SuiChain, SuiNetwork } from '../network';
+import { TransactionPrompt } from '../components/TransactionPrompt';
+import { saveNetwork, SuiChain, SuiNetwork } from '../network';
+
+const TX_QUERY_REGEX = /^(?:sui:)?(mainnet|testnet|devnet):(.*)$/;
+
+const parseTxInput = (
+  input?: string | null,
+): { network?: SuiNetwork; txHash: string } | undefined => {
+  if (!input) {
+    return undefined;
+  }
+  const value = input.trim();
+  if (!value) {
+    return undefined;
+  }
+  const match = value.match(TX_QUERY_REGEX);
+  const txHash = (match?.[2] ?? value).trim();
+  if (!txHash) {
+    return undefined;
+  }
+  return {
+    network: match ? (match[1] as SuiNetwork) : undefined,
+    txHash,
+  };
+};
+
+const normalizeDigest = (input?: string) => {
+  const trimmed = input?.trim();
+  if (!trimmed || trimmed.includes(':')) {
+    return undefined;
+  }
+  return trimmed;
+};
 
 export const Viewer = () => {
   const lastLoaded = useRef<string | undefined>(undefined);
   const { loadFromOnChainTx, loadFromDoc } = usePTB();
 
   const location = useLocation();
-  const { network, selectNetwork } = useSuiClientContext();
+  const { network: clientNetwork, selectNetwork } = useSuiClientContext();
+  const network = clientNetwork as SuiNetwork;
   const { reset, undo, redo } = usePtbUndo();
 
-  useEffect(() => {
+  const parsedQuery = useMemo(() => {
     const parsed = queryString.parse(location.search);
     const rawTx = parsed.tx;
-    if (!rawTx) {
+    const tx =
+      Array.isArray(rawTx) && rawTx.length
+        ? rawTx[0]
+        : (rawTx as string | undefined);
+
+    return parseTxInput(tx);
+  }, [location.search]);
+  const [showPrompt, setShowPrompt] = useState(() => !parsedQuery);
+  const [manualTx, setManualTx] = useState('');
+
+  useEffect(() => {
+    if (!parsedQuery) {
       return;
     }
-
-    const tx = Array.isArray(rawTx) ? rawTx[0] : rawTx;
-    if (!tx) {
-      return;
-    }
-
-    const match = tx.match(/^(?:sui:)?(mainnet|testnet|devnet):(.*)$/);
-    const targetNetwork = match?.[1] as SuiNetwork | undefined;
-    const txHash = (match?.[2] ?? tx).trim();
-
-    if (!txHash) {
-      return;
-    }
-
+    const { network: targetNetwork, txHash } = parsedQuery;
     const effectiveNetwork = targetNetwork ?? network;
     const loadKey = `${effectiveNetwork}:${txHash}`;
     if (lastLoaded.current === loadKey) {
@@ -51,7 +81,16 @@ export const Viewer = () => {
     loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
     reset();
     lastLoaded.current = loadKey;
-  }, [loadFromOnChainTx, location.search, network, reset, selectNetwork]);
+  }, [loadFromOnChainTx, parsedQuery, network, reset, selectNetwork]);
+
+  const lastSearch = useRef(location.search);
+  useEffect(() => {
+    if (location.search === lastSearch.current) {
+      return;
+    }
+    setShowPrompt(!parsedQuery);
+    lastSearch.current = location.search;
+  }, [location.search, parsedQuery]);
 
   useHotkeys(
     'meta+z,ctrl+z',
@@ -77,11 +116,37 @@ export const Viewer = () => {
     [redo],
   );
 
-  return (
-    <ConnectScreen
-      title="PTB Builder"
-      subtitle="Connect your wallet to view on-chain PTBs"
-      connected={<></>}
+  const handleManualLoad = () => {
+    const txHash = normalizeDigest(manualTx);
+    if (!txHash) {
+      return;
+    }
+    const effectiveNetwork = network;
+    const loadKey = `${effectiveNetwork}:${txHash}`;
+    if (lastLoaded.current === loadKey) {
+      setShowPrompt(false);
+      return;
+    }
+
+    loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
+    reset();
+    lastLoaded.current = loadKey;
+    setShowPrompt(false);
+  };
+
+  const canLoadDigest = manualTx.trim() !== '';
+
+  return showPrompt ? (
+    <TransactionPrompt
+      network={network}
+      txValue={manualTx}
+      onNetworkChange={(value) => {
+        selectNetwork(value);
+        saveNetwork(value);
+      }}
+      onTxChange={setManualTx}
+      onLoad={handleManualLoad}
+      canLoad={canLoadDigest}
     />
-  );
+  ) : undefined;
 };

@@ -90,8 +90,8 @@ export function DragAndDrop({
       style={{
         position: 'fixed',
         inset: 0,
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100%',
         backgroundColor: 'rgba(1, 24, 41, 0.2)',
         backdropFilter: 'blur(3px)',
         WebkitBackdropFilter: 'blur(6px)',
@@ -101,8 +101,9 @@ export function DragAndDrop({
         justifyContent: 'center',
         alignItems: 'center',
         textAlign: 'center',
-        padding: 24,
+        padding: '24px 0',
         gap: 20,
+        boxSizing: 'border-box',
       }}
     >
       <div
@@ -110,7 +111,7 @@ export function DragAndDrop({
         tabIndex={0}
         onClick={openFilePicker}
         style={{
-          width: 'min(720px, 90vw)',
+          width: 'min(640px, 80vw)',
           minHeight: 200,
           border: `2px dashed ${dragging ? '#7fd1ff' : 'rgba(255,255,255,0.6)'}`,
           borderRadius: 16,
@@ -126,6 +127,7 @@ export function DragAndDrop({
           cursor: 'pointer',
           transition: 'border-color 0.2s ease, background 0.2s ease',
           backdropFilter: 'blur(4px)',
+          margin: '0 auto',
         }}
       >
         <p style={{ fontSize: 20, margin: 0 }}>

@@ -35,8 +35,8 @@ export function ConnectScreen({
       style={{
         position: 'fixed',
         inset: 0,
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100%',
         backgroundColor: 'rgba(1, 24, 41, 0.2)',
         backdropFilter: 'blur(3px)',
         WebkitBackdropFilter: 'blur(6px)',
@@ -49,6 +49,7 @@ export function ConnectScreen({
         padding: 24,
         gap: 20,
         userSelect: 'none',
+        boxSizing: 'border-box',
       }}
     >
       <img
@@ -103,10 +104,7 @@ export function ConnectScreen({
         <button className="action-button" onClick={() => navigate('/editor')}>
           Editor
         </button>
-        <button
-          className="action-button"
-          onClick={() => navigate('/viewer?tx=')}
-        >
+        <button className="action-button" onClick={() => navigate('/viewer')}>
           Viewer
         </button>
       </div>
