@@ -1,6 +1,6 @@
 {
   "name": "@zktx.io/ptb-builder",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "description": "Sui programmable transaction blocks builder",
   "type": "module",
   "exports": {
@@ -72,6 +72,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
+    "@zktx.io/ptb-model": "0.3.30",
     "prismjs": "^1.29.0"
   }
 }

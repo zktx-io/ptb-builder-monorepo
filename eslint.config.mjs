@@ -43,21 +43,21 @@ export default [
       'import/order': [
         'error',
         {
-          'groups': [
+          groups: [
             ['builtin', 'external'],
             ['internal'],
-            ['parent', 'sibling', 'index']
+            ['parent', 'sibling', 'index'],
           ],
-          'pathGroups': [
+          pathGroups: [
             {
               pattern: 'react',
               group: 'external',
               position: 'before',
-            }
+            },
           ],
-          'pathGroupsExcludedImportTypes': ['react'],
+          pathGroupsExcludedImportTypes: ['react'],
           'newlines-between': 'always',
-          'alphabetize': { order: 'asc', caseInsensitive: true },
+          alphabetize: { order: 'asc', caseInsensitive: true },
         },
       ],
       'sort-imports': [
@@ -73,6 +73,36 @@ export default [
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    files: ['packages/ptb-model/src/utils.ts'],
+    rules: {
+      // Sui SDK 2.16.2 models MakeMoveVec.type as nullable(string()).
+      // Keep the literal null in one model helper instead of hiding it.
+      'no-restricted-syntax': 'off',
+    },
+  },
+  {
+    files: ['packages/ptb-builder/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../**/ptb-model',
+                '../**/ptb-model/**',
+                'packages/ptb-model/**',
+                '@zktx.io/ptb-model/**',
+              ],
+              message:
+                'Import @zktx.io/ptb-model through the package root only; do not cross package boundaries or import model internals.',
+            },
+          ],
+        },
+      ],
     },
   },
 ];

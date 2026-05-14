@@ -79,6 +79,7 @@ export default {
     /^react(\/.*)?$/,
     /^react-dom(\/.*)?$/,
     /^@mysten\/sui(\/.*)?$/,
+    /^@zktx\.io\/ptb-model(\/.*)?$/,
     /^@xyflow\/react(\/.*)?$/,
     /^elkjs(\/.*)?$/,
     /^re-resizable(\/.*)?$/,

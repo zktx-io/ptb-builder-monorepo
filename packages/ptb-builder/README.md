@@ -1,6 +1,6 @@
 # Programmable Transaction Blocks Builder (PTB Builder)
 
-**PTB Builder** is a graphical toolkit for building, simulating, and executing **Programmable Transaction Blocks (PTBs)** on the Sui blockchain. It provides an intuitive drag‑and‑drop interface, automatic code generation, and on‑chain execution support — bridging the gap between developers and non‑developers.
+**PTB Builder** is a graphical toolkit for authoring, inspecting, and rendering **Programmable Transaction Blocks (PTBs)** on the Sui blockchain. It provides an intuitive drag-and-drop interface, code rendering, and host integration points. The host application remains responsible for wallet connection, signing, simulation, and execution.
 
 ![ptb-builder-editor.png](https://docs.zktx.io/images/ptb-builder-editor.png)
 
@@ -8,17 +8,36 @@
 
 - [https://ptb.wal.app/](https://ptb.wal.app/)
 
+## Architecture Boundary
+
+`@zktx.io/ptb-builder` depends on `@zktx.io/ptb-model` so the builder can adopt
+the model package as its canonical PTB data boundary. Model package APIs are the
+boundary for new or refactored PTB data validation, raw PTB conversion, Mermaid
+rendering, and TypeScript SDK code string rendering. Existing builder internals
+still include local graph and code-rendering code until the later adoption
+phases replace those paths.
+
+Import the model package through `@zktx.io/ptb-model` only. Package-internal
+model imports, model `dist` imports, and relative imports across package
+boundaries are intentionally blocked for builder source.
+
+Legacy PTB documents are not model inputs. The model parser rejects legacy
+shapes; explicit conversion utilities should migrate them before model APIs are
+called. The builder `loadFromDoc()` boundary will be tightened to this policy in
+the model-adoption phase.
+
 ## Features
 
-### 1. Transaction Construction and Pre‑Testing
+### 1. Transaction Construction and Review
 
 - **Visual Editor**: Construct PTBs via a drag‑and‑drop UI (React Flow-based).
-- **Code Generation**: Automatically generate clean TypeScript for the Sui TS SDK.
-- **Simulation**: Dry‑run PTBs before execution to validate behavior.
+- **Code Rendering**: Render TypeScript for the Sui TS SDK.
+- **Host Review Hooks**: Let the host application provide simulation or execution adapters when needed.
 
-### 2. Execute Transactions Without Coding
+### 2. Host-Controlled Execution
 
-- **Accessible**: Non‑developers can create and run PTBs without writing code.
+- **Accessible**: Users can create PTB structures without writing code.
+- **Authority Stays Outside**: Wallet connection, signing, simulation, and execution stay in the host app.
 - **Real‑Time Feedback**: Errors/warnings surface instantly during graph construction.
 
 ### 3. Save and Share
@@ -27,10 +46,10 @@
 - **Collaboration**: Share saved graphs with teammates or the community.
 - **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
 
-### 4. Visualization and Debugging
+### 4. Structure Visualization and Debugging
 
-- **Execution Visualization**: Visualize executed PTBs as readable graphs.
-- **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
+- **Loaded Transaction Structure View**: Visualize supported loaded PTB command and input structure as readable graphs.
+- **Debugging Tools**: Inspect graph wiring, inputs, outputs, and validation feedback while editing.
 
 ### 5. On‑Chain Transaction Loading
 
@@ -221,7 +240,7 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
   theme="dark" // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
   address={myAddress} // sender address
   gasBudget={500_000_000} // optional gas budget
-  executeTx={execAdapter} // adapter to execute transactions
+  executeTx={execAdapter} // host-provided execution adapter
   onDocChange={saveDoc} // PTBDoc autosave callback (debounced)
   showExportButton // optional: show Export .ptb button (default: hidden)
 >
@@ -273,7 +292,7 @@ setTheme('tokyo-night');
 | `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
 | `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
 | `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
-| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
+| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
 | `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
 | `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
 | `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |

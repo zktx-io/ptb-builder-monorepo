@@ -1,287 +1,155 @@
-# Programmable Transaction Blocks Builder (PTB Builder)
+# PTB Builder Monorepo
 
-**PTB Builder** is a graphical toolkit for building, simulating, and executing **Programmable Transaction Blocks (PTBs)** on the Sui blockchain. It provides an intuitive drag‑and‑drop interface, automatic code generation, and on‑chain execution support — bridging the gap between developers and non‑developers.
+React and TypeScript packages for authoring, inspecting, converting, and
+rendering Sui Programmable Transaction Block data.
 
-![ptb-builder-editor.png](https://docs.zktx.io/images/ptb-builder-editor.png)
+This repository currently contains two package boundaries:
 
-## Demo
+- `@zktx.io/ptb-model`: UI-independent PTB data model, validation, conversion,
+  Mermaid rendering, and TypeScript SDK code string rendering.
+- `@zktx.io/ptb-builder`: React UI package for graph-based PTB editing. It is
+  being refactored to use `@zktx.io/ptb-model` as its transaction data boundary.
 
-* [https://ptb.wal.app/](https://ptb.wal.app/)
+The packages are intentionally not wallets, custody layers, transaction safety
+guarantees, or autonomous executors. Host applications own wallet connection,
+signing, simulation, execution, and user workflow decisions. The builder package
+currently still contains read-only chain loading and local metadata cache code;
+that does not make it the owner of wallet authorization or transaction
+execution.
 
-## Features
+## Packages
 
-### 1. Transaction Construction and Pre‑Testing
+| Package                | Path                    | Purpose                                                                                                                                                                                                                                                      |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@zktx.io/ptb-model`   | `packages/ptb-model/`   | Canonical PTB data boundary. Converts supported raw Sui PTB-shaped data into `TransactionIR`, converts between `TransactionIR` and `PTBGraph`, validates model shapes, renders Mermaid text, and renders TypeScript SDK transaction-building source strings. |
+| `@zktx.io/ptb-builder` | `packages/ptb-builder/` | Published React package with the PTB editor UI, graph workspace, styling exports, and host integration points.                                                                                                                                               |
+| Example app            | `packages/example/`     | Local Vite app for trying the builder package during development.                                                                                                                                                                                            |
 
-* **Visual Editor**: Construct PTBs via a drag‑and‑drop UI (React Flow-based).
-* **Code Generation**: Automatically generate clean TypeScript for the Sui TS SDK.
-* **Simulation**: Dry‑run PTBs before execution to validate behavior.
+For model-specific behavior and limitations, start with
+[`packages/ptb-model/README.md`](packages/ptb-model/README.md). For React
+builder integration details, use
+[`packages/ptb-builder/README.md`](packages/ptb-builder/README.md).
 
-### 2. Execute Transactions Without Coding
+## Data Boundary
 
-* **Accessible**: Non‑developers can create and run PTBs without writing code.
-* **Real‑Time Feedback**: Errors/warnings surface instantly during graph construction.
+`@zktx.io/ptb-model` keeps three structures separate:
 
-### 3. Save and Share
+- `RawProgrammableTransaction`: normalized Sui PTB-shaped input/output.
+- `TransactionIR`: canonical transaction model used for validation, conversion,
+  Mermaid rendering, and SDK-code string rendering.
+- `PTBGraph`: graph document model used for visual editing and persistence.
 
-* **Graph Persistence**: Save PTB graphs locally and reload them later.
-* **Collaboration**: Share saved graphs with teammates or the community.
-* **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
+```mermaid
+flowchart TD
+  raw["RawProgrammableTransaction"] --> ir["TransactionIR"]
+  ir --> raw
+  graph["PTBGraph"] --> ir
+  ir --> graph
+  ir --> mermaid["Mermaid text"]
+  ir --> code["TS SDK code string"]
+  builder["ptb-builder UI"] <--> graph
+```
 
-### 4. Visualization and Debugging
+Mermaid output is generated from `TransactionIR`, not React Flow screen state.
+Other applications can use `@zktx.io/ptb-model` as a PTB visualization adapter:
+convert supported raw PTB or current SDK transaction-kind data into
+`TransactionIR`, then call `transactionIRToMermaid()`.
 
-* **Execution Visualization**: Visualize executed PTBs as readable graphs.
-* **Debugging Tools**: Trace execution, inspect inputs/outputs, and fix issues.
+The model package does not accept serialized BCS bytes, base64 transaction
+strings, or live SDK `Transaction` instances directly. Use the Sui SDK to turn
+those into current transaction data first, then pass that data to
+`rawTransactionToIR()`.
 
-### 5. On‑Chain Transaction Loading
-
-* **Load from Digest**: Import an on‑chain transaction by digest and visualize its structure.
-
-### 6. Use On‑Chain Assets as Objects
-
-* **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
-* **One‑Click Insert**: Insert an object as an **Object node** in one click.
-* **Seamless Integration**: Use assets directly in commands like `TransferObjects`, `MergeCoins`, `MoveCall`.
-
-### 7. Themes
-
-* **Initial Theme Selection**: `dark`, `light`, `cobalt2`, `tokyo-night`, `cream`, `mint-breeze`.
-* **Switch Anytime**: Change themes dynamically from the workspace.
-
-## Supported Commands
-
-The following PTB commands are currently supported:
-
-* **SplitCoins** — split a coin object into multiple parts.
-* **MergeCoins** — merge multiple coins into one.
-* **TransferObjects** — transfer owned objects to a recipient.
-* **MoveCall** — call any Move function from an on‑chain package.
-* **MakeMoveVec** — create vectors from scalar values.
-
-(Additional commands can be added via registry extensions.)
-
-## Supported Inputs
-
-Inputs follow `tx.option` conventions from the Sui TS SDK:
-
-* **Scalars**: numbers, booleans, addresses, strings ✅
-* **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
-  * *Objects can also be selected from your owned assets via the **Assets modal**.*
-* **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
-* **Options**: available for scalars ✅ (❌ not supported for objects)
-
-## Quick Start (dApp Integration)
-
-Below snippets mirror a typical setup using **@mysten/dapp‑kit** with PTB Builder.
-
-### `App.tsx`
-
-```tsx
-import { PTBBuilder, Chain, ToastVariant } from '@zktx.io/ptb-builder';
+```ts
 import { Transaction } from '@mysten/sui/transactions';
-import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
-import { enqueueSnackbar } from 'notistack';
+import { rawTransactionToIR, transactionIRToMermaid } from '@zktx.io/ptb-model';
 
-import '@mysten/dapp-kit/dist/index.css';
-import '@zktx.io/ptb-builder/index.css';
-import '@zktx.io/ptb-builder/styles/themes-all.css';
-// or only what you need, e.g. import '@zktx.io/ptb-builder/styles/theme-light.css';
+export function transactionKindBytesToMermaid(bytes: Uint8Array): string {
+  const restored = Transaction.fromKind(bytes);
+  const ir = rawTransactionToIR(restored.getData());
 
-function App() {
-  const account = useCurrentAccount();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
-
-  // Toast adapter
-  const handleToast = ({ message, variant }: { message: string; variant?: ToastVariant }) => {
-    enqueueSnackbar(message, { variant });
-  };
-
-  // Execute adapter
-  const executeTx = async (
-    chain: Chain,
-    transaction: Transaction | undefined,
-  ): Promise<{ digest?: string; error?: string }> => {
-    if (!account || !transaction) return { error: 'No account or transaction' };
-    try {
-      const jsonTx = await transaction.toJSON();
-      return new Promise((resolve) => {
-        signAndExecuteTransaction(
-          { transaction: jsonTx, chain },
-          {
-            onSuccess: (result) => resolve({ digest: result.digest }),
-            onError: (error) => resolve({ error: error.message }),
-          },
-        );
-      });
-    } catch (e: any) {
-      return { error: e.message || 'Serialization failed' };
-    }
-  };
-
-  return (
-    <PTBBuilder
-      toast={handleToast}
-      executeTx={executeTx}
-      address={account?.address}
-      showExportButton
-    />
-  );
+  return transactionIRToMermaid(ir, {
+    direction: 'LR',
+    showArgumentValues: true,
+    theme: 'semantic',
+  });
 }
-
-export default App;
 ```
 
-### `pages/editor.tsx`
+If the host already has an SDK `Transaction` object, pass `tx.getData()` to
+`rawTransactionToIR()`; do not pass the live `Transaction` instance itself.
+
+## Builder Package
+
+`@zktx.io/ptb-builder` owns the React editing experience. It provides the graph
+workspace, theme CSS exports, and host-facing integration points such as the
+execution adapter prop. The host app remains responsible for deciding whether
+and how to sign, simulate, or execute a transaction.
+
+Basic package imports:
 
 ```tsx
-import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
-import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
-import { DragAndDrop } from '../components/DragAndDrop';
-
-type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
-type SuiChain = `sui:${SuiNetwork}`;
-
-export const Editor = () => {
-  const { network, selectNetwork } = useSuiClientContext();
-  const account = useCurrentAccount();
-  const { loadFromDoc } = usePTB();
-
-  // Safe parser for "sui:<network>"
-  const parseNetwork = (chain?: string): SuiNetwork | undefined => {
-    const m = chain?.match(/^sui:(mainnet|testnet|devnet)$/);
-    return m?.[1] as SuiNetwork | undefined;
-  };
-
-  const handleDrop = (file: PTBDoc) => {
-    // Align dapp-kit network only if valid and different
-    const target = parseNetwork(file.chain);
-    if (target && target !== network) selectNetwork(target);
-    loadFromDoc(file);
-  };
-
-  const handleChancel = () => {
-    // Reset with a current network
-    loadFromDoc(`sui:${network}` as SuiChain);
-  };
-
-  return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      {account && <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />}
-    </div>
-  );
-};
-```
-
-### `pages/viewer.tsx`
-
-```tsx
-import { useEffect, useRef, useState } from 'react';
-import { usePTB } from '@zktx.io/ptb-builder';
-import queryString from 'query-string';
-import { useLocation } from 'react-router-dom';
-
-export const Viewer = () => {
-  const initialized = useRef<boolean>(false);
-  const { loadFromOnChainTx } = usePTB();
-  const location = useLocation();
-  const [txHash, setTxHash] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    const parsed = queryString.parse(location.search);
-    if (parsed.tx && !initialized.current) {
-      loadFromOnChainTx('sui:testnet', parsed.tx as string);
-      initialized.current = true;
-    } else {
-      setTxHash('');
-    }
-  }, [loadFromOnChainTx, location.search, txHash]);
-
-  return null;
-};
-```
-
-## Public API (Provider + Hook)
-
-### Provider (component)
-
-```tsx
-import '@zktx.io/ptb-builder/index.css';
-import '@zktx.io/ptb-builder/styles/themes-all.css';
-// Or import a specific theme only: import '@zktx.io/ptb-builder/styles/theme-light.css';
-
 import { PTBBuilder } from '@zktx.io/ptb-builder';
 
-<PTBBuilder
-  theme="dark"              // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
-  showThemeSelector={true}  // show theme selector dropdown; defaults to true
-  address={myAddress}       // sender address
-  gasBudget={500_000_000}   // optional gas budget
-  executeTx={execAdapter}   // adapter to execute transactions
-  onDocChange={saveDoc}     // PTBDoc autosave callback (debounced)
-  showExportButton          // optional: show Export .ptb button (default: hidden)
->
-  {/* your app here */}
-</PTBBuilder>
+import '@zktx.io/ptb-builder/index.css';
+import '@zktx.io/ptb-builder/styles/themes-all.css';
 ```
 
-### Hook (public)
+Use a specific theme CSS file instead of `themes-all.css` when the host app does
+not need runtime switching across every bundled theme.
 
-```tsx
-import { usePTB } from '@zktx.io/ptb-builder';
+## Development
 
-const { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme } = usePTB();
+Install dependencies from the repository root:
 
-// Export current PTB document
-const doc = exportDoc({ sender: myAddress });
-
-// Load document from memory or disk
-loadFromDoc(doc);
-
-// Load graph from on-chain transaction digest
-await loadFromOnChainTx('sui:testnet', '0x1234…');
-
-// Switch theme at runtime
-setTheme('tokyo-night');
+```sh
+npm install
 ```
 
----
+Useful root commands:
 
-## Props Reference (`<PTBBuilder />`)
+```sh
+npm run test:model
+npm run build
+npm run lint
+npm run dev
+```
 
-| Prop                | Type                                                                                  | Default  | Description                                                   |
-| ------------------- | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
-| `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
-| `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
-| `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
-| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Adapter to execute transactions.                              |
-| `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
-| `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
-| `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
-| `children`          | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
+Package-specific commands:
 
----
+```sh
+npm run typecheck --workspace @zktx.io/ptb-model
+npm run test --workspace @zktx.io/ptb-model
+npm run build --workspace @zktx.io/ptb-model
 
-## Document Format
+cd packages/ptb-builder && npm run build
+cd packages/example && npm run dev
+```
 
-PTB Builder persists graphs as `PTBDoc` objects containing:
+## Boundaries And Non-Goals
 
-* **graph** — nodes and edges of the PTB
-* **modules** — embedded Move module metadata (for function signatures)
-* **objects** — embedded object metadata (for owned assets)
-* **chain** — target Sui network (e.g., `sui:testnet`)
+- The model package has no React, React Flow, DOM, CSS, wallet, signer, network
+  client, JSON-RPC, or runtime `Transaction` dependency.
+- The builder package is UI and integration code. It should use the model
+  package for canonical PTB validation and conversion as that refactor lands.
+  Builder-internal graph shapes, decoder fallbacks, and codegen shortcuts should
+  adapt to the model package rather than becoming compatibility branches inside
+  the model.
+- Legacy document migration is not part of normal model parsing. Canonical
+  parsers reject legacy shapes; migration utilities outside the model package
+  should convert them before calling model package APIs.
+- SDK builder convenience shapes such as `$Intent`, `UnresolvedPure`, and
+  `UnresolvedObject` are not canonical raw PTB commands.
+- Host applications own execution authority. This repository should not be
+  described as a wallet, custody layer, autonomous executor, or transaction
+  safety guarantee.
 
-This enables saving, sharing, and reloading graphs consistently across environments.
+## Versioning Notes
 
----
+The current refactor direction is to keep both packages:
 
-## Notes on Network Sync
+- `@zktx.io/ptb-model` for the canonical PTB data boundary.
+- `@zktx.io/ptb-builder` for the React editing package.
 
-* Use `useSuiClientContext()` from **@mysten/dapp‑kit** to read/change the active Sui network.
-* Keep PTB `doc.chain` in the form `sui:<network>`, e.g., `sui:testnet`.
-* On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
-
----
-
-## Roadmap
-
-* Expanded sharing and collaboration features
+Do not introduce a separate `ptb-sui` package or rename the model package unless
+a new explicit repository decision replaces this direction.

@@ -12,14 +12,15 @@ The package exists to make PTB structure easier to author and review:
 - Decode or load supported Sui PTB inputs into local editable structures.
 - Let the host application handle wallet connection, signing, simulation, and execution.
 
-Do not describe PTB Builder as a wallet, custody layer, transaction safety guarantee, or autonomous executor.
+PTB Builder is not a wallet, custody layer, transaction safety guarantee, or autonomous executor. Do not describe it as one.
 
-## Repository Facts
+## Repository Map
 
-Inspect the repository before assuming any path, script, package, or API exists.
+Inspect the actual repository before assuming any path, script, package, or API exists. If the repository differs from this map, the repository is the current fact and this section should be updated when the difference is intentional.
 
 Current structure:
 
+- `packages/ptb-model/`: package `@zktx.io/ptb-model`; UI-independent PTB model, TransactionIR, raw PTB conversion, Mermaid renderer, and TS SDK code string renderer.
 - `packages/ptb-builder/`: published package `@zktx.io/ptb-builder`.
 - `packages/example/`: local Vite example app.
 - `.WORK/`: ignored local investigation and planning notes.
@@ -31,40 +32,124 @@ Current source areas inside `packages/ptb-builder/src/`:
 - `ui/`: React builder UI and React Flow integration.
 - `styles/`: package styles and theme exports.
 
-Planned package:
-
-- `packages/ptb-model/`: planned `@zktx.io/ptb-model`; do not claim it exists until it is implemented.
-
 ## Commands
 
-Check `package.json` before running commands. Do not invent scripts.
+Inspect `package.json` before running project commands. Do not invent scripts.
 
-Current root commands:
+Current root commands, as of the current `package.json`:
 
 - Install: `npm install`
-- Build builder package: `npm run build`
+- Build model package then builder package: `npm run build`
 - Run example after build: `npm run dev`
+- Test model package: `npm run test:model`
 - Lint: `npm run lint`
 - Format: `npm run format`
 
 Current package commands:
 
+- Model build: `npm run build --workspace @zktx.io/ptb-model`
+- Model type check: `npm run typecheck --workspace @zktx.io/ptb-model`
+- Model test: `npm run test --workspace @zktx.io/ptb-model`
 - Builder build: `cd packages/ptb-builder && npm run build`
 - Builder lint: `cd packages/ptb-builder && npm run lint`
 - Example dev: `cd packages/example && npm run dev`
 - Example build: `cd packages/example && npm run build`
+- Example lint: `cd packages/example && npm run lint`
 
-Only say a command passed when it was actually run and observed successfully.
+Never claim a test, build, lint, pack, or verification step passed unless it was actually run and observed successfully. If `package.json` differs from this section, `package.json` wins; say so and update this section when the difference is intentional. If a command does not exist, say so and use the closest available verification.
+
+## Communication Rules
+
+- Answer with verified facts and concise conclusions.
+- Do not waste tokens on excuses, filler, or unsupported speculation.
+- State uncertainty plainly when evidence is incomplete.
+- Separate facts, assumptions, and recommendations.
+- Do not substitute a long report for implementation when the user requested a fix or change.
+- Write repository-visible code comments, public documentation, tests, package descriptions, user-facing strings, and release-facing copy in English. Internal ignored planning notes may be in Korean when that helps the current task, but anything moved into exposed surfaces must be rewritten in English.
+
+## Documentation Review
+
+When editing `AGENTS.md`, `README.md`, files under `docs/` if they exist, package READMEs, runtime-facing instructions, exported API descriptions, or user-facing limitation text, do a first-reader pass before calling the work complete.
+
+Read the changed document as if you are a new agent or human with no prior conversation context. Verify that it communicates:
+
+- The product purpose or user problem the document supports.
+- What is implemented, planned, unsupported, or intentionally out of scope.
+- The authority and boundary of every tool, workflow, protocol term, number, SDK claim, package claim, or product claim it mentions.
+- What the reader should do, and what they must not infer.
+
+If the intended meaning depends on prior chat, hidden context, vague shorthand, or local assumptions, rewrite it. Remove wording that is ambiguous, overly broad, contradictory, likely to make a reader overclaim product support, skip required verification, or optimize for size instead of quality.
+
+## Evidence Standard
+
+Do not work from imagination or unchecked assumptions.
+
+Before applying an external suggestion, review comment, or plan:
+
+- Investigate the claim.
+- Check the current codebase, package metadata, lockfiles, official docs, source code, or direct command output.
+- Separate verified facts from assumptions.
+- Explain the evidence behind the recommendation when it affects architecture, migration, SDK usage, public API, compatibility, or product behavior.
+- Do not apply the suggestion blindly.
+
+For current repository behavior:
+
+- Verify directly in `package.json`, lockfiles, and source code under `packages/`.
+- Treat comments and README text as hints only; source code and package metadata win.
+- If a behavior is not confirmed in code, write it as planned work, an assumption, or do not write it.
+- When a current-behavior claim affects architecture, migration, SDK usage, public API, or compatibility, record the concrete source file used as evidence.
+
+For Sui and SDK behavior:
+
+- Identify the target SDK version first, then inspect that SDK's actual source before writing function names, imports, types, transaction structures, or migration rules.
+- Prefer current installed dependency source or behavior, downloaded Sui source in `.WORK/sui-mainnet-v1.71.1/`, downloaded TypeScript SDK source in `.WORK/ts-sdks/`, or official Sui source when local evidence is insufficient.
+- Official docs and npm metadata may identify the version or migration direction, but they are not a substitute for source inspection.
+- Downloaded upstream source under `.WORK/` is evidence only for its recorded commit or version; do not treat it as latest unless the commit or version was just verified.
+- When official docs and the pinned installed SDK disagree, implementation must follow the pinned SDK/source actually used by this repository, and the discrepancy should be documented where it affects behavior.
+- No guessing. If source evidence is missing, stop and gather it before writing or editing.
+
+## Planning Standard
+
+Every non-trivial implementation plan must compare alternatives before choosing a direction.
+
+Before implementation, identify:
+
+- What prerequisite work should already exist.
+- What must be inspected first.
+- What alternative development directions are available.
+- Why the chosen direction is better for the current goal.
+- What risks or scope traps should be avoided.
+
+Plans must be grounded in confirmed objective facts. Distinguish current implemented work from unimplemented expansion, and do not make unimplemented possibilities look like supported functionality.
+
+Do not introduce generalized abstractions for aesthetics, symmetry, or future possibilities before a concrete implementation proves that the verified boundary needs them.
+
+Do not create planning notes, reports, or evidence summaries as a substitute for implementation when the user requested a fix or change. Use investigation to guide the edit, then implement, verify, and report the outcome concisely.
+
+## Purpose Anchor
+
+Before planning, reviewing, or implementing a change, state the product purpose and current task goal in concrete terms:
+
+- What user or product problem is this work meant to solve?
+- Which part of PTB Builder's PTB authoring, inspection, conversion, rendering, or SDK-code generation boundary does it strengthen?
+- What boundary must not be crossed, such as wallet connection, signing, simulation, execution, custody, transaction safety guarantees, or unsupported Sui action support?
+
+Use that purpose statement as the first and final check on the work. A change advances the goal when it implements the requested behavior, removes a defect blocking it, tightens a shared invariant it depends on, or updates tests/docs that define the affected product boundary. If a proposed change does not advance the stated goal, or expands product authority beyond that goal, stop and revise the plan before editing or continuing.
+
+Work from the whole to the part, then back to the whole. Inspect concrete files, line-level defects, edge cases, and failure paths rigorously. Fix defects that affect the current boundary, introduced behavior, shared invariant, or user-facing product claim. Do not let one local detail hide the product goal, and do not let the product goal become an excuse to ignore local defects.
+
+Use this loop while working: state the goal, locate it in the product structure, map related modules and user flows, plan, implement, verify, then review from the product view. In that review, state what improved, what is now possible or still not possible, and whether affected areas show side effects. If problems appear, loop back through the affected boundary before moving on.
 
 ## Current Refactor Direction
 
 The current direction is:
 
-- Add a new lightweight package: `@zktx.io/ptb-model`.
+- Keep developing the lightweight package: `@zktx.io/ptb-model`.
 - Keep the existing published package: `@zktx.io/ptb-builder`.
 - Refactor `@zktx.io/ptb-builder` to use `@zktx.io/ptb-model`.
 
 Do not create a separate `ptb-sui` package or rename the model package unless a new explicit decision replaces this one.
+Do not keep builder-internal graph shapes, decoder fallbacks, or codegen shortcuts inside `@zktx.io/ptb-model` for compatibility. The builder package should adapt to the model boundary, not the other way around.
 
 Use these local planning documents before changing the model boundary:
 
@@ -73,14 +158,16 @@ Use these local planning documents before changing the model boundary:
 - `.WORK/sui-mainnet-v1.71.1/`
 - `.WORK/ts-sdks/`
 
-`@zktx.io/ptb-model` should stay independent from UI runtime concerns:
+`@zktx.io/ptb-model` must be designed against the latest stable `@mysten/sui` SDK source available at implementation time. Verify the SDK version, inspect its actual package source, then record the version or commit in `.WORK/` before scaffolding or changing model types.
+
+The model package should stay independent from UI and execution runtime concerns:
 
 - No React or React Flow.
 - No DOM or CSS.
 - No wallet, signer, or Sui client runtime requirement.
 - No runtime `Transaction` object as a required dependency.
 
-SDK-dependent behavior should remain in `@zktx.io/ptb-builder` or a later explicitly approved adapter package.
+`@mysten/sui` may be used as the source of truth for SDK types, BCS schemas, fixtures, and compatibility tests. Do not duplicate SDK behavior from memory. Client, wallet, signer, execution, and runtime transaction-building behavior should remain in `@zktx.io/ptb-builder` or a later explicitly approved adapter package.
 
 ## PTB Data Boundary
 
@@ -108,57 +195,136 @@ flowchart TD
 Rules:
 
 - Keep `TransactionIR` and `PTBGraph` separate unless implementation evidence proves one structure can replace the other cleanly.
-- Do not treat React Flow positions, handles, viewport state, or UI layout as transaction semantics.
-- Keep legacy migration separate from normal parsing.
-- New canonical parsers should reject legacy shapes; migration utilities may convert them explicitly.
+- Do not treat React Flow positions, handles, viewport state, collapsed state, or UI layout as transaction semantics.
+- Keep legacy migration separate from normal model parsing.
+- New canonical parsers should reject legacy shapes; migration utilities may convert them explicitly outside the normal `@zktx.io/ptb-model` parser path.
 - Include Sui `FundsWithdrawal` in raw PTB coverage.
 - Do not treat SDK builder conveniences such as `$Intent`, `UnresolvedPure`, or `UnresolvedObject` as canonical raw PTB commands.
+- Mermaid, TypeScript SDK code strings, raw PTB conversion, and future runtime adapters should use `TransactionIR` as their transaction-semantics input unless implementation evidence proves a different boundary is safer.
 
-## Sui And SDK Evidence
+## Scope Interpretation
 
-For Sui behavior, use verified sources:
+Do not interpret a user request as the lowest-effort literal edit that could satisfy the words in isolation. Interpret it by the product outcome the user is trying to make true, the affected boundary, and the adjacent invariants that must hold for the work to be complete.
 
-- current installed dependency behavior;
-- downloaded Sui source in `.WORK/sui-mainnet-v1.71.1/`;
-- downloaded TypeScript SDK source in `.WORK/ts-sdks/`;
-- official Sui docs or source when local evidence is insufficient.
+Think broadly before acting deliberately. The final implementation should be the quality-first complete change for the verified boundary. Optimize for correctness, maintainability, shared invariants, failure handling, docs, tests, and user-facing behavior. Prefer shorter or simpler code only when it preserves the same behavior, safety, and clarity. Do not optimize for the fewest edited lines, shallow reasoning, reduced investigation, or an incomplete fix. Before deciding the boundary is complete, inspect the related callers, callees, schemas, docs, tests, user flows, failure modes, and product claims that could be affected.
 
-Do not guess SDK function names, transaction structures, JSON-RPC/Core API behavior, or version differences.
+When a request points to a specific file, line, review comment, or symptom, do not start by editing that spot. First inspect the adjacent callers, callees, schemas, docs, tests, user flows, failure modes, and shared invariants. Then collect the verified issues, decide the best improvement plan for the affected boundary, and edit according to that plan. If inspection shows the pointed-at spot is the only affected boundary, state that finding and keep the edit narrow.
 
-The current builder package uses `@mysten/sui` as a peer dependency. Do not upgrade it casually. If a Sui SDK upgrade is part of the task, document why, update dependency metadata intentionally, and run affected checks.
+Elegance is part of quality only when it makes product rules easier to verify and maintain. Prefer elegant structure after correctness, explicit boundaries, failure handling, numeric and unit safety, tests, and user-facing consistency are preserved. Do not choose abstraction, brevity, symmetry, or aesthetic neatness when it hides invariants, weakens evidence, obscures failure paths, or makes the product boundary less explicit.
 
-JSON-RPC sunset is an active compatibility risk. For new chain-read work, prefer the verified gRPC/Core API direction when the SDK supports it.
+If a literal reading would leave the stated goal unmet, leave a shared invariant broken, or make code, docs, tests, and product behavior disagree, reject that reading. Fix the connected issue in the same change when it is safe and part of the affected boundary; otherwise state the specific boundary that requires a separate plan.
 
-## Development Rules
+Do not use boundary control as an excuse to avoid necessary investigation. Do not use broad investigation as an excuse to expand product authority, add unrelated features, or delay a safe fix. Rich reasoning is required; final communication should remain concise and evidence-based.
+
+## Development Discipline
 
 For every task:
 
-1. Read this file from disk first.
-2. Inspect current code and package metadata before planning.
-3. Use `rg` or `rg --files` for searches when available.
-4. Prefer existing source-of-truth modules over adding parallel helpers.
-5. Preserve `@zktx.io/ptb-builder` public exports and CSS export paths unless the task explicitly allows a breaking change.
-6. Keep changes scoped to the verified boundary.
-7. Update examples or docs when public behavior changes.
-8. Run relevant build, lint, test, or manual verification when practical.
+0. Open and read `AGENTS.md` from disk before starting. Do not rely on memory, previous turns, or summaries as a substitute.
+1. Inspect the current repository state first.
+2. Identify affected files, modules, interfaces, user flows, docs, package exports, generated artifacts, and examples.
+3. Check whether a source-of-truth implementation already exists before adding a function, type, script, adapter, renderer, registry entry, or conversion helper. In this repository, source of truth means an existing shared local module, `@zktx.io/ptb-model`, the pinned SDK/source API, or verified Sui source depending on the boundary.
+4. Reuse existing source-of-truth code when it exists. Do not create a parallel helper with similar responsibility unless the existing source is demonstrably wrong or too limited for the verified boundary.
+5. Add new code only when no suitable source exists or the existing source is demonstrably insufficient.
+6. Do not duplicate existing logic, registries, protocol metadata, conversion rules, validation rules, renderer rules, or SDK-shape normalization without a clear reason.
+7. Make the quality-first complete change that satisfies the goal after the affected boundary is understood. Do not make symptom-only patches that leave the same invariant broken on adjacent paths.
+   Evaluate planning and implementation units by dependency and logical cohesion, not by diff size, file count, or phase count. Group strongly dependent work into one coherent change when the pieces must be completed together to preserve the same product boundary, shared invariant, failure handling, docs, tests, public exports, or user-facing behavior. When two implementations satisfy the same behavior and quality bar, prefer the shorter and simpler one.
+8. After the change, re-check every affected area.
+9. Run relevant checks, tests, builds, pack dry-runs, or manual verification when available.
+10. Fix errors or regressions caused by the change before calling the work complete.
+
+If a check cannot be run, state that fact and the remaining risk.
+
+Do not declare a blocker until the relevant source, callers, failure path, and available verification have been checked. If a blocker remains, state the concrete evidence and the next required decision or dependency.
+
+Function and program structure:
+
+- Prefer simple, direct structure with locally understandable control flow and only the moving parts justified by the verified boundary. When two structures preserve the same behavior, safety, and clarity, choose the shorter and simpler one.
+- Use existing source-of-truth modules and established infrastructure when they already own the boundary. Do not duplicate shared rules just to make one local function look cleaner.
+- Add a helper or abstraction only when it names a real shared concept, preserves an invariant, or removes meaningful repetition.
+- Avoid premature class hierarchies, generic frameworks, new registries, plugin layers, event buses, background schedulers, callback/subscription systems, or other coordination machinery unless the current verified requirement needs them, including failure paths, lifecycle cleanup, and observability.
+- Simple never means hardcoded, temporary, case-specific, or test-only code. A simple implementation must still validate inputs and outputs, handle cleanup and errors, preserve shared invariants, and cover affected state paths with tests.
 
 Use `apply_patch` for manual file edits. Do not revert unrelated user changes.
 
-## Review Rules
+## Review Discipline
 
-When asked for a review:
+The goal of review is defect discovery, not praise or consensus. Do not defend an implementation; verify whether code, docs, tests, package exports, examples, and product boundaries actually agree.
 
 - Report findings first, ordered by severity.
-- Cite file and line evidence.
+- Each finding cites a file and line as evidence.
 - Check actual code behavior instead of trusting comments.
 - Mark speculation clearly when evidence is incomplete.
-- If no issues are found, say so and name any remaining verification gap.
+- Do not defer with "can be done later." If a defect can be fixed safely now within the current affected boundary, classify it as fix-now.
+- Do not rely on existing tests passing as proof of correctness. Walk through every input, state, conversion, rendering, and error path the change touches.
+- When a defect is found, expand the search to callers, callees, and adjacent boundaries. Trace upstream until the shared rule, type, schema, or invariant the defect violates is identified. Do not stop because the related code is outside the current task scope or outside the diff under review.
+
+When findings reveal structural problems, also describe how the feature would be designed from scratch with no legacy constraints, optimizing for long-term maintainability and against code complexity and fragmentation. Include the prerequisite work that should have existed before implementation. Present the result as one connected design, starting from the type dependency graph and explicit separation of boundaries and responsibilities, not as a stage-by-stage list.
+
+## Implementation Integrity
+
+- Do not hardcode values to bypass real validation, SDK compatibility, graph semantics, raw PTB semantics, package metadata, or Sui source checks.
+- Do not add temporary branches solely to satisfy one failing case.
+- Do not manipulate tests, fixtures, generated files, snapshots, package metadata, source files, or examples just to make checks pass.
+- Test doubles, fixtures, placeholders, and config constants are allowed only when their scope is explicit and they are not presented as product functionality.
+- Do not fake transactions, object refs, package IDs, digests, BCS bytes, Mermaid support, SDK helper support, wallet state, simulation support, signing readiness, or network support.
+- If technical debt remains, name it explicitly and explain why it is not being removed now.
+- Prefer removing avoidable debt in the same change when it is safe and within the affected boundary.
+
+## PTB, Numeric, And Protocol Honesty
+
+Treat PTB data as protocol-facing data, even when it is shown in a UI or rendered as text.
+
+- Treat raw amounts, display values, gas references, object IDs, object versions, object digests, type tags, BCS bytes, module bytes, package IDs, command result indexes, nested result indexes, and transaction arguments as safety-critical data.
+- Keep raw amounts, object versions, gas values, and protocol integer values as integer strings or `BigInt` values when precision matters. Do not use floating point `number` arithmetic for signable quantities or protocol integers.
+- Keep display values presentation-only and label them as display data. Do not feed display strings back into raw PTB conversion or code generation without an explicit conversion step.
+- Do not infer token decimals, type tags, object ownership, shared-object metadata, receiving-object status, or package metadata from symbols, UI labels, memory, or convenience defaults. Use a verified source of truth such as pinned SDK/source data or verified Sui source.
+- Separate raw PTB, TransactionIR, PTBGraph, React Flow screen state, Mermaid output, TypeScript SDK code strings, and runtime `Transaction` objects in types, docs, and user-facing explanations. Do not let one category masquerade as another.
+- Use Sui and SDK terms as the protocol or SDK defines them. If PTB Builder uses a product label for clarity, keep the canonical protocol term traceable in code, docs, or evidence notes.
+- If a protocol, SDK, or source file does not define a term, quantity, status, or behavior clearly enough, mark it as unsupported, unavailable, or requiring verification. Do not fill the gap with imagination or confident prose.
+
+## Product Rules
+
+- Keep PTB authoring and transaction authorization separate.
+- PTB Builder may help users build, inspect, render, and edit PTB data, but host applications own wallet connection, signing, simulation, execution, custody, and final transaction authorization.
+- Do not pass generated TypeScript code strings or decoded transaction data as trusted signing material.
+- Keep unsupported Sui PTB shapes clearly unsupported. Do not add unimplemented action types, raw variants, graph semantics, or renderer claims in code or docs.
+- Prefer read-only inspection and deterministic conversion before adding write, signing, simulation, or execution behavior.
+- `@zktx.io/ptb-model` must remain UI-independent and runtime-execution-independent unless a new explicit decision replaces that boundary.
+- `@zktx.io/ptb-builder` public exports and CSS export paths must remain compatible unless the task explicitly allows a breaking change. This compatibility rule applies to the builder package; it must not weaken or fork the canonical model boundary.
+
+## Network And SDK Policy
+
+JSON-RPC use is forbidden for new implementation. Do not add `@mysten/sui/jsonRpc`, `SuiJsonRpcClient`, `getJsonRpcFullnodeUrl`, JSON-RPC endpoints, or JSON-RPC API calls. Existing JSON-RPC paths are technical debt to replace with gRPC/Core API or another verified non-JSON-RPC path.
+
+When chain reads, transaction fetching, object fetching, package fetching, or live examples are needed, prefer verified `@mysten/sui` v2 Core/gRPC APIs supported by the installed SDK source. Do not guess method names.
+
+Internal experiments may use testnet, but product docs, package descriptions, public examples, and supported-feature claims must not silently present testnet-only behavior as mainnet-ready product functionality. If a testnet fixture is used in tests or examples, label it as test-only.
+
+Do not silently substitute mainnet assets, packages, objects, type tags, or transaction digests. Resolved assets, packages, objects, functions, and command shapes must be shown explicitly when they affect the review or rendering output.
+
+## Generated And Package Files
+
+- Generated package outputs under `dist/` are build artifacts. Do not hand-edit them unless a file is explicitly marked as manual.
+- Commit lockfile changes when dependency metadata changes.
+- If package exports, CSS export paths, files lists, side effects, or peer dependencies change, verify package build output and run a relevant pack dry-run when practical.
+- If generated or decoded fixture data changes, update related tests/docs or state why no doc change is needed.
+
+## Dependency Policy
+
+- Pin Sui, wallet, React Flow, and builder/model boundary dependencies intentionally during active development.
+- Do not upgrade SDKs casually.
+- If an SDK is upgraded, inspect the SDK source for affected transaction structures, helper names, Core/gRPC APIs, and serialized PTB shapes.
+- After an SDK upgrade, re-run affected model conversion, builder decode, codegen, example, package build, and registry/fixture checks when available.
 
 ## Completion Criteria
 
 Work is complete only when:
 
-- The requested change is implemented or the blocker is clearly stated.
-- Affected code, docs, exports, and examples have been checked.
-- Relevant verification has been run or explicitly skipped with reason.
-- Remaining limitations are stated clearly.
+- The requested change is implemented, not merely planned or reported.
+- Affected code, docs, interfaces, package exports, examples, and user flows have been reviewed after the change.
+- Relevant checks, tests, builds, pack dry-runs, or manual verification have been run when available.
+- Errors introduced by the change have been fixed.
+- Remaining limitations are explicitly documented.
+
+If implementation cannot be completed, the blocker must be concrete: cite the source checked, the failure path, the command or evidence observed, and the next required decision or dependency.
