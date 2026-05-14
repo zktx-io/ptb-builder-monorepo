@@ -1,0 +1,44 @@
+{
+  "name": "@zktx.io/ptb-model",
+  "version": "0.3.30",
+  "description": "Sui PTB model, IR, conversion, and text renderers",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{force:true,recursive:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sui",
+    "ptb",
+    "transaction",
+    "mermaid"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zktx-io/ptb-builder-monorepo.git"
+  },
+  "author": "daoauth",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zktx-io/ptb-builder-monorepo/issues"
+  },
+  "homepage": "https://github.com/zktx-io/ptb-builder-monorepo#readme",
+  "devDependencies": {
+    "@mysten/sui": "2.16.2",
+    "typescript": "^5.7.2",
+    "vitest": "4.1.6"
+  }
+}

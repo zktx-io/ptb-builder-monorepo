@@ -6,7 +6,8 @@
     "lint:fix": "eslint 'packages/**/*.{js,jsx,ts,tsx}' --fix",
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
     "dev": "npm run build && cd packages/example && npm run dev",
-    "build": "cd packages/ptb-builder && npm run build",
+    "build": "npm run build --workspace @zktx.io/ptb-model && cd packages/ptb-builder && npm run build",
+    "test:model": "npm run test --workspace @zktx.io/ptb-model",
     "version:patch": "lerna version patch",
     "version:minor": "lerna version minor",
     "prepare": "husky install"
@@ -15,6 +16,7 @@
   "license": "ISC",
   "description": "Sui programmable transaction blocks builder",
   "workspaces": [
+    "packages/ptb-model",
     "packages/ptb-builder",
     "packages/example"
   ],

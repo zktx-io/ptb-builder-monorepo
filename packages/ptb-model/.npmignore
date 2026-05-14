@@ -1,0 +1,7 @@
+# Package-local npm ignore rules are intentional: the root .gitignore excludes
+# dist/, but the published package must include the built dist/ files declared
+# in package.json.
+!dist/
+!dist/**
+src/
+tsconfig.json

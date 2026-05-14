@@ -1,0 +1,1353 @@
+import { normalizeGraphRawInput } from './rawInput.js';
+import { validatePTBGraph } from './types.js';
+import type {
+  CommandNode,
+  Port,
+  PTBEdge,
+  PTBGraph,
+  PTBNode,
+  VariableNode,
+} from './types.js';
+import {
+  assertNoErrors,
+  errorDiagnostic,
+  hasErrors,
+} from '../ir/diagnostics.js';
+import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import { createTransactionIR, irCommandArgRefs } from '../ir/types.js';
+import type {
+  IRArgRef,
+  IRCommand,
+  IRInput,
+  IRPureValue,
+  TransactionIR,
+} from '../ir/types.js';
+import { validateTransactionIR } from '../ir/validate.js';
+import type { RawCallArg } from '../raw/types.js';
+import { parseBase64Bytes, parseJsonU64, parseObjectId } from '../raw/types.js';
+import { cloneJsonLike, isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
+
+const GAS_NODE_ID = 'gas';
+const GAS_HANDLE_ID = 'out';
+const RESULT_HANDLE_ID = 'out_result';
+const NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES = ['graph.rawInput'] as const;
+
+interface GraphArgRead {
+  refs: IRArgRef[];
+  invalid: boolean;
+}
+
+interface GraphSingleArgRead {
+  ref?: IRArgRef;
+  invalid: boolean;
+}
+
+export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
+  const graphDiagnostics = validatePTBGraph(graph);
+  const blockingGraphDiagnostics = graphDiagnostics.filter(
+    isBlockingGraphDiagnostic,
+  );
+  if (hasErrors(blockingGraphDiagnostics)) {
+    return createTransactionIR([], [], graphDiagnostics);
+  }
+
+  const diagnostics: TransactionDiagnostic[] = [];
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const nodeIndexesById = new Map(
+    graph.nodes.map((node, index) => [node.id, index]),
+  );
+  const inputRefs = new Map<string, IRArgRef>();
+  const inputs: IRInput[] = [];
+
+  graph.nodes.forEach((node, nodeIndex) => {
+    if (node.kind !== 'Variable') return;
+    if (isGasVariable(node)) {
+      node.ports
+        .filter((port) => port.role === 'io' && port.direction === 'out')
+        .forEach((port) => {
+          inputRefs.set(edgeKey(node.id, port.id), { kind: 'GasCoin' });
+        });
+      return;
+    }
+
+    const input = variableNodeToInput(
+      node,
+      inputs.length,
+      `$.nodes[${nodeIndex}]`,
+      diagnostics,
+    );
+    inputs.push(input);
+    node.ports
+      .filter((port) => port.role === 'io' && port.direction === 'out')
+      .forEach((port) => {
+        inputRefs.set(edgeKey(node.id, port.id), {
+          kind: 'Input',
+          index: inputs.length - 1,
+        });
+      });
+  });
+
+  const commandNodes = orderCommandNodes(graph, nodesById);
+  const commandIndexes = new Map<string, number>();
+  const commands: IRCommand[] = [];
+
+  commandNodes.forEach((node) => {
+    const commandIndex = commands.length;
+    commandIndexes.set(node.id, commandIndex);
+    const nodePath = `$.nodes[${nodeIndexesById.get(node.id)}]`;
+    const command = commandNodeToIRCommand(
+      node,
+      nodePath,
+      commandIndex,
+      graph.edges,
+      inputRefs,
+      commandIndexes,
+      diagnostics,
+    );
+    commands.push(command);
+  });
+
+  const ir = createTransactionIR(inputs, commands, diagnostics);
+  return {
+    ...ir,
+    diagnostics: validateTransactionIR(ir),
+  };
+}
+
+function isBlockingGraphDiagnostic(diagnostic: TransactionDiagnostic): boolean {
+  // Invalid rawInput is still representable as an Unsupported IR input; other
+  // graph errors make command ordering, endpoints, or flow semantics unreliable.
+  return !NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES.some((prefix) =>
+    diagnostic.code.startsWith(prefix),
+  );
+}
+
+export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
+  assertGraphableTransactionIR(ir);
+
+  const nodes: PTBNode[] = [
+    {
+      id: 'start',
+      kind: 'Start',
+      label: 'Start',
+      ports: [{ id: 'out', direction: 'out', role: 'flow' }],
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: 'end',
+      kind: 'End',
+      label: 'End',
+      ports: [{ id: 'in', direction: 'in', role: 'flow' }],
+      position: { x: 0, y: 120 * (ir.commands.length + 1) },
+    },
+  ];
+  const edges: PTBEdge[] = [];
+  const nestedResultHandles = nestedResultHandlesByCommand(ir.commands);
+
+  if (ir.commands.some((command) => irCommandArgRefs(command).some(isGasArg))) {
+    nodes.push({
+      id: GAS_NODE_ID,
+      kind: 'Variable',
+      label: 'gas',
+      name: 'gas',
+      varType: { kind: 'object' },
+      semantic: { kind: 'GasCoin' },
+      ports: [
+        {
+          id: GAS_HANDLE_ID,
+          direction: 'out',
+          role: 'io',
+          dataType: { kind: 'object' },
+        },
+      ],
+      position: { x: -560, y: 0 },
+    });
+  }
+
+  ir.inputs.forEach((input, index) => {
+    const rawInput = rawInputFromIRInput(input);
+    const semantic = inputSemantic(input);
+    nodes.push({
+      id: `var-${index}`,
+      kind: 'Variable',
+      label: input.id,
+      name: input.id,
+      varType: inputType(input),
+      ...graphInputValueParam(input),
+      ...(rawInput ? { rawInput } : {}),
+      ...(semantic ? { semantic } : {}),
+      ports: [{ id: 'out', direction: 'out', role: 'io' }],
+      position: { x: -280, y: 120 * index },
+    });
+  });
+
+  let previous = 'start';
+  ir.commands.forEach((command, index) => {
+    const node = irCommandToGraphCommand(
+      command,
+      index,
+      nestedResultHandles.get(index) ?? [],
+    );
+    nodes.push(node);
+    edges.push({
+      id: `flow-${previous}-${node.id}`,
+      kind: 'flow',
+      source: previous,
+      sourceHandle: 'out',
+      target: node.id,
+      targetHandle: 'in',
+    });
+    previous = node.id;
+
+    commandArgEntries(command).forEach(({ arg, handle }, argIndex) => {
+      const source = sourceForArg(arg);
+      edges.push({
+        id: `io-${source.node}-${node.id}-${argIndex}`,
+        kind: 'io',
+        source: source.node,
+        sourceHandle: source.handle,
+        target: node.id,
+        targetHandle: handle,
+      });
+    });
+  });
+
+  edges.push({
+    id: `flow-${previous}-end`,
+    kind: 'flow',
+    source: previous,
+    sourceHandle: 'out',
+    target: 'end',
+    targetHandle: 'in',
+  });
+
+  return { nodes, edges };
+}
+
+function inputType(input: IRInput) {
+  switch (input.kind) {
+    case 'Pure':
+      return input.type ?? { kind: 'unknown' as const, debugInfo: input.kind };
+    case 'Object':
+      return input.type ?? { kind: 'object' as const };
+    case 'FundsWithdrawal':
+      return { kind: 'unknown' as const, debugInfo: input.kind };
+    case 'Unsupported':
+      return { kind: 'unknown' as const, debugInfo: input.kind };
+  }
+}
+
+function variableNodeToInput(
+  node: VariableNode,
+  index: number,
+  nodePath: string,
+  diagnostics: TransactionDiagnostic[],
+): IRInput {
+  const id = node.name || `input_${index}`;
+  const hasRawInput = node.rawInput !== undefined;
+  // validatePTBGraph checks rawInput diagnostics for document validation;
+  // conversion parses again here because it needs the normalized value.
+  const rawInput = normalizeGraphRawInput(
+    node.rawInput,
+    `${nodePath}.rawInput`,
+    diagnostics,
+  );
+
+  if (rawInput) {
+    return rawInputToIRInput(id, rawInput, node.varType);
+  }
+
+  if (hasRawInput) {
+    return {
+      id,
+      kind: 'Unsupported',
+      sourceKind: 'InvalidRawInput',
+      value: cloneJsonLike(node.rawInput),
+    };
+  }
+
+  if (node.semantic?.kind === 'UnsupportedInput') {
+    return {
+      id,
+      kind: 'Unsupported',
+      sourceKind: node.semantic.sourceKind,
+      value: cloneJsonLike(node.value),
+    };
+  }
+
+  if (node.varType.kind === 'object') {
+    const object = isRecord(node.value) ? node.value : undefined;
+    const objectId = canonicalObjectId(object?.objectId);
+    const version = canonicalJsonU64(object?.version);
+    if (
+      object &&
+      objectId !== undefined &&
+      version !== undefined &&
+      typeof object.digest === 'string'
+    ) {
+      return {
+        id,
+        kind: 'Object',
+        object: {
+          kind: 'ImmOrOwnedObject',
+          objectId,
+          version,
+          digest: object.digest,
+        },
+        type: node.varType,
+      };
+    }
+
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.input.object.unresolved',
+        `Object variable ${node.id} requires canonical objectId, canonical decimal JsonU64 version, and digest to become raw PTB.`,
+        nodePath,
+      ),
+    );
+    return {
+      id,
+      kind: 'Object',
+      type: node.varType,
+    };
+  }
+
+  const pureInput: Extract<IRInput, { kind: 'Pure' }> = {
+    id,
+    kind: 'Pure',
+    type: node.varType,
+  };
+  return Object.prototype.hasOwnProperty.call(node, 'value')
+    ? {
+        ...pureInput,
+        value: cloneJsonLike(node.value) as IRPureValue,
+      }
+    : pureInput;
+}
+
+function graphInputValueParam(input: IRInput): { value: unknown } | {} {
+  switch (input.kind) {
+    case 'Pure':
+      return Object.prototype.hasOwnProperty.call(input, 'value')
+        ? {
+            value:
+              input.value === undefined
+                ? NULL_VALUE
+                : cloneJsonLike(input.value),
+          }
+        : {};
+    case 'Object':
+      return input.object !== undefined
+        ? { value: cloneJsonLike(input.object) }
+        : {};
+    case 'FundsWithdrawal':
+      return { value: cloneJsonLike(input.value) };
+    case 'Unsupported':
+      return Object.prototype.hasOwnProperty.call(input, 'value')
+        ? { value: cloneJsonLike(input.value) }
+        : {};
+  }
+}
+
+function rawInputFromIRInput(input: IRInput): RawCallArg | undefined {
+  switch (input.kind) {
+    case 'Pure':
+      return input.bytes !== undefined
+        ? { kind: 'Pure', bytes: input.bytes }
+        : undefined;
+    case 'Object':
+      return input.object
+        ? { kind: 'Object', object: cloneJsonLike(input.object) }
+        : undefined;
+    case 'FundsWithdrawal':
+      return { kind: 'FundsWithdrawal', value: cloneJsonLike(input.value) };
+    case 'Unsupported':
+      return undefined;
+  }
+}
+
+function inputSemantic(input: IRInput): VariableNode['semantic'] | undefined {
+  if (input.kind !== 'Unsupported') return undefined;
+
+  return {
+    kind: 'UnsupportedInput',
+    sourceKind: input.sourceKind,
+  };
+}
+
+function assertGraphableTransactionIR(ir: TransactionIR): void {
+  const diagnostics = validateTransactionIR(ir, {
+    includeExistingDiagnostics: false,
+  }).filter(
+    (diagnostic) =>
+      diagnostic.code !== 'ir.input.unsupported' &&
+      diagnostic.code !== 'ir.command.unsupported',
+  );
+  assertNoErrors('TransactionIR cannot be converted to PTBGraph.', diagnostics);
+}
+
+function rawInputToIRInput(
+  id: string,
+  rawInput: RawCallArg,
+  type: VariableNode['varType'],
+): IRInput {
+  switch (rawInput.kind) {
+    case 'Pure':
+      return {
+        id,
+        kind: 'Pure',
+        bytes: rawInput.bytes,
+        type,
+        raw: cloneJsonLike(rawInput),
+      };
+    case 'Object':
+      return {
+        id,
+        kind: 'Object',
+        object: cloneJsonLike(rawInput.object),
+        type,
+        raw: cloneJsonLike(rawInput),
+      };
+    case 'FundsWithdrawal':
+      return {
+        id,
+        kind: 'FundsWithdrawal',
+        value: cloneJsonLike(rawInput.value),
+        raw: cloneJsonLike(rawInput),
+      };
+  }
+}
+
+function isGasVariable(node: VariableNode): boolean {
+  return node.semantic?.kind === 'GasCoin';
+}
+
+function canonicalObjectId(value: unknown): string | undefined {
+  const objectId = parseObjectId(value);
+  return objectId !== undefined && objectId === value ? objectId : undefined;
+}
+
+function canonicalJsonU64(value: unknown): string | undefined {
+  const jsonU64 = parseJsonU64(value);
+  return jsonU64 !== undefined && jsonU64 === value ? jsonU64 : undefined;
+}
+
+function commandNodeToIRCommand(
+  node: CommandNode,
+  nodePath: string,
+  commandIndex: number,
+  edges: PTBEdge[],
+  inputRefs: Map<string, IRArgRef>,
+  commandIndexes: Map<string, number>,
+  diagnostics: TransactionDiagnostic[],
+): IRCommand {
+  const arg = (handle: string) =>
+    readIncomingArg(
+      node,
+      nodePath,
+      edges,
+      inputRefs,
+      commandIndexes,
+      handle,
+      diagnostics,
+    );
+  const args = (match: (handle: string) => boolean) =>
+    readIncomingArgs(
+      node,
+      edges,
+      inputRefs,
+      commandIndexes,
+      match,
+      diagnostics,
+    );
+
+  switch (node.command) {
+    case 'splitCoins': {
+      const amounts = args((handle) => matchesInputHandle(handle, 'amount'));
+      const coin = arg('coin');
+      if (coin.invalid || amounts.invalid || !coin.ref) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      if (
+        !requireNonEmptyGraphArgs(
+          node,
+          nodePath,
+          'amounts',
+          amounts.refs,
+          diagnostics,
+        )
+      ) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      return {
+        id: node.id,
+        kind: 'SplitCoins',
+        coin: coin.ref,
+        amounts: amounts.refs,
+        resultCount: amounts.refs.length,
+      };
+    }
+    case 'mergeCoins': {
+      const destination = arg('destination');
+      const sources = args((handle) => matchesInputHandle(handle, 'source'));
+      if (destination.invalid || sources.invalid || !destination.ref) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      if (
+        !requireNonEmptyGraphArgs(
+          node,
+          nodePath,
+          'sources',
+          sources.refs,
+          diagnostics,
+        )
+      ) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      return {
+        id: node.id,
+        kind: 'MergeCoins',
+        destination: destination.ref,
+        sources: sources.refs,
+        resultCount: 0,
+      };
+    }
+    case 'transferObjects': {
+      const objects = args((handle) => matchesInputHandle(handle, 'object'));
+      const address = arg('recipient');
+      if (objects.invalid || address.invalid || !address.ref) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      if (
+        !requireNonEmptyGraphArgs(
+          node,
+          nodePath,
+          'objects',
+          objects.refs,
+          diagnostics,
+        )
+      ) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      return {
+        id: node.id,
+        kind: 'TransferObjects',
+        objects: objects.refs,
+        address: address.ref,
+        resultCount: 0,
+      };
+    }
+    case 'makeMoveVec': {
+      const elements = args(
+        (handle) =>
+          matchesInputHandle(handle, 'elem') ||
+          matchesInputHandle(handle, 'arg'),
+      );
+      if (elements.invalid) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      const type = typeTagFromNode(node, nodePath, diagnostics);
+      if (type === undefined) {
+        return invalidGraphCommand(node, 'InvalidMakeMoveVecType');
+      }
+      if (type === NULL_VALUE && elements.refs.length === 0) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.command.emptyInput',
+            `MakeMoveVec ${node.id} elements must not be empty when type is null.`,
+            nodePath,
+          ),
+        );
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      return {
+        id: node.id,
+        kind: 'MakeMoveVec',
+        type,
+        elements: elements.refs,
+        resultCount: 1,
+      };
+    }
+    case 'moveCall': {
+      const target = moveCallTarget(node);
+      if (!target) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.command.moveCall.target',
+            `MoveCall ${node.id} requires package::module::function target.`,
+            nodePath,
+          ),
+        );
+        return invalidGraphCommand(node, 'InvalidMoveCallTarget');
+      }
+      const parts = target.split('::');
+      if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.command.moveCall.target',
+            `MoveCall ${node.id} requires package::module::function target.`,
+            nodePath,
+          ),
+        );
+        return invalidGraphCommand(node, 'InvalidMoveCallTarget');
+      }
+      const [packageIdInput, moduleName, functionName] = parts as [
+        string,
+        string,
+        string,
+      ];
+      const packageId = canonicalObjectId(packageIdInput);
+      if (!packageId) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.command.moveCall.package',
+            `MoveCall ${node.id} requires a canonical Sui object ID package.`,
+            nodePath,
+          ),
+        );
+        return invalidGraphCommand(node, 'InvalidMoveCallTarget');
+      }
+      const moveArgs = args((handle) => matchesInputHandle(handle, 'arg'));
+      if (moveArgs.invalid) {
+        return invalidGraphCommand(node, 'GraphCommandInvalidInput');
+      }
+      const typeArguments = moveCallTypeArguments(node, nodePath, diagnostics);
+      if (!typeArguments) {
+        return invalidGraphCommand(node, 'InvalidMoveCallTypeArguments');
+      }
+      return {
+        id: node.id,
+        kind: 'MoveCall',
+        package: packageId,
+        module: moduleName,
+        function: functionName,
+        typeArguments,
+        arguments: moveArgs.refs,
+      };
+    }
+    case 'publish': {
+      const modules = nonEmptyBase64BytesArrayParam(
+        node,
+        nodePath,
+        'modules',
+        diagnostics,
+      );
+      const dependencies = objectIdArrayParam(
+        node,
+        nodePath,
+        'dependencies',
+        diagnostics,
+      );
+      if (!modules || !dependencies) {
+        return invalidGraphCommand(node, 'InvalidPublishParams');
+      }
+      return {
+        id: node.id,
+        kind: 'Publish',
+        modules,
+        dependencies,
+        resultCount: 1,
+      };
+    }
+    case 'upgrade': {
+      const modules = nonEmptyBase64BytesArrayParam(
+        node,
+        nodePath,
+        'modules',
+        diagnostics,
+      );
+      const dependencies = objectIdArrayParam(
+        node,
+        nodePath,
+        'dependencies',
+        diagnostics,
+      );
+      const packageId = objectIdParam(node, nodePath, 'package', diagnostics);
+      const ticket = arg('upgradeCap');
+      if (
+        !modules ||
+        !dependencies ||
+        !packageId ||
+        ticket.invalid ||
+        !ticket.ref
+      ) {
+        return invalidGraphCommand(node, 'InvalidUpgradeParams');
+      }
+      return {
+        id: node.id,
+        kind: 'Upgrade',
+        modules,
+        dependencies,
+        package: packageId,
+        ticket: ticket.ref,
+        resultCount: 1,
+      };
+    }
+    case 'unsupported':
+      return unsupportedGraphCommand(node);
+  }
+}
+
+function requireNonEmptyGraphArgs(
+  node: CommandNode,
+  nodePath: string,
+  key: string,
+  refs: IRArgRef[],
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  if (refs.length > 0) return true;
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.emptyInput',
+      `Command ${node.id} requires at least one ${key} input.`,
+      nodePath,
+    ),
+  );
+  return false;
+}
+
+function readIncomingArg(
+  node: CommandNode,
+  nodePath: string,
+  edges: PTBEdge[],
+  inputRefs: Map<string, IRArgRef>,
+  commandIndexes: Map<string, number>,
+  handleNeedle: string,
+  diagnostics: TransactionDiagnostic[],
+): GraphSingleArgRead {
+  const result = readIncomingArgs(
+    node,
+    edges,
+    inputRefs,
+    commandIndexes,
+    (handle) => matchesInputHandle(handle, handleNeedle),
+    diagnostics,
+  );
+  if (result.refs[0]) {
+    return {
+      ref: result.refs[0],
+      invalid: result.invalid,
+    };
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.arg.missing',
+      `Command ${node.id} is missing input ${handleNeedle}.`,
+      nodePath,
+    ),
+  );
+  return {
+    invalid: true,
+  };
+}
+
+function readIncomingArgs(
+  node: CommandNode,
+  edges: PTBEdge[],
+  inputRefs: Map<string, IRArgRef>,
+  commandIndexes: Map<string, number>,
+  match: (handle: string) => boolean,
+  diagnostics: TransactionDiagnostic[],
+): GraphArgRead {
+  const refs: IRArgRef[] = [];
+  let invalid = false;
+
+  edges
+    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+    .filter(
+      ({ edge }) =>
+        edge.kind === 'io' &&
+        edge.target === node.id &&
+        match(baseHandle(edge.targetHandle)),
+    )
+    .sort((a, b) => compareHandles(a.edge.targetHandle, b.edge.targetHandle))
+    .map(({ edge, edgeIndex }): IRArgRef | undefined => {
+      const directInput = inputRefs.get(
+        edgeKey(edge.source, edge.sourceHandle),
+      );
+      if (directInput) return directInput;
+
+      const commandIndex = commandIndexes.get(edge.source);
+      if (commandIndex === undefined) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.arg.source',
+            `Edge ${edge.id} references a source that is not an input or previously ordered command.`,
+            `$.edges[${edgeIndex}]`,
+          ),
+        );
+        invalid = true;
+        return undefined;
+      }
+
+      const resultIndex = trailingIndex(baseHandle(edge.sourceHandle));
+      return resultIndex === undefined
+        ? { kind: 'Result', commandIndex }
+        : { kind: 'NestedResult', commandIndex, resultIndex };
+    })
+    .forEach((ref) => {
+      if (ref) refs.push(ref);
+    });
+
+  return { refs, invalid };
+}
+
+function orderCommandNodes(
+  graph: PTBGraph,
+  nodesById: Map<string, PTBNode>,
+): CommandNode[] {
+  const start = graph.nodes.find((node) => node.kind === 'Start');
+  if (!start) {
+    return graph.nodes.filter(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+  }
+
+  const ordered: CommandNode[] = [];
+  const visited = new Set<string>();
+  let current = start.id;
+
+  while (!visited.has(current)) {
+    visited.add(current);
+    const next = graph.edges.find(
+      (edge) => edge.kind === 'flow' && edge.source === current,
+    );
+    if (!next) break;
+    const node = nodesById.get(next.target);
+    if (!node) break;
+    if (node.kind === 'Command') ordered.push(node);
+    current = node.id;
+  }
+
+  const orderedIds = new Set(ordered.map((node) => node.id));
+  graph.nodes.forEach((node) => {
+    if (node.kind === 'Command' && !orderedIds.has(node.id)) {
+      ordered.push(node);
+    }
+  });
+
+  return ordered;
+}
+
+function irCommandToGraphCommand(
+  command: IRCommand,
+  index: number,
+  referencedNestedResultIndexes: readonly number[] = [],
+): CommandNode {
+  return {
+    id: `cmd-${index}`,
+    kind: 'Command',
+    label: command.kind,
+    command: graphCommandKind(command),
+    params: graphCommandParams(command),
+    ports: commandPorts(command, referencedNestedResultIndexes),
+    position: { x: 0, y: 120 * index },
+  };
+}
+
+function commandPorts(
+  command: IRCommand,
+  referencedNestedResultIndexes: readonly number[] = [],
+): Port[] {
+  const ports: Port[] = [
+    { id: 'in', direction: 'in', role: 'flow' },
+    { id: 'out', direction: 'out', role: 'flow' },
+  ];
+
+  commandArgEntries(command).forEach(({ handle }) => {
+    ports.push({ id: handle, direction: 'in', role: 'io' });
+  });
+
+  commandOutputHandles(command, referencedNestedResultIndexes).forEach(
+    (handle) => {
+      ports.push({ id: handle, direction: 'out', role: 'io' });
+    },
+  );
+
+  return ports;
+}
+
+function commandOutputHandles(
+  command: IRCommand,
+  referencedNestedResultIndexes: readonly number[] = [],
+): string[] {
+  switch (command.kind) {
+    case 'TransferObjects':
+    case 'MergeCoins':
+    case 'Unsupported':
+      return [];
+    case 'Publish':
+    case 'MakeMoveVec':
+    case 'Upgrade':
+      return singleResultOutputHandles(referencedNestedResultIndexes);
+    case 'MoveCall':
+      return moveCallOutputHandles(command, referencedNestedResultIndexes);
+    case 'SplitCoins':
+      return knownResultOutputHandles(
+        command.resultCount,
+        referencedNestedResultIndexes,
+      );
+  }
+}
+
+function singleResultOutputHandles(
+  referencedNestedResultIndexes: readonly number[],
+): string[] {
+  return [
+    RESULT_HANDLE_ID,
+    ...nestedResultOutputHandles(referencedNestedResultIndexes),
+  ];
+}
+
+function moveCallOutputHandles(
+  command: Extract<IRCommand, { kind: 'MoveCall' }>,
+  referencedNestedResultIndexes: readonly number[],
+): string[] {
+  if (command.resultCount === 0) return [];
+  if (command.resultCount === undefined) {
+    return referencedNestedResultIndexes.length > 0
+      ? singleResultOutputHandles(referencedNestedResultIndexes)
+      : [RESULT_HANDLE_ID];
+  }
+
+  return knownResultOutputHandles(
+    command.resultCount,
+    referencedNestedResultIndexes,
+  );
+}
+
+function knownResultOutputHandles(
+  resultCount: number,
+  referencedNestedResultIndexes: readonly number[],
+): string[] {
+  if (resultCount <= 0) return [];
+  if (resultCount === 1)
+    return singleResultOutputHandles(referencedNestedResultIndexes);
+
+  return denseNestedResultOutputHandles(resultCount);
+}
+
+function denseNestedResultOutputHandles(count: number): string[] {
+  return Array.from({ length: count }, (_value, index) => `out_${index}`);
+}
+
+function nestedResultOutputHandles(indexes: readonly number[]): string[] {
+  return indexes.map((index) => `out_${index}`);
+}
+
+function nestedResultHandlesByCommand(
+  commands: IRCommand[],
+): Map<number, number[]> {
+  const indexes = new Map<number, Set<number>>();
+
+  commands.forEach((command) => {
+    irCommandArgRefs(command).forEach((arg) => {
+      if (arg.kind !== 'NestedResult') return;
+      if (!Number.isSafeInteger(arg.resultIndex) || arg.resultIndex < 0) return;
+      const currentIndexes = indexes.get(arg.commandIndex) ?? new Set<number>();
+      currentIndexes.add(arg.resultIndex);
+      indexes.set(arg.commandIndex, currentIndexes);
+    });
+  });
+
+  const handlesByCommand = new Map<number, number[]>();
+  indexes.forEach((commandIndexes, commandIndex) => {
+    handlesByCommand.set(
+      commandIndex,
+      [...commandIndexes].sort((left, right) => left - right),
+    );
+  });
+
+  return handlesByCommand;
+}
+
+function graphCommandParams(command: IRCommand): CommandNode['params'] {
+  switch (command.kind) {
+    case 'MoveCall':
+      return {
+        runtime: {
+          target: `${command.package}::${command.module}::${command.function}`,
+          typeArguments: [...command.typeArguments],
+        },
+      };
+    case 'Publish':
+      return {
+        runtime: {
+          modules: [...command.modules],
+          dependencies: [...command.dependencies],
+        },
+      };
+    case 'Upgrade':
+      return {
+        runtime: {
+          modules: [...command.modules],
+          dependencies: [...command.dependencies],
+          package: command.package,
+        },
+      };
+    case 'MakeMoveVec':
+      return typeof command.type === 'string'
+        ? {
+            runtime: {
+              type: command.type,
+            },
+          }
+        : undefined;
+    case 'Unsupported':
+      return {
+        runtime: {
+          sourceKind: command.sourceKind,
+          value: cloneJsonLike(command.value),
+        },
+      };
+    default:
+      return undefined;
+  }
+}
+
+function graphCommandKind(command: IRCommand): CommandNode['command'] {
+  switch (command.kind) {
+    case 'MoveCall':
+      return 'moveCall';
+    case 'TransferObjects':
+      return 'transferObjects';
+    case 'SplitCoins':
+      return 'splitCoins';
+    case 'MergeCoins':
+      return 'mergeCoins';
+    case 'Publish':
+      return 'publish';
+    case 'MakeMoveVec':
+      return 'makeMoveVec';
+    case 'Upgrade':
+      return 'upgrade';
+    case 'Unsupported':
+      return 'unsupported';
+  }
+}
+
+function commandArgEntries(
+  command: IRCommand,
+): { arg: IRArgRef; handle: string }[] {
+  switch (command.kind) {
+    case 'MoveCall':
+      return command.arguments.map((arg, index) => ({
+        arg,
+        handle: `in_arg_${index}`,
+      }));
+    case 'TransferObjects':
+      return [
+        ...command.objects.map((arg, index) => ({
+          arg,
+          handle: `in_object_${index}`,
+        })),
+        { arg: command.address, handle: 'in_recipient' },
+      ];
+    case 'SplitCoins':
+      return [
+        { arg: command.coin, handle: 'in_coin' },
+        ...command.amounts.map((arg, index) => ({
+          arg,
+          handle: `in_amount_${index}`,
+        })),
+      ];
+    case 'MergeCoins':
+      return [
+        { arg: command.destination, handle: 'in_destination' },
+        ...command.sources.map((arg, index) => ({
+          arg,
+          handle: `in_source_${index}`,
+        })),
+      ];
+    case 'MakeMoveVec':
+      return command.elements.map((arg, index) => ({
+        arg,
+        handle: `in_elem_${index}`,
+      }));
+    case 'Upgrade':
+      return [{ arg: command.ticket, handle: 'in_upgradeCap' }];
+    case 'Publish':
+    case 'Unsupported':
+      return [];
+  }
+}
+
+function sourceForArg(arg: IRArgRef): { node: string; handle: string } {
+  switch (arg.kind) {
+    case 'Input':
+      return { node: `var-${arg.index}`, handle: 'out' };
+    case 'Result':
+      return { node: `cmd-${arg.commandIndex}`, handle: RESULT_HANDLE_ID };
+    case 'NestedResult':
+      return {
+        node: `cmd-${arg.commandIndex}`,
+        handle: `out_${arg.resultIndex}`,
+      };
+    case 'GasCoin':
+      return { node: GAS_NODE_ID, handle: GAS_HANDLE_ID };
+  }
+}
+
+function isGasArg(arg: IRArgRef): boolean {
+  return arg.kind === 'GasCoin';
+}
+
+function unsupportedGraphCommand(node: CommandNode): IRCommand {
+  const runtime = isRecord(node.params?.runtime) ? node.params.runtime : {};
+  const sourceKind =
+    typeof runtime.sourceKind === 'string'
+      ? runtime.sourceKind
+      : 'UnsupportedGraphCommand';
+
+  return {
+    id: node.id,
+    kind: 'Unsupported',
+    sourceKind,
+    value: 'value' in runtime ? cloneJsonLike(runtime.value) : undefined,
+    resultCount: 0,
+  };
+}
+
+function invalidGraphCommand(node: CommandNode, sourceKind: string): IRCommand {
+  return {
+    id: node.id,
+    kind: 'Unsupported',
+    sourceKind,
+    value: {
+      command: node.command,
+      params: cloneJsonLike(node.params),
+    },
+    resultCount: 0,
+  };
+}
+
+function moveCallTarget(node: CommandNode): string | undefined {
+  const params = node.params as Record<string, unknown> | undefined;
+  const runtime = isRecord(params?.runtime) ? params.runtime : undefined;
+
+  if (typeof runtime?.target === 'string') return runtime.target;
+  return undefined;
+}
+
+function moveCallTypeArguments(
+  node: CommandNode,
+  nodePath: string,
+  diagnostics: TransactionDiagnostic[],
+): string[] | undefined {
+  const params = node.params as Record<string, unknown> | undefined;
+  const runtime = isRecord(params?.runtime) ? params.runtime : undefined;
+  const typeArguments = runtime?.typeArguments;
+  if (typeArguments === undefined) return [];
+  if (
+    isDenseArray(typeArguments) &&
+    typeArguments.every((item) => typeof item === 'string')
+  ) {
+    return [...typeArguments];
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.moveCall.typeArguments',
+      `MoveCall ${node.id} runtime typeArguments must be a dense string array when present.`,
+      `${nodePath}.params.runtime.typeArguments`,
+    ),
+  );
+  return undefined;
+}
+
+function objectIdParam(
+  node: CommandNode,
+  nodePath: string,
+  key: string,
+  diagnostics: TransactionDiagnostic[],
+): string | undefined {
+  const runtime = isRecord(node.params?.runtime)
+    ? node.params.runtime
+    : undefined;
+  const objectId = canonicalObjectId(runtime?.[key]);
+  if (objectId) return objectId;
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.objectIdParam',
+      `Command ${node.id} requires canonical Sui object ID runtime param ${key}.`,
+      `${nodePath}.params.runtime.${key}`,
+    ),
+  );
+  return undefined;
+}
+
+function objectIdArrayParam(
+  node: CommandNode,
+  nodePath: string,
+  key: string,
+  diagnostics: TransactionDiagnostic[],
+): string[] | undefined {
+  const runtime = isRecord(node.params?.runtime)
+    ? node.params.runtime
+    : undefined;
+  const value = runtime?.[key];
+  const path = `${nodePath}.params.runtime.${key}`;
+  if (!isDenseArray(value)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.command.objectIdArrayParam',
+        `Command ${node.id} requires Sui object ID array runtime param ${key}.`,
+        path,
+      ),
+    );
+    return undefined;
+  }
+
+  const items = value.map((item, index) => {
+    const objectId = canonicalObjectId(item);
+    if (objectId === undefined) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.command.objectIdParam',
+          `Command ${node.id} runtime param ${key} item ${index} must be a canonical Sui object ID.`,
+          `${path}[${index}]`,
+        ),
+      );
+    }
+    return objectId;
+  });
+
+  return items.every((item): item is string => item !== undefined)
+    ? items
+    : undefined;
+}
+
+function base64BytesArrayParam(
+  node: CommandNode,
+  nodePath: string,
+  key: string,
+  diagnostics: TransactionDiagnostic[],
+): string[] | undefined {
+  const runtime = isRecord(node.params?.runtime)
+    ? node.params.runtime
+    : undefined;
+  const value = runtime?.[key];
+  const path = `${nodePath}.params.runtime.${key}`;
+  if (!isDenseArray(value)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.command.base64BytesParam',
+        `Command ${node.id} requires a canonical atob-decodable base64 byte array runtime param ${key}.`,
+        path,
+      ),
+    );
+    return undefined;
+  }
+
+  const items = value.map((item, index) => {
+    const bytes = parseBase64Bytes(item);
+    if (bytes === undefined || bytes !== item) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.command.base64BytesParam',
+          `Command ${node.id} runtime param ${key} item ${index} must be canonical atob-decodable base64 bytes.`,
+          `${path}[${index}]`,
+        ),
+      );
+      return undefined;
+    }
+    return bytes;
+  });
+
+  return items.every((item): item is string => item !== undefined)
+    ? items
+    : undefined;
+}
+
+function nonEmptyBase64BytesArrayParam(
+  node: CommandNode,
+  nodePath: string,
+  key: string,
+  diagnostics: TransactionDiagnostic[],
+): string[] | undefined {
+  const items = base64BytesArrayParam(node, nodePath, key, diagnostics);
+  if (!items) return undefined;
+  if (items.length > 0) return items;
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.emptyInput',
+      `Command ${node.id} runtime param ${key} must not be empty.`,
+      `${nodePath}.params.runtime.${key}`,
+    ),
+  );
+  return undefined;
+}
+
+function typeTagFromNode(
+  node: CommandNode,
+  nodePath: string,
+  diagnostics: TransactionDiagnostic[],
+): string | null | undefined {
+  const runtime = isRecord(node.params?.runtime)
+    ? node.params.runtime
+    : undefined;
+  if (runtime === undefined || runtime.type === undefined) return NULL_VALUE;
+  if (runtime.type === NULL_VALUE || typeof runtime.type === 'string') {
+    return runtime.type;
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.makeMoveVec.type',
+      `MakeMoveVec ${node.id} runtime type must be a string or null when present.`,
+      `${nodePath}.params.runtime.type`,
+    ),
+  );
+  return undefined;
+}
+
+function matchesInputHandle(handle: string, name: string): boolean {
+  const normalized = baseHandle(handle).replace(/^in[_-]/, '');
+  return (
+    normalized === name ||
+    normalized.startsWith(`${name}_`) ||
+    normalized.startsWith(`${name}-`)
+  );
+}
+
+function edgeKey(nodeId: string, handleId: string): string {
+  return `${nodeId}:${baseHandle(handleId)}`;
+}
+
+function baseHandle(handle: string): string {
+  return handle.split(':')[0];
+}
+
+function compareHandles(left: string, right: string): number {
+  const leftKey = handleSortKey(baseHandle(left));
+  const rightKey = handleSortKey(baseHandle(right));
+
+  if (leftKey.prefix === rightKey.prefix) {
+    if (leftKey.index !== undefined && rightKey.index !== undefined) {
+      return leftKey.index - rightKey.index;
+    }
+    if (leftKey.index !== undefined) return -1;
+    if (rightKey.index !== undefined) return 1;
+  }
+
+  return leftKey.raw.localeCompare(rightKey.raw);
+}
+
+function handleSortKey(value: string): {
+  raw: string;
+  prefix: string;
+  index?: number;
+} {
+  const match = value.match(/^(.*?)(?:_|-)(\d+)$/);
+  return match
+    ? { raw: value, prefix: match[1], index: Number(match[2]) }
+    : { raw: value, prefix: value };
+}
+
+function trailingIndex(value: string): number | undefined {
+  const match = value.match(/(?:_|-)(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}

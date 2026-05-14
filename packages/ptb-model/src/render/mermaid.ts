@@ -1,0 +1,377 @@
+import { assertNoErrors, errorDiagnostic } from '../ir/diagnostics.js';
+import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import { irCommandArgRefs } from '../ir/types.js';
+import type {
+  IRArgRef,
+  IRCommand,
+  IRInput,
+  TransactionIR,
+} from '../ir/types.js';
+import { validateTransactionIR } from '../ir/validate.js';
+import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
+import type { RawObjectArg } from '../raw/types.js';
+import { isDenseArray, isRecord } from '../utils.js';
+
+export type MermaidDirection = 'TD' | 'LR';
+
+export interface TransactionIRToMermaidOptions {
+  direction?: MermaidDirection;
+  showArgumentValues?: boolean;
+  theme?: 'none' | 'semantic';
+}
+
+export function transactionIRToMermaid(
+  ir: TransactionIR,
+  options: TransactionIRToMermaidOptions = {},
+): string {
+  const optionDiagnostics = validateMermaidOptions(options);
+  if (optionDiagnostics.length > 0) {
+    assertNoErrors(
+      optionDiagnostics.map((diagnostic) => diagnostic.message).join(' '),
+      optionDiagnostics,
+    );
+  }
+  const renderOptions = isRecord(options)
+    ? (options as TransactionIRToMermaidOptions)
+    : {};
+  const source: Record<string, unknown> = isRecord(ir) ? ir : {};
+  const renderIR: TransactionIR = {
+    version:
+      source.version === 'transaction_ir_1'
+        ? source.version
+        : 'transaction_ir_1',
+    inputs: isDenseArray(source.inputs) ? (source.inputs as IRInput[]) : [],
+    commands: isDenseArray(source.commands)
+      ? (source.commands as IRCommand[])
+      : [],
+    diagnostics: validateTransactionIR(ir),
+  };
+  const direction = renderOptions.direction ?? 'TD';
+  const theme = renderOptions.theme ?? 'none';
+  const lines = [`flowchart ${direction}`];
+  const showArgumentValues = renderOptions.showArgumentValues ?? false;
+  const hasGasCoin = renderIR.commands.some((command) =>
+    irCommandArgRefs(command).some((arg) => arg.kind === 'GasCoin'),
+  );
+
+  renderIR.diagnostics.forEach((diagnostic, index) => {
+    lines.push(`  diag${index}["${mermaidNodeLabel([diagnostic.code])}"]`);
+  });
+
+  renderIR.inputs.forEach((input, index) => {
+    lines.push(
+      `  input${index}["${mermaidNodeLabel(
+        inputNodeLabel(input, index, showArgumentValues),
+      )}"]`,
+    );
+  });
+
+  if (hasGasCoin) {
+    lines.push(`  gas["GasCoin"]`);
+  }
+
+  renderIR.commands.forEach((command, index) => {
+    lines.push(
+      `  command${index}["${mermaidNodeLabel(commandLabel(command, index))}"]`,
+    );
+    irCommandArgRefs(command).forEach((arg) => {
+      const sourceNode = argSourceNodeId(renderIR, arg, hasGasCoin);
+      if (!sourceNode) return;
+      const edge = showArgumentValues
+        ? ` -- "${escapeMermaid(argValueLabel(renderIR, arg))}" --> `
+        : ' --> ';
+      lines.push(`  ${sourceNode}${edge}command${index}`);
+    });
+  });
+
+  if (theme === 'semantic') {
+    lines.push(
+      '  classDef diagnostic fill:#fef2f2,stroke:#dc2626,color:#7f1d1d',
+      '  classDef input fill:#eff6ff,stroke:#2563eb,color:#111827',
+      '  classDef gas fill:#fefce8,stroke:#ca8a04,color:#713f12',
+      '  classDef moveCall fill:#ecfdf5,stroke:#059669,color:#064e3b',
+      '  classDef transfer fill:#fff7ed,stroke:#ea580c,color:#7c2d12',
+      '  classDef coin fill:#f5f3ff,stroke:#7c3aed,color:#3b0764',
+      '  classDef package fill:#fdf2f8,stroke:#db2777,color:#831843',
+      '  classDef vector fill:#f0fdfa,stroke:#0d9488,color:#134e4a',
+      '  classDef unsupported fill:#f3f4f6,stroke:#6b7280,color:#374151',
+    );
+    if (renderIR.diagnostics.length > 0) {
+      lines.push(
+        `  class ${renderIR.diagnostics.map((_diagnostic, index) => `diag${index}`).join(',')} diagnostic`,
+      );
+    }
+    if (renderIR.inputs.length > 0) {
+      lines.push(
+        `  class ${renderIR.inputs.map((_input, index) => `input${index}`).join(',')} input`,
+      );
+    }
+    if (hasGasCoin) {
+      lines.push('  class gas gas');
+    }
+    const commandClasses = groupedCommandClasses(renderIR.commands);
+    commandClasses.forEach((nodeIds, className) => {
+      lines.push(`  class ${nodeIds.join(',')} ${className}`);
+    });
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+function validateMermaidOptions(
+  options: unknown,
+): readonly TransactionDiagnostic[] {
+  const diagnostics: TransactionDiagnostic[] = [];
+  if (options === undefined) return diagnostics;
+  if (!isRecord(options)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'mermaid.options',
+        'Mermaid options must be an object when provided.',
+        '$.options',
+      ),
+    );
+    return diagnostics;
+  }
+  if (
+    options.direction !== undefined &&
+    options.direction !== 'TD' &&
+    options.direction !== 'LR'
+  ) {
+    diagnostics.push(
+      errorDiagnostic(
+        'mermaid.direction',
+        'Mermaid direction must be TD or LR.',
+        '$.options.direction',
+      ),
+    );
+  }
+  if (
+    options.theme !== undefined &&
+    options.theme !== 'none' &&
+    options.theme !== 'semantic'
+  ) {
+    diagnostics.push(
+      errorDiagnostic(
+        'mermaid.theme',
+        'Mermaid theme must be none or semantic.',
+        '$.options.theme',
+      ),
+    );
+  }
+  if (
+    options.showArgumentValues !== undefined &&
+    typeof options.showArgumentValues !== 'boolean'
+  ) {
+    diagnostics.push(
+      errorDiagnostic(
+        'mermaid.showArgumentValues',
+        'Mermaid showArgumentValues must be boolean.',
+        '$.options.showArgumentValues',
+      ),
+    );
+  }
+  return diagnostics;
+}
+
+function argSourceNodeId(
+  ir: TransactionIR,
+  arg: IRArgRef,
+  hasGasCoin: boolean,
+): string | undefined {
+  switch (arg.kind) {
+    case 'Input':
+      return isExistingIndex(arg.index, ir.inputs.length)
+        ? `input${arg.index}`
+        : undefined;
+    case 'Result':
+    case 'NestedResult':
+      return isExistingIndex(arg.commandIndex, ir.commands.length)
+        ? `command${arg.commandIndex}`
+        : undefined;
+    case 'GasCoin':
+      return hasGasCoin ? 'gas' : undefined;
+  }
+}
+
+function isExistingIndex(value: number, length: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0 && value < length;
+}
+
+function inputNodeLabel(
+  input: unknown,
+  index: number,
+  showArgumentValues: boolean,
+): string[] {
+  const kind =
+    isRecord(input) && typeof input.kind === 'string' ? input.kind : 'Invalid';
+  const lines = [`Input ${index}: ${kind}`];
+  if (showArgumentValues) {
+    lines.push(inputValueLabel(input));
+  }
+  return lines;
+}
+
+function commandLabel(command: unknown, index: number): string[] {
+  if (!isRecord(command) || typeof command.kind !== 'string') {
+    return [`${index}: InvalidCommand`];
+  }
+
+  switch (command.kind) {
+    case 'MoveCall':
+      return [
+        `${index}: MoveCall ${labelValue(command.package)}::${labelValue(
+          command.module,
+        )}::${labelValue(command.function)}`,
+      ];
+    case 'TransferObjects':
+      return [`${index}: TransferObjects`];
+    case 'SplitCoins':
+      return [`${index}: SplitCoins`];
+    case 'MergeCoins':
+      return [`${index}: MergeCoins`];
+    case 'Publish':
+      return [`${index}: Publish`];
+    case 'MakeMoveVec':
+      return [`${index}: MakeMoveVec`];
+    case 'Upgrade':
+      return [`${index}: Upgrade ${labelValue(command.package)}`];
+    case 'Unsupported':
+      return [`${index}: Unsupported ${labelValue(command.sourceKind)}`];
+    default:
+      return [`${index}: UnsupportedCommand ${command.kind}`];
+  }
+}
+
+function groupedCommandClasses(commands: IRCommand[]): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  commands.forEach((command, index) => {
+    const className = commandClass(command);
+    const nodeIds = result.get(className);
+    if (nodeIds) {
+      nodeIds.push(`command${index}`);
+    } else {
+      result.set(className, [`command${index}`]);
+    }
+  });
+  return result;
+}
+
+function commandClass(command: unknown): string {
+  if (!isRecord(command) || typeof command.kind !== 'string') {
+    return 'unsupported';
+  }
+
+  switch (command.kind) {
+    case 'MoveCall':
+      return 'moveCall';
+    case 'TransferObjects':
+      return 'transfer';
+    case 'SplitCoins':
+    case 'MergeCoins':
+      return 'coin';
+    case 'Publish':
+    case 'Upgrade':
+      return 'package';
+    case 'MakeMoveVec':
+      return 'vector';
+    case 'Unsupported':
+    default:
+      return 'unsupported';
+  }
+}
+
+function argValueLabel(ir: TransactionIR, arg: IRArgRef): string {
+  switch (arg.kind) {
+    case 'GasCoin':
+      return 'GasCoin';
+    case 'Input': {
+      const input = ir.inputs[arg.index];
+      return input
+        ? `input ${arg.index}: ${inputValueLabel(input)}`
+        : `missing input ${arg.index}`;
+    }
+    case 'Result':
+      return `result command ${arg.commandIndex}`;
+    case 'NestedResult':
+      return `result command ${arg.commandIndex}[${arg.resultIndex}]`;
+  }
+}
+
+function inputValueLabel(input: unknown): string {
+  if (!isRecord(input) || typeof input.kind !== 'string') {
+    return 'invalid input';
+  }
+
+  switch (input.kind) {
+    case 'Pure':
+      if (Object.prototype.hasOwnProperty.call(input, 'value')) {
+        return `value ${shorten(String(input.value))}`;
+      }
+      return typeof input.bytes === 'string'
+        ? `bytes ${shorten(input.bytes)}`
+        : 'bytes unavailable';
+    case 'Object':
+      return isRawObjectArg(input.object)
+        ? objectValueLabel(input.object)
+        : input.object
+          ? 'invalid object'
+          : 'object unresolved';
+    case 'FundsWithdrawal':
+      if (!isRawFundsWithdrawalArg(input.value)) {
+        return 'invalid funds withdrawal';
+      }
+      return `withdraw ${input.value.reservation.amount} ${shorten(
+        input.value.typeArg.type,
+      )} from ${input.value.withdrawFrom.kind}`;
+    case 'Unsupported':
+      return `unsupported ${input.sourceKind}`;
+    default:
+      return `unsupported ${input.kind}`;
+  }
+}
+
+function objectValueLabel(object: RawObjectArg): string {
+  switch (object.kind) {
+    case 'ImmOrOwnedObject':
+      return `owned ${shortId(object.objectId)} v${object.version} ${shorten(
+        object.digest,
+      )}`;
+    case 'SharedObject':
+      return `shared ${shortId(object.objectId)} v${object.initialSharedVersion} ${
+        object.mutable ? 'mutable' : 'immutable'
+      }`;
+    case 'Receiving':
+      return `receiving ${shortId(object.objectId)} v${object.version} ${shorten(
+        object.digest,
+      )}`;
+  }
+}
+
+function shortId(value: string): string {
+  if (value.length <= 18) {
+    return value;
+  }
+  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function shorten(value: string): string {
+  return value.length <= 32 ? value : `${value.slice(0, 29)}...`;
+}
+
+function mermaidNodeLabel(lines: string[]): string {
+  return lines.map((line) => escapeMermaid(line)).join('<br/>');
+}
+
+function labelValue(value: unknown): string {
+  return typeof value === 'string' ? value : 'unknown';
+}
+
+function escapeMermaid(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
