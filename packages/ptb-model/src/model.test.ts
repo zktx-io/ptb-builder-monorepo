@@ -925,7 +925,9 @@ describe('rawTransactionToIR', () => {
       function: 'zero',
     });
     expect(mermaid).toContain('flowchart LR');
-    expect(mermaid).toContain(`MoveCall ${normalizedObjectId('2')}::coin::zero`);
+    expect(mermaid).toContain(
+      `MoveCall ${normalizedObjectId('2')}::coin::zero`,
+    );
   });
 
   it('converts locally built resolved transaction-kind data', async () => {

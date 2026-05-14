@@ -7,14 +7,27 @@
 // - The resulting types are already normalized to PTBType via toPTBTypeFromMove.
 // -----------------------------------------------------------------------------
 
-import type {
-  SuiMoveNormalizedModule,
-  SuiMoveNormalizedModules,
-  SuiMoveNormalizedType,
-} from '@mysten/sui/client';
+import type { RawOpenSignature } from '@zktx.io/ptb-model';
 
-import { toPTBTypeFromMove } from './toPTBType';
+import {
+  isTxContextOpenSignature,
+  toPTBTypeFromMove,
+  toPTBTypeFromOpenSignature,
+} from './toPTBType';
 import type { PTBFunctionData } from '../ptbDoc';
+
+type SuiMoveNormalizedType = any;
+type SuiMoveNormalizedModule = {
+  exposedFunctions: Record<
+    string,
+    {
+      parameters?: SuiMoveNormalizedType[];
+      return?: SuiMoveNormalizedType[];
+      typeParameters?: unknown[] | number;
+    }
+  >;
+};
+type SuiMoveNormalizedModules = Record<string, SuiMoveNormalizedModule>;
 
 /**
  * Drop TxContext from a list of Move types.
@@ -44,7 +57,7 @@ function deleteTxContext(
 /**
  * Normalize on-chain modules into PTBFunctionData view.
  *
- * @param data SuiMoveNormalizedModules (from SuiClient)
+ * @param data normalized Move modules
  * @returns Record<string, PTBFunctionData> keyed by moduleName
  */
 export function toPTBModuleData(
@@ -85,4 +98,25 @@ export function toPTBModuleData(
   }
 
   return out;
+}
+
+export function toPTBFunctionDataEntry(data: {
+  typeParameters?: unknown[];
+  parameters?: RawOpenSignature[];
+  returns?: RawOpenSignature[];
+}): PTBFunctionData[string] {
+  const parameters = (data.parameters ?? []).filter(
+    (signature) => !isTxContextOpenSignature(signature),
+  );
+  const returns = (data.returns ?? []).filter(
+    (signature) => !isTxContextOpenSignature(signature),
+  );
+
+  return {
+    tparamCount: Array.isArray(data.typeParameters)
+      ? data.typeParameters.length
+      : 0,
+    ins: parameters.map(toPTBTypeFromOpenSignature),
+    outs: returns.map(toPTBTypeFromOpenSignature),
+  };
 }

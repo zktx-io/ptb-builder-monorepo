@@ -1,4 +1,4 @@
-import { useSuiClientContext } from '@mysten/dapp-kit';
+import { useCurrentNetwork, useDAppKit } from '@mysten/dapp-kit-react';
 import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
 import { useHotkeys } from 'react-hotkeys-hook';
 
@@ -8,7 +8,8 @@ import { usePtbUndo } from '../components/usePtbUndo';
 import { SuiChain, SuiNetwork } from '../network';
 
 export const Editor = () => {
-  const { network, selectNetwork } = useSuiClientContext();
+  const dAppKit = useDAppKit();
+  const network = useCurrentNetwork() as SuiNetwork;
   const { loadFromDoc } = usePTB();
   const { reset, undo, redo } = usePtbUndo();
 
@@ -22,7 +23,7 @@ export const Editor = () => {
     // Only switch if the dropped file has a valid chain
     const target = parseNetwork(file.chain);
     if (target && target !== network) {
-      selectNetwork(target);
+      dAppKit.switchNetwork(target);
     }
     loadFromDoc(file);
     reset();

@@ -4,11 +4,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
 
-import type {
-  CommandNode,
-  PTBNode,
-  PTBType,
-} from '../../../../ptb/graph/types';
+import type { CommandNode, PTBNode } from '../../../../ptb/graph/types';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -21,13 +17,12 @@ import {
   ROW_SPACING,
   TITLE_TO_IO_GAP,
 } from '../../nodeLayout';
-import { SmallSelect } from '../../vars/inputs/SmallSelect';
 import { TextInput } from '../../vars/inputs/TextInput';
 import { labelOf, useCommandPorts } from '../commandLayout';
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
-  const MVC_CONTROL_ROWS = 3; // package + module + function rows
+  const MVC_CONTROL_ROWS = 4; // package, module, function, and status rows
   const MVC_EXTRA_GAP = 24; // small padding under controls
   const MVC_IO_OFFSET = MVC_CONTROL_ROWS * ROW_SPACING + MVC_EXTRA_GAP;
 
@@ -45,33 +40,42 @@ export type MoveCallData = {
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
 
+function splitMoveCallTarget(
+  target: unknown,
+): { pkgId: string; moduleName: string; functionName: string } | undefined {
+  if (typeof target !== 'string') return undefined;
+  const [pkgId, moduleName, functionName, extra] = target.split('::');
+  if (!pkgId || !moduleName || !functionName || extra !== undefined) {
+    return undefined;
+  }
+  return { pkgId, moduleName, functionName };
+}
+
 export const MoveCallCommand = memo(function MoveCallCommand({
   data,
 }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
   const ui = ((node?.params?.ui ?? {}) as any) || {};
+  const runtime = ((node?.params?.runtime ?? {}) as any) || {};
+  const target = splitMoveCallTarget(runtime.target);
+  const pkgIdValue = ui.pkgId ?? target?.pkgId ?? '';
+  const moduleValue = ui.module ?? target?.moduleName ?? '';
+  const functionValue = ui.func ?? target?.functionName ?? '';
 
-  const { getPackageModules, toast, readOnly } = usePtb();
+  const { getMoveFunction, toast, readOnly } = usePtb();
 
-  // Local buffer for the package id input (avoid graph writes while typing).
-  const [pkgIdBuf, setPkgIdBuf] = useState<string>(ui.pkgId ?? '');
+  // Local buffers avoid graph writes while typing an unresolved target.
+  const [pkgIdBuf, setPkgIdBuf] = useState<string>(pkgIdValue);
+  const [moduleBuf, setModuleBuf] = useState<string>(moduleValue);
+  const [funcBuf, setFuncBuf] = useState<string>(functionValue);
   const [loading, setLoading] = useState(false);
 
   // Ports (already materialized by registry; we only render them).
   const { inIO, outIO } = useCommandPorts(node);
 
-  // Lists from UI (populated after load).
-  const moduleNames: string[] = Array.isArray(ui._nameModules_)
-    ? ui._nameModules_
-    : [];
-  const fnNames: string[] =
-    (ui.module &&
-      Array.isArray(ui._moduleFunctions_?.[ui.module]) &&
-      ui._moduleFunctions_[ui.module]) ||
-    [];
-
   // Min-height accounts for IO rows plus the fixed controls offset.
   const minHeight = minHeightWithOffset(inIO.length, outIO.length);
+  const ioOffset = 4 * ROW_SPACING + 24;
 
   // Patch helper → merge into node.params.ui (provider re-materializes ports & prunes edges).
   const patchUI = useCallback(
@@ -84,138 +88,68 @@ export const MoveCallCommand = memo(function MoveCallCommand({
 
   // Keep the local pkg input buffer in sync when external UI state changes.
   useEffect(() => {
-    setPkgIdBuf(ui.pkgId ?? '');
-  }, [ui.pkgId]);
+    setPkgIdBuf(pkgIdValue);
+    setModuleBuf(moduleValue);
+    setFuncBuf(functionValue);
+  }, [functionValue, moduleValue, pkgIdValue]);
 
-  // Load package → store modules, functions, and normalized fn signatures.
-  const loadPackage = useCallback(async () => {
+  const resolveFunction = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
-    if (!pkg || !node?.id) return;
+    const mod = (moduleBuf || '').trim();
+    const fn = (funcBuf || '').trim();
+    if (!pkg || !mod || !fn || !node?.id) return;
 
     try {
       setLoading(true);
-      const view = await getPackageModules(pkg, { forceRefresh: true });
-      if (!view) {
-        toast?.({
-          message: 'Failed to load package metadata',
-          variant: 'error',
-        });
-        return;
-      }
+      const result = await getMoveFunction(pkg, mod, fn, {
+        forceRefresh: true,
+      });
+      if (!result) return;
 
-      // Build function lists per module and normalized signatures for ins/outs.
-      const moduleToFuncs: Record<string, string[]> = {};
-      const sigs: Record<
-        string,
-        Record<string, { tparamCount: number; ins: PTBType[]; outs: PTBType[] }>
-      > = {};
-
-      for (const m of view.names) {
-        const mod = view.modules[m];
-        const names = mod?.names ?? [];
-        moduleToFuncs[m] = names;
-
-        sigs[m] = {};
-        for (const fn of names) {
-          const f = mod.functions[fn];
-          const tparamCount =
-            typeof (f as any)?.tparamCount === 'number'
-              ? (f as any).tparamCount
-              : 0;
-          const ins = f.ins;
-          const outs = f.outs;
-          sigs[m][fn] = { tparamCount, ins, outs };
-        }
-      }
-
-      // Pick first module/function as defaults.
-      const nextModule = view.names[0] ?? '';
-      const nextFunc = nextModule ? (moduleToFuncs[nextModule][0] ?? '') : '';
-      const sig =
-        nextModule && nextFunc ? sigs[nextModule]?.[nextFunc] : undefined;
-
-      // SSOT for generics: initialize placeholders using tparamCount
+      const sig = result.signature;
+      const existingTParams = Array.isArray(ui._fnTParams)
+        ? (ui._fnTParams as string[])
+        : [];
       const _fnTParams = Array.from(
-        { length: sig?.tparamCount ?? 0 },
-        () => '',
+        { length: sig.tparamCount },
+        (_value, index) => existingTParams[index] ?? '',
       );
 
       patchUI({
-        pkgId: pkg,
-        pkgLocked: true,
-        _nameModules_: view.names,
-        _moduleFunctions_: moduleToFuncs,
-        _fnSigs_: sigs,
-
-        module: nextModule || undefined,
-        func: nextFunc || undefined,
-
-        // SSOT only: do NOT store any count; array length is the source of truth
+        pkgId: result.packageId,
+        module: result.moduleName,
+        func: result.functionName,
+        pkgLocked: undefined,
+        _nameModules_: undefined,
+        _moduleFunctions_: undefined,
+        _fnSigs_: undefined,
         _fnTParams,
-
-        // Normalized ins/outs for port rendering
-        _fnIns: sig?.ins ?? [],
-        _fnOuts: sig?.outs ?? [],
+        _fnIns: sig.ins,
+        _fnOuts: sig.outs,
       });
 
-      toast?.({ message: 'Package loaded', variant: 'success' });
+      setPkgIdBuf(result.packageId);
+      setModuleBuf(result.moduleName);
+      setFuncBuf(result.functionName);
+      toast?.({ message: 'Move function resolved', variant: 'success' });
     } catch (e: any) {
       toast?.({
-        message: e?.message || 'Package load failed',
+        message: e?.message || 'Move function lookup failed',
         variant: 'error',
       });
     } finally {
       setLoading(false);
     }
-  }, [pkgIdBuf, node?.id, getPackageModules, patchUI, toast]);
-
-  // Module change → pick first function of the module and update signatures.
-  const onChangeModule = useCallback(
-    (mod: string) => {
-      const nextFunc = mod ? (ui._moduleFunctions_?.[mod]?.[0] ?? '') : '';
-      const sig = mod && nextFunc ? ui._fnSigs_?.[mod]?.[nextFunc] : undefined;
-
-      const _fnTParams = Array.from(
-        { length: sig?.tparamCount ?? 0 },
-        () => '',
-      );
-
-      patchUI({
-        module: mod || undefined,
-        func: nextFunc || undefined,
-
-        // keep only the array
-        _fnTParams,
-        _fnIns: sig?.ins ?? [],
-        _fnOuts: sig?.outs ?? [],
-      });
-    },
-    [patchUI, ui._fnSigs_, ui._moduleFunctions_],
-  );
-
-  // Function change → update signatures.
-  const onChangeFunc = useCallback(
-    (fn: string) => {
-      const mod = ui.module as string | undefined;
-      const sig = mod && fn ? ui._fnSigs_?.[mod]?.[fn] : undefined;
-
-      const _fnTParams = Array.from(
-        { length: sig?.tparamCount ?? 0 },
-        () => '',
-      );
-
-      patchUI({
-        func: fn || undefined,
-
-        // keep only the array
-        _fnTParams,
-
-        _fnIns: sig?.ins ?? [],
-        _fnOuts: sig?.outs ?? [],
-      });
-    },
-    [patchUI, ui._fnSigs_, ui.module],
-  );
+  }, [
+    funcBuf,
+    getMoveFunction,
+    moduleBuf,
+    node?.id,
+    patchUI,
+    pkgIdBuf,
+    toast,
+    ui._fnTParams,
+  ]);
 
   // Render
   return (
@@ -244,44 +178,46 @@ export const MoveCallCommand = memo(function MoveCallCommand({
               placeholder="package id (0x...)"
               value={pkgIdBuf}
               onChange={(e) => setPkgIdBuf(e.target.value)}
-              disabled={ui.pkgLocked}
               readOnly={readOnly}
             />
-            {!ui.pkgLocked && (
-              <button
-                type="button"
-                className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={loadPackage}
-                disabled={ui.pkgLocked || !pkgIdBuf.trim() || loading}
-                title={
-                  ui.pkgLocked ? 'Package is locked' : 'Load package metadata'
-                }
-              >
-                {loading ? '...' : 'Load'}
-              </button>
-            )}
           </div>
 
-          {/* Module select */}
-          <SmallSelect
-            value={ui.module ?? ''}
-            options={moduleNames}
-            placeholderOption="no modules"
-            onChange={(v) => onChangeModule(v)}
-            disabled={!ui.pkgLocked || moduleNames.length === 0 || readOnly}
+          {/* Module input */}
+          <TextInput
+            placeholder="module"
+            value={moduleBuf}
+            onChange={(e) => setModuleBuf(e.target.value)}
+            readOnly={readOnly}
           />
 
-          {/* Function select */}
-          <SmallSelect
-            value={ui.func ?? ''}
-            options={fnNames}
-            placeholderOption="n/a"
-            onChange={(v) => onChangeFunc(v)}
-            disabled={
-              !ui.pkgLocked || !ui.module || fnNames.length === 0 || readOnly
-            }
-          />
+          {/* Function input */}
+          <div className="flex items-center gap-1">
+            <TextInput
+              placeholder="function"
+              value={funcBuf}
+              onChange={(e) => setFuncBuf(e.target.value)}
+              readOnly={readOnly}
+            />
+            <button
+              type="button"
+              className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={resolveFunction}
+              disabled={
+                readOnly ||
+                loading ||
+                !pkgIdBuf.trim() ||
+                !moduleBuf.trim() ||
+                !funcBuf.trim()
+              }
+              title="Resolve function signature"
+            >
+              {loading ? '...' : 'Use'}
+            </button>
+          </div>
+          <div className="px-1 text-[10px] text-gray-500 dark:text-gray-400">
+            Enter package, module, and function explicitly.
+          </div>
         </div>
 
         {/* IO handles */}
@@ -290,7 +226,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             key={port.id}
             port={port}
             position={Position.Left}
-            style={{ top: ioTopForIndex(idx, 3 * ROW_SPACING + 24) }}
+            style={{ top: ioTopForIndex(idx, ioOffset) }}
             label={labelOf(port)}
           />
         ))}
@@ -299,7 +235,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             key={port.id}
             port={port}
             position={Position.Right}
-            style={{ top: ioTopForIndex(idx, 3 * ROW_SPACING + 24) }}
+            style={{ top: ioTopForIndex(idx, ioOffset) }}
             label={labelOf(port)}
           />
         ))}

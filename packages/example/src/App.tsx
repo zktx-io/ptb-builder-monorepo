@@ -1,17 +1,18 @@
 import {
   useCurrentAccount,
-  useSignAndExecuteTransaction,
-} from '@mysten/dapp-kit';
+  useCurrentNetwork,
+  useDAppKit,
+} from '@mysten/dapp-kit-react';
 import { Transaction } from '@mysten/sui/transactions';
 import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
-import '@mysten/dapp-kit/dist/index.css';
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
 import { usePtbUndo } from './components/usePtbUndo';
+import { SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -31,9 +32,18 @@ const router = createBrowserRouter([
   },
 ]);
 
+function chainToNetwork(chain: Chain): SuiNetwork {
+  const match = chain.match(/^sui:(mainnet|testnet|devnet)$/);
+  if (!match) {
+    throw new Error(`Unsupported Sui chain: ${chain}`);
+  }
+  return match[1] as SuiNetwork;
+}
+
 function App() {
   const account = useCurrentAccount();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const network = useCurrentNetwork() as SuiNetwork;
+  const dAppKit = useDAppKit();
   const { set: onDocChange } = usePtbUndo();
 
   const handleToast = ({
@@ -56,36 +66,57 @@ function App() {
     if (!transaction) {
       return { error: 'No transaction to execute' };
     }
+    const targetNetwork = chainToNetwork(chain);
+    if (network !== targetNetwork) {
+      return {
+        error: `Switch to ${targetNetwork} before executing this PTB`,
+      };
+    }
 
     try {
-      const jsonTx = await transaction.toJSON();
-
-      return await new Promise((resolve) => {
-        try {
-          signAndExecuteTransaction(
-            {
-              transaction: jsonTx,
-              chain,
-            },
-            {
-              onSuccess: (result) => resolve({ digest: result.digest }),
-              onError: (error) =>
-                resolve({
-                  error: error.message || 'Transaction execution failed',
-                }),
-            },
-          );
-        } catch (error: unknown) {
-          resolve({
-            error:
-              (error as Error).message ||
-              'Transaction execution failed (sync error)',
-          });
-        }
+      const result = await dAppKit.signAndExecuteTransaction({
+        transaction,
       });
+      const executed =
+        result.$kind === 'Transaction'
+          ? result.Transaction
+          : result.FailedTransaction;
+      return { digest: executed.digest };
     } catch (error: unknown) {
       return {
-        error: (error as Error).message || 'Transaction serialization failed',
+        error: (error as Error).message || 'Transaction execution failed',
+      };
+    }
+  };
+
+  const createClient = (chain: Chain) =>
+    dAppKit.getClient(chainToNetwork(chain));
+
+  const simulateTx = async (
+    chain: Chain,
+    transaction: Transaction | undefined,
+  ): Promise<{ success?: boolean; error?: string }> => {
+    if (!transaction) {
+      return { error: 'No transaction to simulate' };
+    }
+
+    try {
+      const client = createClient(chain);
+      const bytes = await transaction.build({ client });
+      const result = await client.core.simulateTransaction({
+        transaction: bytes,
+        include: { effects: true },
+      });
+      const simulated =
+        result.$kind === 'Transaction'
+          ? result.Transaction
+          : result.FailedTransaction;
+      const error =
+        simulated.status.error?.message || simulated.status.error?.$kind;
+      return { success: simulated.status.success, error };
+    } catch (error: unknown) {
+      return {
+        error: (error as Error).message || 'Transaction simulation failed',
       };
     }
   };
@@ -95,6 +126,8 @@ function App() {
       <PTBBuilder
         toast={handleToast}
         executeTx={executeTx}
+        simulateTx={simulateTx}
+        createClient={createClient}
         address={account?.address}
         showExportButton
         onDocChange={onDocChange}

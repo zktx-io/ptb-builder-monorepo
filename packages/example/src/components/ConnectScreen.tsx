@@ -1,10 +1,11 @@
 import { ReactNode } from 'react';
 
 import {
-  ConnectButton,
-  useCurrentWallet,
-  useSuiClientContext,
-} from '@mysten/dapp-kit';
+  useCurrentNetwork,
+  useDAppKit,
+  useWalletConnection,
+} from '@mysten/dapp-kit-react';
+import { ConnectButton } from '@mysten/dapp-kit-react/ui';
 import { useNavigate } from 'react-router-dom';
 
 import { NETWORKS, NetworkType, saveNetwork } from '../network';
@@ -22,11 +23,12 @@ export function ConnectScreen({
   showNetworkSelect = true,
   connected,
 }: Props) {
-  const { connectionStatus } = useCurrentWallet();
+  const connection = useWalletConnection();
   const navigate = useNavigate();
-  const { network, selectNetwork } = useSuiClientContext();
+  const dAppKit = useDAppKit();
+  const network = useCurrentNetwork() as NetworkType;
 
-  if (connectionStatus === 'connected' && connected) {
+  if (connection.status === 'connected' && connected) {
     return <>{connected}</>;
   }
 
@@ -73,7 +75,7 @@ export function ConnectScreen({
           value={network}
           onChange={(e) => {
             const val = e.target.value as NetworkType;
-            selectNetwork(val);
+            dAppKit.switchNetwork(val);
             saveNetwork(val);
           }}
           style={{

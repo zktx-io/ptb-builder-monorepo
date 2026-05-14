@@ -10,6 +10,8 @@
 // Public Props (PTBBuilderProps)
 // - theme           : initial theme (managed by provider afterwards)
 // - executeTx       : adapter for executing transactions
+// - simulateTx      : adapter for simulating transactions
+// - createClient    : adapter for read-only SDK Core client creation
 // - address         : optional sender for codegen/exec
 // - gasBudget       : optional gas budget for tx build
 // - toast           : toast adapter; if absent, provider falls back to console
@@ -35,6 +37,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { PTBFlow } from './PtbFlow';
 import { PtbProvider, usePtb } from './PtbProvider';
 import type { PTBDoc } from '../ptb/ptbDoc';
+import type { PtbCoreClient } from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 
 // ---------- Public types ----------
@@ -47,6 +50,11 @@ export type PTBBuilderProps = {
     chain: Chain,
     tx: Transaction | undefined,
   ) => Promise<{ digest?: string; error?: string }>;
+  simulateTx?: (
+    chain: Chain,
+    tx: Transaction | undefined,
+  ) => Promise<{ success?: boolean; error?: string }>;
+  createClient?: (chain: Chain) => PtbCoreClient;
   address?: string;
   gasBudget?: number;
   toast?: ToastAdapter;
@@ -94,6 +102,8 @@ function PublicBridge({ children }: { children?: React.ReactNode }) {
 export function PTBBuilder({
   theme,
   executeTx,
+  simulateTx,
+  createClient,
   address,
   gasBudget,
   toast,
@@ -119,6 +129,8 @@ export function PTBBuilder({
         showExportButton={showExportButton}
         // flattened adapters
         executeTx={executeTx}
+        simulateTx={simulateTx}
+        createClient={createClient}
         toast={toast}
         // execution opts for codegen / tx builder
         execOpts={execOpts}

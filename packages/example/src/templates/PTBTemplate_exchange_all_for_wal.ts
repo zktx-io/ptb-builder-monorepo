@@ -1,7 +1,7 @@
 import { PTBTemplateItem } from './type';
 
 const exchange_all_for_wal = {
-  version: 'ptb_3',
+  version: 'ptb_4',
   chain: 'sui:testnet',
   view: {
     x: 148.41038812785382,

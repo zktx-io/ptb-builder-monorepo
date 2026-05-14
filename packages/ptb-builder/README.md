@@ -22,9 +22,8 @@ model imports, model `dist` imports, and relative imports across package
 boundaries are intentionally blocked for builder source.
 
 Legacy PTB documents are not model inputs. The model parser rejects legacy
-shapes; explicit conversion utilities should migrate them before model APIs are
-called. The builder `loadFromDoc()` boundary will be tightened to this policy in
-the model-adoption phase.
+shapes, and the normal builder runtime accepts only current `ptb_4` documents.
+Run any legacy migration outside this package before calling builder/model APIs.
 
 ## Features
 
@@ -73,7 +72,9 @@ The following PTB commands are currently supported:
 - **SplitCoins** — split a coin object into multiple parts.
 - **MergeCoins** — merge multiple coins into one.
 - **TransferObjects** — transfer owned objects to a recipient.
-- **MoveCall** — call any Move function from an on‑chain package.
+- **MoveCall** — call a Move function by entering its package, module, and
+  function names explicitly; the builder verifies the selected function
+  signature through the SDK Core API.
 - **MakeMoveVec** — create vectors from scalar values.
 
 (Additional commands can be added via registry extensions.)
@@ -90,140 +91,126 @@ Inputs follow `tx.option` conventions from the Sui TS SDK:
 
 ## Quick Start (dApp Integration)
 
-Below snippets mirror a typical setup using **@mysten/dapp‑kit** with PTB Builder.
-
-### `App.tsx`
+The example app uses `@mysten/dapp-kit-react@2.x` and
+`@mysten/sui@2.16.2`. The host creates the wallet/client provider and passes an
+execution adapter into PTB Builder.
 
 ```tsx
-import { PTBBuilder, Chain, ToastVariant } from '@zktx.io/ptb-builder';
-import { Transaction } from '@mysten/sui/transactions';
+import { createDAppKit, DAppKitProvider } from '@mysten/dapp-kit-react';
 import {
   useCurrentAccount,
-  useSignAndExecuteTransaction,
-} from '@mysten/dapp-kit';
-import { enqueueSnackbar } from 'notistack';
+  useCurrentNetwork,
+  useDAppKit,
+} from '@mysten/dapp-kit-react';
+import { Transaction } from '@mysten/sui/transactions';
+import {
+  Chain,
+  createPtbCoreClientForNetwork,
+  PTBBuilder,
+  ToastVariant,
+  type PtbCoreClientTransport,
+} from '@zktx.io/ptb-builder';
 
-import '@mysten/dapp-kit/dist/index.css';
 import '@zktx.io/ptb-builder/index.css';
+import '@zktx.io/ptb-builder/styles/themes-all.css';
 
-function App() {
+const suiTransport: PtbCoreClientTransport =
+  import.meta.env.VITE_SUI_TRANSPORT === 'graphql' ? 'graphql' : 'grpc';
+
+const dAppKit = createDAppKit({
+  networks: ['mainnet', 'testnet', 'devnet'],
+  defaultNetwork: 'testnet',
+  createClient(network) {
+    // Uses SDK Core transport only. gRPC is the default path; GraphQL is
+    // available for networks with a verified endpoint.
+    return createPtbCoreClientForNetwork(network, { transport: suiTransport });
+  },
+});
+
+function BuilderApp() {
   const account = useCurrentAccount();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const network = useCurrentNetwork();
+  const dAppKit = useDAppKit();
+  const createClient = (chain: Chain) =>
+    dAppKit.getClient(chain.replace(/^sui:/, '') as 'mainnet' | 'testnet' | 'devnet');
 
-  // Toast adapter
-  const handleToast = ({
-    message,
-    variant,
-  }: {
-    message: string;
-    variant?: ToastVariant;
-  }) => {
-    enqueueSnackbar(message, { variant });
-  };
-
-  // Execute adapter
   const executeTx = async (
     chain: Chain,
     transaction: Transaction | undefined,
   ): Promise<{ digest?: string; error?: string }> => {
     if (!account || !transaction) return { error: 'No account or transaction' };
-    try {
-      const jsonTx = await transaction.toJSON();
-      return new Promise((resolve) => {
-        signAndExecuteTransaction(
-          { transaction: jsonTx, chain },
-          {
-            onSuccess: (result) => resolve({ digest: result.digest }),
-            onError: (error) => resolve({ error: error.message }),
-          },
-        );
-      });
-    } catch (e: any) {
-      return { error: e.message || 'Serialization failed' };
+    const targetNetwork = chain.replace(/^sui:/, '') as 'mainnet' | 'testnet' | 'devnet';
+    if (network !== targetNetwork) {
+      return { error: `Switch to ${targetNetwork} before executing this PTB` };
     }
+    const result = await dAppKit.signAndExecuteTransaction({ transaction });
+    const executed =
+      result.$kind === 'Transaction'
+        ? result.Transaction
+        : result.FailedTransaction;
+    return { digest: executed.digest };
+  };
+
+  const simulateTx = async (
+    chain: Chain,
+    transaction: Transaction | undefined,
+  ): Promise<{ success?: boolean; error?: string }> => {
+    if (!transaction) return { error: 'No transaction' };
+    const client = createClient(chain);
+    const bytes = await transaction.build({ client });
+    const result = await client.core.simulateTransaction({
+      transaction: bytes,
+      include: { effects: true },
+    });
+    const simulated =
+      result.$kind === 'Transaction'
+        ? result.Transaction
+        : result.FailedTransaction;
+    const error =
+      simulated.status.error?.message || simulated.status.error?.$kind;
+    return { success: simulated.status.success, error };
+  };
+
+  const toast = ({ message, variant }: { message: string; variant?: ToastVariant }) => {
+    console.log(variant ?? 'info', message);
   };
 
   return (
     <PTBBuilder
-      toast={handleToast}
+      toast={toast}
       executeTx={executeTx}
+      simulateTx={simulateTx}
+      createClient={createClient}
       address={account?.address}
       showExportButton
     />
   );
 }
 
-export default App;
-```
-
-### `pages/editor.tsx`
-
-```tsx
-import { useCurrentAccount, useSuiClientContext } from '@mysten/dapp-kit';
-import { PTB_VERSION, PTBDoc, usePTB } from '@zktx.io/ptb-builder';
-import { DragAndDrop } from '../components/DragAndDrop';
-
-type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
-type SuiChain = `sui:${SuiNetwork}`;
-
-export const Editor = () => {
-  const { network, selectNetwork } = useSuiClientContext();
-  const account = useCurrentAccount();
-  const { loadFromDoc } = usePTB();
-
-  // Safe parser for "sui:<network>"
-  const parseNetwork = (chain?: string): SuiNetwork | undefined => {
-    const m = chain?.match(/^sui:(mainnet|testnet|devnet)$/);
-    return m?.[1] as SuiNetwork | undefined;
-  };
-
-  const handleDrop = (file: PTBDoc) => {
-    // Align dapp-kit network only if valid and different
-    const target = parseNetwork(file.chain);
-    if (target && target !== network) selectNetwork(target);
-    loadFromDoc(file);
-  };
-
-  const handleChancel = () => {
-    // Reset with a current network
-    loadFromDoc(`sui:${network}` as SuiChain);
-  };
-
+export function App() {
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      {account && <DragAndDrop onDrop={handleDrop} onChancel={handleChancel} />}
-    </div>
+    <DAppKitProvider dAppKit={dAppKit}>
+      <BuilderApp />
+    </DAppKitProvider>
   );
-};
+}
 ```
 
-### `pages/viewer.tsx`
+Use `useDAppKit().switchNetwork(network)` to switch networks in the host app.
+`createPtbCoreClientForNetwork(..., { transport: 'graphql' })` throws when the
+requested network has no verified GraphQL endpoint in the package client table.
+`loadFromDoc()` accepts current `ptb_4` documents only. Legacy document
+migration is intentionally outside this package.
 
-```tsx
-import { useEffect, useRef, useState } from 'react';
-import { usePTB } from '@zktx.io/ptb-builder';
-import queryString from 'query-string';
-import { useLocation } from 'react-router-dom';
+### SDK Core client boundary
 
-export const Viewer = () => {
-  const initialized = useRef<boolean>(false);
-  const { loadFromOnChainTx } = usePTB();
-  const location = useLocation();
-  const [txHash, setTxHash] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    const parsed = queryString.parse(location.search);
-    if (parsed.tx && !initialized.current) {
-      loadFromOnChainTx('sui:testnet', parsed.tx as string);
-      initialized.current = true;
-    } else {
-      setTxHash('');
-    }
-  }, [loadFromOnChainTx, location.search, txHash]);
-
-  return null;
-};
-```
+`createPtbCoreClient()` and `createPtbCoreClientForNetwork()` return SDK Core
+clients for read/load paths. The exported `PtbCoreClient` type is an alias of
+the pinned `@mysten/sui@2.16.2` `ClientWithCoreApi` type, not a separate stable
+client abstraction owned by PTB Builder. Host applications may provide their own
+`ClientWithCoreApi`-compatible client through `createClient`, but SDK Core type
+changes are part of the Sui SDK boundary and should be reviewed when upgrading
+`@mysten/sui`.
 
 ## Public API (Provider + Hook)
 
@@ -241,6 +228,7 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
   address={myAddress} // sender address
   gasBudget={500_000_000} // optional gas budget
   executeTx={execAdapter} // host-provided execution adapter
+  createClient={clientFactory} // host-provided SDK Core client factory for reads/loads
   onDocChange={saveDoc} // PTBDoc autosave callback (debounced)
   showExportButton // optional: show Export .ptb button (default: hidden)
 >
@@ -293,6 +281,8 @@ setTheme('tokyo-night');
 | `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
 | `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
 | `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
+| `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Host-provided simulation adapter used by the Dry run action.  |
+| `createClient`      | `(chain: Chain) => ClientWithCoreApi`                                                 | gRPC     | Optional host-provided SDK Core client factory for read/load paths. |
 | `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
 | `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
 | `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
@@ -304,8 +294,10 @@ setTheme('tokyo-night');
 
 PTB Builder persists graphs as `PTBDoc` objects containing:
 
+- **version** — current documents use `ptb_4`
 - **graph** — nodes and edges of the PTB
-- **modules** — embedded Move module metadata (for function signatures)
+- **modules** — embedded Move function signature metadata for already-resolved
+  MoveCall targets
 - **objects** — embedded object metadata (for owned assets)
 - **chain** — target Sui network (e.g., `sui:testnet`)
 
@@ -315,7 +307,8 @@ This enables saving, sharing, and reloading graphs consistently across environme
 
 ## Notes on Network Sync
 
-- Use `useSuiClientContext()` from **@mysten/dapp‑kit** to read/change the active Sui network.
+- Use `useCurrentNetwork()` and `useDAppKit().switchNetwork()` from
+  `@mysten/dapp-kit-react` to read/change the active Sui network.
 - Keep PTB `doc.chain` in the form `sui:<network>`, e.g., `sui:testnet`.
 - On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
 

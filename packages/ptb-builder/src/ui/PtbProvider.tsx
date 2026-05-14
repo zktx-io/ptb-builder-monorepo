@@ -26,20 +26,17 @@ import React, {
   useState,
 } from 'react';
 
-import {
-  DryRunTransactionBlockResponse,
-  ExecutionStatus,
-  getFullnodeUrl,
-  type GetOwnedObjectsParams,
-  type PaginatedObjectsResponse,
-  SuiClient,
-} from '@mysten/sui/client';
 import type { Transaction } from '@mysten/sui/transactions';
+import {
+  parsePTBDocV4,
+  rawTransactionToIR,
+  transactionIRToGraph,
+} from '@zktx.io/ptb-model';
+import type { PTBModelError } from '@zktx.io/ptb-model';
 
 import type { ExecOptions } from '../codegen/types';
-import { decodeTx } from '../ptb/decodeTx';
 import type { PTBGraph } from '../ptb/graph/types';
-import { toPTBModuleData } from '../ptb/move/toPTBModuleData';
+import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
 import {
   buildDoc,
   type PTBDoc,
@@ -53,6 +50,13 @@ import {
   seedDefaultGraph,
   type WellKnownId,
 } from '../ptb/seedGraph';
+import {
+  coreTransactionResultToRawProgrammableTransactionInput,
+  createPtbCoreClient,
+  PTB_TRANSACTION_LOAD_INCLUDE,
+  type PtbCoreClient,
+  selectCoreTransactionResult,
+} from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 import { toColorMode } from '../types';
 
@@ -63,6 +67,42 @@ const VIEW_CHANGE_DEBOUNCE_MS = 250;
 type TxStatus = {
   status: 'success' | 'failure';
   error?: string;
+};
+
+type OwnedObjectsParams = {
+  owner: string;
+  cursor?: string | null;
+  limit?: number;
+  type?: string;
+  options?: {
+    showType?: boolean;
+    showContent?: boolean;
+    showDisplay?: boolean;
+  };
+  clientOverride?: PtbCoreClient;
+};
+
+type OwnedObjectsResponse = {
+  data: Array<{
+    data: {
+      objectId: string;
+      type: string;
+      content?: { dataType: 'moveObject'; type: string };
+      display?: { data?: Record<string, unknown> | null };
+    };
+  }>;
+  hasNextPage: boolean;
+  nextCursor?: string | null;
+};
+
+type HostTxResult = { digest?: string; error?: string };
+type HostSimulationResult = { success?: boolean; error?: string };
+
+type MoveFunctionSignature = {
+  packageId: string;
+  moduleName: string;
+  functionName: string;
+  signature: PTBFunctionData[string];
 };
 
 export type PtbContextValue = {
@@ -83,29 +123,20 @@ export type PtbContextValue = {
   objects: PTBObjectsEmbed;
   getObjectData: (
     objectId: string,
-    opts?: { forceRefresh?: boolean; clientOverride?: SuiClient },
+    opts?: { forceRefresh?: boolean; clientOverride?: PtbCoreClient },
   ) => Promise<PTBObjectData | undefined>;
 
   modules: PTBModulesEmbed;
-  getPackageModules: (
+  getMoveFunction: (
     packageId: string,
+    moduleName: string,
+    functionName: string,
     opts?: { forceRefresh?: boolean },
-  ) => Promise<
-    | {
-        names: string[];
-        modules: {
-          [moduleName: string]: { names: string[]; functions: PTBFunctionData };
-        };
-      }
-    | undefined
-  >;
+  ) => Promise<MoveFunctionSignature | undefined>;
 
   getOwnedObjects: (
-    params: Omit<GetOwnedObjectsParams, 'owner'> & {
-      owner: string;
-      clientOverride?: SuiClient;
-    },
-  ) => Promise<PaginatedObjectsResponse | undefined>;
+    params: OwnedObjectsParams,
+  ) => Promise<OwnedObjectsResponse | undefined>;
 
   // Loaders
   loadTxStatus: TxStatus | undefined;
@@ -156,7 +187,12 @@ export type PtbProviderProps = {
   executeTx?: (
     chain: Chain,
     tx: Transaction | undefined,
-  ) => Promise<{ digest?: string; error?: string }>;
+  ) => Promise<HostTxResult>;
+  simulateTx?: (
+    chain: Chain,
+    tx: Transaction | undefined,
+  ) => Promise<HostSimulationResult>;
+  createClient?: (chain: Chain) => PtbCoreClient;
   toast?: ToastAdapter;
   showExportButton?: boolean;
 };
@@ -249,6 +285,15 @@ function stableDocSig(doc: PTBDoc): string {
   return JSON.stringify(orderObject(doc));
 }
 
+function modelErrorMessage(error: unknown, fallback: string): string {
+  const diagnostics = (error as Partial<PTBModelError> | undefined)
+    ?.diagnostics;
+  if (Array.isArray(diagnostics) && diagnostics.length > 0) {
+    return diagnostics.map((diagnostic) => diagnostic.message).join(' ');
+  }
+  return (error as { message?: string } | undefined)?.message || fallback;
+}
+
 // ===== Provider ===============================================================
 
 export function PtbProvider({
@@ -260,6 +305,8 @@ export function PtbProvider({
   showThemeSelector = true,
 
   executeTx: executeTxProp,
+  simulateTx: simulateTxProp,
+  createClient: createClientProp,
   toast: toastProp,
   showExportButton = false,
 }: PtbProviderProps) {
@@ -300,16 +347,18 @@ export function PtbProvider({
 
   // Chain & client
   const [activeChain, setActiveChain] = useState<Chain | undefined>(undefined);
-  const clientRef = useRef<SuiClient | undefined>(undefined);
+  const clientRef = useRef<PtbCoreClient | undefined>(undefined);
+  const createCoreClient = useCallback(
+    (chain: Chain) => createClientProp?.(chain) ?? createPtbCoreClient(chain),
+    [createClientProp],
+  );
   useEffect(() => {
     if (!activeChain) {
       clientRef.current = undefined;
       return;
     }
-    clientRef.current = new SuiClient({
-      url: getFullnodeUrl(activeChain.split(':')[1] as any),
-    });
-  }, [activeChain]);
+    clientRef.current = createCoreClient(activeChain);
+  }, [activeChain, createCoreClient]);
   const activeChainRef = useRef(activeChain);
   activeChainRef.current = activeChain;
 
@@ -374,12 +423,9 @@ export function PtbProvider({
     };
   }, [toastProp]);
 
-  // Execute adapter
+  // Host adapters
   const executeTx = useCallback(
-    async (
-      chain: Chain,
-      tx?: Transaction,
-    ): Promise<{ digest?: string; error?: string }> => {
+    async (chain: Chain, tx?: Transaction): Promise<HostTxResult> => {
       if (!executeTxProp) return { error: 'executeTx adapter not provided' };
       try {
         const res = await executeTxProp(chain, tx);
@@ -391,42 +437,23 @@ export function PtbProvider({
     [executeTxProp],
   );
 
-  // Build + dry-run + execute
+  const simulateTx = useCallback(
+    async (chain: Chain, tx?: Transaction): Promise<HostSimulationResult> => {
+      if (!simulateTxProp) return { error: 'simulateTx adapter not provided' };
+      try {
+        const res = await simulateTxProp(chain, tx);
+        return res ?? {};
+      } catch (e: any) {
+        return { error: e?.message || 'Unknown simulation error' };
+      }
+    },
+    [simulateTxProp],
+  );
+
+  // Build + execute
   const runTx = useCallback(
     async (tx?: Transaction) => {
       if (!tx || !activeChain) return { error: 'No transaction to run' };
-      const client = clientRef.current;
-      if (!client) {
-        toastImpl({
-          message: 'SuiClient unavailable (not ready).',
-          variant: 'error',
-        });
-        return { error: 'SuiClient unavailable' };
-      }
-
-      try {
-        const bytes = await tx.build({ client });
-        const sim = await client.dryRunTransactionBlock({
-          transactionBlock: bytes,
-        });
-        const status = (sim as any)?.effects?.status?.status;
-        const errorMsg =
-          (sim as any)?.effects?.status?.error ||
-          (sim as any)?.checkpointError ||
-          (sim as any)?.error;
-
-        if (status !== 'success') {
-          toastImpl({
-            message: errorMsg || 'Dry run failed',
-            variant: 'error',
-          });
-          return { error: errorMsg || 'Dry run failed' };
-        }
-      } catch (e: any) {
-        const msg = e?.message || 'Dry run error';
-        toastImpl({ message: msg, variant: 'error' });
-        return { error: msg };
-      }
 
       const res = await executeTx(activeChain, tx);
       if (res?.digest) {
@@ -441,51 +468,30 @@ export function PtbProvider({
 
   const dryRunTx = useCallback(
     async (tx?: Transaction): Promise<void> => {
+      if (!activeChain) {
+        toastImpl({ message: 'No active chain to dry-run', variant: 'error' });
+        return;
+      }
       if (!tx) {
         toastImpl({ message: 'No transaction to dry-run', variant: 'error' });
         return;
       }
 
-      const client = clientRef.current;
-      if (!client) {
+      const res = await simulateTx(activeChain, tx);
+      if (res.error) {
         toastImpl({
-          message: 'SuiClient unavailable (not ready).',
+          message: res.error,
           variant: 'error',
         });
         return;
       }
-
-      try {
-        const bytes = await tx.build({ client });
-        const sim = (await client.dryRunTransactionBlock({
-          transactionBlock: bytes,
-        })) as DryRunTransactionBlockResponse;
-
-        const status =
-          (sim as any)?.effects?.status?.status ??
-          (sim as any)?.effects?.status ??
-          (sim as any)?.status;
-
-        const errorMsg =
-          (sim as any)?.effects?.status?.error ||
-          (sim as any)?.checkpointError ||
-          (sim as any)?.error;
-
-        if (status !== 'success') {
-          toastImpl({
-            message: errorMsg || 'Dry run failed',
-            variant: 'error',
-          });
-          return;
-        }
-
-        toastImpl({ message: 'Dry run success', variant: 'success' });
-      } catch (e: any) {
-        const msg = e?.message || 'Dry run error';
-        toastImpl({ message: msg, variant: 'error' });
+      if (res.success === false) {
+        toastImpl({ message: 'Dry run failed', variant: 'error' });
+        return;
       }
+      toastImpl({ message: 'Dry run success', variant: 'success' });
     },
-    [toastImpl],
+    [activeChain, simulateTx, toastImpl],
   );
 
   // Keep a stable signature to prevent feedback loops on normalizeGraph
@@ -616,21 +622,14 @@ export function PtbProvider({
       if (!client) return undefined;
 
       try {
-        const resp = await client.getObject({
-          id,
-          options: { showType: true, showContent: true },
+        const resp = await client.core.getObject({
+          objectId: id,
+          include: { content: true },
         });
 
-        if (!resp.data) return undefined;
-
-        const moveType =
-          resp.data.content?.dataType === 'moveObject'
-            ? (resp.data.content as any)?.type
-            : undefined;
-
         const obj: PTBObjectData = {
-          objectId: resp.data.objectId,
-          typeTag: moveType ?? '',
+          objectId: resp.object.objectId,
+          typeTag: resp.object.type ?? '',
         };
 
         setObjects((prev) => ({ ...prev, [id]: obj }));
@@ -642,89 +641,105 @@ export function PtbProvider({
     [objects],
   );
 
-  const getPackageModules = useCallback<PtbContextValue['getPackageModules']>(
-    async (
-      packageId,
-      opts,
-    ): Promise<
-      | {
-          names: string[];
-          modules: {
-            [moduleName: string]: {
-              names: string[];
-              functions: PTBFunctionData;
-            };
-          };
-        }
-      | undefined
-    > => {
+  const getMoveFunction = useCallback<PtbContextValue['getMoveFunction']>(
+    async (packageId, moduleName, functionName, opts) => {
       const id = packageId?.trim();
+      const module = moduleName?.trim();
+      const name = functionName?.trim();
       if (!id || !id.startsWith('0x')) {
         toastImpl({ message: 'Invalid package id', variant: 'warning' });
         return undefined;
       }
+      if (!module || !name) {
+        toastImpl({
+          message: 'Enter package, module, and function',
+          variant: 'warning',
+        });
+        return undefined;
+      }
 
-      if (!opts?.forceRefresh && modules[id]) {
+      if (!opts?.forceRefresh && modules[id]?.[module]?.[name]) {
         return {
-          names: Object.keys(modules[id]),
-          modules: Object.fromEntries(
-            Object.keys(modules[id]).map((name) => [
-              name,
-              {
-                names: Object.keys(modules[id][name]),
-                functions: modules[id][name],
-              },
-            ]),
-          ),
+          packageId: id,
+          moduleName: module,
+          functionName: name,
+          signature: modules[id][module][name],
         };
       }
 
       const client = clientRef.current;
-      if (!client) {
-        toastImpl({ message: 'No client available', variant: 'warning' });
-        return undefined;
-      }
+      if (!client) return undefined;
 
       try {
-        const raw = await client.getNormalizedMoveModulesByPackage({
-          package: id,
+        const response = await client.core.getMoveFunction({
+          packageId: id,
+          moduleName: module,
+          name,
         });
-        const normalized = toPTBModuleData(raw);
-        setModules((prev) => ({ ...prev, [id]: normalized }));
+        const signature = toPTBFunctionDataEntry(response.function);
+        const resolvedPackageId = response.function.packageId || id;
+        const resolvedModuleName = response.function.moduleName || module;
+        const resolvedFunctionName = response.function.name || name;
+
+        setModules((prev) => ({
+          ...prev,
+          [resolvedPackageId]: {
+            ...(prev[resolvedPackageId] ?? {}),
+            [resolvedModuleName]: {
+              ...(prev[resolvedPackageId]?.[resolvedModuleName] ?? {}),
+              [resolvedFunctionName]: signature,
+            },
+          },
+        }));
+
         return {
-          names: Object.keys(normalized),
-          modules: Object.fromEntries(
-            Object.keys(normalized).map((name) => [
-              name,
-              {
-                names: Object.keys(normalized[name]),
-                functions: normalized[name],
-              },
-            ]),
-          ),
+          packageId: resolvedPackageId,
+          moduleName: resolvedModuleName,
+          functionName: resolvedFunctionName,
+          signature,
         };
-      } catch (e: any) {
+      } catch (error: any) {
         toastImpl({
-          message: e?.message || 'Failed to load package modules',
+          message: error?.message || 'Move function lookup failed',
           variant: 'error',
         });
         return undefined;
       }
     },
-    [modules, clientRef, toastImpl],
+    [modules, toastImpl],
   );
 
   const getOwnedObjects = useCallback<PtbContextValue['getOwnedObjects']>(
     async (params) => {
-      const { clientOverride, ...rest } = params ?? {};
+      const { clientOverride, options: _options, ...rest } = params ?? {};
       const client = clientOverride ?? clientRef.current;
       if (!client) return undefined;
 
       try {
-        const page = await client.getOwnedObjects(
-          rest as GetOwnedObjectsParams,
-        );
-        return page;
+        const page = await client.core.listOwnedObjects({
+          owner: rest.owner,
+          cursor: rest.cursor,
+          limit: rest.limit,
+          type: rest.type,
+          include: {
+            content: true,
+            display: true,
+          },
+        });
+        return {
+          data: page.objects.map((object) => ({
+            data: {
+              objectId: object.objectId,
+              type: object.type,
+              content: { dataType: 'moveObject', type: object.type },
+              display: object.display
+                ? { data: object.display.output }
+                : undefined,
+            },
+          })),
+          hasNextPage: page.hasNextPage,
+          nextCursor: page.cursor,
+        };
       } catch {
         return undefined;
       }
@@ -748,30 +763,31 @@ export function PtbProvider({
         return;
       }
 
-      const localClient = new SuiClient({
-        url: getFullnodeUrl(chain.split(':')[1] as any),
-      });
+      const localClient = createCoreClient(chain);
 
       try {
-        const res = await localClient.getTransactionBlock({
+        const res = await localClient.core.getTransaction({
           digest,
-          options: {
-            showInput: true,
-            showEffects: true,
-            showObjectChanges: false,
-            showEvents: false,
-          },
+          include: PTB_TRANSACTION_LOAD_INCLUDE,
         });
 
-        const txData: any = res?.transaction?.data;
-        const programmable = txData?.transaction;
-        const status: ExecutionStatus | undefined = res.effects?.status;
+        const txResult = selectCoreTransactionResult(res);
+        const programmable =
+          coreTransactionResultToRawProgrammableTransactionInput(res);
+        const status = txResult.status;
 
         if (status) {
-          setLoadTxStatus({ status: status.status, error: status.error });
+          setLoadTxStatus({
+            status: status.success ? 'success' : 'failure',
+            error: status.error?.message || status.error?.$kind,
+          });
         }
 
-        if (!programmable || programmable.kind !== 'ProgrammableTransaction') {
+        if (
+          !programmable ||
+          !Array.isArray(programmable.inputs) ||
+          !Array.isArray(programmable.commands)
+        ) {
           toastImpl({
             message: 'Only ProgrammableTransaction is supported.',
             variant: 'warning',
@@ -779,42 +795,20 @@ export function PtbProvider({
           return;
         }
 
-        // 1) Preload modules referenced by MoveCalls (best effort)
-        const pkgIds: string[] = Array.isArray(programmable?.transactions)
-          ? programmable.transactions
-              .filter((t: any) => t?.MoveCall?.package)
-              .map((t: any) => t.MoveCall.package)
-          : [];
-        const uniquePkgs = Array.from(new Set(pkgIds));
-
-        const modsEmbed: PTBModulesEmbed = {};
-        for (const pkg of uniquePkgs) {
-          try {
-            const m = await localClient.getNormalizedMoveModulesByPackage({
-              package: pkg,
-            });
-            modsEmbed[pkg] = toPTBModuleData(m);
-          } catch {
-            // ignore per-package failures
-          }
-        }
-
-        // 2) Collect candidate object ids (from inputs)
+        // 1) Collect candidate object ids (from inputs).
         const candidateIds = new Set<string>();
         const inputs = Array.isArray(programmable?.inputs)
           ? programmable.inputs
           : [];
         for (const inp of inputs) {
-          if (
-            inp?.type === 'object' &&
-            typeof inp.objectId === 'string' &&
-            inp.objectId.startsWith('0x')
-          ) {
-            candidateIds.add(inp.objectId);
+          const object = (inp as any)?.object ?? (inp as any)?.Object;
+          const objectId = object?.objectId;
+          if (typeof objectId === 'string' && objectId.startsWith('0x')) {
+            candidateIds.add(objectId);
           }
         }
 
-        // 3) Fetch object metadata (best effort)
+        // 2) Fetch object metadata (best effort).
         const fetched = await Promise.all(
           [...candidateIds].map((oid) =>
             getObjectData(oid, { clientOverride: localClient }),
@@ -825,22 +819,19 @@ export function PtbProvider({
           if (o) objectsEmbed[o.objectId] = o;
         }
 
-        // 4) Decode once with embed = { modules, objects }
-        const { graph: decoded, diags } = decodeTx(programmable, {
-          modules: modsEmbed,
-          objects: objectsEmbed,
+        // 3) Convert through the model boundary.
+        const ir = rawTransactionToIR(programmable);
+        ir.diagnostics.forEach(({ message }) => {
+          toastImpl({ message, variant: 'warning' });
         });
+        const decoded = transactionIRToGraph(ir) as unknown as PTBGraph;
 
-        diags.forEach(({ variant, message }) => {
-          toastImpl({ message, variant });
-        });
-
-        // 5) Fix chain and prime caches (overwrite → no carry-over)
+        // 4) Fix chain and prime caches (overwrite, no carry-over).
         setActiveChain(chain);
-        setModules(modsEmbed);
+        setModules({});
         setObjects(objectsEmbed);
 
-        // 6) Replace snapshot (viewer mode) and bump epoch
+        // 5) Replace snapshot (viewer mode) and bump epoch.
         replaceGraphImmediate(decoded);
         setReadOnly(true);
 
@@ -859,7 +850,7 @@ export function PtbProvider({
         });
       }
     },
-    [toastImpl, replaceGraphImmediate, getObjectData],
+    [toastImpl, replaceGraphImmediate, getObjectData, createCoreClient],
   );
 
   // ---- document loader (editor) ---------------------------------------------
@@ -868,15 +859,32 @@ export function PtbProvider({
     (value) => {
       resetBeforeLoad();
       if (typeof value !== 'string') {
-        const doc: any = value as any;
+        let doc;
+        try {
+          doc = parsePTBDocV4(value);
+        } catch (e: any) {
+          toastImpl({
+            message: modelErrorMessage(e, 'Invalid PTB document.'),
+            variant: 'error',
+          });
+          return;
+        }
 
         const normalizeChain = (c: unknown): Chain | undefined => {
           if (typeof c !== 'string') return undefined;
           const s = c.trim();
           if (/^sui:(mainnet|testnet|devnet)$/.test(s)) return s as Chain;
-          if (/^(mainnet|testnet|devnet)$/.test(s)) return `sui:${s}` as Chain;
           return undefined;
         };
+
+        const nextChain = normalizeChain(doc?.chain);
+        if (!nextChain) {
+          toastImpl({
+            message: 'Invalid or missing chain in PTB document.',
+            variant: 'error',
+          });
+          return;
+        }
 
         const nextView =
           doc?.view &&
@@ -886,33 +894,11 @@ export function PtbProvider({
             ? doc.view
             : { x: 0, y: 0, zoom: 1 };
 
-        const nextChain =
-          normalizeChain(doc?.chain) ??
-          normalizeChain(doc?.network) ??
-          normalizeChain(doc?.activeChain);
-
-        if (!nextChain) {
-          toastImpl({
-            message:
-              'Invalid or missing chain in document; defaulting to sui:testnet.',
-            variant: 'warning',
-          });
-        }
-
-        const nextGraph =
-          doc?.graph &&
-          Array.isArray(doc.graph?.nodes) &&
-          Array.isArray(doc.graph?.edges)
-            ? doc.graph
-            : Array.isArray(doc?.nodes) && Array.isArray(doc?.edges)
-              ? { nodes: doc.nodes, edges: doc.edges }
-              : seedDefaultGraph();
-
         setView(nextView);
-        setActiveChain((nextChain ?? 'sui:testnet') as Chain);
+        setActiveChain(nextChain);
         setModules((doc?.modules ?? {}) as any);
         setObjects((doc?.objects ?? {}) as any);
-        replaceGraphImmediate(nextGraph);
+        replaceGraphImmediate(doc.graph as unknown as PTBGraph);
         setReadOnly(false);
         setCodePipOpenTick((t) => t + 1);
         requestAnimationFrame(() => {
@@ -1058,7 +1044,7 @@ export function PtbProvider({
       getObjectData,
 
       modules,
-      getPackageModules,
+      getMoveFunction,
 
       getOwnedObjects,
 
@@ -1096,7 +1082,7 @@ export function PtbProvider({
       objects,
       getObjectData,
       modules,
-      getPackageModules,
+      getMoveFunction,
       getOwnedObjects,
       loadTxStatus,
       loadFromOnChainTx,

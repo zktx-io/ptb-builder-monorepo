@@ -1,7 +1,7 @@
 import { PTBTemplateItem } from './type';
 
 const splitTemplateJson = {
-  version: 'ptb_3',
+  version: 'ptb_4',
   chain: 'sui:testnet',
   view: {
     x: 39.284210526315746,

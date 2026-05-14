@@ -642,14 +642,11 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
       case 'moveCall': {
         const uiAny = (c.params as any)?.ui ?? {};
         const rtAny = (c.params as any)?.runtime ?? {};
-        const mvAny = (c.params as any)?.moveCall ?? {};
         const target =
           rtAny.target ??
           (uiAny.pkgId && uiAny.module && uiAny.func
             ? `${uiAny.pkgId}::${uiAny.module}::${uiAny.func}`
-            : mvAny.package && mvAny.module && mvAny.function
-              ? `${mvAny.package}::${mvAny.module}::${mvAny.function}`
-              : (mvAny.target ?? '/* pkg::module::function */'));
+            : '/* pkg::module::function */');
 
         const inPorts = (c.ports || []).filter(
           (p) => p.role === 'io' && p.direction === 'in',
@@ -670,13 +667,6 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
           (p) => !String(p.id).startsWith('in_targ_'),
         );
 
-        // Legacy fallback: some older docs stored type args in params (not via ports/edges).
-        const legacyTypeArgs: string[] = Array.isArray(mvAny.typeArgs)
-          ? mvAny.typeArgs
-          : Array.isArray(mvAny.typeArguments)
-            ? mvAny.typeArguments
-            : [];
-
         // moveCall.arguments in port order; fill undef if missing
         const args: PValue[] = argPorts.map((p) => {
           const incoming = byPortVals.get(p.id) ?? [];
@@ -693,20 +683,10 @@ export function preprocess(graph: PTBGraph, chain: Chain): Program {
         });
 
         // moveCall.typeArguments from in_targ_* ports (aligned by index)
-        const typeArgs: PValue[] =
-          targPorts.length > 0
-            ? targPorts.map((p, i) => {
-                const incoming = byPortVals.get(p.id) ?? [];
-                const v = incoming[0] ?? ({ kind: 'undef' } as PValue);
-                if (v.kind !== 'undef') return v;
-                const legacy = legacyTypeArgs[i];
-                return typeof legacy === 'string' && legacy.trim()
-                  ? ({ kind: 'scalar', value: legacy } as PValue)
-                  : v;
-              })
-            : legacyTypeArgs
-                .filter((s) => typeof s === 'string' && s.trim().length > 0)
-                .map((s) => ({ kind: 'scalar', value: s }) as PValue);
+        const typeArgs: PValue[] = targPorts.map((p) => {
+          const incoming = byPortVals.get(p.id) ?? [];
+          return incoming[0] ?? ({ kind: 'undef' } as PValue);
+        });
 
         // Return binding policy from OUT ports
         const outs = (c.ports || []).filter(

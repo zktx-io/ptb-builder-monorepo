@@ -19,7 +19,6 @@
 //   Function ins/outs come from normalized ABI when present; otherwise inferred.
 // -----------------------------------------------------------------------------
 
-import type { SuiCallArg, SuiTransactionBlockKind } from '@mysten/sui/client';
 import { fromHex } from '@mysten/sui/utils';
 
 import {
@@ -60,6 +59,9 @@ import { FLOW_NEXT, FLOW_PREV, PORTS, VAR_OUT } from '../portTemplates';
 import { PTBModulesEmbed, PTBObjectsEmbed } from '../ptbDoc';
 import { buildCommandPorts } from '../registry';
 import { KNOWN_IDS } from '../seedGraph';
+
+type SuiCallArg = any;
+type SuiTransactionBlockKind = any;
 
 // ---- tiny value table -------------------------------------------------------
 
@@ -387,7 +389,7 @@ export function decodeTx(
   vt.set('gas', { nodeId: gasVar.id, portId: VAR_OUT, t: O() });
 
   // Inputs → Variable nodes
-  (prog.inputs ?? []).forEach((arg, i) => {
+  (prog.inputs ?? []).forEach((arg: SuiCallArg, i: number) => {
     let t: PTBType;
     let init: unknown;
 

@@ -6,18 +6,23 @@
 // - The document captures only what PTB needs to reconstruct/preview a graph.
 // -----------------------------------------------------------------------------
 
-import type { Chain } from '../types';
+import {
+  parsePTBDocV4,
+  PTB_DOC_VERSION_V4,
+  validatePTBDocV4,
+} from '@zktx.io/ptb-model';
 import type {
-  CommandNode,
-  PTBEdge,
-  PTBGraph,
-  PTBNode,
-  PTBType,
-} from './graph/types';
+  CommandNode as ModelCommandNode,
+  PTBGraph as ModelPTBGraph,
+  PTBDocV4,
+} from '@zktx.io/ptb-model';
+
+import type { Chain } from '../types';
+import type { CommandNode, PTBGraph, PTBType } from './graph/types';
 
 // ----- version ---------------------------------------------------------------
 
-export const PTB_VERSION = 'ptb_3' as const;
+export const PTB_VERSION = PTB_DOC_VERSION_V4;
 
 // ----- normalized ABI --------------------------------------------------------
 
@@ -67,26 +72,7 @@ export interface PTBObjectData {
 
 // ----- document --------------------------------------------------------------
 
-export interface PTBDoc {
-  /** File identifier + version */
-  version: typeof PTB_VERSION;
-
-  /** Required active chain for this document */
-  chain: Chain;
-
-  /** Transaction sender (wallet address or extracted from tx) */
-  sender?: string;
-
-  /** PTB graph (required) */
-  graph: PTBGraph;
-
-  /** Required normalized embeds */
-  modules: PTBModulesEmbed;
-  objects: PTBObjectsEmbed;
-
-  /** Optional editor viewport state */
-  view: { x: number; y: number; zoom: number };
-}
+export type PTBDoc = PTBDocV4;
 
 // ----- validation (strict: new format only) ----------------------------------
 
@@ -142,50 +128,84 @@ export function isPTBObjectsEmbed(x: unknown): x is PTBObjectsEmbed {
 
 /** Narrow check for PTBDoc (new-only). */
 export function isPTBDoc(x: unknown): x is PTBDoc {
-  if (!x || typeof x !== 'object') return false;
-  const v = (x as any).version;
-  const c = (x as any).chain;
-  const g = (x as any).graph;
-  const me = (x as any).modules;
-  const oe = (x as any).objects;
-
-  return (
-    v === PTB_VERSION &&
-    !!c &&
-    !!g &&
-    Array.isArray(g.nodes) &&
-    Array.isArray(g.edges) &&
-    isPTBModulesEmbed(me) &&
-    isPTBObjectsEmbed(oe)
-  );
+  return validatePTBDocV4(x).length === 0;
 }
 
 // ----- save helpers ----------------------------------------------------------
 
 /** Strip runtime-only bits from graph before saving. */
-export function sanitizeGraphForSave(src: PTBGraph): PTBGraph {
-  const nodes: PTBNode[] = src.nodes.map((n) => {
-    const nn: PTBNode = {
-      ...n,
-      // Shallow-copy ports to avoid retaining ephemeral references
-      ports: Array.isArray(n.ports) ? [...n.ports] : [],
-    } as PTBNode;
+export function sanitizeGraphForSave(src: PTBGraph): ModelPTBGraph {
+  const nodes = src.nodes.map((n) => {
+    const base = {
+      id: n.id,
+      kind: n.kind,
+      ...(n.label !== undefined ? { label: n.label } : {}),
+      ports: Array.isArray(n.ports) ? n.ports.map((port) => ({ ...port })) : [],
+      ...(n.position ? { position: { ...n.position } } : {}),
+    };
 
-    // Remove command runtime params
-    if (nn.kind === 'Command') {
-      const c = nn as CommandNode;
-      const prevParams = c.params ?? {};
-      const { runtime, ...rest } = prevParams as Record<string, unknown>;
-      c.params = Object.keys(rest).length ? (rest as any) : undefined;
+    if (n.kind === 'Command') {
+      const params = sanitizeCommandParams(n);
+      return {
+        ...base,
+        command: n.command,
+        ...(params ? { params } : {}),
+      };
     }
 
-    // NOTE: If PTBNode contains additional UI-only flags later (e.g., hovered),
-    // strip here in the same manner to keep the on-disk shape stable.
-    return nn;
+    if (n.kind === 'Variable') {
+      const anyNode = n as unknown as Record<string, unknown>;
+      return {
+        ...base,
+        name: n.name,
+        varType: n.varType,
+        ...('value' in anyNode ? { value: anyNode.value } : {}),
+        ...('rawInput' in anyNode ? { rawInput: anyNode.rawInput } : {}),
+        ...('semantic' in anyNode ? { semantic: anyNode.semantic } : {}),
+      };
+    }
+
+    return base;
   });
 
-  const edges: PTBEdge[] = src.edges.map((e) => ({ ...e }));
-  return { nodes, edges };
+  const edges = src.edges.map((e) => ({ ...e }));
+  return { nodes, edges } as ModelPTBGraph;
+}
+
+function sanitizeCommandParams(
+  command: CommandNode,
+): ModelCommandNode['params'] {
+  const runtime = sanitizeCommandRuntime(command);
+  return runtime ? { runtime } : undefined;
+}
+
+function sanitizeCommandRuntime(
+  command: CommandNode,
+): Record<string, unknown> | undefined {
+  const runtime =
+    command.params?.runtime && typeof command.params.runtime === 'object'
+      ? { ...(command.params.runtime as Record<string, unknown>) }
+      : {};
+  const ui =
+    command.params?.ui && typeof command.params.ui === 'object'
+      ? (command.params.ui as Record<string, unknown>)
+      : {};
+
+  if (command.command === 'moveCall') {
+    if (typeof runtime.target !== 'string') {
+      const pkgId = typeof ui.pkgId === 'string' ? ui.pkgId : undefined;
+      const moduleName = typeof ui.module === 'string' ? ui.module : undefined;
+      const functionName = typeof ui.func === 'string' ? ui.func : undefined;
+      if (pkgId && moduleName && functionName) {
+        runtime.target = `${pkgId}::${moduleName}::${functionName}`;
+      }
+    }
+    if (!Array.isArray(runtime.typeArguments)) {
+      delete runtime.typeArguments;
+    }
+  }
+
+  return Object.keys(runtime).length > 0 ? runtime : undefined;
 }
 
 /** Build a PTB document (accepts only normalized embed shapes). */
@@ -206,7 +226,7 @@ export function buildDoc(opts: {
     ? (opts.objects as PTBObjectsEmbed)
     : {};
 
-  const doc: PTBDoc = {
+  const doc = {
     version: PTB_VERSION,
     chain,
     sender,
@@ -216,11 +236,10 @@ export function buildDoc(opts: {
     objects,
   };
 
-  return doc;
+  return parsePTBDocV4(doc);
 }
 
 /** Parse and validate a JSON object into PTBDoc (new-only). */
 export function parseDoc(json: unknown): PTBDoc {
-  if (!isPTBDoc(json)) throw new Error('Invalid PTB document');
-  return json as PTBDoc;
+  return parsePTBDocV4(json);
 }

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { useSuiClientContext } from '@mysten/dapp-kit';
+import { useCurrentNetwork, useDAppKit } from '@mysten/dapp-kit-react';
 import { usePTB } from '@zktx.io/ptb-builder';
 import queryString from 'query-string';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocation } from 'react-router-dom';
 
-import { usePtbUndo } from '../components/usePtbUndo';
 import { TransactionPrompt } from '../components/TransactionPrompt';
+import { usePtbUndo } from '../components/usePtbUndo';
 import { saveNetwork, SuiChain, SuiNetwork } from '../network';
 
 const TX_QUERY_REGEX = /^(?:sui:)?(mainnet|testnet|devnet):(.*)$/;
@@ -46,8 +46,8 @@ export const Viewer = () => {
   const { loadFromOnChainTx, loadFromDoc } = usePTB();
 
   const location = useLocation();
-  const { network: clientNetwork, selectNetwork } = useSuiClientContext();
-  const network = clientNetwork as SuiNetwork;
+  const dAppKit = useDAppKit();
+  const network = useCurrentNetwork() as SuiNetwork;
   const { reset, undo, redo } = usePtbUndo();
 
   const parsedQuery = useMemo(() => {
@@ -75,13 +75,13 @@ export const Viewer = () => {
     }
 
     if (targetNetwork && targetNetwork !== network) {
-      selectNetwork(targetNetwork);
+      dAppKit.switchNetwork(targetNetwork);
     }
 
     loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
     reset();
     lastLoaded.current = loadKey;
-  }, [loadFromOnChainTx, parsedQuery, network, reset, selectNetwork]);
+  }, [dAppKit, loadFromOnChainTx, parsedQuery, network, reset]);
 
   const lastSearch = useRef(location.search);
   useEffect(() => {
@@ -141,7 +141,7 @@ export const Viewer = () => {
       network={network}
       txValue={manualTx}
       onNetworkChange={(value) => {
-        selectNetwork(value);
+        dAppKit.switchNetwork(value);
         saveNetwork(value);
       }}
       onTxChange={setManualTx}

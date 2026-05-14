@@ -16,9 +16,14 @@
 //   The model keeps it for decode/forward-compat.
 // -----------------------------------------------------------------------------
 
-import type { SuiMoveNormalizedType } from '@mysten/sui/client';
+import type {
+  RawOpenSignature,
+  RawOpenSignatureBody,
+} from '@zktx.io/ptb-model';
 
 import type { PTBType } from '../graph/types';
+
+type SuiMoveNormalizedType = any;
 
 /** Narrow helper */
 function has<K extends string>(x: any, k: K): x is Record<K, unknown> {
@@ -123,4 +128,100 @@ export function toPTBTypeFromMove(t: SuiMoveNormalizedType): PTBType {
 
   // Fallback
   return { kind: 'unknown', debugInfo: `unrecognized Move type: ${String(t)}` };
+}
+
+function parseDatatypeName(typeName: string):
+  | {
+      address: string;
+      module: string;
+      name: string;
+    }
+  | undefined {
+  const parts = typeName.split('::');
+  if (parts.length !== 3) return undefined;
+  return { address: parts[0]!, module: parts[1]!, name: parts[2]! };
+}
+
+function isOpenSignatureBodyStruct(
+  body: RawOpenSignatureBody,
+  addr: string,
+  module: string,
+  name: string,
+): boolean {
+  if (body.$kind !== 'datatype') return false;
+  const parsed = parseDatatypeName(body.datatype.typeName);
+  return (
+    !!parsed &&
+    isStructTag(parsed, addr, module, name) &&
+    body.datatype.typeParameters.length === 0
+  );
+}
+
+export function isTxContextOpenSignature(sig: RawOpenSignature): boolean {
+  return isOpenSignatureBodyStruct(sig.body, '0x2', 'tx_context', 'TxContext');
+}
+
+function toPTBTypeFromOpenSignatureBody(body: RawOpenSignatureBody): PTBType {
+  switch (body.$kind) {
+    case 'bool':
+      return { kind: 'scalar', name: 'bool' };
+    case 'address':
+      return { kind: 'scalar', name: 'address' };
+    case 'u8':
+    case 'u16':
+    case 'u32':
+    case 'u64':
+    case 'u128':
+    case 'u256':
+      return { kind: 'move_numeric', width: body.$kind };
+    case 'unknown':
+      return { kind: 'unknown' };
+    case 'vector':
+      return {
+        kind: 'vector',
+        elem: toPTBTypeFromOpenSignatureBody(body.vector),
+      };
+    case 'typeParameter':
+      return {
+        kind: 'unknown',
+        debugInfo: `generic TypeParameter ${body.index}`,
+      };
+    case 'datatype': {
+      const parsed = parseDatatypeName(body.datatype.typeName);
+      const args = body.datatype.typeParameters ?? [];
+      if (!parsed) {
+        return {
+          kind: 'unknown',
+          debugInfo: `unrecognized datatype: ${body.datatype.typeName}`,
+        };
+      }
+
+      if (isStructTag(parsed, '0x1', 'string', 'String') && args.length === 0) {
+        return { kind: 'scalar', name: 'string' };
+      }
+
+      if (isStructTag(parsed, '0x2', 'object', 'ID') && args.length === 0) {
+        return { kind: 'scalar', name: 'id' };
+      }
+
+      if (isStructTag(parsed, '0x1', 'option', 'Option') && args.length === 1) {
+        return {
+          kind: 'option',
+          elem: toPTBTypeFromOpenSignatureBody(args[0]!),
+        };
+      }
+
+      if (args.length > 0) return { kind: 'object' };
+
+      return { kind: 'object', typeTag: body.datatype.typeName };
+    }
+    default: {
+      const _exhaustive: never = body;
+      return { kind: 'unknown', debugInfo: String(_exhaustive) };
+    }
+  }
+}
+
+export function toPTBTypeFromOpenSignature(sig: RawOpenSignature): PTBType {
+  return toPTBTypeFromOpenSignatureBody(sig.body);
 }

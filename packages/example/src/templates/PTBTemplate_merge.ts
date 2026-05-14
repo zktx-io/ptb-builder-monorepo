@@ -1,7 +1,7 @@
 import { PTBTemplateItem } from './type';
 
 const mergeTemplateJson = {
-  version: 'ptb_3',
+  version: 'ptb_4',
   chain: 'sui:testnet',
   view: {
     x: -334.71578947368425,

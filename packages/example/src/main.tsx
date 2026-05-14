@@ -1,16 +1,12 @@
 import { StrictMode } from 'react';
 
-import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit';
-import { getFullnodeUrl } from '@mysten/sui/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { DAppKitProvider } from '@mysten/dapp-kit-react';
 import { SnackbarProvider } from 'notistack';
 import { createRoot } from 'react-dom/client';
 
 import './index.css';
 import App from './App.tsx';
-import { loadNetwork } from './network.ts';
-
-const queryClient = new QueryClient();
+import { dAppKit } from './dapp-kit.ts';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -18,20 +14,9 @@ createRoot(document.getElementById('root')!).render(
       anchorOrigin={{ horizontal: 'right', vertical: 'top' }}
       hideIconVariant
     >
-      <QueryClientProvider client={queryClient}>
-        <SuiClientProvider
-          networks={{
-            mainnet: { url: getFullnodeUrl('mainnet') },
-            testnet: { url: getFullnodeUrl('testnet') },
-            devnet: { url: getFullnodeUrl('devnet') },
-          }}
-          defaultNetwork={loadNetwork()}
-        >
-          <WalletProvider autoConnect>
-            <App />
-          </WalletProvider>
-        </SuiClientProvider>
-      </QueryClientProvider>
+      <DAppKitProvider dAppKit={dAppKit}>
+        <App />
+      </DAppKitProvider>
     </SnackbarProvider>
   </StrictMode>,
 );
