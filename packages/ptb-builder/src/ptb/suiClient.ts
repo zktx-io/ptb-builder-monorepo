@@ -27,8 +27,22 @@ export const PTB_TRANSACTION_LOAD_INCLUDE: PtbTransactionLoadInclude = {
   effects: true,
 };
 
+export type PtbLoadedTransaction = Pick<
+  SuiClientTypes.Transaction<PtbTransactionLoadInclude>,
+  'digest' | 'status' | 'transaction'
+>;
+
 export type PtbLoadedTransactionResult =
-  SuiClientTypes.TransactionResult<PtbTransactionLoadInclude>;
+  | {
+      $kind: 'Transaction';
+      Transaction: PtbLoadedTransaction;
+      FailedTransaction?: never;
+    }
+  | {
+      $kind: 'FailedTransaction';
+      Transaction?: never;
+      FailedTransaction: PtbLoadedTransaction;
+    };
 
 export type PtbRawProgrammableTransactionInput = {
   inputs: unknown[];
@@ -74,7 +88,7 @@ export function createPtbCoreClientForNetwork(
 
 export function selectCoreTransactionResult(
   result: PtbLoadedTransactionResult,
-): SuiClientTypes.Transaction<PtbTransactionLoadInclude> {
+): PtbLoadedTransaction {
   return result.$kind === 'Transaction'
     ? result.Transaction
     : result.FailedTransaction;

@@ -7,6 +7,7 @@
 // -----------------------------------------------------------------------------
 
 import {
+  isPTBType,
   parsePTBDocV4,
   PTB_DOC_VERSION_V4,
   validatePTBDocV4,
@@ -14,11 +15,15 @@ import {
 import type {
   CommandNode as ModelCommandNode,
   PTBGraph as ModelPTBGraph,
+  PTBNode as ModelPTBNode,
   PTBDocV4,
 } from '@zktx.io/ptb-model';
 
+import { isSuiChain } from '../types';
 import type { Chain } from '../types';
 import type { CommandNode, PTBGraph, PTBType } from './graph/types';
+
+type PTBView = { x: number; y: number; zoom: number };
 
 // ----- version ---------------------------------------------------------------
 
@@ -72,9 +77,25 @@ export interface PTBObjectData {
 
 // ----- document --------------------------------------------------------------
 
-export type PTBDoc = PTBDocV4;
+export type PTBDoc = PTBDocV4 & {
+  chain: Chain;
+  view: PTBView;
+  modules?: PTBModulesEmbed;
+  objects?: PTBObjectsEmbed;
+};
+export type LoadedPTBDocState = {
+  doc: PTBDoc;
+  chain: Chain;
+  view: PTBView;
+  modules: PTBModulesEmbed;
+  objects: PTBObjectsEmbed;
+  graph: PTBGraph;
+};
 
 // ----- validation (strict: new format only) ----------------------------------
+
+const PTB_FUNCTION_ENTRY_KEYS = ['tparamCount', 'ins', 'outs'] as const;
+const PTB_OBJECT_DATA_KEYS = ['objectId', 'typeTag'] as const;
 
 /** Narrow check for PTBFunctionData entry. */
 function isPTBFunctionEntry(x: unknown): x is {
@@ -82,12 +103,14 @@ function isPTBFunctionEntry(x: unknown): x is {
   ins: PTBType[];
   outs: PTBType[];
 } {
-  if (!x || typeof x !== 'object') return false;
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return false;
   const e = x as any;
   return (
-    typeof e.tparamCount === 'number' &&
-    Array.isArray(e.ins) &&
-    Array.isArray(e.outs)
+    hasOnlyKeys(e, PTB_FUNCTION_ENTRY_KEYS) &&
+    Number.isInteger(e.tparamCount) &&
+    e.tparamCount >= 0 &&
+    isPTBTypeArray(e.ins) &&
+    isPTBTypeArray(e.outs)
   );
 }
 
@@ -119,7 +142,11 @@ export function isPTBObjectsEmbed(x: unknown): x is PTBObjectsEmbed {
   for (const v of Object.values(x as Record<string, unknown>)) {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
     const o = v as any;
-    if (typeof o.objectId !== 'string' || typeof o.typeTag !== 'string') {
+    if (
+      !hasOnlyKeys(o, PTB_OBJECT_DATA_KEYS) ||
+      typeof o.objectId !== 'string' ||
+      typeof o.typeTag !== 'string'
+    ) {
       return false;
     }
   }
@@ -128,17 +155,21 @@ export function isPTBObjectsEmbed(x: unknown): x is PTBObjectsEmbed {
 
 /** Narrow check for PTBDoc (new-only). */
 export function isPTBDoc(x: unknown): x is PTBDoc {
-  return validatePTBDocV4(x).length === 0;
+  try {
+    parseDoc(x);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ----- save helpers ----------------------------------------------------------
 
 /** Strip runtime-only bits from graph before saving. */
 export function sanitizeGraphForSave(src: PTBGraph): ModelPTBGraph {
-  const nodes = src.nodes.map((n) => {
+  const nodes: ModelPTBGraph['nodes'] = src.nodes.map((n): ModelPTBNode => {
     const base = {
       id: n.id,
-      kind: n.kind,
       ...(n.label !== undefined ? { label: n.label } : {}),
       ports: Array.isArray(n.ports) ? n.ports.map((port) => ({ ...port })) : [],
       ...(n.position ? { position: { ...n.position } } : {}),
@@ -148,28 +179,37 @@ export function sanitizeGraphForSave(src: PTBGraph): ModelPTBGraph {
       const params = sanitizeCommandParams(n);
       return {
         ...base,
+        kind: 'Command',
         command: n.command,
         ...(params ? { params } : {}),
       };
     }
 
     if (n.kind === 'Variable') {
-      const anyNode = n as unknown as Record<string, unknown>;
       return {
         ...base,
+        kind: 'Variable',
         name: n.name,
         varType: n.varType,
-        ...('value' in anyNode ? { value: anyNode.value } : {}),
-        ...('rawInput' in anyNode ? { rawInput: anyNode.rawInput } : {}),
-        ...('semantic' in anyNode ? { semantic: anyNode.semantic } : {}),
+        ...('value' in n ? { value: n.value } : {}),
+        ...(n.rawInput !== undefined ? { rawInput: n.rawInput } : {}),
+        ...(n.semantic !== undefined ? { semantic: n.semantic } : {}),
       };
     }
 
-    return base;
+    if (n.kind === 'Start') {
+      return { ...base, kind: 'Start' };
+    }
+
+    if (n.kind === 'End') {
+      return { ...base, kind: 'End' };
+    }
+
+    return unsupportedPTBNodeKind(n);
   });
 
-  const edges = src.edges.map((e) => ({ ...e }));
-  return { nodes, edges } as ModelPTBGraph;
+  const edges: ModelPTBGraph['edges'] = src.edges.map((e) => ({ ...e }));
+  return { nodes, edges };
 }
 
 function sanitizeCommandParams(
@@ -219,12 +259,8 @@ export function buildDoc(opts: {
 }): PTBDoc {
   const { chain, graph, sender, view } = opts;
 
-  const modules: PTBModulesEmbed = isPTBModulesEmbed(opts.modules)
-    ? (opts.modules as PTBModulesEmbed)
-    : {};
-  const objects: PTBObjectsEmbed = isPTBObjectsEmbed(opts.objects)
-    ? (opts.objects as PTBObjectsEmbed)
-    : {};
+  const modules = requirePTBModulesEmbed(opts.modules);
+  const objects = requirePTBObjectsEmbed(opts.objects);
 
   const doc = {
     version: PTB_VERSION,
@@ -236,10 +272,136 @@ export function buildDoc(opts: {
     objects,
   };
 
-  return parsePTBDocV4(doc);
+  return parseDoc(doc);
 }
 
 /** Parse and validate a JSON object into PTBDoc (new-only). */
 export function parseDoc(json: unknown): PTBDoc {
-  return parsePTBDocV4(json);
+  const doc = parsePTBDocV4(json);
+  const chain = parseDocChain(doc.chain);
+  if (!chain) {
+    throw new Error('Invalid or missing chain in PTB document.');
+  }
+  if (!doc.view) {
+    throw new Error('Invalid or missing view in PTB document.');
+  }
+  requirePTBModulesEmbed(doc.modules ?? {});
+  requirePTBObjectsEmbed(doc.objects ?? {});
+  return doc as PTBDoc;
+}
+
+export function prepareLoadedDoc(value: unknown): LoadedPTBDocState {
+  const doc = parseDoc(value);
+  const modules = requirePTBModulesEmbed(doc.modules ?? {});
+  const objects = requirePTBObjectsEmbed(doc.objects ?? {});
+
+  return {
+    doc,
+    chain: doc.chain,
+    view: doc.view,
+    modules,
+    objects,
+    graph: toBuilderGraph(doc.graph),
+  };
+}
+
+function requirePTBModulesEmbed(value: unknown): PTBModulesEmbed {
+  if (isPTBModulesEmbed(value)) return value;
+  throw new Error(
+    'PTB document modules must match the PTB modules embed shape.',
+  );
+}
+
+function requirePTBObjectsEmbed(value: unknown): PTBObjectsEmbed {
+  if (isPTBObjectsEmbed(value)) return value;
+  throw new Error(
+    'PTB document objects must match the PTB objects embed shape.',
+  );
+}
+
+function parseDocChain(value: unknown): Chain | undefined {
+  if (typeof value !== 'string') return undefined;
+  const chain = value.trim();
+  return isSuiChain(chain) ? chain : undefined;
+}
+
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+): boolean {
+  return Object.keys(value).every((key) => allowedKeys.includes(key));
+}
+
+function isDenseArray(value: unknown): value is unknown[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
+  }
+  return true;
+}
+
+function isPTBTypeArray(value: unknown): value is PTBType[] {
+  return isDenseArray(value) && value.every(isPTBType);
+}
+
+export function toBuilderGraph(graph: ModelPTBGraph): PTBGraph {
+  const nodes: PTBGraph['nodes'] = graph.nodes.map((node) => {
+    const base = {
+      id: node.id,
+      ...(node.label !== undefined ? { label: node.label } : {}),
+      ports: node.ports.map((port) => ({ ...port })),
+      ...(node.position ? { position: { ...node.position } } : {}),
+    };
+
+    if (node.kind === 'Command') {
+      const runtime: Record<string, unknown> | undefined = node.params?.runtime
+        ? { ...node.params.runtime }
+        : undefined;
+      const params =
+        runtime || node.params?.ui
+          ? {
+              ...(runtime ? { runtime } : {}),
+              ...(node.params?.ui ? { ui: { ...node.params.ui } } : {}),
+            }
+          : undefined;
+      return {
+        ...base,
+        kind: 'Command',
+        command: node.command,
+        ...(params ? { params } : {}),
+      };
+    }
+
+    if (node.kind === 'Variable') {
+      return {
+        ...base,
+        kind: 'Variable',
+        name: node.name,
+        varType: node.varType,
+        ...('value' in node ? { value: node.value } : {}),
+        ...(node.rawInput !== undefined ? { rawInput: node.rawInput } : {}),
+        ...(node.semantic !== undefined ? { semantic: node.semantic } : {}),
+      };
+    }
+
+    if (node.kind === 'Start') {
+      return { ...base, kind: 'Start' };
+    }
+
+    if (node.kind === 'End') {
+      return { ...base, kind: 'End' };
+    }
+
+    return unsupportedPTBNodeKind(node);
+  });
+
+  return {
+    nodes,
+    edges: graph.edges.map((edge) => ({ ...edge })),
+  };
+}
+
+function unsupportedPTBNodeKind(node: never): never {
+  const kind = (node as { kind?: unknown }).kind;
+  throw new Error(`Unsupported PTB node kind: ${String(kind)}`);
 }

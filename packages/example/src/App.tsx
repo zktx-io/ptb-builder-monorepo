@@ -77,11 +77,15 @@ function App() {
       const result = await dAppKit.signAndExecuteTransaction({
         transaction,
       });
-      const executed =
-        result.$kind === 'Transaction'
-          ? result.Transaction
-          : result.FailedTransaction;
-      return { digest: executed.digest };
+      if (result.$kind === 'FailedTransaction') {
+        const statusError = result.FailedTransaction.status.error;
+        const error =
+          statusError?.message ||
+          statusError?.$kind ||
+          'Transaction execution failed';
+        return { digest: result.FailedTransaction.digest, error };
+      }
+      return { digest: result.Transaction.digest };
     } catch (error: unknown) {
       return {
         error: (error as Error).message || 'Transaction execution failed',

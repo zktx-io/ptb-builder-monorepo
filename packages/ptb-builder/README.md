@@ -144,11 +144,18 @@ function BuilderApp() {
       return { error: `Switch to ${targetNetwork} before executing this PTB` };
     }
     const result = await dAppKit.signAndExecuteTransaction({ transaction });
-    const executed =
-      result.$kind === 'Transaction'
-        ? result.Transaction
-        : result.FailedTransaction;
-    return { digest: executed.digest };
+    if (result.$kind === 'FailedTransaction') {
+      const statusError = result.FailedTransaction.status.error;
+      const reason =
+        statusError?.message ||
+        statusError?.$kind ||
+        'Transaction execution failed';
+      return {
+        digest: result.FailedTransaction.digest,
+        error: reason,
+      };
+    }
+    return { digest: result.Transaction.digest };
   };
 
   const simulateTx = async (
@@ -199,8 +206,9 @@ export function App() {
 Use `useDAppKit().switchNetwork(network)` to switch networks in the host app.
 `createPtbCoreClientForNetwork(..., { transport: 'graphql' })` throws when the
 requested network has no verified GraphQL endpoint in the package client table.
-`loadFromDoc()` accepts current `ptb_4` documents only. Legacy document
-migration is intentionally outside this package.
+`loadFromDoc()` accepts current `ptb_4` documents with explicit `chain` and
+`view` fields only. Legacy document migration is intentionally outside this
+package.
 
 ### SDK Core client boundary
 
@@ -213,6 +221,12 @@ changes are part of the Sui SDK boundary and should be reviewed when upgrading
 `@mysten/sui`.
 
 ## Public API (Provider + Hook)
+
+Supported public imports are the package root (`@zktx.io/ptb-builder`) and the
+CSS subpaths declared in `package.json` `exports`. Files emitted under
+`dist/types/` are build artifacts for those exports, not separate compatibility
+entry points. Helpers that are not re-exported from the package root are internal
+implementation details.
 
 ### Provider (component)
 
@@ -259,8 +273,9 @@ setTheme('tokyo-night');
 ### Styling & Theme imports
 
 - `@zktx.io/ptb-builder/index.css` contains the structural styles for nodes, edges, and the builder chrome. It should be imported exactly once in your host app (or exposed by your bundler) regardless of the theme you choose.
-- `@zktx.io/ptb-builder/styles/themes-all.css` bundles every theme token file so you can switch themes at runtime with `setTheme`. Pulling in the whole pack adds roughly ~18 kB pre-gzip.
-- To minimize CSS for static deployments, import only the theme(s) you actually ship, e.g. `import '@zktx.io/ptb-builder/styles/theme-dark.css';`. Each theme file is ~3 kB pre-gzip, so picking a single one keeps the bundle lean while still allowing dynamic switching between the themes you explicitly include.
+- `@zktx.io/ptb-builder/styles/themes-all.css` is a self-contained bundle of every theme token file so you can switch themes at runtime with `setTheme`. Importing it includes all shipped themes; the current package build emits it at roughly 43 kB before gzip.
+- To minimize CSS for static deployments, import only the theme(s) you actually ship, e.g. `import '@zktx.io/ptb-builder/styles/theme-dark.css';`. Picking a single one keeps the bundle lean while still allowing dynamic switching between the themes you explicitly include.
+- Do not import `themes-all.css` together with individual `theme-*.css` files. Choose the aggregate file for runtime theme switching, or choose individual theme files for a smaller static bundle.
 - When you only ship a single theme file, pass the matching `theme` value (e.g., `theme="light"`) and set `showThemeSelector={false}` so the UI doesn’t expose choices that aren’t bundled.
 
 ### Autosave, undo/redo & `onDocChange`
@@ -281,7 +296,7 @@ setTheme('tokyo-night');
 | `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
 | `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
 | `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
-| `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Host-provided simulation adapter used by the Dry run action.  |
+| `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Optional host-provided simulation adapter; required only when the Dry run action is used. |
 | `createClient`      | `(chain: Chain) => ClientWithCoreApi`                                                 | gRPC     | Optional host-provided SDK Core client factory for read/load paths. |
 | `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
 | `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
@@ -300,6 +315,7 @@ PTB Builder persists graphs as `PTBDoc` objects containing:
   MoveCall targets
 - **objects** — embedded object metadata (for owned assets)
 - **chain** — target Sui network (e.g., `sui:testnet`)
+- **view** — saved editor viewport `{ x, y, zoom }`
 
 This enables saving, sharing, and reloading graphs consistently across environments.
 

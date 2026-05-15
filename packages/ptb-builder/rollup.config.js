@@ -19,18 +19,20 @@ function emitThemeAssets() {
   return {
     name: 'emit-theme-assets',
     generateBundle() {
-      const imports = [];
+      const allThemeSources = [];
       for (const [key, filename] of THEME_FILES) {
         const abs = path.resolve('src/ui/styles', filename);
         const source = fs.readFileSync(abs, 'utf8');
         const outName = `styles/theme-${key}.css`;
         this.emitFile({ type: 'asset', fileName: outName, source });
-        imports.push(`@import './theme-${key}.css';`);
+        // Keep the aggregate export self-contained. Some host bundlers resolve
+        // package CSS subpath imports without preserving nested relative @imports.
+        allThemeSources.push(`/* ${outName} */\n${source}`);
       }
       this.emitFile({
         type: 'asset',
         fileName: 'styles/themes-all.css',
-        source: `${imports.join('\n')}\n`,
+        source: `${allThemeSources.join('\n\n')}\n`,
       });
     },
   };

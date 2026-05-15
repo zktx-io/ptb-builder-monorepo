@@ -1,5 +1,7 @@
 // src/ptb/graph/types.ts
 
+import type { RawCallArg } from '@zktx.io/ptb-model';
+
 /** ------------------------------------------------------------------
  * Numeric widths (Move-precise)
  * ----------------------------------------------------------------- */
@@ -73,7 +75,8 @@ export type CommandKind =
   | 'moveCall'
   | 'makeMoveVec'
   | 'publish'
-  | 'upgrade';
+  | 'upgrade'
+  | 'unsupported';
 
 /** ------------------------------------------------------------------
  * Command UI params
@@ -118,6 +121,10 @@ export interface VariableNode extends NodeBase {
   varType: PTBType;
   name: string;
   value?: unknown;
+  rawInput?: RawCallArg;
+  semantic?:
+    | { kind: 'GasCoin' }
+    | { kind: 'UnsupportedInput'; sourceKind: string };
 }
 
 export type PTBNode = StartNode | EndNode | CommandNode | VariableNode;

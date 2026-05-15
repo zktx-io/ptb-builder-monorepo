@@ -27,11 +27,7 @@ import React, {
 } from 'react';
 
 import type { Transaction } from '@mysten/sui/transactions';
-import {
-  parsePTBDocV4,
-  rawTransactionToIR,
-  transactionIRToGraph,
-} from '@zktx.io/ptb-model';
+import { rawTransactionToIR, transactionIRToGraph } from '@zktx.io/ptb-model';
 import type { PTBModelError } from '@zktx.io/ptb-model';
 
 import type { ExecOptions } from '../codegen/types';
@@ -39,11 +35,13 @@ import type { PTBGraph } from '../ptb/graph/types';
 import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
 import {
   buildDoc,
+  prepareLoadedDoc,
   type PTBDoc,
   PTBFunctionData,
   PTBModulesEmbed,
   PTBObjectData,
   PTBObjectsEmbed,
+  toBuilderGraph,
 } from '../ptb/ptbDoc';
 import {
   KNOWN_IDS,
@@ -59,6 +57,11 @@ import {
 } from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 import { toColorMode } from '../types';
+import { executionResultToast } from './executionResult';
+import type {
+  HostExecutionResult,
+  HostSimulationResult,
+} from './executionResult';
 
 const VIEW_CHANGE_DEBOUNCE_MS = 250;
 
@@ -95,8 +98,7 @@ type OwnedObjectsResponse = {
   nextCursor?: string | null;
 };
 
-type HostTxResult = { digest?: string; error?: string };
-type HostSimulationResult = { success?: boolean; error?: string };
+type HostTxResult = HostExecutionResult;
 
 type MoveFunctionSignature = {
   packageId: string;
@@ -456,10 +458,9 @@ export function PtbProvider({
       if (!tx || !activeChain) return { error: 'No transaction to run' };
 
       const res = await executeTx(activeChain, tx);
-      if (res?.digest) {
-        toastImpl({ message: `Executed: ${res.digest}`, variant: 'success' });
-      } else if (res?.error) {
-        toastImpl({ message: res.error, variant: 'error' });
+      const toast = executionResultToast(res);
+      if (toast) {
+        toastImpl(toast);
       }
       return res ?? {};
     },
@@ -824,7 +825,7 @@ export function PtbProvider({
         ir.diagnostics.forEach(({ message }) => {
           toastImpl({ message, variant: 'warning' });
         });
-        const decoded = transactionIRToGraph(ir) as unknown as PTBGraph;
+        const decoded = toBuilderGraph(transactionIRToGraph(ir));
 
         // 4) Fix chain and prime caches (overwrite, no carry-over).
         setActiveChain(chain);
@@ -857,11 +858,10 @@ export function PtbProvider({
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (value) => {
-      resetBeforeLoad();
       if (typeof value !== 'string') {
         let doc;
         try {
-          doc = parsePTBDocV4(value);
+          doc = prepareLoadedDoc(value);
         } catch (e: any) {
           toastImpl({
             message: modelErrorMessage(e, 'Invalid PTB document.'),
@@ -870,35 +870,14 @@ export function PtbProvider({
           return;
         }
 
-        const normalizeChain = (c: unknown): Chain | undefined => {
-          if (typeof c !== 'string') return undefined;
-          const s = c.trim();
-          if (/^sui:(mainnet|testnet|devnet)$/.test(s)) return s as Chain;
-          return undefined;
-        };
-
-        const nextChain = normalizeChain(doc?.chain);
-        if (!nextChain) {
-          toastImpl({
-            message: 'Invalid or missing chain in PTB document.',
-            variant: 'error',
-          });
-          return;
-        }
-
-        const nextView =
-          doc?.view &&
-          typeof doc.view?.x === 'number' &&
-          typeof doc.view?.y === 'number' &&
-          typeof doc.view?.zoom === 'number'
-            ? doc.view
-            : { x: 0, y: 0, zoom: 1 };
+        resetBeforeLoad();
+        const nextView = doc.view;
 
         setView(nextView);
-        setActiveChain(nextChain);
-        setModules((doc?.modules ?? {}) as any);
-        setObjects((doc?.objects ?? {}) as any);
-        replaceGraphImmediate(doc.graph as unknown as PTBGraph);
+        setActiveChain(doc.chain);
+        setModules(doc.modules);
+        setObjects(doc.objects);
+        replaceGraphImmediate(doc.graph);
         setReadOnly(false);
         setCodePipOpenTick((t) => t + 1);
         requestAnimationFrame(() => {
@@ -908,6 +887,7 @@ export function PtbProvider({
           });
         });
       } else {
+        resetBeforeLoad();
         setActiveChain(value);
         replaceGraphImmediate(seedDefaultGraph());
         setReadOnly(false);

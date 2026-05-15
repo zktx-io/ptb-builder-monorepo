@@ -258,6 +258,14 @@ const upgradeSpec: CommandSpec = {
   },
 };
 
+const unsupportedSpec: CommandSpec = {
+  label: 'Unsupported',
+  graphOnly: true,
+  buildIO() {
+    return [];
+  },
+};
+
 // -----------------------------------------------------------------------------
 // Registry
 // -----------------------------------------------------------------------------
@@ -270,6 +278,7 @@ const REGISTRY: Record<CommandKind, CommandSpec> = {
   makeMoveVec: makeMoveVecSpec,
   publish: publishSpec,
   upgrade: upgradeSpec,
+  unsupported: unsupportedSpec,
 };
 
 /** Returns the default label for a command. */

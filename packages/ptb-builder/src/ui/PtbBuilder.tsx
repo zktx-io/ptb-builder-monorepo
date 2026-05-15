@@ -34,6 +34,10 @@ import React, { createContext, useContext, useMemo } from 'react';
 import type { Transaction } from '@mysten/sui/transactions';
 import { ReactFlowProvider } from '@xyflow/react';
 
+import type {
+  HostExecutionResult,
+  HostSimulationResult,
+} from './executionResult';
 import { PTBFlow } from './PtbFlow';
 import { PtbProvider, usePtb } from './PtbProvider';
 import type { PTBDoc } from '../ptb/ptbDoc';
@@ -49,11 +53,11 @@ export type PTBBuilderProps = {
   executeTx?: (
     chain: Chain,
     tx: Transaction | undefined,
-  ) => Promise<{ digest?: string; error?: string }>;
+  ) => Promise<HostExecutionResult>;
   simulateTx?: (
     chain: Chain,
     tx: Transaction | undefined,
-  ) => Promise<{ success?: boolean; error?: string }>;
+  ) => Promise<HostSimulationResult>;
   createClient?: (chain: Chain) => PtbCoreClient;
   address?: string;
   gasBudget?: number;

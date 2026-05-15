@@ -51,6 +51,7 @@ Current package commands:
 - Model type check: `npm run typecheck --workspace @zktx.io/ptb-model`
 - Model test: `npm run test --workspace @zktx.io/ptb-model`
 - Builder build: `cd packages/ptb-builder && npm run build`
+- Builder test: `cd packages/ptb-builder && npm run test`
 - Builder lint: `cd packages/ptb-builder && npm run lint`
 - Example dev: `cd packages/example && npm run dev`
 - Example build: `cd packages/example && npm run build`

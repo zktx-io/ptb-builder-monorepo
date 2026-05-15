@@ -1,6 +1,15 @@
 // src/types.ts
 
-export type Chain = 'sui:devnet' | 'sui:testnet' | 'sui:mainnet';
+export const SUI_CHAINS = ['sui:devnet', 'sui:testnet', 'sui:mainnet'] as const;
+export type Chain = (typeof SUI_CHAINS)[number];
+
+export function isSuiChain(value: unknown): value is Chain {
+  return (
+    typeof value === 'string' &&
+    (SUI_CHAINS as readonly string[]).includes(value)
+  );
+}
+
 export type ToastVariant = 'info' | 'success' | 'error' | 'warning';
 export type ToastMessage = {
   message: string;
