@@ -27,10 +27,10 @@ Current structure:
 
 Current source areas inside `packages/ptb-builder/src/`:
 
-- `ptb/`: PTB document, graph, decode, registry, and adapter logic.
-- `codegen/`: transaction preprocessing and TypeScript SDK code generation.
+- `ptb/`: PTB document, graph/model adapters, registry, Core client bridge, and runtime `Transaction` adapter logic for host-owned simulation/execution paths. It must not sign, execute, or take custody.
 - `ui/`: React builder UI and React Flow integration.
 - `styles/`: package styles and theme exports.
+- `types/`: local ambient type declarations for builder UI dependencies.
 
 ## Commands
 
@@ -41,6 +41,7 @@ Current root commands, as of the current `package.json`:
 - Install: `npm install`
 - Build model package then builder package: `npm run build`
 - Run example after build: `npm run dev`
+- Run builder-flow tests sequentially: `npm run test:builder-flow`
 - Test model package: `npm run test:model`
 - Lint: `npm run lint`
 - Format: `npm run format`
@@ -54,10 +55,16 @@ Current package commands:
 - Builder test: `cd packages/ptb-builder && npm run test`
 - Builder lint: `cd packages/ptb-builder && npm run lint`
 - Example dev: `cd packages/example && npm run dev`
+- Example test: `cd packages/example && npm run test`
 - Example build: `cd packages/example && npm run build`
 - Example lint: `cd packages/example && npm run lint`
 
 Never claim a test, build, lint, pack, or verification step passed unless it was actually run and observed successfully. If `package.json` differs from this section, `package.json` wins; say so and update this section when the difference is intentional. If a command does not exist, say so and use the closest available verification.
+
+Do not run builder and example tests in parallel. Both flows consume package
+build artifacts, and concurrent clean/build steps can remove `dist/` while the
+other test runner is resolving workspace package exports. Use
+`npm run test:builder-flow` for the sequential builder/example test gate.
 
 ## Communication Rules
 
@@ -127,6 +134,18 @@ Do not introduce generalized abstractions for aesthetics, symmetry, or future po
 
 Do not create planning notes, reports, or evidence summaries as a substitute for implementation when the user requested a fix or change. Use investigation to guide the edit, then implement, verify, and report the outcome concisely.
 
+## Work Quality Bar
+
+The goal is not to mechanically clear checklists or follow the plan for its own sake.
+
+Moving to the next phase quickly is not success.
+
+A task is not complete because it was marked "closed"; it is complete only when the affected boundary remains robust under a fresh review from the product purpose, code paths, PTB data boundaries, user flows, tests, package exports, examples, and documentation.
+
+Plans may change during implementation, but any plan change must be grounded in verified code, actual product output, official or pinned source code, or direct command results. Do not change direction from preference, momentum, convenience, or unchecked assumptions.
+
+When speed, small diff size, or plan conformance conflicts with product correctness, evidence quality, maintainability, or user-facing clarity, the latter wins.
+
 ## Purpose Anchor
 
 Before planning, reviewing, or implementing a change, state the product purpose and current task goal in concrete terms:
@@ -159,7 +178,9 @@ Use these local planning documents before changing the model boundary:
 - `.WORK/sui-mainnet-v1.71.1/`
 - `.WORK/ts-sdks/`
 
-`@zktx.io/ptb-model` must be designed against the latest stable `@mysten/sui` SDK source available at implementation time. Verify the SDK version, inspect its actual package source, then record the version or commit in `.WORK/` before scaffolding or changing model types.
+These `.WORK/` files are planning and evidence context, not independent authority. Verify their claims against current source code, package metadata, pinned SDK source, or direct command output before using them to justify a model-boundary change.
+
+`@zktx.io/ptb-model` must be designed against the `@mysten/sui` SDK version actually pinned by this repository. Verify the installed SDK version, inspect its actual package source, and record the version or commit in `.WORK/` before scaffolding or changing model types. Investigate the latest stable SDK only when an explicit SDK upgrade or compatibility decision is part of the task.
 
 The model package should stay independent from UI and execution runtime concerns:
 
@@ -316,13 +337,14 @@ Do not silently substitute mainnet assets, packages, objects, type tags, or tran
 - Pin Sui, wallet, React Flow, and builder/model boundary dependencies intentionally during active development.
 - Do not upgrade SDKs casually.
 - If an SDK is upgraded, inspect the SDK source for affected transaction structures, helper names, Core/gRPC APIs, and serialized PTB shapes.
-- After an SDK upgrade, re-run affected model conversion, builder decode, codegen, example, package build, and registry/fixture checks when available.
+- After an SDK upgrade, re-run affected model conversion, builder load/render/runtime adapter, example, package build, and registry/fixture checks when available.
 
 ## Completion Criteria
 
 Work is complete only when:
 
 - The requested change is implemented, not merely planned or reported.
+- The affected boundary still looks robust when reviewed again from the product purpose, code paths, PTB data boundaries, user flows, tests, package exports, examples, and documentation.
 - Affected code, docs, interfaces, package exports, examples, and user flows have been reviewed after the change.
 - Relevant checks, tests, builds, pack dry-runs, or manual verification have been run when available.
 - Errors introduced by the change have been fixed.
