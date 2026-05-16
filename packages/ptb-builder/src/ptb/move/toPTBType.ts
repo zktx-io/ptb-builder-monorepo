@@ -10,8 +10,8 @@
 //     0x2::object::ID         → scalar('id')
 //     0x1::option::Option<T>  → option<...>
 // - Structs with type arguments → generic objects (no concrete typeTag).
-// - NOTE: While the model allows option<vector<...>> (and vector<object>),
-//   UI-level creation of object inside vector/option is currently disallowed.
+// - The model allows option<vector<...>> and vector<object>; UI-level creation
+//   of object inside vector/option is disallowed.
 // -----------------------------------------------------------------------------
 
 import type {

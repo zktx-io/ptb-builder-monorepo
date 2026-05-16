@@ -191,6 +191,19 @@ The model package should stay independent from UI and execution runtime concerns
 
 `@mysten/sui` may be used as the source of truth for SDK types, BCS schemas, fixtures, and compatibility tests. Do not duplicate SDK behavior from memory. Client, wallet, signer, execution, and runtime transaction-building behavior should remain in `@zktx.io/ptb-builder` or a later explicitly approved adapter package.
 
+Package responsibilities during this refactor:
+
+- `@zktx.io/ptb-model` owns protocol-facing logical data structures and deterministic data transforms: canonical file/document shape, document validation, raw PTB conversion, `TransactionIR`, `PTBGraph`, graph-to-IR and IR-to-graph conversion, Mermaid text rendering, and TypeScript SDK code string rendering.
+- `@zktx.io/ptb-model` must stay UI-independent and runtime-execution-independent. It may use pinned SDK source, BCS schemas, fixtures, and compatibility tests as evidence, but it must not depend on React, React Flow, DOM, CSS, UI drawing/layout frameworks, wallet state, Sui clients, host callbacks, or runtime `Transaction` instances.
+- Treat `@zktx.io/ptb-model` as the source of truth. A builder defect, UI convenience, non-canonical document, example behavior, or test fixture must not bend the model boundary. If the model changes, it must be because the canonical PTB/document/IR/graph/renderer rule is wrong or incomplete after checking all model conversions and the pinned SDK/source evidence.
+- Changes to `@zktx.io/ptb-model` require a stricter review than builder-only changes. Before editing it, inspect the affected parser, validator, converter, renderer, public exports, README claims, model tests, builder call sites, and example call sites. After editing it, re-check every conversion direction it touches (`doc`, `raw`, `IR`, `graph`, Mermaid, TS SDK code) before moving back to builder code.
+- `@zktx.io/ptb-model` should be consumed through its root package export. Opening a new package subpath or adding a new root export is a source-of-truth decision: update the model README, public-surface tests, and downstream builder/example imports in the same change.
+- `@zktx.io/ptb-builder` owns the React product surface around the model: graph editing, drawing, node placement, React Flow screen state, user interactions, Sui Core reads needed for inspection, local metadata caches, builder-specific document requirements such as supported chain/view/module embeds/object embeds, pseudocode/code preview display, and host-owned runtime `Transaction` construction from a model `TransactionIR`.
+- `@zktx.io/ptb-builder` must depend on model boundaries instead of re-implementing, repairing, or forking them. It may adapt a parsed model `PTBGraph` to React Flow and back, but it does not define file format, graph semantics, transaction semantics, canonical parser behavior, Mermaid rules, or TypeScript SDK code-rendering rules.
+- Host applications own wallet connection, signing, simulation, execution, custody, and final authorization. Builder may expose callbacks and runtime `Transaction` construction helpers for host-owned flows, but it must not present those flows as builder-owned authority.
+- Do not add legacy file migration, compatibility parsing, or canonical graph repair paths inside `@zktx.io/ptb-builder`. Canonical model parsers should reject legacy shapes. If file migration is explicitly required, it belongs in an explicitly named model utility or separate tool outside the normal parser path, never in the builder load path.
+- The local example package is a consumer and smoke-test surface for `@zktx.io/ptb-builder`. It should demonstrate the public builder API; it must not introduce hidden product behavior, alternate parsing rules, or transaction authority that the builder package does not own.
+
 ## PTB Data Boundary
 
 The target data model has three different responsibilities:
@@ -218,11 +231,11 @@ Rules:
 
 - Keep `TransactionIR` and `PTBGraph` separate unless implementation evidence proves one structure can replace the other cleanly.
 - Do not treat React Flow positions, handles, viewport state, collapsed state, or UI layout as transaction semantics.
-- Keep legacy migration separate from normal model parsing.
-- New canonical parsers should reject legacy shapes; migration utilities may convert them explicitly outside the normal `@zktx.io/ptb-model` parser path.
+- Keep file/document format and file-to-graph conversion in `@zktx.io/ptb-model`. Builder code should call model utilities and then render or edit the resulting `PTBGraph`; it must not own parallel document conversion rules.
+- Keep legacy migration separate from normal model parsing and out of `@zktx.io/ptb-builder`. New canonical parsers should reject legacy shapes; migration utilities may convert them explicitly outside the normal `@zktx.io/ptb-model` parser path only when that utility is an explicit product decision.
 - Include Sui `FundsWithdrawal` in raw PTB coverage.
 - Do not treat SDK builder conveniences such as `$Intent`, `UnresolvedPure`, or `UnresolvedObject` as canonical raw PTB commands.
-- Mermaid, TypeScript SDK code strings, raw PTB conversion, and future runtime adapters should use `TransactionIR` as their transaction-semantics input unless implementation evidence proves a different boundary is safer.
+- Mermaid, TypeScript SDK code strings, raw PTB conversion, and runtime adapters should use `TransactionIR` as their transaction-semantics input unless implementation evidence proves a different boundary is safer.
 
 ## Scope Interpretation
 

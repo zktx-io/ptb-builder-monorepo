@@ -1143,7 +1143,7 @@ export function PTBFlow() {
           } catch {
             /* no-op */
           }
-          // Mark layout ready so ReactFlow can auto-fit on future mounts if needed.
+          // Mark layout ready so ReactFlow can auto-fit after remounts.
           setLayoutReady(true);
         });
       });

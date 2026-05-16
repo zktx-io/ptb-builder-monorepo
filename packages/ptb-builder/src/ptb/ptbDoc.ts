@@ -93,7 +93,7 @@ export type LoadedPTBDocState = {
   graph: PTBGraph;
 };
 
-// ----- validation (strict: new format only) ----------------------------------
+// ----- validation (strict ptb_4 document shape) ------------------------------
 
 const PTB_FUNCTION_ENTRY_KEYS = ['tparamCount', 'ins', 'outs'] as const;
 const PTB_OBJECT_DATA_KEYS = ['objectId', 'typeTag'] as const;
@@ -191,7 +191,7 @@ export function createEmptyPTBDoc(chain: Chain): PTBDoc {
   });
 }
 
-/** Parse and validate a JSON object into PTBDoc (new-only). */
+/** Parse and validate a JSON object into PTBDoc. */
 export function parseDoc(json: unknown): PTBDoc {
   const doc = parsePTBDocV4(json);
   const chain = parseDocChain(doc.chain);

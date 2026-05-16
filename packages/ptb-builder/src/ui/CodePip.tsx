@@ -1,6 +1,7 @@
 // src/ui/CodePip.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { parseObjectId } from '@zktx.io/ptb-model';
 import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
@@ -113,10 +114,15 @@ export function CodePip({
     showThemeSelector,
   } = usePtb();
   const [prismReady, setPrismReady] = useState(false);
+  const assetOwner = parseObjectId(execOpts.sender);
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = code ?? '';
   const visibleCode = normalized.trim().length ? normalized : emptyText;
+
+  useEffect(() => {
+    if (!assetOwner && assetsOpen) setAssetsOpen(false);
+  }, [assetOwner, assetsOpen]);
 
   // --- Mobile detection to hard-disable resizing and pin width to 100% ---
   // Note: Keep logic here minimal; CSS handles the visual layout.
@@ -215,6 +221,10 @@ export function CodePip({
 
   const handleOpenAssets = () => {
     try {
+      if (!assetOwner) {
+        show('Set a valid sender address to browse assets');
+        return;
+      }
       setAssetsOpen(true);
     } catch (e: any) {
       show(e?.message ? `Open failed: ${e.message}` : 'Failed to open Assets');
@@ -376,8 +386,14 @@ export function CodePip({
               <button
                 type="button"
                 onClick={handleOpenAssets}
+                disabled={!assetOwner}
+                aria-disabled={!assetOwner}
                 className="ptb-codepip__btn ptb-codepip__btn--neutral"
-                title="Open your owned assets"
+                title={
+                  assetOwner
+                    ? 'Open owned assets'
+                    : 'Set a valid sender address to browse assets'
+                }
                 aria-label="Open Assets"
               >
                 <PackageSearch size={16} />
@@ -429,9 +445,9 @@ export function CodePip({
 
       {/* Assets modal */}
       <AssetsModal
-        open={assetsOpen}
+        open={assetsOpen && !!assetOwner}
         onClose={() => setAssetsOpen(false)}
-        owner={execOpts.sender || ''}
+        owner={assetOwner ?? ''}
         onPick={(it) => onAssetPick?.(it)}
       />
     </>

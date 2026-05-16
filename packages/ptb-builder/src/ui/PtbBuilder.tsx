@@ -9,6 +9,7 @@
 //
 // Public Props (PTBBuilderProps)
 // - theme           : initial theme (managed by provider afterwards)
+// - initialChain    : optional chain for starting with a fresh editable PTB
 // - executeTx       : adapter for executing transactions
 // - simulateTx      : adapter for simulating transactions
 // - createClient    : adapter for read-only SDK Core client creation
@@ -16,6 +17,7 @@
 // - gasBudget       : optional runtime envelope gas budget
 // - toast           : toast adapter; if absent, provider falls back to console
 // - onDocChange     : PTBDoc-level autosave callback
+// - className/style : optional host-controlled container around the builder
 // - children        : optional React children
 //
 // Public Hook (usePTB)
@@ -51,6 +53,9 @@ import type { Chain, Theme, ToastAdapter } from '../types';
 
 export type PTBBuilderProps = {
   theme?: Theme;
+  initialChain?: Chain;
+  className?: string;
+  style?: React.CSSProperties;
   showExportButton?: boolean;
   showThemeSelector?: boolean;
   executeTx?: (
@@ -121,6 +126,7 @@ function PublicBridge({ children }: { children?: React.ReactNode }) {
 
 export function PTBBuilder({
   theme,
+  initialChain,
   executeTx,
   simulateTx,
   createClient,
@@ -131,6 +137,8 @@ export function PTBBuilder({
   children,
   showExportButton,
   showThemeSelector,
+  className,
+  style,
 }: PTBBuilderProps) {
   const execOpts = useMemo<RuntimeEnvelope>(() => {
     const envelope: RuntimeEnvelope = {};
@@ -140,27 +148,30 @@ export function PTBBuilder({
   }, [address, gasBudget]);
 
   return (
-    <ReactFlowProvider>
-      <PtbProvider
-        // UI
-        initialTheme={theme ?? 'dark'}
-        showThemeSelector={showThemeSelector}
-        showExportButton={showExportButton}
-        // flattened adapters
-        executeTx={executeTx}
-        simulateTx={simulateTx}
-        createClient={createClient}
-        toast={toast}
-        // runtime envelope for preview metadata and transaction building
-        execOpts={execOpts}
-        // public autosave (doc-level callback)
-        onDocChange={onDocChange}
-      >
-        <PublicBridge>
-          <PTBFlow />
-          {children}
-        </PublicBridge>
-      </PtbProvider>
-    </ReactFlowProvider>
+    <div className={className} style={style}>
+      <ReactFlowProvider>
+        <PtbProvider
+          // UI
+          initialChain={initialChain}
+          initialTheme={theme ?? 'dark'}
+          showThemeSelector={showThemeSelector}
+          showExportButton={showExportButton}
+          // flattened adapters
+          executeTx={executeTx}
+          simulateTx={simulateTx}
+          createClient={createClient}
+          toast={toast}
+          // runtime envelope for preview metadata and transaction building
+          execOpts={execOpts}
+          // public autosave (doc-level callback)
+          onDocChange={onDocChange}
+        >
+          <PublicBridge>
+            <PTBFlow />
+            {children}
+          </PublicBridge>
+        </PtbProvider>
+      </ReactFlowProvider>
+    </div>
   );
 }

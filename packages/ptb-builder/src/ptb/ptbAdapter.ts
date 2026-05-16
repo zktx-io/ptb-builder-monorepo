@@ -4,8 +4,8 @@
 // PTBGraph ↔ React Flow adapter.
 // - Nodes: SSOT lives in node.data.ptbNode. Variable nodes always materialize
 //   a single IO out port that mirrors varType.
-// - Edges: sourceHandle/targetHandle are passed through 1:1. For RF v11/12,
-//   sourceHandleId/targetHandleId aliases are also set for compatibility.
+// - Edges: sourceHandle/targetHandle are passed through 1:1. Handle aliases are
+//   also set because local edge helpers read both field spellings.
 // - Edge badges: serialized types are derived from the port dataType, not from
 //   handle suffixes (suffixes are conservative).
 // -----------------------------------------------------------------------------
@@ -28,7 +28,7 @@ import {
 import { PORTS } from './portTemplates';
 import { extractHandles } from '../ui/handles/handleUtils';
 
-type RFEdgeCompat = RFEdge<RFEdgeData> & {
+type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
   sourceHandleId?: string;
   targetHandleId?: string;
 };
@@ -102,13 +102,12 @@ export function ptbToRF(graph: PTBGraph): {
     const srcTypeStr = sPort?.dataType
       ? serializePTBType(sPort.dataType)
       : undefined;
-    const edge: RFEdgeCompat = {
+    const edge: RFEdgeWithHandleAliases = {
       id: e.id,
       source: e.source,
       target: e.target,
       sourceHandle: sh,
       targetHandle: th,
-      // v11/12 alias
       sourceHandleId: sh,
       targetHandleId: th,
       type: mapPTBEdgeToRFType(e),

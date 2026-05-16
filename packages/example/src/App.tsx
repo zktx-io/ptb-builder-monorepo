@@ -12,7 +12,7 @@ import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
 import { PtbUndoProvider, usePtbUndo } from './components/usePtbUndo';
-import { SuiNetwork } from './network';
+import { SuiChain, SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
 import { Viewer } from './pages/viewer';
@@ -126,19 +126,19 @@ function AppShell() {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <PTBBuilder
-        toast={handleToast}
-        executeTx={executeTx}
-        simulateTx={simulateTx}
-        createClient={createClient}
-        address={account?.address}
-        showExportButton
-        onDocChange={onDocChange}
-      >
-        <RouterProvider router={router} />
-      </PTBBuilder>
-    </div>
+    <PTBBuilder
+      initialChain={`sui:${network}` as SuiChain}
+      style={{ width: '100vw', height: '100vh' }}
+      toast={handleToast}
+      executeTx={executeTx}
+      simulateTx={simulateTx}
+      createClient={createClient}
+      address={account?.address}
+      showExportButton
+      onDocChange={onDocChange}
+    >
+      <RouterProvider router={router} />
+    </PTBBuilder>
   );
 }
 

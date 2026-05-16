@@ -226,6 +226,7 @@ export type PtbProviderProps = {
   children: React.ReactNode;
   onDocChange?: (doc: PTBDoc) => void;
 
+  initialChain?: Chain;
   initialTheme: Theme;
   execOpts?: RuntimeEnvelope;
   showThemeSelector?: boolean;
@@ -283,6 +284,7 @@ export function PtbProvider({
   children,
   onDocChange,
 
+  initialChain,
   initialTheme,
   execOpts: execOptsProp = {},
   showThemeSelector = true,
@@ -347,6 +349,9 @@ export function PtbProvider({
 
   // Chain & client
   const [activeChain, setActiveChain] = useState<Chain | undefined>(undefined);
+  const initialChainLoadedRef = useRef(false);
+  const initialChainLoadRef = useRef(false);
+  const explicitLoadStartedRef = useRef(false);
   const clientRef = useRef<PtbCoreClient | undefined>(undefined);
   const createCoreClient = useCallback(
     (chain: Chain) => createClientProp?.(chain) ?? createPtbCoreClient(chain),
@@ -887,6 +892,7 @@ export function PtbProvider({
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
+      explicitLoadStartedRef.current = true;
       const load = lifecycleRef.current.beginLoad('transaction');
       const digest = (txDigest || '').trim();
       if (!digest) {
@@ -1019,6 +1025,9 @@ export function PtbProvider({
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (value) => {
+      if (!initialChainLoadRef.current) {
+        explicitLoadStartedRef.current = true;
+      }
       const load = lifecycleRef.current.beginLoad('document');
 
       if (typeof value !== 'string') {
@@ -1107,6 +1116,29 @@ export function PtbProvider({
     },
     [deliverDocChange, replaceGraphImmediate, reportDocEmitError, toastImpl],
   );
+
+  const loadFromDocRef = useRef(loadFromDoc);
+  useEffect(() => {
+    loadFromDocRef.current = loadFromDoc;
+  }, [loadFromDoc]);
+
+  useEffect(() => {
+    if (
+      !initialChain ||
+      initialChainLoadedRef.current ||
+      explicitLoadStartedRef.current ||
+      activeChainRef.current
+    ) {
+      return;
+    }
+    initialChainLoadedRef.current = true;
+    initialChainLoadRef.current = true;
+    try {
+      loadFromDocRef.current(initialChain);
+    } finally {
+      initialChainLoadRef.current = false;
+    }
+  }, [initialChain]);
 
   // ---- export doc ------------------------------------------------------------
 

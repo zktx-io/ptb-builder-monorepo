@@ -417,6 +417,20 @@ function validateVariableNode(
     diagnostics,
     new WeakSet<object>(),
   );
+  if (isRecord(value.varType) && value.varType.kind === 'option') {
+    const hasValue = Object.prototype.hasOwnProperty.call(value, 'value');
+    if (!hasValue || value.value === undefined) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.variable.optionValue',
+          !hasValue
+            ? 'PTB graph option variables must store None as null; missing value is not canonical.'
+            : 'PTB graph option variables must store None as null; undefined is not canonical.',
+          `${path}.value`,
+        ),
+      );
+    }
+  }
   validateVariableSemantic(value.semantic, `${path}.semantic`, diagnostics);
   normalizeGraphRawInput(value.rawInput, `${path}.rawInput`, diagnostics);
 }

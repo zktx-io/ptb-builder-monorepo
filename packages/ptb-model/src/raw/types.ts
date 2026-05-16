@@ -131,6 +131,9 @@ export function parseJsonU64(value: unknown): JsonU64 | undefined {
   ) {
     return undefined;
   }
+  if (typeof value === 'string' && value.trim() === '') {
+    return undefined;
+  }
 
   try {
     const parsed = BigInt(value);
@@ -151,6 +154,8 @@ export function parseBase64Bytes(value: unknown): Base64Bytes | undefined {
 export function parseObjectId(value: unknown): ObjectId | undefined {
   const text = asString(value);
   if (text === undefined) return undefined;
+  const body = text.replace(/^0x/i, '');
+  if (body.length === 0) return undefined;
   const normalized = normalizeSuiAddress(text);
   return isValidSuiAddress(normalized) ? normalized : undefined;
 }

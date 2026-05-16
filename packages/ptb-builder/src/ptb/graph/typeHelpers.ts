@@ -8,8 +8,8 @@
 //   typeArguments: string[] and never appear as PTBType.
 // - The model permits vector<option<...>> etc. at any depth, but the UI may
 //   restrict creation for simplicity.
-// - Although the model permits vector<object> / option<object> for forward
-//   compatibility, UI-level creation currently disallows them.
+// - The model permits vector<object> / option<object>, but UI-level creation
+//   disallows them.
 // -----------------------------------------------------------------------------
 
 import type { NumericWidth, PTBScalar, PTBType } from './types';
@@ -30,7 +30,7 @@ export const O = (typeTag?: string): PTBType =>
 /** Vector type factory */
 export const V = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
 
-/** Option type factory (kept for future; not emitted by resolver now) */
+/** Option type factory */
 export const Opt = (elem: PTBType): PTBType => ({ kind: 'option', elem });
 
 /** Tuple type factory */
@@ -39,7 +39,7 @@ export const T = (...elems: PTBType[]): PTBType => ({ kind: 'tuple', elems });
 /** Unknown type factory */
 export const Unknown = (): PTBType => ({ kind: 'unknown' });
 
-// Optional friendly aliases (back-compat)
+// Friendly aliases
 export const scalar = S;
 export const moveNumeric = M;
 export const object = O;

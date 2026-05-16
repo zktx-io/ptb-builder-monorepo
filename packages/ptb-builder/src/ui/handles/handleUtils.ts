@@ -6,7 +6,7 @@ import type { Port, PTBType } from '../../ptb/graph/types';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import { buildOutPort } from '../nodes/vars/varUtils';
 
-/** Read handle id from v12 (...HandleId) or v11 (...Handle); null-safe. */
+/** Read handle id from either local edge handle field spelling; null-safe. */
 export function extractHandles(x: {
   sourceHandleId?: string | null;
   targetHandleId?: string | null;

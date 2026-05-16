@@ -1,4 +1,7 @@
 import { Transaction } from '@mysten/sui/transactions';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -8,7 +11,9 @@ import {
   freezeDiagnostics,
   graphToTransactionIR,
   jsonStringifyWithBigInt,
+  NULL_VALUE,
   parseBase64Bytes,
+  parseJsonU64,
   parseObjectId,
   parsePTBDocV4,
   PTBModelError,
@@ -26,16 +31,88 @@ import type {
   CommandNode,
   IRInput,
   PTBGraph,
+  PTBType,
   RawCallArg,
   RawCommand,
   RawProgrammableTransaction,
   TransactionIR,
   VariableNode,
 } from './index.js';
-import { NULL_VALUE } from './utils.js';
 
 function normalizedObjectId(value: string): string {
   return `0x${value.replace(/^0x/i, '').padStart(64, '0').toLowerCase()}`;
+}
+
+const modelSourceRoot = fileURLToPath(new URL('.', import.meta.url));
+const modelPackageJsonPath = fileURLToPath(
+  new URL('../package.json', import.meta.url),
+);
+
+describe('public package surface', () => {
+  it('publishes one root entrypoint for the model source of truth', () => {
+    const packageJson = JSON.parse(
+      readFileSync(modelPackageJsonPath, 'utf8'),
+    ) as {
+      exports: unknown;
+      files: unknown;
+      dependencies?: Record<string, string>;
+    };
+
+    expect(packageJson.exports).toEqual({
+      '.': {
+        types: './dist/index.d.ts',
+        import: './dist/index.js',
+      },
+    });
+    expect(packageJson.files).toEqual(['dist/', 'README.md']);
+    expect(packageJson.dependencies ?? {}).toEqual({});
+  });
+
+  it('keeps model source free of UI framework and runtime client imports', () => {
+    const forbiddenSpecifiers = new Set([
+      '@mysten/dapp-kit',
+      '@mysten/sui/client',
+      '@mysten/sui/jsonRpc',
+      '@mysten/sui/transactions',
+      '@xyflow/react',
+      'react',
+      'react-dom',
+    ]);
+    const violations = collectSourceFiles(modelSourceRoot)
+      .filter((file) => !file.endsWith('.test.ts'))
+      .flatMap((file) =>
+        collectImportSpecifiers(readFileSync(file, 'utf8'))
+          .filter(
+            (specifier) =>
+              forbiddenSpecifiers.has(specifier) ||
+              specifier.startsWith('@mysten/sui/jsonRpc/'),
+          )
+          .map((specifier) => `${file}: ${specifier}`),
+      );
+
+    expect(violations).toEqual([]);
+  });
+});
+
+function collectSourceFiles(root: string): string[] {
+  return readdirSync(root).flatMap((entry) => {
+    const path = join(root, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) return collectSourceFiles(path);
+    return /\.ts$/.test(path) ? [path] : [];
+  });
+}
+
+function collectImportSpecifiers(text: string): string[] {
+  return [
+    ...text.matchAll(
+      /^[\t ]*import\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/gm,
+    ),
+    ...text.matchAll(
+      /^[\t ]*export\s+(?:type\s+)?(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]/gm,
+    ),
+    ...text.matchAll(/^[\t ]*import\s*\(\s*['"]([^'"]+)['"]\s*\)/gm),
+  ].map((match) => match[1]);
 }
 
 describe('PTBDocV4', () => {
@@ -1193,7 +1270,7 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).toContain('class command0,command1 coin');
   });
 
-  it('renders Mermaid labels through one escape path and preserves explicit undefined values', () => {
+  it('renders Mermaid labels through one escape path and preserves explicit null values', () => {
     const mermaid = transactionIRToMermaid(
       {
         version: 'transaction_ir_1',
@@ -1201,7 +1278,7 @@ describe('TransactionIR renderers', () => {
           {
             id: 'maybeAmount',
             kind: 'Pure',
-            value: undefined,
+            value: NULL_VALUE,
             type: {
               kind: 'option',
               elem: { kind: 'move_numeric', width: 'u64' },
@@ -1224,13 +1301,11 @@ describe('TransactionIR renderers', () => {
       { showArgumentValues: true },
     );
 
-    expect(mermaid).toContain('Input 0: Pure<br/>value undefined');
+    expect(mermaid).toContain('Input 0: Pure<br/>value null');
     expect(mermaid).toContain(
       `MoveCall ${normalizedObjectId('2')}::mod&lt;ule::f`,
     );
-    expect(mermaid).toContain(
-      'input0 -- "input 0: value undefined" --> command0',
-    );
+    expect(mermaid).toContain('input0 -- "input 0: value null" --> command0');
   });
 
   it('generates SDK 2.16.2 style transaction code', () => {
@@ -1410,7 +1485,7 @@ describe('TransactionIR renderers', () => {
     });
   });
 
-  it('renders option pure None values through the SDK option helper', () => {
+  it('renders canonical option None values through the SDK option helper', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       diagnostics: [],
@@ -1418,7 +1493,7 @@ describe('TransactionIR renderers', () => {
         {
           id: 'maybeAmount',
           kind: 'Pure',
-          value: undefined,
+          value: NULL_VALUE,
           type: {
             kind: 'option',
             elem: { kind: 'move_numeric', width: 'u64' },
@@ -1430,8 +1505,36 @@ describe('TransactionIR renderers', () => {
 
     const code = transactionIRToTsSdkCode(ir);
 
-    expect(code).toContain('tx.pure.option("u64", undefined)');
+    expect(code).toContain('tx.pure.option("u64", null)');
     expectValidTypeScriptSource(code);
+  });
+
+  it('rejects undefined option None values at the canonical IR boundary', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'maybeAmount',
+          kind: 'Pure',
+          value: undefined as never,
+          type: {
+            kind: 'option',
+            elem: { kind: 'move_numeric', width: 'u64' },
+          },
+        },
+      ],
+      commands: [],
+    };
+
+    expectModelErrorCodes(
+      () => transactionIRToTsSdkCode(ir),
+      ['ir.input.pureValue'],
+    );
+    expectModelErrorCodes(
+      () => transactionIRToGraph(ir),
+      ['ir.input.pureValue'],
+    );
   });
 
   it('preserves explicit option None through graph round-trips', () => {
@@ -1442,7 +1545,7 @@ describe('TransactionIR renderers', () => {
         {
           id: 'maybeAmount',
           kind: 'Pure',
-          value: undefined,
+          value: NULL_VALUE,
           type: {
             kind: 'option',
             elem: { kind: 'move_numeric', width: 'u64' },
@@ -1468,6 +1571,48 @@ describe('TransactionIR renderers', () => {
     });
     expect(Object.prototype.hasOwnProperty.call(input, 'value')).toBe(true);
     expect((input as Extract<IRInput, { kind: 'Pure' }>).value).toBeNull();
+  });
+
+  it('rejects option graph variables that omit canonical null None', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'maybeAmount',
+          kind: 'Variable',
+          label: 'maybeAmount',
+          name: 'maybeAmount',
+          varType: {
+            kind: 'option',
+            elem: { kind: 'move_numeric', width: 'u64' },
+          },
+          ports: [
+            {
+              id: 'out',
+              direction: 'out',
+              role: 'io',
+              dataType: {
+                kind: 'option',
+                elem: { kind: 'move_numeric', width: 'u64' },
+              },
+            },
+          ],
+        },
+      ],
+      edges: [],
+    };
+
+    expect(validatePTBGraph(graph)).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.variable.optionValue',
+        path: '$.nodes[0].value',
+      }),
+    );
+    expect(graphToTransactionIR(graph).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.variable.optionValue',
+        path: '$.nodes[0].value',
+      }),
+    );
   });
 
   it('rejects typed pure values that do not match SDK pure value shapes', () => {
@@ -1536,6 +1681,15 @@ describe('TransactionIR renderers', () => {
     expect(parseObjectId('0x2')).toBe(normalizedObjectId('2'));
     expect(code).toContain(`tx.pure("address", "${normalizedObjectId('2')}")`);
     expectValidTypeScriptSource(code);
+  });
+
+  it('rejects empty address and JSON-U64 parser inputs instead of silently normalizing them', () => {
+    expect(parseObjectId('')).toBeUndefined();
+    expect(parseObjectId('0x')).toBeUndefined();
+    expect(parseObjectId('0x0')).toBe(normalizedObjectId('0'));
+    expect(parseObjectId('0x2')).toBe(normalizedObjectId('2'));
+    expect(parseJsonU64('')).toBeUndefined();
+    expect(parseJsonU64('0')).toBe('0');
   });
 
   it('renders bigint typed pure values and serializes them through the JSON helper', () => {
@@ -1622,6 +1776,97 @@ describe('TransactionIR renderers', () => {
       `tx.pure.option("id", "${normalizedObjectId('5')}")`,
     );
     expectValidTypeScriptSource(code);
+  });
+
+  it('rejects empty typed pure address and id values before code generation', () => {
+    const cases: Array<{
+      id: string;
+      value: unknown;
+      type: PTBType;
+      message: string;
+      path: string;
+    }> = [
+      {
+        id: 'recipient',
+        value: '',
+        type: { kind: 'scalar', name: 'address' },
+        message: 'Pure input recipient requires a non-empty Sui address.',
+        path: '$.inputs[0].value',
+      },
+      {
+        id: 'objectId',
+        value: '0x',
+        type: { kind: 'scalar', name: 'id' },
+        message: 'Pure input objectId requires a non-empty Sui object ID.',
+        path: '$.inputs[0].value',
+      },
+      {
+        id: 'addressList',
+        value: ['0x1', ''],
+        type: {
+          kind: 'vector',
+          elem: { kind: 'scalar', name: 'address' },
+        },
+        message: 'Pure input addressList requires a non-empty Sui address.',
+        path: '$.inputs[0].value[1]',
+      },
+    ];
+
+    cases.forEach(({ id, value, type, message, path }) => {
+      try {
+        transactionIRToTsSdkCode({
+          version: 'transaction_ir_1',
+          diagnostics: [],
+          inputs: [{ id, kind: 'Pure', value, type }],
+          commands: [],
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(PTBModelError);
+        const diagnostics = (error as PTBModelError).diagnostics;
+        expect(diagnostics[0]).toEqual(
+          expect.objectContaining({
+            code: 'codegen.input.pure',
+            message,
+            path,
+          }),
+        );
+        return;
+      }
+      throw new Error('Expected PTBModelError.');
+    });
+  });
+
+  it('reports empty Move integer strings as invalid typed pure values', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'amount',
+          kind: 'Pure',
+          value: '',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+      ],
+      commands: [],
+    };
+
+    try {
+      transactionIRToTsSdkCode(ir);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PTBModelError);
+      const diagnostics = (error as PTBModelError).diagnostics;
+      expect(diagnostics[0]).toEqual(
+        expect.objectContaining({
+          code: 'codegen.input.pure',
+          message:
+            'Pure input amount requires a non-empty integer string for u64.',
+          path: '$.inputs[0].value',
+        }),
+      );
+      return;
+    }
+    throw new Error('Expected PTBModelError.');
   });
 
   it('normalizes typed pure address leaves inside nested composite values', () => {

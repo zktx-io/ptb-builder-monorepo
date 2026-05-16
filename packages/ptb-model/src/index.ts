@@ -76,7 +76,7 @@ export {
   parseJsonU64,
   parseObjectId,
 } from './raw/types.js';
-export { jsonStringifyWithBigInt } from './utils.js';
+export { jsonStringifyWithBigInt, NULL_VALUE } from './utils.js';
 
 export { graphToTransactionIR, transactionIRToGraph } from './graph/convert.js';
 export { rawTransactionToIR, transactionIRToRaw } from './raw/convert.js';

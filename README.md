@@ -3,19 +3,18 @@
 React and TypeScript packages for authoring, inspecting, converting, and
 rendering Sui Programmable Transaction Block data.
 
-This repository currently contains two package boundaries:
+This repository contains two package boundaries:
 
 - `@zktx.io/ptb-model`: UI-independent PTB data model, validation, conversion,
   Mermaid rendering, and TypeScript SDK code string rendering.
-- `@zktx.io/ptb-builder`: React UI package for graph-based PTB editing. It is
-  being refactored to use `@zktx.io/ptb-model` as its transaction data boundary.
+- `@zktx.io/ptb-builder`: React UI package for graph-based PTB editing. It uses
+  `@zktx.io/ptb-model` as its transaction data boundary.
 
 The packages are intentionally not wallets, custody layers, transaction safety
 guarantees, or autonomous executors. Host applications own wallet connection,
 signing, simulation, execution, and user workflow decisions. The builder package
-currently still contains read-only chain loading and local metadata cache code;
-that does not make it the owner of wallet authorization or transaction
-execution.
+contains read-only chain loading and local metadata cache code; that does not
+make it the owner of wallet authorization or transaction execution.
 
 ## Packages
 
@@ -52,12 +51,12 @@ flowchart TD
 
 Mermaid output is generated from `TransactionIR`, not React Flow screen state.
 Other applications can use `@zktx.io/ptb-model` as a PTB visualization adapter:
-convert supported raw PTB or current SDK transaction-kind data into
+convert supported raw PTB or SDK transaction-kind data into
 `TransactionIR`, then call `transactionIRToMermaid()`.
 
 The model package does not accept serialized BCS bytes, base64 transaction
 strings, or live SDK `Transaction` instances directly. Use the Sui SDK to turn
-those into current transaction data first, then pass that data to
+those into SDK transaction-kind data first, then pass that data to
 `rawTransactionToIR()`.
 
 ```ts
@@ -131,25 +130,11 @@ cd packages/example && npm run dev
 - The model package has no React, React Flow, DOM, CSS, wallet, signer, network
   client, JSON-RPC, or runtime `Transaction` dependency.
 - The builder package is UI and integration code. It should use the model
-  package for canonical PTB validation and conversion as that refactor lands.
-  Builder-internal graph shapes, decoder fallbacks, and codegen shortcuts should
-  adapt to the model package rather than becoming compatibility branches inside
-  the model.
-- Legacy document migration is not part of normal model parsing. Canonical
-  parsers reject legacy shapes; migration utilities outside the model package
-  should convert them before calling model package APIs.
+  package for canonical PTB validation and conversion.
+- Document parsing accepts supported package document versions only. Convert
+  unsupported document shapes before calling model package APIs.
 - SDK builder convenience shapes such as `$Intent`, `UnresolvedPure`, and
   `UnresolvedObject` are not canonical raw PTB commands.
 - Host applications own execution authority. This repository should not be
   described as a wallet, custody layer, autonomous executor, or transaction
   safety guarantee.
-
-## Versioning Notes
-
-The current refactor direction is to keep both packages:
-
-- `@zktx.io/ptb-model` for the canonical PTB data boundary.
-- `@zktx.io/ptb-builder` for the React editing package.
-
-Do not introduce a separate `ptb-sui` package or rename the model package unless
-a new explicit repository decision replaces this direction.

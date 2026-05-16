@@ -1,8 +1,8 @@
 # PTB Builder Developer Notes
 
-This document is for contributors maintaining the current model-root PTB
-Builder architecture. Source code and `package.json` remain the authority if
-this document drifts.
+This document is for contributors maintaining the model-root PTB Builder
+architecture. Source code and `package.json` are the authority if this document
+drifts.
 
 ## Product Boundary
 
@@ -11,7 +11,7 @@ Transaction Block data. It does not own wallet connection, custody, signing,
 simulation, execution, or transaction safety guarantees. Host applications
 provide wallet and execution adapters.
 
-## Current Architecture
+## Architecture
 
 The semantic root is `@zktx.io/ptb-model`.
 
@@ -36,8 +36,8 @@ Rules:
 - Runtime construction starts from `TransactionIR` in `ptb/runtimeAdapter.ts`.
 - Generated TypeScript code strings and decoded PTB data are review and
   authoring aids, not trusted signing material.
-- Legacy `ptb_3`, old top-level `nodes/edges`, builder-local codegen, and
-  builder-local decode fallbacks are not normal runtime paths.
+- Unsupported document shapes, top-level `nodes/edges` documents, builder-local
+  codegen, and builder-local decode fallbacks are not runtime paths.
 
 ## Repository Areas
 
@@ -50,12 +50,10 @@ Rules:
   authoring controls, document emission, provider UI state, and diagnostics.
 - `packages/example/`: Vite host application using dapp-kit React and
   host-owned simulation/execution callbacks.
-- `.WORK/`: local planning and evidence notes. Verify claims against source
-  before using them.
 
 ## Chain Reads And Transport
 
-New implementation must not add JSON-RPC paths. Do not import
+Builder code must not add JSON-RPC paths. Do not import
 `@mysten/sui/jsonRpc`, `SuiClient`, `getFullnodeUrl`, or JSON-RPC endpoint
 helpers.
 
@@ -119,8 +117,7 @@ concepts.
 ## MoveCall Authoring
 
 MoveCall nodes use explicit package/module/function input and SDK Core
-per-function lookup. Package-wide module scans are not part of the current
-runtime.
+per-function lookup. Package-wide module scans are not part of the runtime.
 
 MoveCall signature state should be treated as an async authoring boundary:
 
@@ -132,7 +129,7 @@ MoveCall signature state should be treated as an async authoring boundary:
 
 ## Commands
 
-Check root `package.json` before running commands. Current commands:
+Check root `package.json` before running commands. Available commands:
 
 - `npm run build`
 - `npm run test:builder-flow`
@@ -146,7 +143,7 @@ sequential builder/example gate.
 
 ## Review Checklist
 
-Before calling a refactor complete, review these boundaries together:
+Before calling a change complete, review these boundaries together:
 
 - model graph/raw/IR conversion;
 - React Flow adapter and graph signature;

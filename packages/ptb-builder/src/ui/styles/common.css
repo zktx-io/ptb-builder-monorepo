@@ -178,7 +178,7 @@
   stroke-dasharray: var(--ptb-io-unknown-dash);
 }
 
-/* Ensure base state uses our variable even on older XYFlow builds */
+/* Base edge state uses the package stroke variable. */
 .react-flow__edge .react-flow__edge-path.ptb-io-edge {
   stroke: var(--xy-edge-stroke) !important;
 }
@@ -260,6 +260,9 @@
 .ptb-node--unknown {
   --ptb-active-ring: var(--ptb-node-unknown-border-active);
 }
+.ptb-node--option {
+  --ptb-active-ring: var(--ptb-node-option-border-active);
+}
 /* Base surfaces per type */
 .ptb-node--command .ptb-node-shell {
   border-color: var(--ptb-node-command-border);
@@ -292,6 +295,10 @@
 .ptb-node--unknown .ptb-node-shell {
   border-color: var(--ptb-node-unknown-border);
   background: var(--ptb-node-unknown-bg);
+}
+.ptb-node--option .ptb-node-shell {
+  border-color: var(--ptb-node-option-border);
+  background: var(--ptb-node-option-bg);
 }
 /* Hover (brighter) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-node-shell {
@@ -326,6 +333,10 @@
   border-color: var(--ptb-node-unknown-border-hover);
   background: var(--ptb-node-unknown-bg-hover);
 }
+.react-flow__node:has(.ptb-node--option):hover .ptb-node-shell {
+  border-color: var(--ptb-node-option-border-hover);
+  background: var(--ptb-node-option-bg-hover);
+}
 /* Selected/Active (brightest) */
 .react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell {
   border-color: var(--ptb-node-command-border-active);
@@ -358,6 +369,10 @@
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-node-shell {
   border-color: var(--ptb-node-unknown-border-active);
   background: var(--ptb-node-unknown-bg-active);
+}
+.react-flow__node.selected:has(.ptb-node--option) .ptb-node-shell {
+  border-color: var(--ptb-node-option-border-active);
+  background: var(--ptb-node-option-bg-active);
 }
 /* Subtle appear animation */
 @keyframes ptb-fade-in {
@@ -505,6 +520,9 @@
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io {
   color: var(--ptb-node-unknown-border);
 }
+.react-flow__node:has(.ptb-node--option) .ptb-handle--io {
+  color: var(--ptb-node-option-border);
+}
 /* Hover / Selected mapping */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io {
   color: var(--ptb-node-command-border-hover);
@@ -560,6 +578,13 @@
 }
 .react-flow__node.selected:has(.ptb-node--unknown) .ptb-handle--io {
   color: var(--ptb-node-unknown-border-active);
+}
+
+.react-flow__node:has(.ptb-node--option):hover .ptb-handle--io {
+  color: var(--ptb-node-option-border-hover);
+}
+.react-flow__node.selected:has(.ptb-node--option) .ptb-handle--io {
+  color: var(--ptb-node-option-border-active);
 }
 
 /* Subtle hover affordance on the handle icon itself */

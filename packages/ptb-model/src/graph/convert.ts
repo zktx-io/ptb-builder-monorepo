@@ -328,12 +328,7 @@ function graphInputValueParam(input: IRInput): { value: unknown } | {} {
   switch (input.kind) {
     case 'Pure':
       return Object.prototype.hasOwnProperty.call(input, 'value')
-        ? {
-            value:
-              input.value === undefined
-                ? NULL_VALUE
-                : cloneJsonLike(input.value),
-          }
+        ? { value: cloneJsonLike(input.value) }
         : {};
     case 'Object':
       return input.object !== undefined

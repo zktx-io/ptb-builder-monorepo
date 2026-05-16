@@ -6,8 +6,8 @@
  *  - Connection validation uses structured PTB types resolved from the store
  *    (findPortTypeFromStore) and applies isTypeCompatible() semantics.
  *  - Visual category/glyphs are purely cosmetic; they do not affect validation.
- *  - NOTE: The PTB model permits vector<object>/option<object> for decode and
- *    forward-compat. UI-level creation of such shapes may be disabled.
+ *  - The PTB model can represent vector<object>/option<object> from decoded data.
+ *    UI-level creation of such shapes may be disabled.
  */
 
 import React, { useCallback, useMemo } from 'react';

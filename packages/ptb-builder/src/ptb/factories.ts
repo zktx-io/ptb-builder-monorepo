@@ -8,10 +8,11 @@
 //   external direct factory use only, not React component ownership.
 // - UI count defaults for commands are seeded automatically when absent,
 //   so the initial port sets always reflect a usable default.
-// - IMPORTANT: while the model allows vector<object>/option<object> for forward
-//   compatibility, UI-level creation currently disallows them.
+// - The model allows vector<object>/option<object>; UI-level creation disallows
+//   them.
 // -----------------------------------------------------------------------------
 
+import { NULL_VALUE } from '@zktx.io/ptb-model';
 import type { RawCallArg } from '@zktx.io/ptb-model';
 
 import { M, O, Opt, S, V } from './graph/typeHelpers';
@@ -62,7 +63,7 @@ export function makeCommandNode(
   const id = opts?.id ?? createUniqueId(`cmd-${kind}`);
   const label = opts?.label ?? defaultLabelOf(kind);
 
-  // --- seed UI with default count when absent (fundamental fix) ---
+  // Seed command UI with default counts when absent.
   const key = countKeyOf(kind);
   const def = countDefaultOf(kind);
   const seededUI: CommandUIParams | undefined = (() => {
@@ -183,19 +184,39 @@ export function makeMoveNumericVector(
 /** Options */
 export const makeAddressOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(Opt(S('address')), { ...opts, label: 'option<address>' });
+) =>
+  makeVariableNode(Opt(S('address')), {
+    value: NULL_VALUE,
+    ...opts,
+    label: 'option<address>',
+  });
 
 export const makeBoolOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(Opt(S('bool')), { ...opts, label: 'option<bool>' });
+) =>
+  makeVariableNode(Opt(S('bool')), {
+    value: NULL_VALUE,
+    ...opts,
+    label: 'option<bool>',
+  });
 
 export const makeStringOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(Opt(S('string')), { ...opts, label: 'option<string>' });
+) =>
+  makeVariableNode(Opt(S('string')), {
+    value: NULL_VALUE,
+    ...opts,
+    label: 'option<string>',
+  });
 
 export const makeIdOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(Opt(S('id')), { ...opts, label: 'option<id>' });
+) =>
+  makeVariableNode(Opt(S('id')), {
+    value: NULL_VALUE,
+    ...opts,
+    label: 'option<id>',
+  });
 
 /** Move numeric options: option<u8|u16|u32|u64|u128|u256> */
 export function makeMoveNumericOption(
@@ -203,6 +224,7 @@ export function makeMoveNumericOption(
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
 ) {
   return makeVariableNode(Opt(M(width)), {
+    value: NULL_VALUE,
     ...opts,
     label: `option<${width}>`,
   });

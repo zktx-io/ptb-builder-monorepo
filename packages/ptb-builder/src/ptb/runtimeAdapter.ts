@@ -2,6 +2,7 @@ import type { PureTypeName } from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
 import {
   hasErrors,
+  NULL_VALUE,
   parseObjectId,
   PTBModelError,
   transactionIRToTsSdkCode,
@@ -279,7 +280,9 @@ function normalizePureValue(type: PTBType, value: unknown): unknown {
         ? value.map((item) => normalizePureValue(type.elem, item))
         : value;
     case 'option':
-      return value === undefined ? value : normalizePureValue(type.elem, value);
+      return value === NULL_VALUE
+        ? value
+        : normalizePureValue(type.elem, value);
     case 'move_numeric':
     case 'object':
     case 'tuple':

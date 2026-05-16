@@ -282,6 +282,16 @@ function isIRInputShape(
         );
         return false;
       }
+      if (value.value === undefined) {
+        diagnostics.push(
+          errorDiagnostic(
+            'ir.input.pureValue',
+            `Pure input ${inputIndex} must use null for None values; undefined is not canonical.`,
+            `${path}.value`,
+          ),
+        );
+        return false;
+      }
       if (value.type === undefined) {
         diagnostics.push(
           errorDiagnostic(

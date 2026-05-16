@@ -12,18 +12,18 @@
 
 `@zktx.io/ptb-builder` depends on `@zktx.io/ptb-model` so the builder can adopt
 the model package as its canonical PTB data boundary. Model package APIs are the
-boundary for new or refactored PTB data validation, raw PTB conversion, Mermaid
-rendering, and TypeScript SDK code string rendering. Existing builder internals
-still include local graph and code-rendering code until the later adoption
-phases replace those paths.
+boundary for PTB data validation, raw PTB conversion, Mermaid rendering, and
+TypeScript SDK code string rendering. The builder package owns React UI state,
+React Flow integration, document/provider lifecycle, SDK Core read helpers,
+object authoring policy, and the runtime adapter that turns a validated
+`TransactionIR` into a host-owned Sui `Transaction`.
 
 Import the model package through `@zktx.io/ptb-model` only. Package-internal
 model imports, model `dist` imports, and relative imports across package
 boundaries are intentionally blocked for builder source.
 
-Legacy PTB documents are not model inputs. The model parser rejects legacy
-shapes, and the normal builder runtime accepts only current `ptb_4` documents.
-Run any legacy migration outside this package before calling builder/model APIs.
+The builder runtime accepts `ptb_4` documents. Convert unsupported document
+shapes outside this package before calling builder/model APIs.
 
 ## Features
 
@@ -42,7 +42,7 @@ Run any legacy migration outside this package before calling builder/model APIs.
 ### 3. Save and Share
 
 - **Graph Persistence**: Save PTB graphs locally and reload them later.
-- **Collaboration**: Share saved graphs with teammates or the community.
+- **Portable Documents**: Share saved `.ptb` documents with other PTB Builder users.
 - **Optional Export**: Expose an **Export .ptb** button from the UI (hidden by default).
 
 ### 4. Structure Visualization and Debugging
@@ -56,7 +56,7 @@ Run any legacy migration outside this package before calling builder/model APIs.
 
 ### 6. Use On‑Chain Assets as Objects
 
-- **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
+- **Asset Browser**: Browse objects owned by the `address` prop when a host wallet/address is connected (coins, Move objects, modules, etc.).
 - **Object Ref Preservation**: Insert owned assets as **Object nodes** with SDK-reported object id, version, and digest when the Core API returns those fields.
 - **Explicit Shared Usage**: Shared-object inputs require an explicit read-only or mutable selection. PTB Builder does not infer shared mutability from owner labels, symbols, or convenience defaults.
 
@@ -67,7 +67,7 @@ Run any legacy migration outside this package before calling builder/model APIs.
 
 ## Supported Commands
 
-The following PTB commands are currently supported:
+The following command nodes are available from the builder context menu:
 
 - **SplitCoins** — split a coin object into multiple parts.
 - **MergeCoins** — merge multiple coins into one.
@@ -75,96 +75,82 @@ The following PTB commands are currently supported:
 - **MoveCall** — call a Move function by entering its package, module, and
   function names explicitly; the builder verifies the selected function
   signature through the SDK Core API.
-- **MakeMoveVec** — create vectors from scalar values.
 
-(Additional commands can be added via registry extensions.)
+The model/runtime path also supports `MakeMoveVec` for loaded or decoded PTB
+data, but the UI does not expose a context-menu action for creating
+`MakeMoveVec` nodes. The package does not expose a public command registry
+extension API.
 
 ## Supported Inputs
 
-Inputs follow `tx.option` conventions from the Sui TS SDK:
+Input authoring support:
 
 - **Scalars**: numbers, booleans, addresses, strings ✅
 - **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
-  - _Objects can be selected from your owned assets via the **Assets modal**._
+  - _Objects can be selected from your owned assets via the **Assets modal** when `address` is provided._
   - _Manual object authoring should use the object node lookup before runtime building so the graph carries SDK-reported object id, version, digest, owner kind, and type tag._
   - _Receiving and shared-object usage are explicit authoring choices. Consensus-owned or unknown-owner objects are not converted into raw PTB object inputs by default._
 - **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
 - **Options**: available for scalars ✅ (❌ not supported for objects)
 
-## Quick Start (dApp Integration)
+## Quick Start
 
-The example app uses `@mysten/dapp-kit-react@2.x` and
-`@mysten/sui@2.16.2`. The host creates the wallet/client provider and passes an
-execution adapter into PTB Builder.
+Install the builder package plus its peer dependencies in your React app:
+
+```sh
+npm install @zktx.io/ptb-builder @mysten/sui @xyflow/react elkjs lucide-react re-resizable react react-dom
+```
+
+For authoring, inspection, and TypeScript SDK code preview, the smallest useful
+setup is the component, CSS, a starting chain, and a sized container. Passing
+`initialChain` creates a fresh editable PTB document on mount. It is intentionally
+an initializer, not a network controller; use `loadFromDoc()` when your app needs
+to replace the active document.
 
 ```tsx
-import { createDAppKit, DAppKitProvider } from '@mysten/dapp-kit-react';
-import {
-  useCurrentAccount,
-  useCurrentNetwork,
-  useDAppKit,
-} from '@mysten/dapp-kit-react';
-import { Transaction } from '@mysten/sui/transactions';
-import {
-  Chain,
-  createPtbCoreClientForNetwork,
-  PTBBuilder,
-  ToastVariant,
-  type PtbCoreClientTransport,
-} from '@zktx.io/ptb-builder';
+import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
-const suiTransport: PtbCoreClientTransport =
-  import.meta.env.VITE_SUI_TRANSPORT === 'graphql' ? 'graphql' : 'grpc';
+export function App() {
+  return (
+    <PTBBuilder
+      initialChain="sui:testnet"
+      style={{ width: '100vw', height: '100vh' }}
+    />
+  );
+}
+```
 
-const dAppKit = createDAppKit({
-  networks: ['mainnet', 'testnet', 'devnet'],
-  defaultNetwork: 'testnet',
-  createClient(network) {
-    // Uses SDK Core transport only. gRPC is the default path; GraphQL is
-    // available for networks with a verified endpoint.
-    return createPtbCoreClientForNetwork(network, { transport: suiTransport });
-  },
-});
+That minimal setup does not connect a wallet and does not execute or simulate
+transactions. It can still author PTB graphs, render code, export documents when
+enabled, and use the package default SDK Core client for read/load helpers.
 
-function BuilderApp() {
+Add host integration only for the capabilities your app owns. The next example
+assumes your app already wraps this component in the dapp-kit provider setup
+shown by the local `packages/example` app.
+
+```tsx
+import { useCurrentAccount, useCurrentNetwork, useDAppKit } from '@mysten/dapp-kit-react';
+import type { Transaction } from '@mysten/sui/transactions';
+import { PTBBuilder, type Chain } from '@zktx.io/ptb-builder';
+
+function chainToNetwork(chain: Chain) {
+  const match = chain.match(/^sui:(mainnet|testnet|devnet)$/);
+  if (!match) throw new Error(`Unsupported chain: ${chain}`);
+  return match[1] as 'mainnet' | 'testnet' | 'devnet';
+}
+
+export function BuilderWithHostAdapters() {
   const account = useCurrentAccount();
-  const network = useCurrentNetwork();
+  const network = useCurrentNetwork() ?? 'testnet';
   const dAppKit = useDAppKit();
-  const createClient = (chain: Chain) =>
-    dAppKit.getClient(chain.replace(/^sui:/, '') as 'mainnet' | 'testnet' | 'devnet');
 
-  const executeTx = async (
-    chain: Chain,
-    transaction: Transaction | undefined,
-  ): Promise<{ digest?: string; error?: string }> => {
-    if (!account || !transaction) return { error: 'No account or transaction' };
-    const targetNetwork = chain.replace(/^sui:/, '') as 'mainnet' | 'testnet' | 'devnet';
-    if (network !== targetNetwork) {
-      return { error: `Switch to ${targetNetwork} before executing this PTB` };
-    }
-    const result = await dAppKit.signAndExecuteTransaction({ transaction });
-    if (result.$kind === 'FailedTransaction') {
-      const statusError = result.FailedTransaction.status.error;
-      const reason =
-        statusError?.message ||
-        statusError?.$kind ||
-        'Transaction execution failed';
-      return {
-        digest: result.FailedTransaction.digest,
-        error: reason,
-      };
-    }
-    return { digest: result.Transaction.digest };
-  };
+  const createClient = (chain: Chain) => dAppKit.getClient(chainToNetwork(chain));
 
-  const simulateTx = async (
-    chain: Chain,
-    transaction: Transaction | undefined,
-  ): Promise<{ success?: boolean; error?: string }> => {
-    if (!transaction) return { error: 'No transaction' };
+  const simulateTx = async (chain: Chain, transaction?: Transaction) => {
+    if (!transaction) return { error: 'No transaction to simulate' };
     const client = createClient(chain);
     const bytes = await transaction.build({ client });
     const result = await client.core.simulateTransaction({
@@ -180,36 +166,44 @@ function BuilderApp() {
     return { success: simulated.status.success, error };
   };
 
-  const toast = ({ message, variant }: { message: string; variant?: ToastVariant }) => {
-    console.log(variant ?? 'info', message);
+  const executeTx = async (chain: Chain, transaction?: Transaction) => {
+    if (!account) return { error: 'Wallet not connected' };
+    if (!transaction) return { error: 'No transaction to execute' };
+    if (network !== chainToNetwork(chain)) {
+      return { error: `Switch to ${chainToNetwork(chain)} before executing this PTB` };
+    }
+    const result = await dAppKit.signAndExecuteTransaction({ transaction });
+    if (result.$kind === 'FailedTransaction') {
+      const statusError = result.FailedTransaction.status.error;
+      return {
+        digest: result.FailedTransaction.digest,
+        error:
+          statusError?.message ||
+          statusError?.$kind ||
+          'Transaction execution failed',
+      };
+    }
+    return { digest: result.Transaction.digest };
   };
 
   return (
     <PTBBuilder
-      toast={toast}
-      executeTx={executeTx}
-      simulateTx={simulateTx}
+      initialChain={`sui:${network}` as Chain}
+      style={{ width: '100vw', height: '100vh' }}
       createClient={createClient}
+      simulateTx={simulateTx}
+      executeTx={executeTx}
       address={account?.address}
       showExportButton
     />
   );
 }
-
-export function App() {
-  return (
-    <DAppKitProvider dAppKit={dAppKit}>
-      <BuilderApp />
-    </DAppKitProvider>
-  );
-}
 ```
 
-Use `useDAppKit().switchNetwork(network)` to switch networks in the host app.
-`createPtbCoreClientForNetwork(..., { transport: 'graphql' })` throws when the
-requested network has no verified GraphQL endpoint in the package client table.
-`loadFromDoc()` accepts current `ptb_4` documents with explicit `chain` and
-`view` fields only. Legacy document migration is intentionally outside this
+The local `packages/example` app shows a complete dapp-kit host with network
+selection, undo/redo, document drop, on-chain transaction loading, and toast
+integration. `loadFromDoc()` accepts `ptb_4` documents with explicit `chain`
+and `view` fields only. Convert unsupported document shapes outside this
 package.
 
 ### SDK Core client boundary
@@ -241,7 +235,8 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 <PTBBuilder
   theme="dark" // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
-  address={connectedAddress} // optional runtime envelope sender
+  initialChain="sui:testnet" // optional: start with a fresh editable PTB for this chain
+  address={connectedAddress} // optional runtime envelope sender and Assets modal owner
   gasBudget={500_000_000} // optional runtime envelope gas budget
   executeTx={execAdapter} // host-provided execution adapter
   createClient={clientFactory} // host-provided SDK Core client factory for reads/loads
@@ -265,7 +260,7 @@ const {
   setTheme,
 } = usePTB();
 
-// Export current PTB document with structured error information
+// Export the active PTB document with structured error information
 const exportResult = exportDocResult({ sender: connectedAddress });
 if (!exportResult.ok) {
   console.warn(exportResult.error);
@@ -295,7 +290,7 @@ setTheme('tokyo-night');
 ### Styling & Theme imports
 
 - `@zktx.io/ptb-builder/index.css` contains the structural styles for nodes, edges, and the builder chrome. It should be imported exactly once in your host app (or exposed by your bundler) regardless of the theme you choose.
-- `@zktx.io/ptb-builder/styles/themes-all.css` is a self-contained bundle of every theme token file so you can switch themes at runtime with `setTheme`. Importing it includes all shipped themes; the current package build emits it at roughly 43 kB before gzip.
+- `@zktx.io/ptb-builder/styles/themes-all.css` is a self-contained bundle of every theme token file so you can switch themes at runtime with `setTheme`. Importing it includes all shipped themes; the package build emits it at roughly 43 kB before gzip.
 - To minimize CSS for static deployments, import only the theme(s) you actually ship, e.g. `import '@zktx.io/ptb-builder/styles/theme-dark.css';`. Picking a single one keeps the bundle lean while still allowing dynamic switching between the themes you explicitly include.
 - Do not import `themes-all.css` together with individual `theme-*.css` files. Choose the aggregate file for runtime theme switching, or choose individual theme files for a smaller static bundle.
 - When you only ship a single theme file, pass the matching `theme` value (e.g., `theme="light"`) and set `showThemeSelector={false}` so the UI doesn’t expose choices that aren’t bundled.
@@ -304,7 +299,7 @@ setTheme('tokyo-night');
 
 - PTB Builder batches graph/content `onDocChange` emissions briefly and debounces viewport-only changes by 250 ms so autosave targets are not overwhelmed while the user edits or pans the canvas.
 - Loading a document via `loadFromDoc`/`loadFromOnChainTx` resets the internal history cache, replays the snapshot once, and suppresses duplicate events until the user edits again.
-- The sample `usePtbUndo` hook keeps a deterministic signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. The signature is a deduplication helper for current builder behavior, not a persistent cross-version document id.
+- The sample `usePtbUndo` hook keeps a deterministic signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. The signature is a deduplication helper for builder document behavior, not a persistent cross-version document id.
 - When integrating your own autosave pipeline, expect `onDocChange` to fire often during graph edits but only after the debounce window for viewport-only motions.
 
 ---
@@ -314,8 +309,11 @@ setTheme('tokyo-night');
 | Prop                | Type                                                                                  | Default  | Description                                                   |
 | ------------------- | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
 | `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
+| `initialChain`      | `Chain`                                                                               | –        | Optional chain used to create a fresh editable PTB on mount. Later document changes should use `loadFromDoc()`. |
+| `className`         | `string`                                                                              | –        | Optional class for a host-controlled container around the builder. |
+| `style`             | `React.CSSProperties`                                                                 | –        | Optional style for the same container; useful for setting width/height directly on `<PTBBuilder />`. |
 | `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
-| `address`           | `string`                                                                              | –        | Optional runtime envelope sender. It is not substituted into graph arguments. |
+| `address`           | `string`                                                                              | –        | Optional runtime envelope sender and owner address for the Assets modal. It is not substituted into graph arguments. |
 | `gasBudget`         | `number`                                                                              | –        | Optional runtime envelope gas budget.                         |
 | `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
 | `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Optional host-provided simulation adapter; required only when the Dry run action is used. |
@@ -331,7 +329,7 @@ setTheme('tokyo-night');
 
 PTB Builder persists graphs as `PTBDoc` objects containing:
 
-- **version** — current documents use `ptb_4`
+- **version** — documents use `ptb_4`
 - **graph** — nodes and edges of the PTB
 - **modules** — embedded Move function signature metadata for already-resolved
   MoveCall targets
@@ -351,7 +349,3 @@ This enables saving, sharing, and reloading graphs consistently across environme
 - On file drop, prefer validating with `/^sui:(mainnet|testnet|devnet)$/` before switching the network.
 
 ---
-
-## Roadmap
-
-- Expanded sharing and collaboration features

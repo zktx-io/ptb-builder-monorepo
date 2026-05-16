@@ -5,8 +5,7 @@
  * - Uses a Bezier path for smooth curvature.
  * - Derives a coarse IO category for CSS from the serialized type:
  *   props.data.dataType (preferred) → source/target handle suffix.
- * - Compatible with v11 (sourceHandle/targetHandle) and v12
- *   (sourceHandleId/targetHandleId).
+ * - Reads both handle field spellings used by local React Flow edge helpers.
  */
 
 import { memo, useMemo } from 'react';
@@ -48,7 +47,6 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
     [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition],
   );
 
-  // v11 (sourceHandle/targetHandle) and v12 (sourceHandleId/targetHandleId)
   const srcH: string | undefined =
     (props as any).sourceHandleId ?? (props as any).sourceHandle;
   const tgtH: string | undefined =

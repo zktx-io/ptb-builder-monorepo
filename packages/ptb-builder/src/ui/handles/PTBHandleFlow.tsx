@@ -3,7 +3,7 @@
 /** Flow handle component.
  *  - Uses fixed ids: source = FLOW_NEXT, target = FLOW_PREV.
  *  - Validates direction (next→prev), forbids self-edges, requires concrete ends.
- *  - Relies on @xyflow/react to provide v11/v12-compatible handle props.
+ *  - Relies on @xyflow/react to provide handle ids during connection validation.
  */
 
 import { memo } from 'react';

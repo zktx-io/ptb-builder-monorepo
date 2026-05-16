@@ -7,6 +7,7 @@ import {
   Position,
   useUpdateNodeInternals,
 } from '@xyflow/react';
+import { NULL_VALUE } from '@zktx.io/ptb-model';
 
 import { MiniStepper } from './inputs/MiniStepper';
 import { OptionToggle } from './inputs/OptionToggle';
@@ -47,6 +48,7 @@ import { iconOfVar } from '../icons';
 import { NODE_SIZES } from '../nodeLayout';
 
 const DEBOUNCE_MS = 250;
+const OPTION_NONE_VALUE = NULL_VALUE;
 type VectorEditorItem = string | boolean;
 
 export type VarData = {
@@ -175,6 +177,7 @@ export const VarNode = memo(function VarNode({
   // Local UI buffers
   const [scalarBuf, setScalarBuf] = useState(''); // scalar & object id (also Option<T> inner)
   const [vecItems, setVecItems] = useState<VectorEditorItem[]>(['']); // vector<T> editor
+  const vecItemsRef = useRef<VectorEditorItem[]>(['']);
   const [optSome, setOptSome] = useState<boolean>(false); // Option<T> toggle
   const reqSeqRef = useRef(0);
   const [objectDraft, setObjectDraft] = useState(() =>
@@ -213,6 +216,10 @@ export const VarNode = memo(function VarNode({
     },
     [],
   );
+  const replaceVectorItems = useCallback((next: VectorEditorItem[]) => {
+    vecItemsRef.current = next;
+    setVecItems(next);
+  }, []);
 
   // Derived flags for minimal branching
   const isOption = isOptionType(varType);
@@ -236,7 +243,7 @@ export const VarNode = memo(function VarNode({
     const val = variableValue;
 
     if (isOption) {
-      const isNone = val === undefined;
+      const isNone = val === OPTION_NONE_VALUE;
       setOptSome(!isNone);
       if (!isNone) {
         const s = String(val ?? '');
@@ -254,7 +261,9 @@ export const VarNode = memo(function VarNode({
                 : String(item),
             )
           : [''];
-      setVecItems((prev) => (arrShallowEqual(prev, arr) ? prev : arr));
+      if (!arrShallowEqual(vecItemsRef.current, arr)) {
+        replaceVectorItems(arr);
+      }
       return;
     }
 
@@ -267,6 +276,7 @@ export const VarNode = memo(function VarNode({
     isVector,
     vecElemIsBool,
     arrShallowEqual,
+    replaceVectorItems,
   ]);
 
   // Default scalar<bool>=true once (non-helper)
@@ -285,6 +295,10 @@ export const VarNode = memo(function VarNode({
       patchVar({ value: vals });
     },
   );
+  const cancelPendingPureValueDrafts = useCallback(() => {
+    debouncedPatchScalar.cancel();
+    debouncedPatchVector.cancel();
+  }, [debouncedPatchScalar, debouncedPatchVector]);
 
   const rawObject =
     (v as any)?.rawInput?.kind === 'Object'
@@ -314,6 +328,7 @@ export const VarNode = memo(function VarNode({
     if (!canEdit) return;
 
     const id = scalarBuf.trim();
+    cancelPendingPureValueDrafts();
     patchVar({ value: scalarBuf, rawInput: undefined });
 
     if (!id) {
@@ -368,11 +383,19 @@ export const VarNode = memo(function VarNode({
         variant: 'error',
       });
     }
-  }, [canEdit, lookupObjectForAuthoring, patchVar, scalarBuf, toast]);
+  }, [
+    canEdit,
+    cancelPendingPureValueDrafts,
+    lookupObjectForAuthoring,
+    patchVar,
+    scalarBuf,
+    toast,
+  ]);
 
   const handleObjectUsageChange = useCallback(
     (usage: ObjectRawUsage | '') => {
       if (!canEdit) return;
+      cancelPendingPureValueDrafts();
       const resolved = activeObjectAuthoringInfo(objectDraft);
       if (!resolved) {
         patchVar({ rawInput: undefined });
@@ -399,7 +422,7 @@ export const VarNode = memo(function VarNode({
         rawInput: rawInput.rawInput,
       });
     },
-    [canEdit, objectDraft, patchVar, toast],
+    [canEdit, cancelPendingPureValueDrafts, objectDraft, patchVar, toast],
   );
 
   // Port
@@ -412,21 +435,28 @@ export const VarNode = memo(function VarNode({
   const stepVec = useCallback(
     (delta: number) => {
       if (!canEdit || !isVector) return;
-      setVecItems((prev) => {
-        const nextLen = Math.max(1, prev.length + delta);
-        const next =
-          nextLen > prev.length
-            ? [
-                ...prev,
-                ...Array.from({ length: nextLen - prev.length }, () => ''),
-              ]
-            : prev.slice(0, nextLen);
-        patchVar({ value: next });
-        requestInternals();
-        return next;
-      });
+      cancelPendingPureValueDrafts();
+      const prev = vecItemsRef.current;
+      const nextLen = Math.max(1, prev.length + delta);
+      const next =
+        nextLen > prev.length
+          ? [
+              ...prev,
+              ...Array.from({ length: nextLen - prev.length }, () => ''),
+            ]
+          : prev.slice(0, nextLen);
+      replaceVectorItems(next);
+      patchVar({ value: next });
+      requestInternals();
     },
-    [canEdit, isVector, patchVar, requestInternals],
+    [
+      canEdit,
+      cancelPendingPureValueDrafts,
+      isVector,
+      patchVar,
+      replaceVectorItems,
+      requestInternals,
+    ],
   );
 
   // Refresh internals on height-affecting changes
@@ -443,6 +473,9 @@ export const VarNode = memo(function VarNode({
   ]);
 
   const title = (data?.label ?? v?.label ?? 'variable').trim();
+  const nodeClassName = isOption
+    ? `ptb-node--${category} ptb-node--option`
+    : `ptb-node--${category}`;
 
   // Render vector editor
   const renderVectorEditor = (elemT = vectorElem(varType)) => {
@@ -466,13 +499,12 @@ export const VarNode = memo(function VarNode({
                 key={`vec-bool-${i}`}
                 value={b}
                 onChange={(newVal) => {
-                  setVecItems((prev) => {
-                    const next = prev.slice();
-                    next[i] = newVal;
-                    defer(() => patchVar({ value: next }));
-                    requestInternals();
-                    return next;
-                  });
+                  cancelPendingPureValueDrafts();
+                  const next = vecItemsRef.current.slice();
+                  next[i] = newVal;
+                  replaceVectorItems(next);
+                  patchVar({ value: next });
+                  requestInternals();
                 }}
                 disabled={!canEdit}
               />
@@ -485,15 +517,13 @@ export const VarNode = memo(function VarNode({
               placeholder={`${placeholderFor(elemT)} [${i}]`}
               onChange={(e) => {
                 const vv = e.target.value;
-                setVecItems((prev) => {
-                  const copy = prev.slice();
-                  copy[i] = vv;
-                  if (canEdit) {
-                    debouncedPatchVector.schedule(copy);
-                    requestInternals();
-                  }
-                  return copy;
-                });
+                const next = vecItemsRef.current.slice();
+                next[i] = vv;
+                replaceVectorItems(next);
+                if (canEdit) {
+                  debouncedPatchVector.schedule(next);
+                  requestInternals();
+                }
               }}
               disabled={!canEdit}
             />
@@ -512,7 +542,7 @@ export const VarNode = memo(function VarNode({
     : '';
 
   return (
-    <div className={`ptb-node--${category}`}>
+    <div className={nodeClassName}>
       <div
         className="ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative"
         style={{
@@ -544,13 +574,18 @@ export const VarNode = memo(function VarNode({
                 some={optSome}
                 disabled={!canEdit || readOnly}
                 onToggle={(next) => {
+                  cancelPendingPureValueDrafts();
                   setOptSome(next);
                   if (optionInnerIsBool) {
                     const nextValue = optionBoolValue ?? true;
                     if (next) setScalarBuf(String(nextValue));
-                    patchVar({ value: next ? nextValue : undefined });
+                    patchVar({
+                      value: next ? nextValue : OPTION_NONE_VALUE,
+                    });
                   } else {
-                    patchVar({ value: next ? scalarBuf : undefined });
+                    patchVar({
+                      value: next ? scalarBuf : OPTION_NONE_VALUE,
+                    });
                   }
                   requestInternals();
                 }}
@@ -568,7 +603,10 @@ export const VarNode = memo(function VarNode({
                   value={optionBoolValue}
                   onChange={(val) => {
                     setScalarBuf(String(val));
-                    if (canEdit && optSome) patchVar({ value: val });
+                    if (canEdit && optSome) {
+                      cancelPendingPureValueDrafts();
+                      patchVar({ value: val });
+                    }
                   }}
                   disabled={optionInputDisabled}
                 />
@@ -592,7 +630,11 @@ export const VarNode = memo(function VarNode({
               // ===== Scalar<bool> (non-option) =====
               <SelectBool
                 value={variableValue as boolean | undefined}
-                onChange={(val) => canEdit && patchVar({ value: val })}
+                onChange={(val) => {
+                  if (!canEdit) return;
+                  cancelPendingPureValueDrafts();
+                  patchVar({ value: val });
+                }}
                 disabled={!canEdit}
               />
             ) : (
@@ -608,6 +650,7 @@ export const VarNode = memo(function VarNode({
 
                     if (varType?.kind === 'object') {
                       const seq = ++reqSeqRef.current;
+                      cancelPendingPureValueDrafts();
                       setObjectDraft((prev) =>
                         objectAuthoringInputChanged(prev, s, seq),
                       );

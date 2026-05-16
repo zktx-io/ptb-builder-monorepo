@@ -1,6 +1,7 @@
 import {
   graphToTransactionIR,
   hasErrors,
+  NULL_VALUE,
   PTBModelError,
   type PTBType,
   type TransactionIR,
@@ -412,6 +413,47 @@ describe('model-root PTB boundary', () => {
     }
   });
 
+  it('rejects empty address and id pure values before runtime build', () => {
+    const cases: Array<{ id: string; type: PTBType; value: unknown }> = [
+      {
+        id: 'recipient',
+        type: { kind: 'scalar', name: 'address' },
+        value: '',
+      },
+      {
+        id: 'objectId',
+        type: { kind: 'scalar', name: 'id' },
+        value: '0x',
+      },
+      {
+        id: 'addressList',
+        type: {
+          kind: 'vector',
+          elem: { kind: 'scalar', name: 'address' },
+        },
+        value: ['0x1', ''],
+      },
+    ];
+
+    for (const testCase of cases) {
+      const ir: TransactionIR = {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: testCase.id,
+            kind: 'Pure',
+            value: testCase.value,
+            type: testCase.type,
+          },
+        ],
+        commands: [],
+        diagnostics: [],
+      };
+
+      expect(() => buildTransactionFromIR(ir)).toThrow(PTBModelError);
+    }
+  });
+
   it('builds runtime pure inputs for option<bool> values authored as booleans', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
@@ -427,6 +469,50 @@ describe('model-root PTB boundary', () => {
       diagnostics: [],
     };
 
+    expect(() => buildTransactionFromIR(ir)).not.toThrow();
+  });
+
+  it('preserves builder-authored option None through graph JSON and runtime build', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'maybeFlag',
+          kind: 'Variable',
+          label: 'option<bool>',
+          name: 'maybeFlag',
+          varType: { kind: 'option', elem: { kind: 'scalar', name: 'bool' } },
+          value: NULL_VALUE,
+          ports: [
+            {
+              id: 'out',
+              direction: 'out',
+              role: 'io',
+              dataType: {
+                kind: 'option',
+                elem: { kind: 'scalar', name: 'bool' },
+              },
+            },
+          ],
+        },
+      ],
+      edges: [],
+    };
+
+    const roundTrippedGraph = JSON.parse(JSON.stringify(graph)) as PTBGraph;
+    const ir = graphToTransactionIR(roundTrippedGraph);
+    const input = ir.inputs[0];
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(Object.prototype.hasOwnProperty.call(input, 'value')).toBe(true);
+    expect(input).toMatchObject({
+      id: 'maybeFlag',
+      kind: 'Pure',
+      value: NULL_VALUE,
+      type: { kind: 'option', elem: { kind: 'scalar', name: 'bool' } },
+    });
+    expect(transactionIRToTsSdkCode(ir)).toContain(
+      'tx.pure.option("bool", null)',
+    );
     expect(() => buildTransactionFromIR(ir)).not.toThrow();
   });
 

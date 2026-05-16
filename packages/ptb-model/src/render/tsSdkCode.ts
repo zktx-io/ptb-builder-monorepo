@@ -141,11 +141,13 @@ function validateTsSdkRenderableIR(ir: TransactionIR): TransactionDiagnostic[] {
     switch (input.kind) {
       case 'Pure':
         if (input.bytes === undefined && !canRenderTypedPureInput(input)) {
+          const specific = pureValueRenderDiagnostic(input, index);
           diagnostics.push(
             errorDiagnostic(
               'codegen.input.pure',
-              `Pure input ${input.id} requires raw bytes or a supported SDK pure type/value pair for TS SDK code generation.`,
-              `$.inputs[${index}]`,
+              specific?.message ??
+                `Pure input ${input.id} requires raw bytes or a supported SDK pure type/value pair for TS SDK code generation.`,
+              specific?.path ?? `$.inputs[${index}]`,
             ),
           );
         }
@@ -368,7 +370,7 @@ function normalizePureValueForRender(type: PTBType, value: unknown): unknown {
         ? value.map((item) => normalizePureValueForRender(type.elem, item))
         : value;
     case 'option':
-      return value === NULL_VALUE || value === undefined
+      return value === NULL_VALUE
         ? value
         : normalizePureValueForRender(type.elem, value);
     case 'move_numeric':
@@ -402,15 +404,106 @@ function isPureValueCompatible(type: PTBType, value: unknown): boolean {
         value.every((item) => isPureValueCompatible(type.elem, item))
       );
     case 'option':
-      return (
-        value === NULL_VALUE ||
-        value === undefined ||
-        isPureValueCompatible(type.elem, value)
-      );
+      return value === NULL_VALUE || isPureValueCompatible(type.elem, value);
     case 'object':
     case 'tuple':
     case 'unknown':
       return false;
+  }
+}
+
+function pureValueRenderDiagnostic(
+  input: Extract<IRInput, { kind: 'Pure' }>,
+  index: number,
+): { message: string; path: string } | undefined {
+  if (!input.type || !isPTBType(input.type) || !hasPureValue(input)) {
+    return undefined;
+  }
+  return describePureValueIssue(
+    input.id,
+    input.type,
+    input.value,
+    `$.inputs[${index}].value`,
+  );
+}
+
+function describePureValueIssue(
+  inputId: string,
+  type: PTBType,
+  value: unknown,
+  path: string,
+): { message: string; path: string } | undefined {
+  switch (type.kind) {
+    case 'move_numeric':
+      return isNumericPureValue(type.width, value)
+        ? undefined
+        : {
+            message:
+              value === ''
+                ? `Pure input ${inputId} requires a non-empty integer string for ${type.width}.`
+                : `Pure input ${inputId} requires a ${type.width} value within the supported unsigned integer range.`,
+            path,
+          };
+    case 'scalar':
+      switch (type.name) {
+        case 'address':
+        case 'id':
+          return parseObjectId(value) !== undefined
+            ? undefined
+            : {
+                message:
+                  typeof value === 'string' &&
+                  value.replace(/^0x/i, '').length === 0
+                    ? `Pure input ${inputId} requires a non-empty Sui ${type.name === 'id' ? 'object ID' : 'address'}.`
+                    : `Pure input ${inputId} requires a valid Sui ${type.name === 'id' ? 'object ID' : 'address'}.`,
+                path,
+              };
+        case 'bool':
+          return typeof value === 'boolean'
+            ? undefined
+            : {
+                message: `Pure input ${inputId} requires a boolean value.`,
+                path,
+              };
+        case 'string':
+          return typeof value === 'string'
+            ? undefined
+            : {
+                message: `Pure input ${inputId} requires a string value.`,
+                path,
+              };
+        case 'number':
+          return {
+            message: `Pure input ${inputId} uses the abstract number placeholder; choose a concrete Move integer width before rendering TS SDK code.`,
+            path,
+          };
+      }
+      return undefined;
+    case 'vector':
+      if (!isDenseArray(value)) {
+        return {
+          message: `Pure input ${inputId} requires an array value for vector pure input.`,
+          path,
+        };
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        const issue = describePureValueIssue(
+          inputId,
+          type.elem,
+          value[index],
+          `${path}[${index}]`,
+        );
+        if (issue) return issue;
+      }
+      return undefined;
+    case 'option':
+      return value === NULL_VALUE
+        ? undefined
+        : describePureValueIssue(inputId, type.elem, value, path);
+    case 'object':
+    case 'tuple':
+    case 'unknown':
+      return undefined;
   }
 }
 

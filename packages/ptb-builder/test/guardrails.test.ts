@@ -8,7 +8,7 @@ const sourceFiles = collectSourceFiles(sourceRoot);
 
 const forbiddenImports = [
   {
-    label: 'legacy dapp-kit package',
+    label: 'unsupported dapp-kit package',
     matches: ({ specifier }: ImportRecord) => specifier === '@mysten/dapp-kit',
   },
   {
@@ -73,7 +73,7 @@ describe('builder source guardrails', () => {
     expect(violations).toEqual([]);
   });
 
-  it('keeps removed legacy sentinel strings out of builder source', () => {
+  it('keeps unsupported sentinel strings out of builder source', () => {
     const violations = sourceFiles.flatMap((file) => {
       const text = readFileSync(file, 'utf8');
       return forbiddenText
@@ -202,6 +202,84 @@ describe('builder source guardrails', () => {
     expect(text).not.toContain('Option<bool> also uses TextInput');
   });
 
+  it('keeps PTBBuilder wrapper props from changing provider subtree identity', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbBuilder.tsx'), 'utf8');
+
+    expect(text).toContain('<div className={className} style={style}>');
+    expect(text).toContain('<ReactFlowProvider>');
+    expect(text).not.toContain(
+      'if (className !== undefined || style !== undefined)',
+    );
+  });
+
+  it('keeps initialChain below explicit host load authority', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('const initialChainLoadRef = useRef(false)');
+    expect(text).toContain('const explicitLoadStartedRef = useRef(false)');
+    expect(text).toContain('explicitLoadStartedRef.current = true');
+    expect(text).toContain('loadFromDocRef.current = loadFromDoc');
+    expect(text).toContain('explicitLoadStartedRef.current ||');
+    expect(text).toContain('activeChainRef.current');
+    expect(text).toMatch(
+      /useEffect\(\(\) => \{[\s\S]*loadFromDocRef\.current\(initialChain\);[\s\S]*\}, \[initialChain\]\);/,
+    );
+    expect(text).not.toContain('}, [initialChain, loadFromDoc]);');
+  });
+
+  it('keeps option None authoring JSON-stable', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('const OPTION_NONE_VALUE = NULL_VALUE');
+    expect(text).toContain('const isNone = val === OPTION_NONE_VALUE');
+    expect(text).toContain('value: next ? nextValue : OPTION_NONE_VALUE');
+    expect(text).toContain('value: next ? scalarBuf : OPTION_NONE_VALUE');
+    expect(text).not.toContain('value: next ? nextValue : undefined');
+    expect(text).not.toContain('value: next ? scalarBuf : undefined');
+  });
+
+  it('wires option node theme tokens to an emitted node class', () => {
+    const varNode = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+    const commonCss = readFileSync(
+      join(sourceRoot, 'ui', 'styles', 'common.css'),
+      'utf8',
+    );
+
+    expect(varNode).toContain('ptb-node--option');
+    expect(commonCss).toContain('.ptb-node--option');
+    expect(commonCss).toContain('--ptb-node-option-border');
+  });
+
+  it('cancels pending pure-value drafts before stronger VarNode semantic writes', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('const cancelPendingPureValueDrafts = useCallback');
+    expect(text).toContain('const replaceVectorItems = useCallback');
+    expect(text).toMatch(
+      /const stepVec = useCallback[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*replaceVectorItems\(next\);[\s\S]*patchVar\(\{ value: next \}\);/,
+    );
+    expect(text).toMatch(
+      /onToggle=\{\(next\) => \{[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*OPTION_NONE_VALUE/,
+    );
+    expect(text).toMatch(
+      /onChange=\{\(newVal\) => \{[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*replaceVectorItems\(next\);[\s\S]*patchVar\(\{ value: next \}\);/,
+    );
+    expect(text).not.toContain('defer(() => patchVar({ value: next }))');
+    expect(text).not.toContain('setVecItems((prev)');
+  });
+
   it('keeps vector<bool> editor buffers type-honest', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
@@ -291,6 +369,16 @@ describe('builder source guardrails', () => {
     expect(text).not.toContain('setFailedImages');
   });
 
+  it('keeps asset browsing behind a valid sender address', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'CodePip.tsx'), 'utf8');
+
+    expect(text).toContain('const assetOwner = parseObjectId(execOpts.sender)');
+    expect(text).toContain('disabled={!assetOwner}');
+    expect(text).toContain('open={assetsOpen && !!assetOwner}');
+    expect(text).toContain("owner={assetOwner ?? ''}");
+    expect(text).not.toContain("owner={execOpts.sender || ''}");
+  });
+
   it('keeps AssetsModal pagination side effects out of React state updaters', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'AssetsModal.tsx'),
@@ -339,7 +427,7 @@ describe('builder source guardrails', () => {
     expect(text).toContain('lookupSeqRef');
   });
 
-  it('keeps deleted refactor debris from reappearing', () => {
+  it('keeps unsupported source folders absent', () => {
     expect(existsSync(join(sourceRoot, 'codegen'))).toBe(false);
     expect(existsSync(join(sourceRoot, 'legacy'))).toBe(false);
     expect(existsSync(join(sourceRoot, 'ptb', 'decodeTx'))).toBe(false);
@@ -398,7 +486,7 @@ describe('builder source guardrails', () => {
     expect(
       importViolations(`
         const message = 'Do not import ptb-model/src or getFullnodeUrl here';
-        // A migration note may mention @mysten/sui/jsonRpc without importing it.
+        // A compatibility note may mention @mysten/sui/jsonRpc without importing it.
       `),
     ).toEqual([]);
     expect(

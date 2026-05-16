@@ -9,8 +9,8 @@
 //     * vector<T> and option<T> are pure iff T is pure (arbitrary depth).
 //       UI may restrict creating nested vectors/options for simplicity.
 // - object and tuple are non-pure (tx.pure does not encode them).
-// - The type model permits vector<object> / option<object> for forward
-//   compatibility, but UI-level creation disallows them currently.
+// - The type model permits vector<object> / option<object>, but UI-level
+//   creation disallows them.
 // - Compatibility:
 //     * option<X> vs non-option are incompatible; option<X> ↔ option<Y> compares inner.
 //     * scalar(number) ↔ move_numeric(uXX) is compatible (edge.cast carries width).

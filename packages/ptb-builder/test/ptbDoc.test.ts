@@ -89,22 +89,22 @@ describe('PTB document boundary', () => {
     );
   });
 
-  it('rejects legacy ptb_3 documents on the normal runtime path', () => {
-    const legacyDoc = {
+  it('rejects unsupported ptb_3 documents on the normal runtime path', () => {
+    const unsupportedDoc = {
       version: 'ptb_3',
       chain: 'sui:testnet',
       graph,
     };
 
-    expect(() => parseDoc(legacyDoc)).toThrow(
+    expect(() => parseDoc(unsupportedDoc)).toThrow(
       'PTB document version must be ptb_4',
     );
-    expect(() => prepareLoadedDoc(legacyDoc)).toThrow(
+    expect(() => prepareLoadedDoc(unsupportedDoc)).toThrow(
       'PTB document version must be ptb_4',
     );
   });
 
-  it('rejects current documents with missing or unsupported chains before load', () => {
+  it('rejects ptb_4 documents with missing or unsupported chains before load', () => {
     expect(() =>
       prepareLoadedDoc({
         version: 'ptb_4',

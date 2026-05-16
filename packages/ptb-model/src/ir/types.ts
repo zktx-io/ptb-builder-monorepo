@@ -18,7 +18,6 @@ export type IRPureValue =
   | boolean
   | bigint
   | null
-  | undefined
   | IRPureValue[];
 
 export type IRArgRef =
