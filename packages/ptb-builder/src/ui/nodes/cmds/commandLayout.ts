@@ -8,7 +8,6 @@
 import { useMemo } from 'react';
 
 import type { Port, PTBNode } from '../../../ptb/graph/types';
-import { ROW_SPACING, TITLE_TO_IO_GAP } from '../nodeLayout';
 
 /** Human-friendly label fallback for a Port. */
 export function labelOf(p: Port): string {
@@ -16,7 +15,7 @@ export function labelOf(p: Port): string {
 }
 
 /** Split all ports into IO buckets (left=in, right=out). */
-export function splitIO(ports: Port[]) {
+function splitIO(ports: Port[]) {
   const inIO = ports.filter((p) => p.role === 'io' && p.direction === 'in');
   const outIO = ports.filter((p) => p.role === 'io' && p.direction === 'out');
   return { inIO, outIO };
@@ -30,8 +29,5 @@ export function useCommandPorts(node?: PTBNode) {
   }, [node]);
 
   const { inIO, outIO } = useMemo(() => splitIO(ports), [ports]);
-  return { ports, inIO, outIO };
+  return { inIO, outIO };
 }
-
-/** Re-exported for convenience in command UIs that compute heights. */
-export { ROW_SPACING, TITLE_TO_IO_GAP };

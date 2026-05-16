@@ -4,17 +4,21 @@
 // Pure PTB node factories (domain-level, UI-agnostic).
 // - Variable nodes: no flow ports (IO out only).
 // - Command nodes: flow+IO ports are provided by the central registry.
-// - ID generation is injectable (doc-scoped monotonicity via setIdGenerator).
+// - ID generation may be supplied per factory call; module fallback is for
+//   external direct factory use only, not React component ownership.
 // - UI count defaults for commands are seeded automatically when absent,
 //   so the initial port sets always reflect a usable default.
 // - IMPORTANT: while the model allows vector<object>/option<object> for forward
 //   compatibility, UI-level creation currently disallows them.
 // -----------------------------------------------------------------------------
 
+import type { RawCallArg } from '@zktx.io/ptb-model';
+
 import { M, O, Opt, S, V } from './graph/typeHelpers';
 import type {
   CommandKind,
   CommandNode,
+  CommandRuntimeParams,
   CommandUIParams,
   Port,
   PTBType,
@@ -29,19 +33,12 @@ import {
 } from './registry';
 import { KNOWN_IDS } from './seedGraph';
 
-// ------------------------------ ID generator (DI) ----------------------------
-let _localNonce = 0;
-let _idGen: (prefix?: string) => string = (prefix = 'id') =>
-  `${prefix}-${++_localNonce}`;
+// ------------------------------ ID generator --------------------------------
+let localNonce = 0;
 
-/** Replace the ID generator used by factories (doc-scoped recommended). */
-export function setIdGenerator(gen: (prefix?: string) => string) {
-  if (typeof gen === 'function') _idGen = gen;
-}
-
-/** Centralized helper to generate unique IDs with an optional prefix. */
-export function createUniqueId(prefix?: string) {
-  return _idGen(prefix);
+/** Fallback for direct factory calls outside a provider-scoped id allocator. */
+function createUniqueId(prefix = 'id') {
+  return `factory-${prefix}-${++localNonce}`;
 }
 
 // ------------------------------- Small helpers -------------------------------
@@ -56,12 +53,13 @@ export function makeCommandNode(
   kind: CommandKind,
   opts?: {
     label?: string;
+    id?: string;
     ui?: CommandUIParams;
-    runtime?: Record<string, unknown>;
+    runtime?: CommandRuntimeParams;
     position?: { x: number; y: number };
   },
 ): CommandNode {
-  const id = createUniqueId(`cmd-${kind}`);
+  const id = opts?.id ?? createUniqueId(`cmd-${kind}`);
   const label = opts?.label ?? defaultLabelOf(kind);
 
   // --- seed UI with default count when absent (fundamental fix) ---
@@ -96,7 +94,7 @@ export function makeCommandNode(
   };
 
   // Flow + IO ports from the central registry (use seeded UI)
-  node.ports = buildCommandPorts(kind, seededUI);
+  node.ports = buildCommandPorts(kind, seededUI, runtime);
 
   return node;
 }
@@ -106,11 +104,13 @@ export function makeVariableNode(
   varType: PTBType,
   opts?: {
     label?: string;
+    id?: string;
+    rawInput?: RawCallArg;
     value?: unknown;
     position?: { x: number; y: number };
   },
 ): VariableNode {
-  const id = createUniqueId('var');
+  const id = opts?.id ?? createUniqueId('var');
 
   return {
     id,
@@ -119,6 +119,7 @@ export function makeVariableNode(
     name: 'var',
     varType,
     value: opts?.value,
+    rawInput: opts?.rawInput,
     ports: [makeVarOut(varType)],
     position: opts?.position ?? { x: 0, y: 0 },
   };
@@ -184,10 +185,6 @@ export const makeAddressOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
 ) => makeVariableNode(Opt(S('address')), { ...opts, label: 'option<address>' });
 
-export const makeNumberOption = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(Opt(S('number')), { ...opts, label: 'option<number>' });
-
 export const makeBoolOption = (
   opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
 ) => makeVariableNode(Opt(S('bool')), { ...opts, label: 'option<bool>' });
@@ -212,19 +209,6 @@ export function makeMoveNumericOption(
 }
 
 // ------------------------------ Well-known vars ------------------------------
-/** My wallet address — fixed ID (callers should dedupe). */
-export function makeWalletAddress(): VariableNode {
-  const t = S('address');
-  return {
-    id: KNOWN_IDS.MY_WALLET,
-    kind: 'Variable',
-    label: 'my wallet',
-    name: 'sender',
-    varType: t,
-    ports: [makeVarOut(t)],
-    position: { x: 0, y: 0 },
-  };
-}
 
 /** Gas coin object — fixed ID. */
 export function makeGasObject(): VariableNode {
@@ -235,6 +219,7 @@ export function makeGasObject(): VariableNode {
     label: 'gas',
     name: 'gas',
     varType: t,
+    semantic: { kind: 'GasCoin' },
     ports: [makeVarOut(t)],
     position: { x: 0, y: 0 },
   };

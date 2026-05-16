@@ -1,10 +1,15 @@
 // src/ui/nodes/cmds/MoveCallCommand/MoveCallCommand.tsx
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
 
-import type { CommandNode, PTBNode } from '../../../../ptb/graph/types';
+import type {
+  CommandNode,
+  CommandRuntimeParams,
+  Port,
+  PTBNode,
+} from '../../../../ptb/graph/types';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -19,6 +24,10 @@ import {
 } from '../../nodeLayout';
 import { TextInput } from '../../vars/inputs/TextInput';
 import { labelOf, useCommandPorts } from '../commandLayout';
+import {
+  buildResolvedMoveCallState,
+  padTypeArguments,
+} from './resolveMoveCall';
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
@@ -36,6 +45,14 @@ export type MoveCallData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchUI?: (nodeId: string, patch: Record<string, unknown>) => void;
+  onPatchCommand?: (
+    nodeId: string,
+    patch: {
+      ui?: Record<string, unknown>;
+      runtime?: CommandRuntimeParams;
+      ports?: Port[];
+    },
+  ) => void;
 };
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
@@ -51,16 +68,21 @@ function splitMoveCallTarget(
   return { pkgId, moduleName, functionName };
 }
 
+function readTypeArguments(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 export const MoveCallCommand = memo(function MoveCallCommand({
   data,
 }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
-  const ui = ((node?.params?.ui ?? {}) as any) || {};
-  const runtime = ((node?.params?.runtime ?? {}) as any) || {};
+  const runtime = (node?.params?.runtime ?? {}) as any;
   const target = splitMoveCallTarget(runtime.target);
-  const pkgIdValue = ui.pkgId ?? target?.pkgId ?? '';
-  const moduleValue = ui.module ?? target?.moduleName ?? '';
-  const functionValue = ui.func ?? target?.functionName ?? '';
+  const pkgIdValue = target?.pkgId ?? '';
+  const moduleValue = target?.moduleName ?? '';
+  const functionValue = target?.functionName ?? '';
 
   const { getMoveFunction, toast, readOnly } = usePtb();
 
@@ -68,20 +90,33 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(pkgIdValue);
   const [moduleBuf, setModuleBuf] = useState<string>(moduleValue);
   const [funcBuf, setFuncBuf] = useState<string>(functionValue);
+  const runtimeTypeArguments = readTypeArguments(runtime.typeArguments);
+  const [pendingTypeArgumentCount, setPendingTypeArgumentCount] =
+    useState<number>(runtimeTypeArguments.length);
+  const typeArgumentCount = Math.max(
+    pendingTypeArgumentCount,
+    runtimeTypeArguments.length,
+  );
+  const [typeArgBufs, setTypeArgBufs] = useState<string[]>(
+    padTypeArguments(runtimeTypeArguments, typeArgumentCount),
+  );
   const [loading, setLoading] = useState(false);
+  const lookupSeqRef = useRef(0);
 
   // Ports (already materialized by registry; we only render them).
   const { inIO, outIO } = useCommandPorts(node);
 
   // Min-height accounts for IO rows plus the fixed controls offset.
-  const minHeight = minHeightWithOffset(inIO.length, outIO.length);
-  const ioOffset = 4 * ROW_SPACING + 24;
+  const minHeight = minHeightWithOffset(
+    inIO.length + typeArgumentCount,
+    outIO.length,
+  );
+  const ioOffset = (4 + typeArgumentCount) * ROW_SPACING + 24;
 
-  // Patch helper → merge into node.params.ui (provider re-materializes ports & prunes edges).
-  const patchUI = useCallback(
-    (patch: Record<string, unknown>) => {
-      if (!node?.id || !data?.onPatchUI) return;
-      data.onPatchUI(node.id, patch);
+  const patchCommand = useCallback(
+    (patch: Parameters<NonNullable<MoveCallData['onPatchCommand']>>[1]) => {
+      if (!node?.id || !data?.onPatchCommand) return;
+      data.onPatchCommand(node.id, patch);
     },
     [data, node?.id],
   );
@@ -93,62 +128,76 @@ export const MoveCallCommand = memo(function MoveCallCommand({
     setFuncBuf(functionValue);
   }, [functionValue, moduleValue, pkgIdValue]);
 
+  const runtimeTypeArgumentsKey = runtimeTypeArguments.join('\u0000');
+  useEffect(() => {
+    const nextCount = runtimeTypeArguments.length;
+    setPendingTypeArgumentCount(nextCount);
+    setTypeArgBufs(padTypeArguments(runtimeTypeArguments, nextCount));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtimeTypeArguments.length, runtimeTypeArgumentsKey]);
+
+  const markDraftChanged = useCallback(() => {
+    lookupSeqRef.current += 1;
+    setLoading(false);
+  }, []);
+
   const resolveFunction = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
     const mod = (moduleBuf || '').trim();
     const fn = (funcBuf || '').trim();
     if (!pkg || !mod || !fn || !node?.id) return;
+    const requestId = (lookupSeqRef.current += 1);
 
     try {
       setLoading(true);
-      const result = await getMoveFunction(pkg, mod, fn, {
-        forceRefresh: true,
-      });
+      const result = await getMoveFunction(pkg, mod, fn);
       if (!result) return;
+      if (requestId !== lookupSeqRef.current) return;
 
       const sig = result.signature;
-      const existingTParams = Array.isArray(ui._fnTParams)
-        ? (ui._fnTParams as string[])
-        : [];
-      const _fnTParams = Array.from(
-        { length: sig.tparamCount },
-        (_value, index) => existingTParams[index] ?? '',
-      );
-
-      patchUI({
-        pkgId: result.packageId,
-        module: result.moduleName,
-        func: result.functionName,
-        pkgLocked: undefined,
-        _nameModules_: undefined,
-        _moduleFunctions_: undefined,
-        _fnSigs_: undefined,
-        _fnTParams,
-        _fnIns: sig.ins,
-        _fnOuts: sig.outs,
+      const resolved = buildResolvedMoveCallState({
+        packageId: result.packageId,
+        moduleName: result.moduleName,
+        functionName: result.functionName,
+        signature: sig,
+        typeArgumentBuffers: typeArgBufs,
       });
+
+      setPendingTypeArgumentCount(resolved.typeArgumentCount);
+      setTypeArgBufs(resolved.typeArgumentBuffers);
+
+      patchCommand(resolved.patch);
 
       setPkgIdBuf(result.packageId);
       setModuleBuf(result.moduleName);
       setFuncBuf(result.functionName);
+      if (resolved.needsConcreteTypeArguments) {
+        toast?.({
+          message:
+            'Move function resolved. Enter concrete type arguments, then use it again to apply them.',
+          variant: 'warning',
+        });
+        return;
+      }
       toast?.({ message: 'Move function resolved', variant: 'success' });
     } catch (e: any) {
+      if (requestId !== lookupSeqRef.current) return;
       toast?.({
         message: e?.message || 'Move function lookup failed',
         variant: 'error',
       });
     } finally {
-      setLoading(false);
+      if (requestId === lookupSeqRef.current) setLoading(false);
     }
   }, [
     funcBuf,
     getMoveFunction,
     moduleBuf,
     node?.id,
-    patchUI,
+    patchCommand,
     pkgIdBuf,
+    typeArgBufs,
     toast,
-    ui._fnTParams,
   ]);
 
   // Render
@@ -162,7 +211,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
         <div className="flex items-center justify-between px-2 mb-1">
           <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200 select-none">
             {iconOfCommand('moveCall')}
-            {data?.label ?? (node as any)?.label ?? 'Move Call'}
+            {data?.label ?? node?.label ?? 'Move Call'}
           </div>
         </div>
 
@@ -177,7 +226,10 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             <TextInput
               placeholder="package id (0x...)"
               value={pkgIdBuf}
-              onChange={(e) => setPkgIdBuf(e.target.value)}
+              onChange={(e) => {
+                markDraftChanged();
+                setPkgIdBuf(e.target.value);
+              }}
               readOnly={readOnly}
             />
           </div>
@@ -186,7 +238,10 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <TextInput
             placeholder="module"
             value={moduleBuf}
-            onChange={(e) => setModuleBuf(e.target.value)}
+            onChange={(e) => {
+              markDraftChanged();
+              setModuleBuf(e.target.value);
+            }}
             readOnly={readOnly}
           />
 
@@ -195,7 +250,10 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             <TextInput
               placeholder="function"
               value={funcBuf}
-              onChange={(e) => setFuncBuf(e.target.value)}
+              onChange={(e) => {
+                markDraftChanged();
+                setFuncBuf(e.target.value);
+              }}
               readOnly={readOnly}
             />
             <button
@@ -215,8 +273,28 @@ export const MoveCallCommand = memo(function MoveCallCommand({
               {loading ? '...' : 'Use'}
             </button>
           </div>
+          {typeArgumentCount > 0
+            ? Array.from({ length: typeArgumentCount }, (_value, index) => (
+                <TextInput
+                  key={`type-arg-${index}`}
+                  placeholder={`type argument T${index}`}
+                  value={typeArgBufs[index] ?? ''}
+                  onChange={(e) => {
+                    const next = padTypeArguments(
+                      typeArgBufs,
+                      typeArgumentCount,
+                    );
+                    next[index] = e.target.value;
+                    markDraftChanged();
+                    setTypeArgBufs(next);
+                  }}
+                  readOnly={readOnly}
+                />
+              ))
+            : undefined}
           <div className="px-1 text-[10px] text-gray-500 dark:text-gray-400">
-            Enter package, module, and function explicitly.
+            Resolve a function to materialize IO ports. Generic functions need
+            concrete type arguments before runtime build.
           </div>
         </div>
 

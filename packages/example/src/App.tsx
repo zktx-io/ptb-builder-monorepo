@@ -11,7 +11,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
-import { usePtbUndo } from './components/usePtbUndo';
+import { PtbUndoProvider, usePtbUndo } from './components/usePtbUndo';
 import { SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
@@ -40,7 +40,7 @@ function chainToNetwork(chain: Chain): SuiNetwork {
   return match[1] as SuiNetwork;
 }
 
-function App() {
+function AppShell() {
   const account = useCurrentAccount();
   const network = useCurrentNetwork() as SuiNetwork;
   const dAppKit = useDAppKit();
@@ -139,6 +139,14 @@ function App() {
         <RouterProvider router={router} />
       </PTBBuilder>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <PtbUndoProvider>
+      <AppShell />
+    </PtbUndoProvider>
   );
 }
 

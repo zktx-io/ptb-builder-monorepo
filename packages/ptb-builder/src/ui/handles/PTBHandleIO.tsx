@@ -10,7 +10,7 @@
  *    forward-compat. UI-level creation of such shapes may be disabled.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 import {
   type Connection,
@@ -18,7 +18,7 @@ import {
   type HandleProps,
   type IsValidConnection,
   Position,
-  useStore,
+  useStoreApi,
 } from '@xyflow/react';
 
 import {
@@ -49,7 +49,7 @@ type PTBHandleIOProps = Omit<HandleProps, 'type' | 'position' | 'id'> & {
   labelGap?: number; // px
 };
 
-export function PTBHandleIO({
+function PTBHandleIOComponent({
   port,
   position,
   className,
@@ -58,11 +58,7 @@ export function PTBHandleIO({
   labelGap = 1,
   ...rest
 }: PTBHandleIOProps) {
-  const nodes = useStore(
-    (s) =>
-      ('getNodes' in s ? (s as any).getNodes() : (s as any).nodes) as any[],
-  );
-  const edges = useStore((s) => ((s as any).edges as any[]) || []);
+  const store = useStoreApi();
 
   // Stable RF handle id (may include ":type" suffix for IO)
   const handleId = useMemo(() => buildHandleId(port), [port]);
@@ -88,20 +84,6 @@ export function PTBHandleIO({
   const isOption =
     (!!port.dataType && port.dataType.kind === 'option') ||
     isOptionSerialized(serializedHint);
-
-  // Connection validation via structured types from the store
-  const isValidConnection: IsValidConnection = (edgeOrConn) => {
-    const c = edgeOrConn as Connection;
-    if (!hasConcreteEnds(c)) return false;
-    if (isSelfEdge(c)) return false;
-    if (isIOTargetBusy(edges, c)) return false;
-
-    const srcT = findPortTypeFromStore(nodes, c.source!, c.sourceHandle as any);
-    const dstT = findPortTypeFromStore(nodes, c.target!, c.targetHandle as any);
-    if (!srcT || !dstT) return false;
-
-    return isTypeCompatible(srcT, dstT);
-  };
 
   /** Build a human-friendly tooltip:
    *  - Prefer structured PTB type (preserving object typeTag when present).
@@ -132,6 +114,34 @@ export function PTBHandleIO({
 
   const isLeft = position === Position.Left;
   const colorVarName = `--ptb-io-${category}-stroke`;
+
+  const isValidConnection: IsValidConnection = useCallback(
+    (edgeOrConn) => {
+      const c = edgeOrConn as Connection;
+      if (!hasConcreteEnds(c)) return false;
+      if (isSelfEdge(c)) return false;
+
+      const state = store.getState() as any;
+      const nodes = Array.isArray(state.nodes) ? state.nodes : [];
+      const edges = Array.isArray(state.edges) ? state.edges : [];
+      if (isIOTargetBusy(edges, c)) return false;
+
+      const srcT = findPortTypeFromStore(
+        nodes,
+        c.source!,
+        c.sourceHandle as any,
+      );
+      const dstT = findPortTypeFromStore(
+        nodes,
+        c.target!,
+        c.targetHandle as any,
+      );
+      if (!srcT || !dstT) return false;
+
+      return isTypeCompatible(srcT, dstT);
+    },
+    [store],
+  );
 
   return (
     <Handle
@@ -204,4 +214,5 @@ export function PTBHandleIO({
   );
 }
 
-export default React.memo(PTBHandleIO);
+export const PTBHandleIO = React.memo(PTBHandleIOComponent);
+export default PTBHandleIO;

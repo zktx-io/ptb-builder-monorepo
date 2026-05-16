@@ -1238,17 +1238,6 @@ function validateEdgeCast(
   }
 }
 
-function validateOptionalRecordField(
-  value: unknown,
-  path: string,
-  code: string,
-  message: string,
-  diagnostics: TransactionDiagnostic[],
-): void {
-  if (value === undefined || isRecord(value)) return;
-  diagnostics.push(errorDiagnostic(code, message, path));
-}
-
 function validateOptionalStringField(
   value: unknown,
   path: string,

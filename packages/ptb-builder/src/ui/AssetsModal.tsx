@@ -1,12 +1,18 @@
 // src/ui/AssetsModal.tsx
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Boxes, Coins, FileBox, ImageOff, Loader2, X } from 'lucide-react';
+import { ImageOff, Loader2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import { usePtb } from './PtbProvider';
+import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
 
-type OwnedItem = { objectId: string; typeTag: string; imageUrl?: string };
+export type OwnedItem = {
+  objectId: string;
+  typeTag: string;
+  imageUrl?: string;
+  authoring?: ObjectAuthoringInfo;
+};
 
 export type AssetsModalProps = {
   open: boolean;
@@ -15,14 +21,6 @@ export type AssetsModalProps = {
   onPick: (obj: OwnedItem) => void;
   pageSize?: number;
 };
-
-function AssetIcon({ typeTag }: { typeTag: string }) {
-  const t = (typeTag || '').toLowerCase();
-  if (t.includes('::coin::coin<')) return <Coins size={16} />;
-  if (t.includes('::package') || t.includes('::module'))
-    return <Boxes size={16} />;
-  return <FileBox size={16} />;
-}
 
 function short(id: string, l = 8, r = 6) {
   if (!id) return '';
@@ -59,7 +57,8 @@ export function AssetsModal({
       return false;
     }
   });
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const canPrev = prevStack.length > 0;
 
@@ -74,6 +73,21 @@ export function AssetsModal({
 
   const filteredItems = nftOnly ? items.filter(isNFT) : items;
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      requestIdRef.current += 1;
+      setLoading(false);
+    }
+  }, [open]);
+
   const loadPage = useCallback(
     async (cursor?: string, pushPrev?: boolean) => {
       if (!open) return;
@@ -81,11 +95,13 @@ export function AssetsModal({
         toast?.({ message: 'Owner address is missing.', variant: 'warning' });
         return;
       }
+      const requestId = (requestIdRef.current += 1);
+      const isCurrentRequest = () =>
+        mountedRef.current && requestIdRef.current === requestId;
       try {
         setLoading(true);
         const res: any = await getOwnedObjects?.({
           owner,
-          options: { showType: true, showContent: true, showDisplay: true },
           cursor,
           limit: pageSize,
         });
@@ -107,11 +123,14 @@ export function AssetsModal({
               ? {
                   objectId: id,
                   typeTag: type || '',
+                  authoring: r?.data?.authoring,
                   imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
                 }
               : undefined;
           })
           .filter(Boolean) as OwnedItem[];
+
+        if (!isCurrentRequest()) return;
 
         if (pushPrev && typeof cursor === 'string') {
           setPrevStack((s) => [...s, cursor]);
@@ -121,12 +140,15 @@ export function AssetsModal({
         setNextCursor(res?.nextCursor ?? undefined);
         setHasNext(!!res?.hasNextPage);
       } catch {
+        if (!isCurrentRequest()) return;
         toast?.({ message: 'Failed to load owned objects.', variant: 'error' });
         setItems([]);
         setNextCursor(undefined);
         setHasNext(false);
       } finally {
-        setLoading(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+        }
       }
     },
     [getOwnedObjects, open, owner, pageSize, toast],
@@ -139,12 +161,10 @@ export function AssetsModal({
 
   const onPrev = () => {
     if (!canPrev || loading) return;
-    setPrevStack((s) => {
-      const prev = s.slice(0, -1);
-      const backCursor = prev.length ? prev[prev.length - 1] : undefined;
-      loadPage(backCursor, false);
-      return prev;
-    });
+    const prev = prevStack.slice(0, -1);
+    const backCursor = prev.length ? prev[prev.length - 1] : undefined;
+    setPrevStack(prev);
+    loadPage(backCursor, false);
   };
 
   useEffect(() => {
@@ -153,7 +173,6 @@ export function AssetsModal({
       setNextCursor(undefined);
       setPrevStack([]);
       setHasNext(false);
-      setFailedImages(new Set());
       loadPage(undefined, false);
     }
   }, [loadPage, open]);
@@ -238,12 +257,6 @@ export function AssetsModal({
                           if (placeholder) {
                             (placeholder as HTMLElement).style.display = 'flex';
                           }
-                          // Track failed image to prevent preview tooltip
-                          if (it.imageUrl) {
-                            setFailedImages((prev) =>
-                              new Set(prev).add(it.imageUrl!),
-                            );
-                          }
                         }}
                       />
                     ) : undefined}
@@ -282,11 +295,6 @@ export function AssetsModal({
                             if (placeholder) {
                               (placeholder as HTMLElement).style.display =
                                 'flex';
-                            }
-                            if (it.imageUrl) {
-                              setFailedImages((prev) =>
-                                new Set(prev).add(it.imageUrl!),
-                              );
                             }
                           }}
                         />

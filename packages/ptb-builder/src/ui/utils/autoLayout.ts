@@ -8,7 +8,8 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import type { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
-import { firstInPorts, outPortsWithPrefix } from '../../ptb/decodeTx/findPorts';
+import { parseHandleTypeSuffix } from '../../ptb/graph/types';
+import { firstInPorts, outPortsWithPrefix } from '../../ptb/portQueries';
 import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
 import {
   BOTTOM_PADDING,
@@ -35,13 +36,7 @@ function getNodeSize(kind?: string) {
 }
 
 /** Well-known singleton objects rendered as label-only (no extra inputs). */
-const WELL_KNOWN_OBJECT_LABELS = new Set([
-  'gas',
-  'clock',
-  'random',
-  'system',
-  'my wallet',
-]);
+const WELL_KNOWN_OBJECT_LABELS = new Set(['gas', 'clock', 'random', 'system']);
 
 function isWellKnownObjectVar(n: RFNode<RFNodeData>): boolean {
   const p = ptbNode(n);
@@ -75,7 +70,7 @@ const TEXT_INPUT_H = 28;
 
 // ---- Height estimation (data → measured → heuristic) ------------------------
 
-export function getLength(val: unknown): number {
+function getLength(val: unknown): number {
   if (val === undefined) return 0;
   if (Array.isArray(val)) return val.length;
   if (ArrayBuffer.isView(val) && !(val instanceof DataView)) {
@@ -295,7 +290,6 @@ function layoutSingleRowPositions(
   // --- local helpers --------------------------------------------------------
   const kindOf = (n: RFNode<RFNodeData>) =>
     (n.data as any)?.ptbNode?.kind as string | undefined;
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const isIo = (e: RFEdge<RFEdgeData>) => {
     if (e.type === 'ptb-io') return true;
     const k = (e.data as any)?.ptbEdge?.kind;
@@ -304,23 +298,22 @@ function layoutSingleRowPositions(
 
   /** Strip optional serialized type suffix, keep only the raw handle id. */
   const baseHandle = (h?: string | null) =>
-    h ? String(h).split('|', 1)[0] : '';
+    h ? (parseHandleTypeSuffix(String(h)).baseId ?? '') : '';
 
   /**
    * Parse input handle into a stable (group, index) key:
-   * - group: 'targ' (type args), 'arg' (value args), or 'other'
+   * - group: 'arg' (value args) or 'other'
    * - index: trailing number if present; 'in_*' without index → 0; else +∞
    */
   const parseInKey = (
     h?: string | null,
     fallback?: string,
-  ): { group: 'targ' | 'arg' | 'other'; idx: number } => {
+  ): { group: 'arg' | 'other'; idx: number } => {
     const s = (baseHandle(h) || fallback || '').toLowerCase();
     if (!s) return { group: 'other', idx: Number.POSITIVE_INFINITY };
 
-    let group: 'targ' | 'arg' | 'other' = 'other';
-    if (s.startsWith('in_targ')) group = 'targ';
-    else if (s.startsWith('in_arg')) group = 'arg';
+    let group: 'arg' | 'other' = 'other';
+    if (s.startsWith('in_arg')) group = 'arg';
     else if (s.startsWith('in_')) group = 'other';
 
     const m = s.match(/_(\d+)(?:$|[^0-9])/);
@@ -331,9 +324,8 @@ function layoutSingleRowPositions(
     return { group: 'other', idx: Number.POSITIVE_INFINITY };
   };
 
-  /** Group rank: ensure type inputs (targ) come before value inputs (arg). */
-  const groupRank = (g: 'targ' | 'arg' | 'other') =>
-    g === 'targ' ? 0 : g === 'arg' ? 1 : 2;
+  /** Group rank: keep value inputs ahead of other command inputs. */
+  const groupRank = (g: 'arg' | 'other') => (g === 'arg' ? 0 : 1);
 
   const hOf = (n: RFNode<RFNodeData>) => {
     const byData = estimateHeightFromData(n);
@@ -394,7 +386,7 @@ function layoutSingleRowPositions(
     node: RFNode<RFNodeData>;
     colIdx: number;
     k0_cmdIdx: number; // earliest command index among 'commands'
-    k1_grpRank: number; // group priority: targ < arg < other
+    k1_grpRank: number; // group priority: arg < other
     k2_argIdx: number; // port index within that group
     k3_orig: number; // original order tiebreaker
     k4_id: string; // id tiebreaker
@@ -453,7 +445,7 @@ function layoutSingleRowPositions(
   }
 
   // Sort inside each column by:
-  //   firstCmdIdx → groupRank(targ < arg < other) → argIdx → original → id
+  //   firstCmdIdx → groupRank(arg < other) → argIdx → original → id
   for (const arr of buckets.values()) {
     arr.sort((a, b) => {
       if (a.k0_cmdIdx !== b.k0_cmdIdx) return a.k0_cmdIdx - b.k0_cmdIdx;

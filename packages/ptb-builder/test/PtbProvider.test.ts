@@ -21,4 +21,9 @@ describe('execution result reporting', () => {
       variant: 'success',
     });
   });
+
+  it('does not invent execution status when the host adapter returns nothing', () => {
+    expect(executionResultToast(undefined)).toBeUndefined();
+    expect(executionResultToast({})).toBeUndefined();
+  });
 });

@@ -17,7 +17,6 @@ import {
   Merge,
   Power,
   Split,
-  Wallet,
 } from 'lucide-react';
 
 import { IconSui } from './IconSui';
@@ -62,7 +61,6 @@ export function iconOfVar(
   const lbl = (displayLabel ?? v?.label ?? '').trim();
 
   // helpers / constants
-  if (name === 'sender' || name === 'wallet') return <Wallet size={14} />;
   if (name === 'gas') return <Fuel size={14} />;
   if (name === 'clock') return <Clock size={14} />;
   if (name === 'system') return <Cog size={14} />;

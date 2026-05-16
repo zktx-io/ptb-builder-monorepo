@@ -1,12 +1,5 @@
 // src/ui/nodes/vars/VarNode.tsx
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type Node,
@@ -15,7 +8,8 @@ import {
   useUpdateNodeInternals,
 } from '@xyflow/react';
 
-import { usePtb } from '../../PtbProvider';
+import { MiniStepper } from './inputs/MiniStepper';
+import { OptionToggle } from './inputs/OptionToggle';
 import { SelectBool } from './inputs/SelectBool';
 import { TextInput } from './inputs/TextInput';
 import { buildOutPort, placeholderFor } from './varUtils';
@@ -27,20 +21,38 @@ import {
   vectorElem,
 } from '../../../ptb/graph/typecheck';
 import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
+import {
+  buildObjectRawInputForUsage,
+  defaultObjectRawUsage,
+  type ObjectRawUsage,
+} from '../../../ptb/objectAuthoring';
+import {
+  createDebouncedCallbackController,
+  type DebouncedCallbackController,
+} from '../../debouncedCallback';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
+import {
+  activeObjectAuthoringInfo,
+  canSelectObjectRawUsage,
+  createObjectAuthoringState,
+  displayObjectAuthoringInfo,
+  objectAuthoringInputChanged,
+  objectAuthoringLookupFailed,
+  objectAuthoringLookupStarted,
+  objectAuthoringLookupSucceeded,
+  unsupportedObjectAuthoringReason,
+} from '../../objectAuthoringState';
+import { usePtb } from '../../PtbProvider';
 import { iconOfVar } from '../icons';
 import { NODE_SIZES } from '../nodeLayout';
-import { MiniStepper } from './inputs/MiniStepper';
-import { OptionToggle } from './inputs/OptionToggle';
 
 const DEBOUNCE_MS = 250;
-const OBJECT_DEBOUNCE_MS = 400;
+type VectorEditorItem = string | boolean;
 
 export type VarData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
-  onLoadTypeTag?: (typeTag: string) => void;
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
 
@@ -50,30 +62,52 @@ function useDebouncedCallback<T extends any[]>(
   delay = DEBOUNCE_MS,
 ) {
   const fnRef = useRef(fn);
-  const timerRef = useRef<number | undefined>(undefined);
+  const mountedRef = useRef(true);
+  const delayRef = useRef(delay);
   useEffect(() => {
     fnRef.current = fn;
   }, [fn]);
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = undefined;
-      }
-    };
+  const controllerRef = useRef<DebouncedCallbackController<T> | undefined>(
+    undefined,
+  );
+  const ensureController = useCallback(() => {
+    if (controllerRef.current) return controllerRef.current;
+    controllerRef.current = createDebouncedCallbackController<T>({
+      delayMs: delayRef.current,
+      invoke: (...args) => {
+        if (mountedRef.current) fnRef.current(...args);
+      },
+    });
+    return controllerRef.current;
   }, []);
-  return useCallback(
+  useEffect(() => {
+    delayRef.current = delay;
+    controllerRef.current?.setDelay(delay);
+  }, [delay]);
+  const cancel = useCallback(() => {
+    controllerRef.current?.cancel();
+  }, []);
+  const flush = useCallback(() => {
+    controllerRef.current?.flush();
+  }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    ensureController();
+    return () => {
+      mountedRef.current = false;
+      controllerRef.current?.dispose();
+      controllerRef.current = undefined;
+    };
+  }, [ensureController]);
+  const schedule = useCallback(
     (...args: T) => {
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = undefined;
-      }
-      timerRef.current = window.setTimeout(() => {
-        Promise.resolve().then(() => fnRef.current(...args));
-        timerRef.current = undefined;
-      }, delay);
+      ensureController().schedule(...args);
     },
-    [delay],
+    [ensureController],
+  );
+  return useMemo(
+    () => ({ schedule, cancel, flush }),
+    [schedule, cancel, flush],
   );
 }
 
@@ -83,6 +117,21 @@ function defer(fn: () => void) {
   else Promise.resolve().then(fn);
 }
 
+function shortMiddle(value: string, left = 8, right = 6): string {
+  if (!value) return '';
+  if (value.length <= left + right + 3) return value;
+  return `${value.slice(0, left)}…${value.slice(-right)}`;
+}
+
+function parseBoolEditorValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return undefined;
+}
+
 export const VarNode = memo(function VarNode({
   id: rfNodeId,
   data,
@@ -90,9 +139,17 @@ export const VarNode = memo(function VarNode({
   const v = data?.ptbNode as VariableNode | undefined;
   const nodeId = v?.id;
   const varType = v?.varType;
+  const variableValue = (v as any)?.value;
 
   const updateNodeInternals = useUpdateNodeInternals();
-  const { getObjectData, readOnly, toast } = usePtb();
+  const { lookupObjectForAuthoring, readOnly, toast } = usePtb();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Editability
   const canEdit = Boolean(nodeId && data?.onPatchVar) && !readOnly;
@@ -102,7 +159,7 @@ export const VarNode = memo(function VarNode({
 
   // Helper variables (label-only)
   const helperNames = useMemo(
-    () => new Set(['sender', 'gas', 'clock', 'system', 'random']),
+    () => new Set(['gas', 'clock', 'system', 'random']),
     [],
   );
   // NOTE: helpers have chrome-only visuals (no editor area & fixed labels).
@@ -117,15 +174,25 @@ export const VarNode = memo(function VarNode({
 
   // Local UI buffers
   const [scalarBuf, setScalarBuf] = useState(''); // scalar & object id (also Option<T> inner)
-  const [vecItems, setVecItems] = useState<string[]>(['']); // vector<T> editor
+  const [vecItems, setVecItems] = useState<VectorEditorItem[]>(['']); // vector<T> editor
   const [optSome, setOptSome] = useState<boolean>(false); // Option<T> toggle
-  const [objTypeLoading, setObjTypeLoading] = useState(false);
+  const reqSeqRef = useRef(0);
+  const [objectDraft, setObjectDraft] = useState(() =>
+    createObjectAuthoringState(''),
+  );
+  useEffect(() => {
+    reqSeqRef.current += 1;
+    setObjectDraft(createObjectAuthoringState('', reqSeqRef.current));
+  }, [nodeId]);
 
   // Patcher
   const patchVar = useCallback(
     (patch: Partial<VariableNode>) => {
       if (!canEdit || !nodeId || !data?.onPatchVar) return;
-      defer(() => data.onPatchVar!(nodeId, patch));
+      defer(() => {
+        if (!mountedRef.current) return;
+        data.onPatchVar!(nodeId, patch);
+      });
     },
     [canEdit, nodeId, data],
   );
@@ -137,12 +204,15 @@ export const VarNode = memo(function VarNode({
   }, [rfNodeId, updateNodeInternals]);
 
   // Array shallow-eq
-  const arrShallowEqual = useCallback((a: string[], b: string[]) => {
-    if (a === b) return true;
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-  }, []);
+  const arrShallowEqual = useCallback(
+    (a: VectorEditorItem[], b: VectorEditorItem[]) => {
+      if (a === b) return true;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      return true;
+    },
+    [],
+  );
 
   // Derived flags for minimal branching
   const isOption = isOptionType(varType);
@@ -153,14 +223,17 @@ export const VarNode = memo(function VarNode({
     () => (isOption ? optionElem(varType) : undefined),
     [isOption, varType],
   );
+  const optionInnerIsBool =
+    optionInner?.kind === 'scalar' && optionInner.name === 'bool';
   const vecElem = useMemo(
     () => (isVector ? vectorElem(varType) : undefined),
     [isVector, varType],
   );
+  const vecElemIsBool = vecElem?.kind === 'scalar' && vecElem.name === 'bool';
 
   // Sync buffers from graph → keep previous buffer when option is None
   useEffect(() => {
-    const val = (v as any)?.value;
+    const val = variableValue;
 
     if (isOption) {
       const isNone = val === undefined;
@@ -173,70 +246,161 @@ export const VarNode = memo(function VarNode({
     }
 
     if (isVector) {
-      const arr = Array.isArray(val) && val.length > 0 ? val.map(String) : [''];
+      const arr: VectorEditorItem[] =
+        Array.isArray(val) && val.length > 0
+          ? val.map((item) =>
+              vecElemIsBool
+                ? (parseBoolEditorValue(item) ?? String(item))
+                : String(item),
+            )
+          : [''];
       setVecItems((prev) => (arrShallowEqual(prev, arr) ? prev : arr));
       return;
     }
 
     const s = val === undefined ? '' : String(val);
     setScalarBuf((prev) => (prev === s ? prev : s));
-  }, [nodeId, v, isOption, isVector, arrShallowEqual]);
+  }, [
+    nodeId,
+    variableValue,
+    isOption,
+    isVector,
+    vecElemIsBool,
+    arrShallowEqual,
+  ]);
 
   // Default scalar<bool>=true once (non-helper)
   useEffect(() => {
     if (!canEdit || isHelper || !isScalarBool) return;
-    const val = (v as any)?.value as boolean | undefined;
+    const val = variableValue as boolean | undefined;
     if (typeof val === 'undefined') patchVar({ value: true });
-  }, [canEdit, isHelper, isScalarBool, v, patchVar]);
+  }, [canEdit, isHelper, isScalarBool, variableValue, patchVar]);
 
   // Debounced patchers
   const debouncedPatchScalar = useDebouncedCallback((val: string) => {
     patchVar({ value: val });
   });
-  const debouncedPatchVector = useDebouncedCallback((vals: string[]) => {
-    patchVar({ value: vals });
-  });
+  const debouncedPatchVector = useDebouncedCallback(
+    (vals: VectorEditorItem[]) => {
+      patchVar({ value: vals });
+    },
+  );
 
-  // Debounced object handler (top-level scalar object only)
-  const reqSeqRef = useRef(0);
-  const debouncedHandleObject = useDebouncedCallback(async (idRaw: string) => {
+  const rawObject =
+    (v as any)?.rawInput?.kind === 'Object'
+      ? (v as any).rawInput.object
+      : undefined;
+  const currentObjectUsage: ObjectRawUsage | '' =
+    rawObject?.kind === 'ImmOrOwnedObject'
+      ? 'object-ref'
+      : rawObject?.kind === 'Receiving'
+        ? 'receiving'
+        : rawObject?.kind === 'SharedObject'
+          ? rawObject.mutable
+            ? 'shared-mutable'
+            : 'shared-readonly'
+          : '';
+  const objectInfo = displayObjectAuthoringInfo(objectDraft);
+  const activeObjectInfo = activeObjectAuthoringInfo(objectDraft);
+  const canSelectObjectUsage = canSelectObjectRawUsage(objectDraft);
+  const objTypeLoading = objectDraft.status === 'loading';
+  const objectInfoMatchesInput = !!activeObjectInfo;
+  const unsupportedOwnerMessage = unsupportedObjectAuthoringReason(objectInfo);
+  const optionBoolValue = parseBoolEditorValue(variableValue ?? scalarBuf);
+
+  // Explicit object lookup: user input changes only edit the object id; raw
+  // ObjectRef data is attached only after a lookup result and usage choice.
+  const handleObjectLookup = useCallback(async () => {
     if (!canEdit) return;
 
-    const id = idRaw.trim();
-    patchVar({ value: idRaw });
+    const id = scalarBuf.trim();
+    patchVar({ value: scalarBuf, rawInput: undefined });
 
     if (!id) {
-      patchVar({ varType: { kind: 'object' } });
-      setObjTypeLoading(false);
+      const seq = ++reqSeqRef.current;
+      setObjectDraft(createObjectAuthoringState('', seq));
+      patchVar({ varType: { kind: 'object' }, rawInput: undefined });
       return;
     }
 
     const seq = ++reqSeqRef.current;
+    setObjectDraft((prev) => objectAuthoringLookupStarted(prev, id, seq));
     try {
-      setObjTypeLoading(true);
-      const resp = await getObjectData(id, { forceRefresh: true });
+      const resp = await lookupObjectForAuthoring(id);
       if (seq !== reqSeqRef.current) return;
 
-      if (resp) {
-        patchVar({ varType: { kind: 'object', typeTag: resp.typeTag } });
-      } else {
-        patchVar({ varType: { kind: 'object' } });
+      if (!resp.ok) {
+        setObjectDraft((prev) =>
+          objectAuthoringLookupFailed(prev, seq, resp.error),
+        );
+        patchVar({ varType: { kind: 'object' }, rawInput: undefined });
         toast?.({
-          message: 'Object not found or not a Move object.',
+          message: resp.error,
           variant: 'error',
         });
+        return;
       }
+
+      setObjectDraft((prev) =>
+        objectAuthoringLookupSucceeded(prev, seq, resp.object),
+      );
+      setScalarBuf(resp.object.objectId);
+
+      const usage = defaultObjectRawUsage(resp.object);
+      const rawInput = usage
+        ? buildObjectRawInputForUsage(resp.object, usage)
+        : undefined;
+      if (rawInput && !rawInput.ok) {
+        toast?.({ message: rawInput.error, variant: 'warning' });
+      }
+      patchVar({
+        value: resp.object.objectId,
+        varType: { kind: 'object', typeTag: resp.object.typeTag },
+        rawInput: rawInput?.ok ? rawInput.rawInput : undefined,
+      });
     } catch (e: any) {
       if (seq !== reqSeqRef.current) return;
-      patchVar({ varType: { kind: 'object' } });
+      const message = e?.message || 'Failed to look up object metadata.';
+      setObjectDraft((prev) => objectAuthoringLookupFailed(prev, seq, message));
+      patchVar({ varType: { kind: 'object' }, rawInput: undefined });
       toast?.({
-        message: e?.message || 'Failed to fetch object metadata.',
+        message,
         variant: 'error',
       });
-    } finally {
-      if (seq === reqSeqRef.current) setObjTypeLoading(false);
     }
-  }, OBJECT_DEBOUNCE_MS);
+  }, [canEdit, lookupObjectForAuthoring, patchVar, scalarBuf, toast]);
+
+  const handleObjectUsageChange = useCallback(
+    (usage: ObjectRawUsage | '') => {
+      if (!canEdit) return;
+      const resolved = activeObjectAuthoringInfo(objectDraft);
+      if (!resolved) {
+        patchVar({ rawInput: undefined });
+        toast?.({
+          message:
+            'Run Lookup to refresh object metadata before choosing usage.',
+          variant: 'warning',
+        });
+        return;
+      }
+      if (!usage) {
+        patchVar({ rawInput: undefined });
+        return;
+      }
+      const rawInput = buildObjectRawInputForUsage(resolved, usage);
+      if (!rawInput.ok) {
+        patchVar({ rawInput: undefined });
+        toast?.({ message: rawInput.error, variant: 'warning' });
+        return;
+      }
+      patchVar({
+        value: resolved.objectId,
+        varType: { kind: 'object', typeTag: resolved.typeTag },
+        rawInput: rawInput.rawInput,
+      });
+    },
+    [canEdit, objectDraft, patchVar, toast],
+  );
 
   // Port
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
@@ -304,7 +468,7 @@ export const VarNode = memo(function VarNode({
                 onChange={(newVal) => {
                   setVecItems((prev) => {
                     const next = prev.slice();
-                    next[i] = newVal as any;
+                    next[i] = newVal;
                     defer(() => patchVar({ value: next }));
                     requestInternals();
                     return next;
@@ -325,7 +489,7 @@ export const VarNode = memo(function VarNode({
                   const copy = prev.slice();
                   copy[i] = vv;
                   if (canEdit) {
-                    debouncedPatchVector(copy as any);
+                    debouncedPatchVector.schedule(copy);
                     requestInternals();
                   }
                   return copy;
@@ -381,7 +545,13 @@ export const VarNode = memo(function VarNode({
                 disabled={!canEdit || readOnly}
                 onToggle={(next) => {
                   setOptSome(next);
-                  patchVar({ value: next ? scalarBuf : undefined });
+                  if (optionInnerIsBool) {
+                    const nextValue = optionBoolValue ?? true;
+                    if (next) setScalarBuf(String(nextValue));
+                    patchVar({ value: next ? nextValue : undefined });
+                  } else {
+                    patchVar({ value: next ? scalarBuf : undefined });
+                  }
                   requestInternals();
                 }}
               />
@@ -393,26 +563,35 @@ export const VarNode = memo(function VarNode({
         {!isHelper && (
           <div className="mt-2">
             {isOption ? (
-              // ===== Option<T>: always show TextInput; disabled when None =====
-              <TextInput
-                value={scalarBuf}
-                placeholder={optionInputPlaceholder}
-                onChange={(e) => {
-                  const s = e.target.value;
-                  setScalarBuf(s);
-                  if (!canEdit || !optSome) return;
-                  // Option<bool> also uses TextInput per requirement
-                  debouncedPatchScalar(s);
-                }}
-                disabled={optionInputDisabled}
-              />
+              optionInnerIsBool ? (
+                <SelectBool
+                  value={optionBoolValue}
+                  onChange={(val) => {
+                    setScalarBuf(String(val));
+                    if (canEdit && optSome) patchVar({ value: val });
+                  }}
+                  disabled={optionInputDisabled}
+                />
+              ) : (
+                <TextInput
+                  value={scalarBuf}
+                  placeholder={optionInputPlaceholder}
+                  onChange={(e) => {
+                    const s = e.target.value;
+                    setScalarBuf(s);
+                    if (!canEdit || !optSome) return;
+                    debouncedPatchScalar.schedule(s);
+                  }}
+                  disabled={optionInputDisabled}
+                />
+              )
             ) : isVector ? (
               // ===== Vector<T> =====
               renderVectorEditor(vecElem)
             ) : isScalarBool ? (
               // ===== Scalar<bool> (non-option) =====
               <SelectBool
-                value={(v as any)?.value as boolean | undefined}
+                value={variableValue as boolean | undefined}
                 onChange={(val) => canEdit && patchVar({ value: val })}
                 disabled={!canEdit}
               />
@@ -428,24 +607,126 @@ export const VarNode = memo(function VarNode({
                     if (!canEdit) return;
 
                     if (varType?.kind === 'object') {
-                      // Only for top-level object
-                      debouncedHandleObject(s);
+                      const seq = ++reqSeqRef.current;
+                      setObjectDraft((prev) =>
+                        objectAuthoringInputChanged(prev, s, seq),
+                      );
+                      patchVar({
+                        value: s,
+                        rawInput: undefined,
+                      });
                     } else {
-                      debouncedPatchScalar(s);
+                      debouncedPatchScalar.schedule(s);
                     }
                   }}
                   disabled={!canEdit}
                 />
                 {varType?.kind === 'object' ? (
-                  <TextInput
-                    value={(varType as any)?.typeTag || ''}
-                    placeholder={
-                      objTypeLoading ? 'Loading type…' : 'type (read-only)'
-                    }
-                    readOnly
-                    aria-readonly="true"
-                    onChange={() => {}}
-                  />
+                  <div className="mt-1 space-y-1">
+                    <div className="flex gap-1">
+                      <TextInput
+                        value={(varType as any)?.typeTag || ''}
+                        placeholder={
+                          objTypeLoading ? 'Loading type…' : 'type (read-only)'
+                        }
+                        readOnly
+                        aria-readonly="true"
+                        onChange={() => {}}
+                      />
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 disabled:opacity-50"
+                        disabled={
+                          !canEdit || objTypeLoading || !scalarBuf.trim()
+                        }
+                        onClick={handleObjectLookup}
+                      >
+                        {objTypeLoading ? 'Lookup…' : 'Lookup'}
+                      </button>
+                    </div>
+
+                    {objectInfo ? (
+                      <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
+                        <div>
+                          Owner: {objectInfo.ownerKind}
+                          {objectInfo.ownerLabel
+                            ? ` (${objectInfo.ownerLabel})`
+                            : ''}
+                        </div>
+                        <div>Version: {objectInfo.version}</div>
+                        <div>Digest: {shortMiddle(objectInfo.digest)}</div>
+                        {!objectInfoMatchesInput && (
+                          <div className="text-amber-700 dark:text-amber-300">
+                            Run Lookup to refresh object metadata.
+                          </div>
+                        )}
+                        {unsupportedOwnerMessage && (
+                          <div className="text-amber-700 dark:text-amber-300">
+                            {unsupportedOwnerMessage}
+                          </div>
+                        )}
+                        <select
+                          className="mt-1 w-full px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100"
+                          value={currentObjectUsage}
+                          disabled={!canEdit || !canSelectObjectUsage}
+                          onChange={(e) =>
+                            handleObjectUsageChange(
+                              e.target.value as ObjectRawUsage | '',
+                            )
+                          }
+                        >
+                          <option value="">No raw object input</option>
+                          <option
+                            value="object-ref"
+                            disabled={
+                              objectInfo.ownerKind === 'Shared' ||
+                              objectInfo.ownerKind ===
+                                'ConsensusAddressOwner' ||
+                              objectInfo.ownerKind === 'Unknown'
+                            }
+                          >
+                            Use as object ref
+                          </option>
+                          <option
+                            value="receiving"
+                            disabled={
+                              objectInfo.ownerKind === 'Shared' ||
+                              objectInfo.ownerKind ===
+                                'ConsensusAddressOwner' ||
+                              objectInfo.ownerKind === 'Unknown'
+                            }
+                          >
+                            Use as receiving
+                          </option>
+                          <option
+                            value="shared-readonly"
+                            disabled={objectInfo.ownerKind !== 'Shared'}
+                          >
+                            Use as shared read-only
+                          </option>
+                          <option
+                            value="shared-mutable"
+                            disabled={objectInfo.ownerKind !== 'Shared'}
+                          >
+                            Use as shared mutable
+                          </option>
+                        </select>
+                      </div>
+                    ) : objectDraft.status === 'error' ? (
+                      <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">
+                        {objectDraft.error || 'Object lookup failed.'}
+                      </div>
+                    ) : currentObjectUsage ? (
+                      <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
+                        Raw input: {currentObjectUsage}. Run Lookup to refresh
+                        object metadata.
+                      </div>
+                    ) : (
+                      <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-500">
+                        Run Lookup before executing object inputs.
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <></>
                 )}

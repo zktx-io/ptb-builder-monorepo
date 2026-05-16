@@ -1,149 +1,161 @@
-PTB Builder — Developer Documentation
+# PTB Builder Developer Notes
 
-This document is intended for contributors and maintainers. It describes internal architecture, policies, constraints, and TODOs that govern PTB Builder development.
+This document is for contributors maintaining the current model-root PTB
+Builder architecture. Source code and `package.json` remain the authority if
+this document drifts.
 
-Conventions
-	•	UI/logic separation is strict: Provider & Headless logic are not mutated from UI directly.
-	•	All network strings use the form sui:<network> where <network> ∈ mainnet|testnet|devnet.
+## Product Boundary
 
-1) Architecture Overview
+PTB Builder helps users author, inspect, render, and edit Sui Programmable
+Transaction Block data. It does not own wallet connection, custody, signing,
+simulation, execution, or transaction safety guarantees. Host applications
+provide wallet and execution adapters.
 
-Runtime model
-	•	RF is authoritative while the editor is open.
-	•	PTB Graph is a persisted snapshot.
-	•	RF → PTB sync happens immediately (no debounce). Only viewport changes are debounced (250ms).
-	•	PTB → RF sync happens only when graphEpoch changes (programmatic rehydrate), guarded by rehydratingRef.
-	•	Feedback-loop guards
-	•	stableGraphSig(g) removes RF-only fields and builds an order-insensitive signature to ignore no-op updates.
-	•	suppressNotifyRef prevents autosave callbacks during bulk reloads (doc/chain loads).
-	•	replaceGraphImmediate() resets signature, bumps graphEpoch, and rehydrates RF once per load.
-	•	Monotonic IDs
-	•	createUniqueId() uses a nonce seeded by seedNonceFromGraph() to keep IDs stable across loads.
+## Current Architecture
 
-Core modules
-	•	PtbProvider: Context, chain/client management, caches, persistence, execution adapters, debounced notifies.
-	•	PTBFlow: RF editing, validation, pruning, auto-layout, code preview triggers, execute/dry-run integrations.
-	•	CodePip: Code preview panel (copy, optional export, assets, dry-run, execute, theme switch).
-	•	AssetsModal: Owner’s on-chain objects picker, feeds onAssetPick.
-	•	Headless (ptb/*): graph schema/types, type system, adapter (RF↔PTB), codegen, on-chain decoder.
+The semantic root is `@zktx.io/ptb-model`.
 
-Network & Client
-	•	activeChain: Chain stored in Provider; SuiClient is (re)built via getFullnodeUrl(activeChain.split(':')[1]).
-	•	Editors should validate dropped docs with /^sui:(mainnet|testnet|devnet)$/ before switching networks.
-	•	Viewer (loadFromOnChainTx) fetches a local client per chain, preloads modules/objects, then replaces the graph in read-only mode.
+```text
+RawProgrammableTransaction
+  <-> TransactionIR
+  <-> PTBGraph
+  -> TypeScript SDK code string
+  -> Mermaid
 
-2) Policies
+ptb-builder UI
+  <-> React Flow draft state
+  <-> ptbAdapter.ts
+  <-> model PTBGraph
+```
 
-Start / End nodes
-	•	Exactly one Start and one End must exist.
-	•	normalizeGraph coalesces duplicates to canonical IDs KNOWN_IDS.START/KNOWN_IDS.END.
-	•	These nodes cannot be deleted (guarded in UI change handlers & context menu).
+Rules:
 
-Handles & Connections
-	•	Flow edges
-	•	Direction: out → in only, strictly 1:1 per handle.
-	•	No self-loops. createsLoop() blocks cycles.
-	•	Conflicts resolved by filterHandleConflictsForFlow().
-	•	IO edges
-	•	Source fan-out allowed; target is single.
-	•	Type-checked via isTypeCompatible(); unknown types are ignored (non-connecting).
-	•	Conflicts resolved by filterHandleConflictsForIO().
-	•	Pruning
-	•	pruneDanglingEdges() drops edges whose handles no longer exist after UI changes.
-	•	pruneIncompatibleIOEdges() drops IO edges that became type-incompatible.
+- Model `PTBGraph` is the persisted graph document shape.
+- React Flow state is a screen/draft representation. Positions, handles,
+  viewport, and selection are not transaction authority.
+- Runtime construction starts from `TransactionIR` in `ptb/runtimeAdapter.ts`.
+- Generated TypeScript code strings and decoded PTB data are review and
+  authoring aids, not trusted signing material.
+- Legacy `ptb_3`, old top-level `nodes/edges`, builder-local codegen, and
+  builder-local decode fallbacks are not normal runtime paths.
 
-Vectors & Options
-	•	Vectors: scalars only (numbers/strings/bool/address). Objects/coins are not allowed.
-	•	Options: tx.option only for scalars. Objects/coins are not allowed.
-	•	UI prevents disallowed constructs; code paths are kept flexible for future extension (see TODOs).
+## Repository Areas
 
-3) Constraints
+- `packages/ptb-model/`: UI-independent raw PTB, `TransactionIR`, `PTBGraph`,
+  conversion, validation, Mermaid, and TypeScript SDK code-string rendering.
+- `packages/ptb-builder/src/ptb/`: builder document boundary, React Flow/model
+  adapter, Core client bridge, metadata caches, runtime adapter, and node
+  factories.
+- `packages/ptb-builder/src/ui/`: React context, React Flow integration,
+  authoring controls, document emission, provider UI state, and diagnostics.
+- `packages/example/`: Vite host application using dapp-kit React and
+  host-owned simulation/execution callbacks.
+- `.WORK/`: local planning and evidence notes. Verify claims against source
+  before using them.
 
-Graph structure
-	•	No cycles (enforced at connect time for flow edges).
-	•	Disconnected nodes (no Start→…→End path) are deferred from codegen.
+## Chain Reads And Transport
 
-Code generation
-	•	Deterministic, minimal output.
-	•	Skip declarations for IO edges without a concrete source.
-	•	Edges connecting two commands avoid redundant intermediate vars when possible.
-	•	Cast labels for IO edges are reflected as label = "as <type>" when inferCastTarget applies.
+New implementation must not add JSON-RPC paths. Do not import
+`@mysten/sui/jsonRpc`, `SuiClient`, `getFullnodeUrl`, or JSON-RPC endpoint
+helpers.
 
-UI & Modes
-	•	Read-only mode (e.g., viewer):
-	•	No context menu.
-	•	No new connections or edits; dragging allowed for inspection.
-	•	Themes
-	•	Initial theme via props; users can switch at runtime.
-	•	Supported: dark, light, cobalt2, tokyo-night, cream, mint-breeze.
+Builder chain reads use the pinned `@mysten/sui` Core/gRPC surface through
+`ptb/suiClient.ts`.
 
-4) Provider Details
+- `createPtbCoreClient()` and `createPtbCoreClientForNetwork()` create Core
+  clients for verified transport/network pairs.
+- `supportedNetworksForTransport()` is the source for host/example network
+  registration.
+- Metadata caches are UI/type metadata caches. They must not silently rewrite
+  signable ObjectRefs, object versions, object digests, package IDs, or
+  transaction arguments.
 
-Props (internal)
-	•	initialTheme: Theme — initial theme injected to <html> via data-ptb-theme and dark class.
-	•	showThemeSelector?: boolean — controls visibility of theme dropdown in CodePip. Default true.
-	•	execOpts?: ExecOptions — { myAddress?: string; gasBudget?: number } used by codegen & tx build.
-	•	executeTx?: (chain, tx?) => Promise<{ digest?: string; error?: string }> — external runner.
-	•	toast?: ToastAdapter — if absent, falls back to console logging.
-	•	showExportButton?: boolean — UI feature flag consumed by CodePip to show/hide Export .ptb button. Default false.
+## Provider And Document Flow
 
-Context (selected highlights)
-	•	chain: Chain, theme: Theme, readOnly: boolean.
-	•	Caches: objects: PTBObjectsEmbed, modules: PTBModulesEmbed with loaders (getObjectData, getPackageModules).
-	•	Persistence: exportDoc({ sender? }), loadFromDoc(doc), loadFromOnChainTx(chain, digest).
-	•	Execution: dryRunTx(tx?) (build+simulate), runTx(tx?) (simulate then execute via executeTx).
-	•	Layout: registerFlowActions({ autoLayoutAndFit? }) to trigger layout from Provider-managed operations.
+Provider state has separate responsibilities:
 
-Debounced notifications
-	•	Graph autosave: RF→PTB snapshot happens immediately (no debounce), suppressed during reloads.
-	•	Doc autosave: PTBDoc-level autosave fires immediately for graph/modules/objects/chain changes. Viewport changes are debounced (250ms).
+- `providerLifecycle.ts`: load tokens, cancellation, and delayed animation-frame
+  cleanup.
+- `providerUiState.ts`: visible transaction status and persistent notices.
+  Provider lifecycle mode stays in `providerLifecycle.ts`; do not duplicate it
+  in UI notice state.
+- `documentEmission.ts`: debounced PTB document emission, max-wait, flush, and
+  cleanup.
+- `ptbDoc.ts`: strict `ptb_4` document parsing/building, required
+  `modules`/`objects` embeds, canonical document signatures, and viewport
+  comparison keys.
 
-5) PTBFlow Details
-	•	RF state is the single source of truth; PTB snapshot is derived.
-	•	Rehydrate on graphEpoch only; rehydratingRef mutes RF callbacks during programmatic updates.
-	•	Auto‑layout writes positions only; performs a single fitView() after positions are ready to avoid flicker.
-	•	Code preview (CodePip) updates on RF diffs; empty graphs show EMPTY_CODE(chain).
-	•	Execute/Dry‑run are gated: disabled in read‑only; execute buttons honor a shared isRunning flag.
+Do not reintroduce component-local autosave timers or provider-local sequence
+refs without proving the shared helper is insufficient.
 
-6) CodePip Details
-	•	Features: Copy, optional Export, Asset picker, Dry‑run, Execute, Theme switch, Collapsible.
-	•	Export button visibility
-	•	Controlled by Provider flag showExportButton (from <PTBBuilder showExportButton />).
-	•	Default hidden; visible only when explicitly enabled by integrators.
-	•	Asset picker is hidden in read‑only mode.
+## React Flow Boundary
 
-7) Testing Guidelines (Minimum)
-	•	Validator: Allowed/denied connections incl. type and role rules.
-	•	Round‑trip: Graph ↔ Export ↔ Import equivalence (structural & semantic).
-	•	Plan Builder: Start→End ordering; disconnected node deferral behavior.
-	•	Parser: On‑chain sample → Graph reconstruction.
-	•	Editor (UI): Drag/connect/context‑menu/drop/validation snapshots.
-	•	Adapters: web/localStorage, vscode/postMessage mocking.
+`PtbFlow` owns screen editing, but model conversion must go through the
+adapter boundary:
 
-8) Security
+- `ptbAdapter.ts` converts React Flow state to model `PTBGraph` and back.
+- `graphSignature.ts` is the semantic no-op gate for provider graph updates.
+  It must include protocol-significant fields such as `rawInput`, command
+  runtime params, and edge casts.
+- Code preview, dry-run, execute, and commit paths should consume a safe
+  RF-to-model conversion result instead of calling `rfToPTB()` ad hoc.
 
-Input Validation
-	•	Address validation (isHexAddr): Limited to 64 hex chars (32 bytes) to prevent DoS attacks.
-	•	Decimal validation (isDecString): Limited to 78 digits (max u256 range).
-	•	Package ID validation (isValidPackageId): Same format as addresses, enforced length limit.
+## Object Authoring
 
-Recursion Limits
-	•	Type checking functions (isPureType, isSameType, isTypeCompatible, inferCastTarget): MAX_TYPE_DEPTH = 32 to prevent stack overflow.
-	•	Serialized type unwrapping (unwrapToBase): Hardcoded limit of 8 wrapper levels.
+Object authoring treats SDK Core object facts and raw PTB usage as separate
+concepts.
 
-Known Constraints
-	•	Dependency vulnerabilities: 13 npm packages with known issues (tracked for Sui SDK gRPC migration).
-	•	Sui address checksums: Not yet validated (deferred to gRPC migration).
+- `objectAuthoring.ts` normalizes SDK Core object id, version, digest, owner,
+  and type facts using the model parsers.
+- Owner kind does not imply `Receiving` usage.
+- Shared object mutability must not be inferred from labels, symbols, type
+  tags, or owner kind alone. The user must choose read-only or mutable shared
+  usage when the SDK owner is `Shared`.
+- `ConsensusAddressOwner` and unknown owner objects are not converted into raw
+  PTB object inputs unless a reviewed source-backed mapping is added.
+- `VarNode` lookup state is UI draft state. Persisted PTB meaning is the graph
+  variable's `value`, `varType`, and `rawInput`.
 
-9) TODOs / Open Decisions
-	•	MakeMoveVec node
-	•	Currently limited in UI.
-	•	Define codegen policy and typechecking, including expanded vs. vector handles.
-	•	Vector of objects/coins
-	•	Disallowed in UI; code paths are flexible. Decide feasibility & safety constraints.
-	•	Option
-	•	Currently disallowed; evaluate real‑world demand and safety.
-	•	Nested vectors (e.g., vector<vector<u64>>)
-	•	Unsupported; keep UI prevention. Decide long‑term spec.
-	•	UI feature flags
-	•	Generalize to uiOptions (e.g., { export: true, assets: true, dryRun: true }) if more toggles appear.
+## MoveCall Authoring
+
+MoveCall nodes use explicit package/module/function input and SDK Core
+per-function lookup. Package-wide module scans are not part of the current
+runtime.
+
+MoveCall signature state should be treated as an async authoring boundary:
+
+- stale lookup responses must not patch runtime params or ports;
+- generic signatures must preserve the resolved target while waiting for type
+  arguments;
+- normal "Use" should be cache-aware, with explicit refresh reserved for user
+  revalidation.
+
+## Commands
+
+Check root `package.json` before running commands. Current commands:
+
+- `npm run build`
+- `npm run test:builder-flow`
+- `npm run test:model`
+- `npm run lint`
+- `npm run format`
+
+Builder and example tests must not run in parallel because both can consume
+workspace package build artifacts. Use `npm run test:builder-flow` for the
+sequential builder/example gate.
+
+## Review Checklist
+
+Before calling a refactor complete, review these boundaries together:
+
+- model graph/raw/IR conversion;
+- React Flow adapter and graph signature;
+- provider load/export/emit states;
+- object and MoveCall authoring async paths;
+- runtime adapter diagnostics;
+- package exports and CSS entry points;
+- example host behavior;
+- public and developer documentation.
+
+Tests passing is not enough by itself. Walk the affected state and error paths
+and verify docs do not describe removed or unsupported behavior.

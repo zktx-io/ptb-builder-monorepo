@@ -57,8 +57,8 @@ Run any legacy migration outside this package before calling builder/model APIs.
 ### 6. Use On‑Chain Assets as Objects
 
 - **Asset Browser**: Browse objects owned by your address (coins, Move objects, modules, etc.).
-- **One‑Click Insert**: Insert an object as an **Object node** in one click.
-- **Seamless Integration**: Use assets directly in commands like `TransferObjects`, `MergeCoins`, `MoveCall`.
+- **Object Ref Preservation**: Insert owned assets as **Object nodes** with SDK-reported object id, version, and digest when the Core API returns those fields.
+- **Explicit Shared Usage**: Shared-object inputs require an explicit read-only or mutable selection. PTB Builder does not infer shared mutability from owner labels, symbols, or convenience defaults.
 
 ### 7. Themes
 
@@ -85,7 +85,9 @@ Inputs follow `tx.option` conventions from the Sui TS SDK:
 
 - **Scalars**: numbers, booleans, addresses, strings ✅
 - **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
-  - _Objects can also be selected from your owned assets via the **Assets modal**._
+  - _Objects can be selected from your owned assets via the **Assets modal**._
+  - _Manual object authoring should use the object node lookup before runtime building so the graph carries SDK-reported object id, version, digest, owner kind, and type tag._
+  - _Receiving and shared-object usage are explicit authoring choices. Consensus-owned or unknown-owner objects are not converted into raw PTB object inputs by default._
 - **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
 - **Options**: available for scalars ✅ (❌ not supported for objects)
 
@@ -239,8 +241,8 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 
 <PTBBuilder
   theme="dark" // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
-  address={myAddress} // sender address
-  gasBudget={500_000_000} // optional gas budget
+  address={connectedAddress} // optional runtime envelope sender
+  gasBudget={500_000_000} // optional runtime envelope gas budget
   executeTx={execAdapter} // host-provided execution adapter
   createClient={clientFactory} // host-provided SDK Core client factory for reads/loads
   onDocChange={saveDoc} // PTBDoc autosave callback (debounced)
@@ -255,16 +257,36 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 ```tsx
 import { usePTB } from '@zktx.io/ptb-builder';
 
-const { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme } = usePTB();
+const {
+  exportDoc,
+  exportDocResult,
+  loadFromDoc,
+  loadFromOnChainTx,
+  setTheme,
+} = usePTB();
 
-// Export current PTB document
-const doc = exportDoc({ sender: myAddress });
+// Export current PTB document with structured error information
+const exportResult = exportDocResult({ sender: connectedAddress });
+if (!exportResult.ok) {
+  console.warn(exportResult.error);
+}
+
+// Compatibility wrapper: returns undefined on failure
+const doc = exportDoc({ sender: connectedAddress });
 
 // Load document from memory or disk
-loadFromDoc(doc);
+if (doc) {
+  const loadResult = loadFromDoc(doc);
+  if (!loadResult.ok) {
+    console.warn(loadResult.error);
+  }
+}
 
 // Load graph from on-chain transaction digest
-await loadFromOnChainTx('sui:testnet', '0x1234…');
+const chainLoadResult = await loadFromOnChainTx('sui:testnet', '0x1234…');
+if (!chainLoadResult.ok) {
+  console.warn(chainLoadResult.error);
+}
 
 // Switch theme at runtime
 setTheme('tokyo-night');
@@ -280,9 +302,9 @@ setTheme('tokyo-night');
 
 ### Autosave, undo/redo & `onDocChange`
 
-- PTB Builder emits `onDocChange` immediately when the underlying PTB graph, modules, objects, or active chain changes. Viewport changes (pan/zoom) are debounced by 250 ms so autosave targets are not overwhelmed while the user drags the canvas.
+- PTB Builder batches graph/content `onDocChange` emissions briefly and debounces viewport-only changes by 250 ms so autosave targets are not overwhelmed while the user edits or pans the canvas.
 - Loading a document via `loadFromDoc`/`loadFromOnChainTx` resets the internal history cache, replays the snapshot once, and suppresses duplicate events until the user edits again.
-- The sample `usePtbUndo` hook keeps a stable signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. A single flag (`suppressNext`) prevents the ensuing `onDocChange` from being treated as a fresh edit.
+- The sample `usePtbUndo` hook keeps a deterministic signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. The signature is a deduplication helper for current builder behavior, not a persistent cross-version document id.
 - When integrating your own autosave pipeline, expect `onDocChange` to fire often during graph edits but only after the debounce window for viewport-only motions.
 
 ---
@@ -293,8 +315,8 @@ setTheme('tokyo-night');
 | ------------------- | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
 | `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
 | `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
-| `address`           | `string`                                                                              | –        | Sender address for generated transactions.                    |
-| `gasBudget`         | `number`                                                                              | –        | Optional gas budget used for tx build/exec.                   |
+| `address`           | `string`                                                                              | –        | Optional runtime envelope sender. It is not substituted into graph arguments. |
+| `gasBudget`         | `number`                                                                              | –        | Optional runtime envelope gas budget.                         |
 | `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
 | `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Optional host-provided simulation adapter; required only when the Dry run action is used. |
 | `createClient`      | `(chain: Chain) => ClientWithCoreApi`                                                 | gRPC     | Optional host-provided SDK Core client factory for read/load paths. |
@@ -313,7 +335,7 @@ PTB Builder persists graphs as `PTBDoc` objects containing:
 - **graph** — nodes and edges of the PTB
 - **modules** — embedded Move function signature metadata for already-resolved
   MoveCall targets
-- **objects** — embedded object metadata (for owned assets)
+- **objects** — embedded object metadata for display and type lookup. Runtime object arguments must come from graph raw input data such as SDK-reported object id, version, and digest; metadata embeds are not a source of signing authority.
 - **chain** — target Sui network (e.g., `sui:testnet`)
 - **view** — saved editor viewport `{ x, y, zoom }`
 

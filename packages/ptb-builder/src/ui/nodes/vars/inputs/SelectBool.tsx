@@ -1,5 +1,5 @@
 // src/ui/nodes/vars/inputs/SelectBool.tsx
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 /** Tiny boolean select (true/false) for VarNode editors */
 export const SelectBool = memo(function SelectBool({

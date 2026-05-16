@@ -1,5 +1,5 @@
 // src/ui/nodes/vars/inputs/OptionToggle.tsx
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 import clsx from 'clsx';
 

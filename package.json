@@ -7,6 +7,7 @@
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
     "dev": "npm run build && cd packages/example && npm run dev",
     "build": "npm run build --workspace @zktx.io/ptb-model && cd packages/ptb-builder && npm run build",
+    "test:builder-flow": "npm run test --workspace @zktx.io/ptb-builder && npm run test --workspace example",
     "test:model": "npm run test --workspace @zktx.io/ptb-model",
     "version:patch": "lerna version patch",
     "version:minor": "lerna version minor",

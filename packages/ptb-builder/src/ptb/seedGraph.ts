@@ -16,14 +16,9 @@ export const KNOWN_IDS = {
   SYSTEM: '@system',
   CLOCK: '@clock',
   RANDOM: '@random',
-  MY_WALLET: '@my_wallet',
 } as const;
 
 export type WellKnownId = (typeof KNOWN_IDS)[keyof typeof KNOWN_IDS];
-
-export function isWellKnownId(id?: string): id is WellKnownId {
-  return !!id && Object.values(KNOWN_IDS).includes(id as WellKnownId);
-}
 
 export function seedDefaultGraph(): PTBGraph {
   return {
@@ -43,6 +38,15 @@ export function seedDefaultGraph(): PTBGraph {
         ports: PORTS.end(),
       },
     ],
-    edges: [],
+    edges: [
+      {
+        id: 'flow-start-end',
+        kind: 'flow',
+        source: KNOWN_IDS.START,
+        sourceHandle: 'next',
+        target: KNOWN_IDS.END,
+        targetHandle: 'prev',
+      },
+    ],
   };
 }

@@ -8,7 +8,8 @@ import {
 import { ConnectButton } from '@mysten/dapp-kit-react/ui';
 import { useNavigate } from 'react-router-dom';
 
-import { NETWORKS, NetworkType, saveNetwork } from '../network';
+import { DAPP_NETWORKS } from '../dapp-kit';
+import { NetworkType, saveNetwork } from '../network';
 
 type Props = {
   title?: string;
@@ -91,7 +92,7 @@ export function ConnectScreen({
             minWidth: 200,
           }}
         >
-          {NETWORKS.map((n) => (
+          {DAPP_NETWORKS.map((n) => (
             <option key={n} value={n}>
               {n.toUpperCase()}
             </option>

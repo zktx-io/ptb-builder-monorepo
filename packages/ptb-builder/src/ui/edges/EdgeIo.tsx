@@ -9,7 +9,7 @@
  *   (sourceHandleId/targetHandleId).
  */
 
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 

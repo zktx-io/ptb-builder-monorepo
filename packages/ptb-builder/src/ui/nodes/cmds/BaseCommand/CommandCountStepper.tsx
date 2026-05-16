@@ -17,8 +17,6 @@ export type PatchUIPayload = (
 ) => void;
 
 export interface CommandCountStepperProps {
-  /** Command kind string (used by parent to decide presence of countKey). */
-  cmdKind?: string;
   nodeId?: string;
   /** Raw UI object that contains the count field (e.g. { amountsCount: 3 }) */
   ui: Record<string, unknown>;

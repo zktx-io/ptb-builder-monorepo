@@ -7,13 +7,13 @@
 // - Count stepper is shown only if the command declares a countKey.
 // - Height is determined by IO rows (+ optional right-column offset).
 
-import React, { memo, useMemo } from 'react';
+import { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
 
 import { CommandCountStepper } from './CommandCountStepper';
-import type { Port, PTBNode } from '../../../../ptb/graph/types';
+import type { CommandNode, PTBNode } from '../../../../ptb/graph/types';
 import { countKeyOf } from '../../../../ptb/registry';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
@@ -42,18 +42,11 @@ export const BaseCommand = memo(function BaseCommand({
   const node = data?.ptbNode as PTBNode | undefined;
   const { readOnly } = usePtb();
 
-  // Extract raw ports only if present (useful for labels; render uses useCommandPorts).
-  const ports: Port[] = useMemo(() => {
-    const raw = (node as any)?.ports;
-    return Array.isArray(raw) ? (raw as Port[]) : [];
-  }, [node]);
-
   // IO lists in UI order (left=in, right=out).
   const { inIO, outIO } = useCommandPorts(node);
 
   // Narrow to Command node to get command kind & UI map.
-  const cmdNode =
-    node && (node as any).kind === 'Command' ? (node as any as any) : undefined;
+  const cmdNode = node?.kind === 'Command' ? (node as CommandNode) : undefined;
   const cmdKind: string | undefined = cmdNode?.command;
   const ui = (cmdNode?.params?.ui ?? {}) as Record<string, unknown>;
 
@@ -68,7 +61,7 @@ export const BaseCommand = memo(function BaseCommand({
   const gaps = Math.max(0, rowCount - 1);
   const minHeight = TITLE_TO_IO_GAP + gaps * ROW_SPACING + BOTTOM_PADDING;
 
-  const title = data?.label ?? (node as any)?.label ?? 'Command';
+  const title = data?.label ?? node?.label ?? 'Command';
 
   return (
     <div className="ptb-node--command">
@@ -86,7 +79,6 @@ export const BaseCommand = memo(function BaseCommand({
           {/* Count stepper when supported */}
           {countKey ? (
             <CommandCountStepper
-              cmdKind={cmdKind}
               nodeId={node?.id}
               ui={ui}
               onPatchUI={data?.onPatchUI}

@@ -8,6 +8,7 @@ import { useLocation } from 'react-router-dom';
 
 import { TransactionPrompt } from '../components/TransactionPrompt';
 import { usePtbUndo } from '../components/usePtbUndo';
+import { DAPP_NETWORKS } from '../dapp-kit';
 import { saveNetwork, SuiChain, SuiNetwork } from '../network';
 
 const TX_QUERY_REGEX = /^(?:sui:)?(mainnet|testnet|devnet):(.*)$/;
@@ -69,6 +70,10 @@ export const Viewer = () => {
     }
     const { network: targetNetwork, txHash } = parsedQuery;
     const effectiveNetwork = targetNetwork ?? network;
+    if (!DAPP_NETWORKS.includes(effectiveNetwork)) {
+      setShowPrompt(true);
+      return;
+    }
     const loadKey = `${effectiveNetwork}:${txHash}`;
     if (lastLoaded.current === loadKey) {
       return;
@@ -78,9 +83,23 @@ export const Viewer = () => {
       dAppKit.switchNetwork(targetNetwork);
     }
 
-    loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
-    reset();
-    lastLoaded.current = loadKey;
+    let cancelled = false;
+    void (async () => {
+      const result = await loadFromOnChainTx(
+        `sui:${effectiveNetwork}` as SuiChain,
+        txHash,
+      );
+      if (cancelled) return;
+      if (result.ok) {
+        reset();
+        lastLoaded.current = loadKey;
+      } else {
+        setShowPrompt(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [dAppKit, loadFromOnChainTx, parsedQuery, network, reset]);
 
   const lastSearch = useRef(location.search);
@@ -116,19 +135,29 @@ export const Viewer = () => {
     [redo],
   );
 
-  const handleManualLoad = () => {
+  const handleManualLoad = async () => {
     const txHash = normalizeDigest(manualTx);
     if (!txHash) {
       return;
     }
     const effectiveNetwork = network;
+    if (!DAPP_NETWORKS.includes(effectiveNetwork)) {
+      return;
+    }
     const loadKey = `${effectiveNetwork}:${txHash}`;
     if (lastLoaded.current === loadKey) {
       setShowPrompt(false);
       return;
     }
 
-    loadFromOnChainTx(`sui:${effectiveNetwork}` as SuiChain, txHash);
+    const result = await loadFromOnChainTx(
+      `sui:${effectiveNetwork}` as SuiChain,
+      txHash,
+    );
+    if (!result.ok) {
+      setShowPrompt(true);
+      return;
+    }
     reset();
     lastLoaded.current = loadKey;
     setShowPrompt(false);

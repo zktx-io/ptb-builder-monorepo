@@ -1,62 +1,20 @@
 // src/ui/CodePip.tsx
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 
-import { AssetsModal } from './AssetsModal';
+import { AssetsModal, type OwnedItem } from './AssetsModal';
 import { usePtb } from './PtbProvider';
 import { type Theme, THEMES } from '../types';
 import { loadPrism } from './utils/prismLoader';
 
-export const EMPTY_CODE = (net?: string) => {
-  if (!net) {
-    return `// PTB Code Preview
-// ⚠ No network is selected yet.
-// - Load a document (loadFromDoc) or load a chain transaction (loadFromOnChainTx)
-//   to set the active network.
-// - Dry-run / Execute are disabled until a network is selected.
-//
-// Add and connect nodes (Start → … → End) to generate ts-sdk code here.
-
-import { Transaction } from '@mysten/sui/transactions';
-
-const tx = new Transaction();
-// tx.setSenderIfNotSet('<your-address>');
-// tx.setGasBudgetIfNotSet(500_000_000);
-
-// ...code for your graph will be generated here...
-
-export { tx };
-`;
-  }
-
-  return `// PTB Code Preview (network: ${net})
-// No commands yet.
-// Connect nodes (Start → … → End) to generate ts-sdk code.
-// Tip: add a MoveCall or SplitCoins node and wire inputs/outputs.
-
-import { Transaction } from '@mysten/sui/transactions';
-
-const tx = new Transaction();
-// tx.setSenderIfNotSet('<your-address>');
-// tx.setGasBudgetIfNotSet(500_000_000);
-
-// ...the graph will generate calls here...
-
-export { tx };
-`;
-};
+export { EMPTY_CODE } from './emptyCode';
 
 type CodePipProps = {
   code: string;
+  previewStatus?: 'current' | 'stale';
   language?: 'typescript' | 'javascript';
   title?: string;
   defaultWidth?: number | string;
@@ -67,8 +25,8 @@ type CodePipProps = {
 
   emptyText?: string;
 
-  /** Shared enable state for both Dry-run and Execute */
-  canRunning?: boolean;
+  canDryRun?: boolean;
+  canExecute?: boolean;
 
   /** Shared running state for both buttons (mutually exclusive UX) */
   isRunning?: boolean;
@@ -78,7 +36,7 @@ type CodePipProps = {
   onExecute?: () => Promise<void> | void;
 
   onCopy?: (text: string) => Promise<void> | void;
-  onAssetPick?: (obj: { objectId: string; typeTag: string }) => void;
+  onAssetPick?: (obj: OwnedItem) => void;
 
   /** Toggle MiniMap from header */
   showMiniMap: boolean;
@@ -106,6 +64,7 @@ function useInlineHint(timeoutMs = 1200) {
 
 export function CodePip({
   code,
+  previewStatus = 'current',
   language = 'typescript',
   title = 'Preview',
   defaultWidth = 420,
@@ -117,7 +76,8 @@ export function CodePip({
   emptyText = '// No code yet. Connect nodes or change values to see generated code.',
 
   isRunning = false,
-  canRunning = true,
+  canDryRun,
+  canExecute,
 
   onDryRun,
   onExecute,
@@ -143,18 +103,19 @@ export function CodePip({
   const [assetsOpen, setAssetsOpen] = useState(false);
   const { hint, show } = useInlineHint();
   const {
+    chain,
     readOnly,
     setTheme,
     theme,
     execOpts,
-    exportDoc,
+    exportDocResult,
     showExportButton,
     showThemeSelector,
   } = usePtb();
   const [prismReady, setPrismReady] = useState(false);
 
   // Normalize code for Prism; fallback to empty placeholder
-  const normalized = useMemo(() => code ?? '', [code]);
+  const normalized = code ?? '';
   const visibleCode = normalized.trim().length ? normalized : emptyText;
 
   // --- Mobile detection to hard-disable resizing and pin width to 100% ---
@@ -227,9 +188,12 @@ export function CodePip({
 
   const handleSave = async () => {
     try {
-      const doc = exportDoc?.();
-      if (!doc) throw new Error('Nothing to export');
-      const filename = 'export.ptb';
+      const result = exportDocResult?.();
+      if (!result?.ok) return;
+      const doc = result.doc;
+      const chainSlug = (chain ?? 'ptb').replace(/[^a-z0-9]+/gi, '-');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${chainSlug}-${timestamp}.ptb`;
       const blob = new Blob([JSON.stringify(doc, undefined, 2)], {
         type: 'application/x-ptb+json',
       });
@@ -262,7 +226,8 @@ export function CodePip({
     onCollapsedChange?.(!checked);
   };
 
-  const runButtonsDisabled = !!isRunning || !canRunning;
+  const dryRunDisabled = !!isRunning || !canDryRun;
+  const executeDisabled = !!isRunning || !canExecute;
   const stopFlowGestures = useCallback(
     (evt: React.SyntheticEvent<HTMLSelectElement>) => {
       evt.stopPropagation();
@@ -292,6 +257,14 @@ export function CodePip({
         <div className="ptb-codepip__header flex items-center justify-between px-2 py-1 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-semibold opacity-85">{title}</span>
+            {previewStatus === 'stale' && (
+              <span
+                className="ptb-codepip__status ptb-codepip__status--stale"
+                title="The current graph has diagnostics; the preview shows the last renderable model output."
+              >
+                stale
+              </span>
+            )}
             <span aria-live="polite" className="ml-1 italic opacity-65">
               {hint}
             </span>
@@ -403,8 +376,7 @@ export function CodePip({
               <button
                 type="button"
                 onClick={handleOpenAssets}
-                disabled={!onAssetPick}
-                className="ptb-codepip__btn ptb-codepip__btn--neutral disabled:cursor-not-allowed"
+                className="ptb-codepip__btn ptb-codepip__btn--neutral"
                 title="Open your owned assets"
                 aria-label="Open Assets"
               >
@@ -417,12 +389,12 @@ export function CodePip({
               <button
                 type="button"
                 onClick={onDryRun}
-                disabled={runButtonsDisabled}
-                aria-disabled={runButtonsDisabled}
+                disabled={dryRunDisabled}
+                aria-disabled={dryRunDisabled}
                 aria-busy={!!isRunning}
                 className="ptb-codepip__btn ptb-codepip__btn--neutral disabled:cursor-not-allowed"
                 title={
-                  runButtonsDisabled
+                  dryRunDisabled
                     ? 'Dry run (disabled while running or unavailable)'
                     : 'Dry run the transaction'
                 }
@@ -437,12 +409,12 @@ export function CodePip({
               <button
                 type="button"
                 onClick={onExecute}
-                disabled={runButtonsDisabled}
-                aria-disabled={runButtonsDisabled}
+                disabled={executeDisabled}
+                aria-disabled={executeDisabled}
                 aria-busy={!!isRunning}
                 className="ptb-codepip__btn ptb-codepip__btn--primary disabled:cursor-not-allowed"
                 title={
-                  runButtonsDisabled
+                  executeDisabled
                     ? 'Run (disabled while running or unavailable)'
                     : 'Execute the transaction'
                 }
@@ -459,7 +431,7 @@ export function CodePip({
       <AssetsModal
         open={assetsOpen}
         onClose={() => setAssetsOpen(false)}
-        owner={execOpts.myAddress || ''}
+        owner={execOpts.sender || ''}
         onPick={(it) => onAssetPick?.(it)}
       />
     </>

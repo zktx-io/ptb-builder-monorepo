@@ -12,14 +12,15 @@
 // - executeTx       : adapter for executing transactions
 // - simulateTx      : adapter for simulating transactions
 // - createClient    : adapter for read-only SDK Core client creation
-// - address         : optional sender for codegen/exec
-// - gasBudget       : optional gas budget for tx build
+// - address         : optional runtime envelope sender
+// - gasBudget       : optional runtime envelope gas budget
 // - toast           : toast adapter; if absent, provider falls back to console
 // - onDocChange     : PTBDoc-level autosave callback
 // - children        : optional React children
 //
 // Public Hook (usePTB)
-// - Exposes ONLY 4 methods: { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme }
+// - Exposes only the document/theme methods needed by host apps:
+//   { exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme }
 //
 // Internals
 // - Wraps <PtbProvider> + <PTBFlow> with <ReactFlowProvider>.
@@ -34,6 +35,7 @@ import React, { createContext, useContext, useMemo } from 'react';
 import type { Transaction } from '@mysten/sui/transactions';
 import { ReactFlowProvider } from '@xyflow/react';
 
+import type { PTBActionResult, PTBExportDocResult } from './actionResult';
 import type {
   HostExecutionResult,
   HostSimulationResult,
@@ -41,6 +43,7 @@ import type {
 import { PTBFlow } from './PtbFlow';
 import { PtbProvider, usePtb } from './PtbProvider';
 import type { PTBDoc } from '../ptb/ptbDoc';
+import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
 import type { PtbCoreClient } from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 
@@ -68,8 +71,9 @@ export type PTBBuilderProps = {
 
 export type PublicPTBApi = {
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
-  loadFromDoc: (data: PTBDoc | Chain) => void;
-  loadFromOnChainTx: (chain: Chain, digest: string) => Promise<void>;
+  exportDocResult: (opts?: { sender?: string }) => PTBExportDocResult;
+  loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
+  loadFromOnChainTx: (chain: Chain, digest: string) => Promise<PTBActionResult>;
   setTheme: (t: Theme) => void;
 };
 
@@ -87,11 +91,23 @@ export function usePTB(): PublicPTBApi {
 // ---------- Internal bridge (maps internal → public) ----------
 
 function PublicBridge({ children }: { children?: React.ReactNode }) {
-  const { exportDoc, loadFromDoc, loadFromOnChainTx, setTheme } = usePtb();
+  const {
+    exportDoc,
+    exportDocResult,
+    loadFromDoc,
+    loadFromOnChainTx,
+    setTheme,
+  } = usePtb();
 
   const api = useMemo<PublicPTBApi>(
-    () => ({ exportDoc, loadFromDoc, loadFromOnChainTx, setTheme }),
-    [exportDoc, loadFromDoc, loadFromOnChainTx, setTheme],
+    () => ({
+      exportDoc,
+      exportDocResult,
+      loadFromDoc,
+      loadFromOnChainTx,
+      setTheme,
+    }),
+    [exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme],
   );
 
   return (
@@ -116,13 +132,12 @@ export function PTBBuilder({
   showExportButton,
   showThemeSelector,
 }: PTBBuilderProps) {
-  const execOpts = useMemo(
-    () => ({
-      myAddress: address,
-      gasBudget,
-    }),
-    [address, gasBudget],
-  );
+  const execOpts = useMemo<RuntimeEnvelope>(() => {
+    const envelope: RuntimeEnvelope = {};
+    if (address) envelope.sender = address;
+    if (typeof gasBudget === 'number') envelope.gasBudget = gasBudget;
+    return envelope;
+  }, [address, gasBudget]);
 
   return (
     <ReactFlowProvider>
@@ -136,7 +151,7 @@ export function PTBBuilder({
         simulateTx={simulateTx}
         createClient={createClient}
         toast={toast}
-        // execution opts for codegen / tx builder
+        // runtime envelope for preview metadata and transaction building
         execOpts={execOpts}
         // public autosave (doc-level callback)
         onDocChange={onDocChange}

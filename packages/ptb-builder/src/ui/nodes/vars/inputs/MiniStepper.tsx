@@ -1,5 +1,5 @@
 // src/ui/nodes/vars/inputs/MiniStepper.tsx
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 type Props = {
   decDisabled?: boolean;

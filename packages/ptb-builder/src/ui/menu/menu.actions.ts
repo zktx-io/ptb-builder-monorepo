@@ -18,7 +18,6 @@ import {
   makeIdVector,
   makeMoveNumericVector,
   // well-known resources
-  makeWalletAddress,
   makeGasObject,
   makeClockObject,
   makeRandomObject,
@@ -31,6 +30,8 @@ import {
 } from '../../ptb/factories';
 import type { CommandKind, NumericWidth, PTBNode } from '../../ptb/graph/types';
 
+type CreateNodeId = (prefix?: string) => string;
+
 /**
  * Routes context-menu actions to factories (functional, no class).
  * Schema aligned to tx.pure:
@@ -40,7 +41,7 @@ import type { CommandKind, NumericWidth, PTBNode } from '../../ptb/graph/types';
  *   NOTE: vector<object> is intentionally not offered at UI level.
  * - Options  : "var/option/<u8|u16|u32|u64|u128|u256|bool|string|address|id>"
  *   NOTE: option<object> is intentionally not offered at UI level.
- * - Resources: "var/resource/<wallet|gas|clock|random|system>"
+ * - Resources: "var/resource/<gas|clock|random|system>"
  */
 export function handleMenuAction(
   action: string,
@@ -49,13 +50,18 @@ export function handleMenuAction(
   onDeleteNode?: (id: string) => void,
   onDeleteEdge?: (id: string) => void,
   onClose?: () => void,
+  createNodeId?: CreateNodeId,
 ) {
   if (!action) return void onClose?.();
+  const nextVarOpts = () =>
+    createNodeId ? { id: createNodeId('var') } : undefined;
+  const nextCommandOpts = (kind: CommandKind) =>
+    createNodeId ? { id: createNodeId(`cmd-${kind}`) } : undefined;
 
   // ---- Commands ----
   if (action.startsWith('cmd/')) {
     const kind = action.slice(4) as CommandKind;
-    placeAndAdd(makeCommandNode(kind));
+    placeAndAdd(makeCommandNode(kind, nextCommandOpts(kind)));
     return void onClose?.();
   }
 
@@ -64,22 +70,22 @@ export function handleMenuAction(
     const k = action.slice('var/scalar/'.length);
     switch (k) {
       case 'address':
-        placeAndAdd(makeAddress());
+        placeAndAdd(makeAddress(nextVarOpts()));
         break;
       case 'number':
-        placeAndAdd(makeNumber());
+        placeAndAdd(makeNumber(nextVarOpts()));
         break;
       case 'bool':
-        placeAndAdd(makeBool());
+        placeAndAdd(makeBool(nextVarOpts()));
         break;
       case 'string':
-        placeAndAdd(makeString());
+        placeAndAdd(makeString(nextVarOpts()));
         break;
       case 'id':
-        placeAndAdd(makeId());
+        placeAndAdd(makeId(nextVarOpts()));
         break;
       case 'object':
-        placeAndAdd(makeObject());
+        placeAndAdd(makeObject(undefined, nextVarOpts()));
         break;
       default:
         // no-op
@@ -96,23 +102,23 @@ export function handleMenuAction(
     if (
       (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'] as const).includes(k as any)
     ) {
-      placeAndAdd(makeMoveNumericVector(k as NumericWidth));
+      placeAndAdd(makeMoveNumericVector(k as NumericWidth, nextVarOpts()));
       return void onClose?.();
     }
 
     // Common vector<T>
     switch (k) {
       case 'address':
-        placeAndAdd(makeAddressVector());
+        placeAndAdd(makeAddressVector(nextVarOpts()));
         break;
       case 'bool':
-        placeAndAdd(makeBoolVector());
+        placeAndAdd(makeBoolVector(nextVarOpts()));
         break;
       case 'string':
-        placeAndAdd(makeStringVector());
+        placeAndAdd(makeStringVector(nextVarOpts()));
         break;
       case 'id':
-        placeAndAdd(makeIdVector());
+        placeAndAdd(makeIdVector(nextVarOpts()));
         break;
       default:
         // no-op
@@ -129,23 +135,23 @@ export function handleMenuAction(
     if (
       (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'] as const).includes(k as any)
     ) {
-      placeAndAdd(makeMoveNumericOption(k as NumericWidth));
+      placeAndAdd(makeMoveNumericOption(k as NumericWidth, nextVarOpts()));
       return void onClose?.();
     }
 
     // Common option<T>
     switch (k) {
       case 'address':
-        placeAndAdd(makeAddressOption());
+        placeAndAdd(makeAddressOption(nextVarOpts()));
         break;
       case 'bool':
-        placeAndAdd(makeBoolOption());
+        placeAndAdd(makeBoolOption(nextVarOpts()));
         break;
       case 'string':
-        placeAndAdd(makeStringOption());
+        placeAndAdd(makeStringOption(nextVarOpts()));
         break;
       case 'id':
-        placeAndAdd(makeIdOption());
+        placeAndAdd(makeIdOption(nextVarOpts()));
         break;
       default:
         // no-op
@@ -158,9 +164,6 @@ export function handleMenuAction(
   if (action.startsWith('var/resource/')) {
     const name = action.slice('var/resource/'.length);
     switch (name) {
-      case 'wallet':
-        placeAndAdd(makeWalletAddress());
-        break;
       case 'gas':
         placeAndAdd(makeGasObject());
         break;

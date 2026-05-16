@@ -6,16 +6,17 @@
 // Flow ports are defined by PORTS.commandBase() and merged here.
 // Policy notes:
 // - No "expanded" toggle flag; multiplicity is controlled solely by count steppers.
-// - MakeMoveVec: elemType defaults to object when absent (kept for decode/future).
-//   IMPORTANT: although the model allows vector<object>, UI-level creation
-//   currently disallows it. The default is preserved for compatibility.
-// - MoveCall generics: SSOT via ui._fnTParams (length-only); ABI-normalized
-//   ins/outs come via ui._fnIns/_fnOuts as PTBType[].
+// - MakeMoveVec: runtime.type is the persisted model value. UI count controls
+//   only the number of element handles.
+// - MoveCall signatures materialize only value arguments and return values as
+//   ports. Resolved package, module, function, and type arguments live in
+//   params.runtime.
 // -----------------------------------------------------------------------------
 
 import { M, O, S, V } from './graph/typeHelpers';
 import {
   type CommandKind,
+  type CommandRuntimeParams,
   type CommandUIParams,
   type Port,
   type PTBType,
@@ -34,8 +35,8 @@ const VEC_ADDR: PTBType = V(S('address'));
 export interface CommandSpec {
   /** Default human-friendly label for the node. */
   label: string;
-  /** Build IO ports based on UI params (e.g., counts/types). */
-  buildIO(ui?: CommandUIParams): Port[];
+  /** Build IO ports based on model runtime params and UI-only counts. */
+  buildIO(ui?: CommandUIParams, runtime?: CommandRuntimeParams): Port[];
   /** True if this command is graph-only (for decode/visualization). */
   graphOnly?: boolean;
 }
@@ -121,82 +122,80 @@ const transferObjectsSpec: CommandSpec = {
 };
 
 /** MakeMoveVec:
- *  inputs : in_elem_0..N-1 (T, expanded; T = ui.elemType or object by default)
+ *  inputs : in_elem_0..N-1 (T, expanded; T = runtime.type or unknown)
  *  outputs: out_vec (vector<T>, single)
- *  NOTE: UI disallows creating vector<object>; default is kept for decode/future.
  */
 const makeMoveVecSpec: CommandSpec = {
   label: 'MakeMoveVec',
-  buildIO(ui) {
+  buildIO(ui, runtime) {
     const count = Math.max(1, Math.floor(ui?.elemsCount ?? 2));
-    const elemT: PTBType = ui?.elemType ?? O();
+    const runtimeType =
+      typeof runtime?.type === 'string' ? runtime.type : undefined;
+    const elemT: PTBType = runtimeType
+      ? { kind: 'unknown', debugInfo: runtimeType }
+      : O();
     const ports: Port[] = [];
     for (let i = 0; i < count; i++) {
       ports.push(
-        ioIn(`in_elem_${i}`, { dataType: elemT, label: `in_elem_${i}` }),
+        ioIn(`in_elem_${i}`, {
+          dataType: elemT,
+          typeStr: runtimeType,
+          label: `in_elem_${i}`,
+        }),
       );
     }
-    ports.push(ioOut('out_vec', { dataType: V(elemT), label: 'out_vec' }));
+    ports.push(
+      ioOut('out_vec', {
+        dataType: V(elemT),
+        typeStr: runtimeType ? `vector<${runtimeType}>` : undefined,
+        label: 'out_vec',
+      }),
+    );
     return ports;
   },
 };
 
-/** MoveCall (ABI-driven):
- * - Generics: SSOT via ui._fnTParams: string[] (we only need length to make handles).
- * - Inputs/Outputs: from ui._fnIns / ui._fnOuts (PTBType[]), normalized from ABI.
- */
 const moveCallSpec: CommandSpec = {
   label: 'MoveCall',
-  buildIO(ui) {
-    const ports: Port[] = [];
-
-    // 1) Type-argument inputs (T0..Tn-1) as scalar<string>
-    const tparams: string[] = Array.isArray((ui as any)?._fnTParams)
-      ? ((ui as any)._fnTParams as string[])
-      : [];
-    const tcount = tparams.length;
-
-    for (let i = 0; i < tcount; i++) {
-      ports.push(
-        ioIn(`in_targ_${i}`, { dataType: S('string'), label: `T${i}` }),
-      );
-    }
-
-    // 2) Normal inputs (arg0..)
-    const ins: PTBType[] = Array.isArray((ui as any)?._fnIns)
-      ? (ui as any)._fnIns
-      : [];
-    for (let i = 0; i < ins.length; i++) {
-      const t = ins[i]!;
-      ports.push({
-        id: `in_arg_${i}`,
-        role: 'io',
-        direction: 'in',
-        dataType: t,
-        typeStr: serializePTBType(t),
-        label: `arg${i}`,
-      });
-    }
-
-    // 3) Outputs (ret0..)
-    const outs: PTBType[] = Array.isArray((ui as any)?._fnOuts)
-      ? (ui as any)._fnOuts
-      : [];
-    for (let i = 0; i < outs.length; i++) {
-      const t = outs[i]!;
-      ports.push({
-        id: `out_ret_${i}`,
-        role: 'io',
-        direction: 'out',
-        dataType: t,
-        typeStr: serializePTBType(t),
-        label: `ret${i}`,
-      });
-    }
-
-    return ports;
+  buildIO() {
+    return [];
   },
 };
+
+export function buildMoveCallPorts(
+  inputs: readonly PTBType[],
+  outputs: readonly PTBType[],
+): Port[] {
+  const ports: Port[] = [];
+  inputs.forEach((t, index) => {
+    ports.push({
+      id: `in_arg_${index}`,
+      role: 'io',
+      direction: 'in',
+      dataType: t,
+      typeStr: serializePTBType(t),
+      label: `arg${index}`,
+    });
+  });
+  outputs.forEach((t, index) => {
+    ports.push({
+      id: `out_ret_${index}`,
+      role: 'io',
+      direction: 'out',
+      dataType: t,
+      typeStr: serializePTBType(t),
+      label: `ret${index}`,
+    });
+  });
+  return ports;
+}
+
+function isMoveCallValuePort(port: Port): boolean {
+  if (port.role !== 'io') return false;
+  if (port.direction === 'in') return /^in_arg_\d+$/.test(port.id);
+  if (port.direction === 'out') return /^out_ret_\d+$/.test(port.id);
+  return false;
+}
 
 // -----------------------------------------------------------------------------
 // Graph-only commands (unchanged).
@@ -286,18 +285,19 @@ export function defaultLabelOf(kind: CommandKind): string {
   return REGISTRY[kind]?.label ?? kind;
 }
 
-/** True if the command is graph-only (decode/visualize only). */
-export function isGraphOnly(kind: CommandKind): boolean {
-  return !!REGISTRY[kind]?.graphOnly;
-}
-
 /** Build complete port list for a command (flow + IO). */
 export function buildCommandPorts(
   kind: CommandKind,
   ui?: CommandUIParams,
+  runtime?: CommandRuntimeParams,
+  existingPorts?: readonly Port[],
 ): Port[] {
   const flow = PORTS.commandBase();
-  const io = REGISTRY[kind]?.buildIO(ui) ?? [];
+  if (kind === 'moveCall' && existingPorts?.length) {
+    const io = existingPorts.filter(isMoveCallValuePort);
+    return [...flow, ...io.map((port) => ({ ...port }))];
+  }
+  const io = REGISTRY[kind]?.buildIO(ui, runtime) ?? [];
   return [...flow, ...io];
 }
 

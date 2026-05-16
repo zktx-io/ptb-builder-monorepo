@@ -6,7 +6,7 @@
  *  - Relies on @xyflow/react to provide v11/v12-compatible handle props.
  */
 
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 import {
   type Connection,

@@ -20,7 +20,11 @@ import type {
   PTBNode,
   VariableNode,
 } from './graph/types';
-import { parseHandleTypeSuffix, serializePTBType } from './graph/types';
+import {
+  buildHandleId,
+  parseHandleTypeSuffix,
+  serializePTBType,
+} from './graph/types';
 import { PORTS } from './portTemplates';
 import { extractHandles } from '../ui/handles/handleUtils';
 
@@ -38,7 +42,6 @@ export interface RFNodeData extends Record<string, unknown> {
 /** UI edge payload: serialized type & cast metadata for badges/debug */
 export interface RFEdgeData extends Record<string, unknown> {
   dataType?: string;
-  targetType?: string;
   cast?: { to: NumericWidth };
 }
 
@@ -85,25 +88,20 @@ export function ptbToRF(graph: PTBGraph): {
   }));
 
   const edges: RFEdge<RFEdgeData>[] = graph.edges.map((e) => {
-    const sh = e.sourceHandle;
-    const th = e.targetHandle;
-
     const srcNode = matNodes.find((n) => n.id === e.source);
     const dstNode = matNodes.find((n) => n.id === e.target);
 
-    const sBase = parseHandleTypeSuffix(sh).baseId;
-    const tBase = parseHandleTypeSuffix(th).baseId;
+    const sBase = parseHandleTypeSuffix(e.sourceHandle).baseId;
+    const tBase = parseHandleTypeSuffix(e.targetHandle).baseId;
 
     const sPort = srcNode?.ports?.find((p) => p.id === sBase);
     const tPort = dstNode?.ports?.find((p) => p.id === tBase);
+    const sh = sPort ? buildHandleId(sPort) : e.sourceHandle;
+    const th = tPort ? buildHandleId(tPort) : e.targetHandle;
 
     const srcTypeStr = sPort?.dataType
       ? serializePTBType(sPort.dataType)
       : undefined;
-    const dstTypeStr = tPort?.dataType
-      ? serializePTBType(tPort.dataType)
-      : undefined;
-
     const edge: RFEdgeCompat = {
       id: e.id,
       source: e.source,
@@ -116,7 +114,6 @@ export function ptbToRF(graph: PTBGraph): {
       type: mapPTBEdgeToRFType(e),
       data: {
         dataType: srcTypeStr,
-        targetType: dstTypeStr,
         cast: (e as any).cast,
       },
       label: (e as any).label,
@@ -174,14 +171,21 @@ export function rfToPTB(
   const edges: PTBEdge[] = rfEdges.map((re) => {
     const { source, target } = extractHandles(re);
     const cast = (re.data as RFEdgeData | undefined)?.cast;
+    const sourceHandle = parseHandleTypeSuffix(source).baseId;
+    const targetHandle = parseHandleTypeSuffix(target).baseId;
+    if (!sourceHandle || !targetHandle) {
+      throw new Error(
+        `Cannot persist React Flow edge ${re.id}: source and target handles are required.`,
+      );
+    }
 
     return {
       id: re.id,
       kind: mapRFTypeToPTBEdgeKind(re.type as string),
       source: re.source,
       target: re.target,
-      sourceHandle: source ?? '',
-      targetHandle: target ?? '',
+      sourceHandle,
+      targetHandle,
       ...(cast ? { cast } : {}),
     };
   });

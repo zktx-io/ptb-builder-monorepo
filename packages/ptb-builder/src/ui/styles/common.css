@@ -260,11 +260,6 @@
 .ptb-node--unknown {
   --ptb-active-ring: var(--ptb-node-unknown-border-active);
 }
-/* Option */
-.ptb-node--option {
-  --ptb-active-ring: var(--ptb-node-option-border-active);
-}
-
 /* Base surfaces per type */
 .ptb-node--command .ptb-node-shell {
   border-color: var(--ptb-node-command-border);
@@ -298,12 +293,6 @@
   border-color: var(--ptb-node-unknown-border);
   background: var(--ptb-node-unknown-bg);
 }
-/* Option */
-.ptb-node--option .ptb-node-shell {
-  border-color: var(--ptb-node-option-border);
-  background: var(--ptb-node-option-bg);
-}
-
 /* Hover (brighter) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-node-shell {
   border-color: var(--ptb-node-command-border-hover);
@@ -337,12 +326,6 @@
   border-color: var(--ptb-node-unknown-border-hover);
   background: var(--ptb-node-unknown-bg-hover);
 }
-/* Option */
-.react-flow__node:has(.ptb-node--option):hover .ptb-node-shell {
-  border-color: var(--ptb-node-option-border-hover);
-  background: var(--ptb-node-option-bg-hover);
-}
-
 /* Selected/Active (brightest) */
 .react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell {
   border-color: var(--ptb-node-command-border-active);
@@ -376,12 +359,6 @@
   border-color: var(--ptb-node-unknown-border-active);
   background: var(--ptb-node-unknown-bg-active);
 }
-/* Option */
-.react-flow__node.selected:has(.ptb-node--option) .ptb-node-shell {
-  border-color: var(--ptb-node-option-border-active);
-  background: var(--ptb-node-option-bg-active);
-}
-
 /* Subtle appear animation */
 @keyframes ptb-fade-in {
   from {
@@ -528,10 +505,6 @@
 .react-flow__node:has(.ptb-node--unknown) .ptb-handle--io {
   color: var(--ptb-node-unknown-border);
 }
-.react-flow__node:has(.ptb-node--option) .ptb-handle--io {
-  color: var(--ptb-node-option-border);
-}
-
 /* Hover / Selected mapping */
 .react-flow__node:has(.ptb-node--command):hover .ptb-handle--io {
   color: var(--ptb-node-command-border-hover);
@@ -589,13 +562,6 @@
   color: var(--ptb-node-unknown-border-active);
 }
 
-.react-flow__node:has(.ptb-node--option):hover .ptb-handle--io {
-  color: var(--ptb-node-option-border-hover);
-}
-.react-flow__node.selected:has(.ptb-node--option) .ptb-handle--io {
-  color: var(--ptb-node-option-border-active);
-}
-
 /* Subtle hover affordance on the handle icon itself */
 .react-flow__handle:hover,
 .ptb-handle:hover {
@@ -614,12 +580,6 @@
   border-radius: 9999px; /* scalar */
   vertical-align: middle;
   color: var(--ptb-io-unknown-stroke); /* safe default */
-}
-/* vector = diamond */
-.ptb-marker.ptb-marker--vector {
-  border-radius: 2px !important;
-  transform: rotate(45deg);
-  transform-origin: center center;
 }
 /* category → color */
 .ptb-marker--address {
@@ -640,123 +600,6 @@
 .ptb-marker--id {
   color: var(--ptb-io-id-stroke);
 }
-/* option marker */
-.ptb-marker--option {
-  color: var(--ptb-node-option-border);
-}
-
-/* ============================================================
-   Option node extras (UI controls used in VarNode when kind=Option)
-   ============================================================ */
-
-.ptb-title {
-  color: inherit;
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: 0.2px;
-}
-
-.ptb-option-editor {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(0, 0, 0, 0.12);
-}
-.dark .ptb-option-editor {
-  border-top-color: rgba(255, 255, 255, 0.12);
-}
-
-.ptb-option-toggle {
-  font-size: 10px;
-  line-height: 1;
-  padding: 3px 8px;
-  border-radius: 8px;
-  border: 1px solid #d1d5db; /* fallback */
-  background: #ffffff;
-  color: #111827;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-}
-.ptb-option-toggle:hover {
-  background: #f9fafb;
-} /* gray-50 */
-.dark .ptb-option-toggle {
-  border-color: #4b5563; /* fallback */
-  background: #0b0e12;
-  color: #e5e7eb;
-}
-.dark .ptb-option-toggle:hover {
-  background: #111827;
-}
-
-.ptb-option-toggle.is-some {
-  border-color: var(--ptb-node-option-border);
-  box-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--ptb-node-option-border) 25%, transparent);
-}
-.ptb-option-toggle.is-none {
-  opacity: 0.9;
-}
-
-.ptb-option-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 9999px;
-  background: rgba(167, 139, 250, 0.18); /* fallback */
-  border: 1px solid var(--ptb-node-option-border);
-  color: inherit;
-}
-
-/* Vector list inside option/vector */
-.ptb-vec-list {
-  display: grid;
-  gap: 6px;
-}
-.ptb-vec-list .ptb-text-input,
-.ptb-vec-list .ptb-select-bool {
-  width: 100%;
-}
-
-/* Mini stepper near header */
-.ptb-mini-stepper {
-  margin-left: 6px;
-}
-
-/* Inputs inside node (fallbacks for non-tokenized controls) */
-.ptb-text-input {
-  display: block;
-  width: 100%;
-  font-size: 12px;
-  padding: 6px 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #111827;
-  outline: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-}
-.ptb-text-input:focus {
-  border-color: var(--ptb-node-option-border);
-  box-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--ptb-node-option-border) 22%, transparent);
-}
-.dark .ptb-text-input {
-  border-color: #4b5563;
-  background: #0b0e12;
-  color: #e5e7eb;
-}
-.dark .ptb-text-input:focus {
-  border-color: var(--ptb-node-option-border);
-  box-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--ptb-node-option-border) 28%, transparent);
-}
-
 /* ============================================================
    CodePip
    ============================================================ */
@@ -778,6 +621,24 @@
   background: var(--ptb-codepip-header-bg);
   color: var(--ptb-codepip-header-fg);
   border-bottom: 1px solid var(--ptb-codepip-border);
+}
+
+.ptb-codepip__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.ptb-codepip__status--stale {
+  color: #7a3418;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
 }
 
 .ptb-codepip__body {
@@ -1265,6 +1126,18 @@
   .ptb-flow-active .ptb-flow-edge {
     animation: none;
   }
+}
+
+.ptb-empty-state {
+  margin-top: var(--ptb-gutter);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ptb-menu-border);
+  background: var(--ptb-menu-bg);
+  color: var(--ptb-menu-fg);
+  font-size: 12px;
+  line-height: 1.3;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 
 /* ============================================================

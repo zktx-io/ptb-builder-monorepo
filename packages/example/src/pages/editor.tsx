@@ -5,6 +5,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { ConnectScreen } from '../components/ConnectScreen';
 import { DragAndDrop } from '../components/DragAndDrop';
 import { usePtbUndo } from '../components/usePtbUndo';
+import { DAPP_NETWORKS } from '../dapp-kit';
 import { SuiChain, SuiNetwork } from '../network';
 
 export const Editor = () => {
@@ -22,10 +23,19 @@ export const Editor = () => {
   const handleDrop = (file: PTBDoc) => {
     // Only switch if the dropped file has a valid chain
     const target = parseNetwork(file.chain);
+    if (target && !DAPP_NETWORKS.includes(target)) {
+      return {
+        ok: false as const,
+        message: `Unsupported network for the current transport: ${target}`,
+      };
+    }
     if (target && target !== network) {
       dAppKit.switchNetwork(target);
     }
-    loadFromDoc(file);
+    const result = loadFromDoc(file);
+    if (!result.ok) {
+      return { ok: false as const, message: result.error };
+    }
     reset();
   };
 

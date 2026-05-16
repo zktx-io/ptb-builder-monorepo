@@ -6,7 +6,13 @@
 // Only text inputs inside node UI are debounced (not handled here).
 // -----------------------------------------------------------------------------
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   applyEdgeChanges,
@@ -27,12 +33,32 @@ import type {
   NodeChange,
   Viewport,
 } from '@xyflow/react';
+import { graphToTransactionIR } from '@zktx.io/ptb-model';
+import type { PTBModelError } from '@zktx.io/ptb-model';
 
-import { CodePip, EMPTY_CODE } from './CodePip';
+import { CodePip } from './CodePip';
+import { renderCodePreview } from './codePreview';
 import { EdgeTypes } from './edges';
+import { EMPTY_CODE } from './emptyCode';
 import { ContextMenu } from './menu/ContextMenu';
 import { NodeTypes } from './nodes';
 import { usePtb } from './PtbProvider';
+import { createReactFlowCommitController } from './reactFlowCommitController';
+import { StatusBar } from './StatusBar';
+import {
+  inferCastTarget,
+  isTypeCompatible,
+  isUnknownType,
+} from '../ptb/graph/typecheck';
+import {
+  type CommandRuntimeParams,
+  parseHandleTypeSuffix,
+  type Port,
+  type PTBGraph,
+  type PTBNode,
+  type PTBType,
+  type VariableNode,
+} from '../ptb/graph/types';
 import {
   ptbNodeToRF,
   ptbToRF,
@@ -40,27 +66,17 @@ import {
   type RFNodeData,
   rfToPTB,
 } from '../ptb/ptbAdapter';
+import { toColorMode } from '../types';
 import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
 import { hasStartToEnd } from './utils/flowPath';
-import { buildTransaction } from '../codegen/buildTransaction';
-import { buildTsSdkCode } from '../codegen/buildTsSdkCode';
-import { makeObject, setIdGenerator } from '../ptb/factories';
+import { makeObject } from '../ptb/factories';
 import {
-  inferCastTarget,
-  isTypeCompatible,
-  isUnknownType,
-} from '../ptb/graph/typecheck';
-import {
-  parseHandleTypeSuffix,
-  type Port,
-  PTBGraph,
-  type PTBNode,
-  type PTBType,
-  type VariableNode,
-} from '../ptb/graph/types';
+  buildObjectRawInputForUsage,
+  defaultObjectRawUsage,
+} from '../ptb/objectAuthoring';
+import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
 import { buildCommandPorts } from '../ptb/registry';
-import { toColorMode } from '../types';
-import { StatusBar } from './StatusBar';
+import { buildTransactionFromIR } from '../ptb/runtimeAdapter';
 
 // ===== pure helpers (file-scope) =============================================
 
@@ -76,6 +92,32 @@ function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
     for (const e of edges) if (e.source === n) stack.push(e.target);
   }
   return false;
+}
+
+function modelBoundaryErrorMessage(error: unknown): string {
+  const diagnostics = (error as Partial<PTBModelError> | undefined)
+    ?.diagnostics;
+  if (Array.isArray(diagnostics) && diagnostics.length > 0) {
+    return diagnostics.map((diagnostic) => diagnostic.message).join(' ');
+  }
+  return (
+    (error as { message?: string } | undefined)?.message || 'Unexpected error'
+  );
+}
+
+function adapterPreviewCode(
+  chain: string,
+  message: string,
+  previousModelCode?: string,
+): string {
+  return [
+    `// PTB Code Preview (network: ${chain})`,
+    `// Preview is stale: ${message}`,
+    '',
+    previousModelCode?.trim()
+      ? previousModelCode
+      : '// No previous successful model-rendered code is available.',
+  ].join('\n');
 }
 
 /** Enforce 1:1 flow per handle (both source & target). */
@@ -190,6 +232,22 @@ function deferSetState(fn: () => void) {
   else setTimeout(fn, 0);
 }
 
+function hasCommandNode(nodes: RFNode<RFNodeData>[]): boolean {
+  return nodes.some((node) => {
+    const ptbNode = node.data?.ptbNode;
+    return (
+      ptbNode?.kind === 'Command' ||
+      node.type === 'ptb-cmd' ||
+      node.type === 'ptb-mvc'
+    );
+  });
+}
+
+type RFSnapshot = {
+  rfNodes: RFNode<RFNodeData>[];
+  rfEdges: RFEdge<RFEdgeData>[];
+};
+
 // ===== component =============================================================
 
 export function PTBFlow() {
@@ -208,22 +266,22 @@ export function PTBFlow() {
     graphEpoch,
     codePipOpenTick,
     toast,
+    providerUiState,
+    clearProviderNotice,
     loadTxStatus,
   } = usePtb();
 
-  // Keep factories aligned with the provider's monotonic ID policy
-  useEffect(() => {
-    setIdGenerator(createUniqueId);
-  }, [createUniqueId]);
-
   // Code preview
   const [code, setCode] = useState<string>(EMPTY_CODE(chain));
+  const [codePreviewStatus, setCodePreviewStatus] = useState<
+    'current' | 'stale'
+  >('current');
+  const lastSuccessfulCodeRef = useRef<string | undefined>(undefined);
 
   // UI toggles
   const [showMiniMap, setShowMiniMap] = useState(true);
 
   // Flow state flags
-  const [flowActive, setFlowActive] = useState(false);
   const [layoutReady, setLayoutReady] = useState(false);
 
   // Persisted PTB snapshot ref (for RF→PTB diffs)
@@ -232,34 +290,120 @@ export function PTBFlow() {
   // Rehydrate guard
   const rehydratingRef = useRef(false);
   const lastEpochRef = useRef<number>(-1);
+  const flowSessionRef = useRef(0);
+  const previewFrameRef = useRef<number | undefined>(undefined);
+  const commitControllerRef = useRef<
+    ReturnType<typeof createReactFlowCommitController<RFSnapshot>> | undefined
+  >(undefined);
+  const persistSnapshotRef = useRef<(snapshot: RFSnapshot) => void>(() => {});
+  const onAutoLayoutRef = useRef<() => void | Promise<void>>(() => {});
 
   // Patch callback refs (avoid TDZ during initial render)
   const patchUIRef = useRef<
     (id: string, patch: Record<string, unknown>) => void
   >(() => {});
+  const patchCommandRef = useRef<
+    (
+      id: string,
+      patch: {
+        ui?: Record<string, unknown>;
+        runtime?: CommandRuntimeParams;
+        ports?: Port[];
+      },
+    ) => void
+  >(() => {});
   const patchVarRef = useRef<
     (id: string, patch: Partial<VariableNode>) => void
   >(() => {});
-  const loadTypeRef = useRef<(typeTag: string) => void>(() => {});
 
-  /** Optional loader used by nodes (no-op here). */
-  const onLoadTypeTag = useCallback((_typeTag: string) => {}, []);
+  const reportGraphAdapterError = useCallback(
+    (error: unknown) => {
+      toast({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to persist the current graph.',
+        variant: 'error',
+      });
+    },
+    [toast],
+  );
 
-  /** Inject callbacks into every RF node's data payload (via refs). */
+  const safeRfToPTB = useCallback(
+    (
+      snapshot: RFSnapshot,
+      opts?: { notify?: boolean },
+    ):
+      | { ok: true; graph: PTBGraph }
+      | { ok: false; error: unknown; message: string } => {
+      try {
+        return {
+          ok: true,
+          graph: rfToPTB(
+            snapshot.rfNodes,
+            snapshot.rfEdges,
+            baseGraphRef.current,
+          ),
+        };
+      } catch (error) {
+        const message = modelBoundaryErrorMessage(error);
+        if (opts?.notify !== false) reportGraphAdapterError(error);
+        else
+          globalThis.console?.warn?.(
+            '[ptb-builder] Graph adapter error:',
+            message,
+          );
+        return { ok: false, error, message };
+      }
+    },
+    [reportGraphAdapterError],
+  );
+
+  const nodeDataOnPatchUI = useCallback(
+    (id: string, patch: Record<string, unknown>) =>
+      patchUIRef.current(id, patch),
+    [],
+  );
+  const nodeDataOnPatchCommand = useCallback(
+    (
+      id: string,
+      patch: {
+        ui?: Record<string, unknown>;
+        runtime?: CommandRuntimeParams;
+        ports?: Port[];
+      },
+    ) => patchCommandRef.current(id, patch),
+    [],
+  );
+  const nodeDataOnPatchVar = useCallback(
+    (id: string, patch: Partial<VariableNode>) =>
+      patchVarRef.current(id, patch),
+    [],
+  );
+
+  /** Inject stable callbacks into RF node data payloads only when missing. */
   const withCallbacks = useCallback(
     (nodes: RFNode<RFNodeData>[]) =>
-      nodes.map((n) => ({
-        ...n,
-        data: {
-          ...(n.data || {}),
-          onPatchUI: (id: string, patch: Record<string, unknown>) =>
-            patchUIRef.current(id, patch),
-          onPatchVar: (id: string, patch: Partial<VariableNode>) =>
-            patchVarRef.current(id, patch),
-          onLoadTypeTag: (typeTag: string) => loadTypeRef.current(typeTag),
-        },
-      })),
-    [],
+      nodes.map((n) => {
+        const data = n.data || {};
+        if (
+          data.onPatchUI === nodeDataOnPatchUI &&
+          data.onPatchCommand === nodeDataOnPatchCommand &&
+          data.onPatchVar === nodeDataOnPatchVar
+        ) {
+          return n;
+        }
+        return {
+          ...n,
+          data: {
+            ...data,
+            onPatchUI: nodeDataOnPatchUI,
+            onPatchCommand: nodeDataOnPatchCommand,
+            onPatchVar: nodeDataOnPatchVar,
+          },
+        };
+      }),
+    [nodeDataOnPatchCommand, nodeDataOnPatchUI, nodeDataOnPatchVar],
   );
 
   // ----- Node-level patchers (deferred to avoid setState in render) -----------
@@ -267,13 +411,15 @@ export function PTBFlow() {
   /** Patch Command node UI params and keep ports consistent with UI. */
   const onPatchUI = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
+      const session = flowSessionRef.current;
       deferSetState(() => {
+        if (session !== flowSessionRef.current) return;
         setRF((prev) => {
-          const currentPTB = rfToPTB(
-            prev.rfNodes,
-            prev.rfEdges,
-            baseGraphRef.current,
-          );
+          const converted = safeRfToPTB(prev);
+          if (!converted.ok) {
+            return prev;
+          }
+          const currentPTB = converted.graph;
           const node = currentPTB.nodes.find((n) => n.id === nodeId);
           if (!node || node.kind !== 'Command') return prev;
 
@@ -285,8 +431,16 @@ export function PTBFlow() {
             if (typeof v === 'undefined') delete nextUI[k];
             else nextUI[k] = v;
           }
-          node.params = { ...(node.params ?? {}), ui: nextUI };
-          node.ports = buildCommandPorts((node as any).command, nextUI as any);
+          node.params = {
+            ...(node.params ?? {}),
+            ui: nextUI,
+          };
+          node.ports = buildCommandPorts(
+            node.command,
+            nextUI,
+            node.params.runtime,
+            node.ports,
+          );
 
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
@@ -294,24 +448,114 @@ export function PTBFlow() {
           let pruned = pruneDanglingEdges(injected, freshRFEdges);
           pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
-          setFlowActive(hasStartToEnd(injected, pruned));
           return { rfNodes: injected, rfEdges: pruned };
         });
       });
     },
-    [withCallbacks],
+    [safeRfToPTB, withCallbacks],
+  );
+
+  /** Patch model command params and ports in one graph update. */
+  const onPatchCommand = useCallback(
+    (
+      nodeId: string,
+      patch: {
+        ui?: Record<string, unknown>;
+        runtime?: CommandRuntimeParams;
+        ports?: Port[];
+      },
+    ) => {
+      const session = flowSessionRef.current;
+      deferSetState(() => {
+        if (session !== flowSessionRef.current) return;
+        setRF((prev) => {
+          const converted = safeRfToPTB(prev);
+          if (!converted.ok) {
+            return prev;
+          }
+          const currentPTB = converted.graph;
+          const node = currentPTB.nodes.find((n) => n.id === nodeId);
+          if (!node || node.kind !== 'Command') return prev;
+
+          const nextUI =
+            patch.ui === undefined
+              ? node.params?.ui
+              : ({ ...(patch.ui as Record<string, unknown>) } as any);
+          const nextRuntime =
+            patch.runtime === undefined
+              ? node.params?.runtime
+              : { ...patch.runtime };
+          node.params =
+            nextUI || nextRuntime
+              ? {
+                  ...(nextUI ? { ui: nextUI } : {}),
+                  ...(nextRuntime ? { runtime: nextRuntime } : {}),
+                }
+              : undefined;
+          node.ports = patch.ports
+            ? buildCommandPorts(node.command, nextUI, nextRuntime, patch.ports)
+            : buildCommandPorts(node.command, nextUI, nextRuntime, node.ports);
+
+          const { nodes: freshRFNodes, edges: freshRFEdges } =
+            ptbToRF(currentPTB);
+          const injected = withCallbacks(freshRFNodes);
+          let pruned = pruneDanglingEdges(injected, freshRFEdges);
+          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+
+          return { rfNodes: injected, rfEdges: pruned };
+        });
+      });
+    },
+    [safeRfToPTB, withCallbacks],
   );
 
   /** Patch a Variable node (value and/or varType). */
   const onPatchVar = useCallback(
     (nodeId: string, patch: Partial<VariableNode>) => {
+      const session = flowSessionRef.current;
       deferSetState(() => {
+        if (session !== flowSessionRef.current) return;
         setRF((prev) => {
-          const currentPTB = rfToPTB(
-            prev.rfNodes,
-            prev.rfEdges,
-            baseGraphRef.current,
-          );
+          if (!('varType' in patch)) {
+            let changed = false;
+            const nextNodes = prev.rfNodes.map((rfNode) => {
+              if (rfNode.id !== nodeId) return rfNode;
+              const node = rfNode.data?.ptbNode;
+              if (!node || node.kind !== 'Variable') return rfNode;
+
+              const nextNode: VariableNode = {
+                ...node,
+                position: rfNode.position,
+              };
+              if ('value' in patch)
+                (nextNode as any).value = (patch as any).value;
+              if ('rawInput' in patch) {
+                if (patch.rawInput === undefined)
+                  delete (nextNode as any).rawInput;
+                else (nextNode as any).rawInput = patch.rawInput;
+              }
+
+              changed = true;
+              return {
+                ...rfNode,
+                data: {
+                  ...rfNode.data,
+                  label: nextNode.label,
+                  ptbNode: nextNode,
+                },
+              };
+            });
+
+            return changed
+              ? { ...prev, rfNodes: withCallbacks(nextNodes) }
+              : prev;
+          }
+
+          const converted = safeRfToPTB(prev);
+          if (!converted.ok) {
+            return prev;
+          }
+          const currentPTB = converted.graph;
           const node = currentPTB.nodes.find((n) => n.id === nodeId);
           if (!node || node.kind !== 'Variable') return prev;
 
@@ -319,6 +563,10 @@ export function PTBFlow() {
           if ('value' in patch) (v as any).value = (patch as any).value;
           if ('varType' in patch && patch.varType !== undefined)
             v.varType = patch.varType;
+          if ('rawInput' in patch) {
+            if (patch.rawInput === undefined) delete (v as any).rawInput;
+            else (v as any).rawInput = patch.rawInput;
+          }
 
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
@@ -326,24 +574,21 @@ export function PTBFlow() {
           let pruned = pruneDanglingEdges(injected, freshRFEdges);
           pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
 
-          setFlowActive(hasStartToEnd(injected, pruned));
           return { rfNodes: injected, rfEdges: pruned };
         });
       });
     },
-    [withCallbacks],
+    [safeRfToPTB, withCallbacks],
   );
 
   // Keep refs pointing to latest patchers/loaders
   useEffect(() => {
     patchUIRef.current = onPatchUI;
-  }, [onPatchUI]);
+    patchCommandRef.current = onPatchCommand;
+  }, [onPatchCommand, onPatchUI]);
   useEffect(() => {
     patchVarRef.current = onPatchVar;
   }, [onPatchVar]);
-  useEffect(() => {
-    loadTypeRef.current = onLoadTypeTag;
-  }, [onLoadTypeTag]);
 
   // ----- RF state (authoritative while editing) -------------------------------
 
@@ -356,6 +601,15 @@ export function PTBFlow() {
     const pruned = pruneDanglingEdges(injected, edges);
     return { rfNodes: injected, rfEdges: pruned };
   });
+  const flowActive = useMemo(
+    () => hasStartToEnd(rfNodes, rfEdges),
+    [rfNodes, rfEdges],
+  );
+  const rfSnapshotRef = useRef({ rfNodes, rfEdges });
+
+  useEffect(() => {
+    rfSnapshotRef.current = { rfNodes, rfEdges };
+  }, [rfNodes, rfEdges]);
 
   // ----- Rehydrate from provider on epoch bump --------------------------------
 
@@ -363,6 +617,15 @@ export function PTBFlow() {
     if (graphEpoch === lastEpochRef.current) return;
     lastEpochRef.current = graphEpoch;
 
+    flowSessionRef.current += 1;
+    const session = flowSessionRef.current;
+    commitControllerRef.current?.cancel();
+    if (previewFrameRef.current !== undefined) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = undefined;
+    }
+    lastSuccessfulCodeRef.current = undefined;
+    setCodePreviewStatus('current');
     rehydratingRef.current = true;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
@@ -370,7 +633,6 @@ export function PTBFlow() {
     pruned = pruneIncompatibleIOEdges(graph.nodes, pruned);
 
     setRF({ rfNodes: injected, rfEdges: pruned });
-    setFlowActive(hasStartToEnd(injected, pruned));
     baseGraphRef.current = graph;
 
     // Disable fit until layout finishes (prevents initial flicker).
@@ -378,6 +640,7 @@ export function PTBFlow() {
 
     // Unmute next tick to let RF compute dimensions.
     requestAnimationFrame(() => {
+      if (session !== flowSessionRef.current) return;
       rehydratingRef.current = false;
     });
   }, [graphEpoch, graph, withCallbacks]);
@@ -389,25 +652,54 @@ export function PTBFlow() {
       let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
       pruned = pruneIncompatibleIOEdges(baseGraphRef.current.nodes, pruned);
       if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
-      setFlowActive(hasStartToEnd(rfNodes, pruned));
       return { ...prev, rfEdges: pruned };
     });
   }, [rfNodes]);
 
   // ----- Persist RF → PTB after commit (single place) ------------------------
 
-  const isDraggingRef = useRef(false);
-  const codegenFrameRef = useRef<number | undefined>(undefined);
+  const persistRFSnapshotToPTB = useCallback(
+    (snapshot: RFSnapshot) => {
+      if (rehydratingRef.current) return;
+      const converted = safeRfToPTB(snapshot);
+      if (!converted.ok) return;
+      const nextPTB = converted.graph;
+      setGraph(nextPTB);
+      baseGraphRef.current = nextPTB;
+    },
+    [safeRfToPTB, setGraph],
+  );
+  persistSnapshotRef.current = persistRFSnapshotToPTB;
+
+  if (!commitControllerRef.current) {
+    commitControllerRef.current = createReactFlowCommitController<RFSnapshot>({
+      commit: (snapshot) => persistSnapshotRef.current(snapshot),
+      schedule: deferSetState,
+    });
+  }
+
+  const finishNodeDrag = useCallback(
+    (_: unknown, node?: RFNode<RFNodeData>) => {
+      commitControllerRef.current?.endDrag(node?.id, rfSnapshotRef.current);
+    },
+    [],
+  );
+
+  const startNodeDrag = useCallback((_: unknown, node: RFNode<RFNodeData>) => {
+    commitControllerRef.current?.startDrag(node.id);
+  }, []);
 
   useEffect(() => {
     if (rehydratingRef.current) return;
-    if (isDraggingRef.current) return;
-    deferSetState(() => {
-      const nextPTB = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      setGraph(nextPTB);
-      baseGraphRef.current = nextPTB;
-    });
-  }, [rfNodes, rfEdges, setGraph]);
+    commitControllerRef.current?.recordChange({ rfNodes, rfEdges });
+  }, [rfNodes, rfEdges]);
+
+  useEffect(
+    () => () => {
+      commitControllerRef.current?.cancel();
+    },
+    [],
+  );
 
   const onMoveEnd = useCallback(
     (_: any, vp: Viewport) => {
@@ -479,7 +771,6 @@ export function PTBFlow() {
       const nextEdges = prev.rfEdges.filter(
         (e) => e.source !== id && e.target !== id,
       );
-      setFlowActive(hasStartToEnd(nextNodes, nextEdges));
       return { rfNodes: nextNodes, rfEdges: nextEdges };
     });
   }, []);
@@ -487,7 +778,6 @@ export function PTBFlow() {
   const deleteEdge = useCallback((id: string) => {
     setRF((prev) => {
       const nextEdges = prev.rfEdges.filter((e) => e.id !== id);
-      setFlowActive(hasStartToEnd(prev.rfNodes, nextEdges));
       return { ...prev, rfEdges: nextEdges };
     });
   }, []);
@@ -500,20 +790,14 @@ export function PTBFlow() {
       if (rehydratingRef.current) return;
 
       // During dragging, defer updates until drag ends.
-      const hasDragOn = changes.some(
-        (c) => c.type === 'position' && (c as any).dragging === true,
-      );
-      const hasDragOff = changes.some(
-        (c) => c.type === 'position' && (c as any).dragging === false,
-      );
-
-      if (hasDragOn) {
-        isDraggingRef.current = true;
+      for (const change of changes) {
+        if (change.type !== 'position') continue;
+        const nodeId = (change as { id?: string }).id;
+        if (!nodeId) continue;
+        const dragging = (change as { dragging?: boolean }).dragging;
+        if (dragging === true) commitControllerRef.current?.startDrag(nodeId);
+        if (dragging === false) commitControllerRef.current?.endDrag(nodeId);
       }
-      if (!hasDragOn && hasDragOff) {
-        isDraggingRef.current = false;
-      }
-
       const effective = readOnly
         ? changes.filter(
             (ch) =>
@@ -534,6 +818,11 @@ export function PTBFlow() {
             getRFKind(prev.rfNodes.find((n) => n.id === id)) !== 'End'
           );
         });
+        const removedNodeIds = filtered.flatMap((change) => {
+          if (change.type !== 'remove') return [];
+          const id = (change as any).id as string | undefined;
+          return id ? [id] : [];
+        });
 
         // Do NOT re-inject callbacks here; prev.rfNodes already have them.
         const nextNodes = applyNodeChanges(filtered, prev.rfNodes);
@@ -551,7 +840,13 @@ export function PTBFlow() {
           return prev;
         }
 
-        setFlowActive(hasStartToEnd(nextNodes, nextEdges));
+        for (const id of removedNodeIds) {
+          commitControllerRef.current?.removeNode(id, {
+            rfNodes: nextNodes,
+            rfEdges: nextEdges,
+          });
+        }
+
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
     },
@@ -571,7 +866,6 @@ export function PTBFlow() {
         const nextEdges = applyEdgeChanges(effective, prev.rfEdges);
         const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
         if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
-        setFlowActive(hasStartToEnd(prev.rfNodes, pruned));
         return { ...prev, rfEdges: pruned };
       });
     },
@@ -618,7 +912,6 @@ export function PTBFlow() {
             newEdge,
           ]);
           if (edgesSig(nextEdges) === edgesSig(prev.rfEdges)) return prev;
-          setFlowActive(hasStartToEnd(prev.rfNodes, nextEdges));
           return { ...prev, rfEdges: nextEdges };
         }
 
@@ -659,49 +952,68 @@ export function PTBFlow() {
   // ----- Code preview generation ---------------------------------------------
 
   useEffect(() => {
+    const session = flowSessionRef.current;
     const cancelScheduled = () => {
-      if (codegenFrameRef.current !== undefined) {
-        cancelAnimationFrame(codegenFrameRef.current);
-        codegenFrameRef.current = undefined;
+      if (previewFrameRef.current !== undefined) {
+        cancelAnimationFrame(previewFrameRef.current);
+        previewFrameRef.current = undefined;
       }
     };
 
-    const runCodegen = () => {
-      try {
-        if (!chain) {
-          setCode(EMPTY_CODE(chain));
-          return;
-        }
-        const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-        const src = buildTsSdkCode(ptb, chain, execOpts);
-        setCode(src && src.trim().length > 0 ? src : EMPTY_CODE(chain));
-      } catch {
+    const runPreview = () => {
+      if (session !== flowSessionRef.current) return;
+      if (!chain) {
+        lastSuccessfulCodeRef.current = undefined;
         setCode(EMPTY_CODE(chain));
+        setCodePreviewStatus('current');
+        return;
       }
+      const converted = safeRfToPTB({ rfNodes, rfEdges }, { notify: false });
+      if (!converted.ok) {
+        setCodePreviewStatus('stale');
+        setCode(
+          adapterPreviewCode(
+            chain,
+            converted.message,
+            lastSuccessfulCodeRef.current,
+          ),
+        );
+        return;
+      }
+      const graph = converted.graph;
+      const result = renderCodePreview(graph, {
+        chain,
+        envelope: execOpts,
+        previousModelCode: lastSuccessfulCodeRef.current,
+      });
+      if (result.ok) lastSuccessfulCodeRef.current = result.modelCode;
+      setCodePreviewStatus(result.ok ? 'current' : 'stale');
+      setCode(result.code.trim().length > 0 ? result.code : EMPTY_CODE(chain));
     };
 
     cancelScheduled();
 
-    if (isDraggingRef.current) {
+    if (commitControllerRef.current?.isDragging()) {
       const tick = () => {
-        if (isDraggingRef.current) {
-          codegenFrameRef.current = requestAnimationFrame(tick);
+        if (session !== flowSessionRef.current) return;
+        if (commitControllerRef.current?.isDragging()) {
+          previewFrameRef.current = requestAnimationFrame(tick);
           return;
         }
-        codegenFrameRef.current = undefined;
-        runCodegen();
+        previewFrameRef.current = undefined;
+        runPreview();
       };
-      codegenFrameRef.current = requestAnimationFrame(tick);
+      previewFrameRef.current = requestAnimationFrame(tick);
       return () => {
         cancelScheduled();
       };
     }
 
-    runCodegen();
+    runPreview();
     return () => {
       cancelScheduled();
     };
-  }, [rfNodes, rfEdges, chain, execOpts]);
+  }, [rfNodes, rfEdges, chain, execOpts, safeRfToPTB]);
 
   // ----- Execute --------------------------------------------------------------
 
@@ -711,29 +1023,35 @@ export function PTBFlow() {
     try {
       if (!chain) return;
       setIsRunning(true);
-      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const tx = buildTransaction(ptb, chain, execOpts);
+      const converted = safeRfToPTB({ rfNodes, rfEdges });
+      if (!converted.ok) return;
+      const graph = converted.graph;
+      const ir = graphToTransactionIR(graph);
+      const tx = buildTransactionFromIR(ir, execOpts);
       await dryRunTx?.(tx); // toast behavior is controlled in provider
     } catch (e: any) {
-      toast?.({ message: e?.message || 'Unexpected error', variant: 'error' });
+      toast?.({ message: modelBoundaryErrorMessage(e), variant: 'error' });
     } finally {
       setIsRunning(false);
     }
-  }, [rfNodes, rfEdges, chain, execOpts, dryRunTx, toast]);
+  }, [rfNodes, rfEdges, chain, execOpts, dryRunTx, safeRfToPTB, toast]);
 
   const onExecute = useCallback(async () => {
     try {
       if (!chain) return;
       setIsRunning(true);
-      const ptb = rfToPTB(rfNodes, rfEdges, baseGraphRef.current);
-      const tx = buildTransaction(ptb, chain, execOpts);
+      const converted = safeRfToPTB({ rfNodes, rfEdges });
+      if (!converted.ok) return;
+      const graph = converted.graph;
+      const ir = graphToTransactionIR(graph);
+      const tx = buildTransactionFromIR(ir, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } catch (e: any) {
-      toast?.({ message: e?.message || 'Unexpected error', variant: 'error' });
+      toast?.({ message: modelBoundaryErrorMessage(e), variant: 'error' });
     } finally {
       setIsRunning(false);
     }
-  }, [rfNodes, rfEdges, chain, execOpts, runTx, toast]);
+  }, [rfNodes, rfEdges, chain, execOpts, runTx, safeRfToPTB, toast]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
   const { fitView, screenToFlowPosition, setViewport, getViewport } =
@@ -753,12 +1071,17 @@ export function PTBFlow() {
   }, [screenToFlowPosition]);
 
   const onAutoLayout = useCallback(async () => {
+    const session = flowSessionRef.current;
+    const isCurrentLayout = () =>
+      session === flowSessionRef.current && !rehydratingRef.current;
+
     // Guard 1: rehydrate in progress → defer
     if (rehydratingRef.current) {
       if (!retryFlag.current) {
         retryFlag.current = true;
         requestAnimationFrame(() => {
           retryFlag.current = false;
+          if (session !== flowSessionRef.current) return;
           onAutoLayout();
         });
       }
@@ -769,6 +1092,7 @@ export function PTBFlow() {
     if (!rfNodes || rfNodes.length === 0) {
       let tries = 0;
       const retry = () => {
+        if (session !== flowSessionRef.current) return;
         if (!rehydratingRef.current && rfNodes.length > 0) {
           onAutoLayout();
           return;
@@ -782,15 +1106,19 @@ export function PTBFlow() {
     const positions: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
       targetCenter: getViewportCenterFlow(),
     });
+    if (!isCurrentLayout()) return;
 
     // Fallback: retry next frame if layout returned empty
     if (!positions || Object.keys(positions).length === 0) {
       requestAnimationFrame(async () => {
+        if (!isCurrentLayout()) return;
         const pos2: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
           targetCenter: getViewportCenterFlow(),
         });
+        if (!isCurrentLayout()) return;
         if (!pos2 || Object.keys(pos2).length === 0) return; // give up silently
         setRF((prev) => {
+          if (!isCurrentLayout()) return prev;
           const nextNodes = prev.rfNodes.map((n) =>
             pos2[n.id]
               ? {
@@ -806,10 +1134,10 @@ export function PTBFlow() {
             baseGraphRef.current.nodes,
             nextEdges,
           );
-          setFlowActive(hasStartToEnd(nextNodes, nextEdges));
           return { rfNodes: nextNodes, rfEdges: nextEdges };
         });
         requestAnimationFrame(() => {
+          if (!isCurrentLayout()) return;
           try {
             fitView({ padding: 0.2, duration: 300 });
           } catch {
@@ -823,6 +1151,7 @@ export function PTBFlow() {
     }
 
     setRF((prev) => {
+      if (!isCurrentLayout()) return prev;
       const nextNodes = prev.rfNodes.map((n) =>
         positions[n.id]
           ? {
@@ -838,11 +1167,11 @@ export function PTBFlow() {
         baseGraphRef.current.nodes,
         nextEdges,
       );
-      setFlowActive(hasStartToEnd(nextNodes, nextEdges));
       return { rfNodes: nextNodes, rfEdges: nextEdges };
     });
 
     requestAnimationFrame(() => {
+      if (!isCurrentLayout()) return;
       try {
         fitView({ padding: 0.2, duration: 300 });
       } catch {
@@ -852,9 +1181,13 @@ export function PTBFlow() {
     });
   }, [rfNodes, rfEdges, getViewportCenterFlow, fitView]);
 
-  const fitToContent = useCallback(() => {
-    onAutoLayout();
+  useEffect(() => {
+    onAutoLayoutRef.current = onAutoLayout;
   }, [onAutoLayout]);
+
+  const fitToContent = useCallback(() => {
+    onAutoLayoutRef.current();
+  }, []);
 
   const updateViewport = useCallback(
     (v?: { x: number; y: number; zoom: number }) => {
@@ -869,21 +1202,59 @@ export function PTBFlow() {
 
   useEffect(() => {
     registerFlowActions({ fitToContent, updateViewport });
+    return () => {
+      registerFlowActions({
+        fitToContent: undefined,
+        updateViewport: undefined,
+      });
+    };
   }, [registerFlowActions, fitToContent, updateViewport]);
 
   const onAssetPick = useCallback(
-    (obj: { objectId: string; typeTag: string }) => {
+    (obj: {
+      objectId: string;
+      typeTag: string;
+      authoring?: ObjectAuthoringInfo;
+    }) => {
+      const usage = obj.authoring
+        ? defaultObjectRawUsage(obj.authoring)
+        : undefined;
+      const rawInput =
+        obj.authoring && usage
+          ? buildObjectRawInputForUsage(obj.authoring, usage)
+          : undefined;
+      if (rawInput && !rawInput.ok) {
+        toast({
+          message: rawInput.error,
+          variant: 'warning',
+        });
+      } else if (obj.authoring && !usage) {
+        toast({
+          message:
+            'This object needs an explicit raw input usage. Open the variable and run Lookup to choose one.',
+          variant: 'warning',
+        });
+      }
       const center = getViewportCenterFlow();
       const placeAndAdd = (node: PTBNode) => {
         node.position = { x: center.x, y: center.y };
         addNode(node);
       };
-      placeAndAdd(makeObject(obj.typeTag, { value: obj.objectId }));
+      placeAndAdd(
+        makeObject(obj.typeTag, {
+          id: createUniqueId('var'),
+          value: obj.objectId,
+          rawInput: rawInput?.ok ? rawInput.rawInput : undefined,
+        }),
+      );
     },
-    [addNode, getViewportCenterFlow],
+    [addNode, createUniqueId, getViewportCenterFlow, toast],
   );
 
   // ----- Render ---------------------------------------------------------------
+
+  const canBuildRuntimeTransaction =
+    !!chain && !readOnly && flowActive && hasCommandNode(rfNodes);
 
   return (
     <div
@@ -916,9 +1287,17 @@ export function PTBFlow() {
         edgeTypes={EdgeTypes}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
+        onNodeDragStart={startNodeDrag}
+        onNodeDragStop={finishNodeDrag}
         onEdgesChange={onEdgesChange}
         onMoveEnd={onMoveEnd}
       >
+        {!chain ? (
+          <Panel position="top-center" className="ptb-empty-state">
+            <span>No PTB loaded</span>
+          </Panel>
+        ) : undefined}
+
         {/* Background grid layers */}
         <Background
           id="grid"
@@ -955,15 +1334,15 @@ export function PTBFlow() {
               key={`codepip-${readOnly ? 'ro' : 'rw'}-${codePipOpenTick}`}
               defaultCollapsed={readOnly || codePipOpenTick === 0}
               code={code}
+              previewStatus={codePreviewStatus}
               language="typescript"
               title="ts-sdk preview"
               emptyText={EMPTY_CODE(chain)}
-              canRunning={
-                !!chain && !readOnly && flowActive && !!execOpts.myAddress
-              }
+              canDryRun={canBuildRuntimeTransaction}
+              canExecute={canBuildRuntimeTransaction}
               isRunning={isRunning}
-              onDryRun={onDryRun}
-              onExecute={onExecute}
+              onDryRun={dryRunTx ? onDryRun : undefined}
+              onExecute={runTx ? onExecute : undefined}
               onAssetPick={onAssetPick}
               showMiniMap={showMiniMap}
               onToggleMiniMap={setShowMiniMap}
@@ -972,11 +1351,12 @@ export function PTBFlow() {
         </Panel>
 
         <Panel position="top-left" style={{ pointerEvents: 'none' }}>
-          {loadTxStatus && (
+          {(loadTxStatus || providerUiState.notice) && (
             <div style={{ pointerEvents: 'auto' }}>
               <StatusBar
-                status={loadTxStatus.status}
-                error={loadTxStatus.error}
+                transaction={loadTxStatus}
+                notice={providerUiState.notice}
+                onDismissNotice={clearProviderNotice}
               />
             </div>
           )}

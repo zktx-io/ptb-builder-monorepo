@@ -98,7 +98,6 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     const command = commandNodeToIRCommand(
       node,
       nodePath,
-      commandIndex,
       graph.edges,
       inputRefs,
       commandIndexes,
@@ -435,7 +434,6 @@ function canonicalJsonU64(value: unknown): string | undefined {
 function commandNodeToIRCommand(
   node: CommandNode,
   nodePath: string,
-  commandIndex: number,
   edges: PTBEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,

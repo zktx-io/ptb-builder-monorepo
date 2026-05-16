@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -44,6 +44,23 @@ const forbiddenImports = [
       specifier.startsWith('@zktx.io/ptb-model/') ||
       /(?:^|[./])ptb-model\/(?:src|dist)\//.test(specifier),
   },
+  {
+    label: 'deleted builder codegen import',
+    matches: ({ specifier }: ImportRecord) =>
+      /(?:^|[./])codegen(?:\/|$)/.test(specifier),
+  },
+  {
+    label: 'deleted builder decodeTx import',
+    matches: ({ specifier }: ImportRecord) =>
+      /(?:^|[./])decodeTx(?:\/|$)/.test(specifier),
+  },
+];
+
+const forbiddenText = [
+  {
+    label: 'wallet address sentinel',
+    pattern: /\bmyAddress\b|@my_wallet|\bmy wallet\b/,
+  },
 ];
 
 describe('builder source guardrails', () => {
@@ -54,6 +71,327 @@ describe('builder source guardrails', () => {
     });
 
     expect(violations).toEqual([]);
+  });
+
+  it('keeps removed legacy sentinel strings out of builder source', () => {
+    const violations = sourceFiles.flatMap((file) => {
+      const text = readFileSync(file, 'utf8');
+      return forbiddenText
+        .filter(({ pattern }) => pattern.test(text))
+        .map(({ label }) => `${file}: ${label}`);
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('keeps PtbFlow RF-to-PTB conversion behind one safe boundary', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const directCalls = [...text.matchAll(/\brfToPTB\s*\(/g)];
+
+    expect(directCalls).toHaveLength(1);
+  });
+
+  it('keeps provider UI state focused on visible transaction and notice data', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'providerUiState.ts'),
+      'utf8',
+    );
+
+    expect(text).not.toMatch(/\bProviderUiMode\b/);
+    expect(text).not.toMatch(/\bmode\s*:/);
+  });
+
+  it('keeps on-chain transaction loading atomic until a decoded graph is ready', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const loadFromOnChainTx');
+    const end = text.indexOf('// ---- document loader', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).not.toContain("mode: 'loading-transaction'");
+    expect(segment).not.toContain('setReadOnly(false);');
+    expect(segment.indexOf('resetBeforeLoad()')).toBeGreaterThan(
+      segment.indexOf('const decoded = transactionIRToGraph(ir);'),
+    );
+    expect(segment).toContain('const nextView = { ...DEFAULT_PTB_VIEW };');
+    expect(segment.indexOf('setView(nextView);')).toBeGreaterThan(
+      segment.indexOf('resetBeforeLoad()'),
+    );
+  });
+
+  it('keeps failed replacement transaction loads from clearing the committed viewer transaction', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const loadFromOnChainTx');
+    const end = text.indexOf('// ---- document loader', start);
+    const segment = text.slice(start, end);
+
+    expect(segment).not.toContain(
+      'setProviderUiState(providerTransactionLoadError(',
+    );
+    expect(segment).toContain(
+      'setProviderUiState((prev) => providerTransactionLoadError(prev, error));',
+    );
+  });
+
+  it('treats transaction load attempts as cancellation boundaries before validation', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const loadFromOnChainTx');
+    const end = text.indexOf('// ---- document loader', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(
+      segment.indexOf("lifecycleRef.current.beginLoad('transaction')"),
+    ).toBeLessThan(segment.indexOf('const digest = (txDigest ||'));
+    expect(segment).toContain('lifecycleRef.current.fail(load, error);');
+  });
+
+  it('makes document load attempts supersede older async loads before validation', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const loadFromDoc');
+    const end = text.indexOf('// ---- export doc', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(
+      segment.indexOf("lifecycleRef.current.beginLoad('document')"),
+    ).toBeLessThan(segment.indexOf('prepareLoadedDoc(value)'));
+    expect(
+      segment.indexOf("lifecycleRef.current.beginLoad('document')"),
+    ).toBeLessThan(segment.indexOf('createEmptyPTBDoc(chain)'));
+    expect(segment).toContain('lifecycleRef.current.fail(load, error);');
+    expect(segment).toContain('lifecycleRef.current.fail(load, message);');
+  });
+
+  it('keeps object-id edits from debouncing rawInput invalidation', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(text).not.toContain('debouncedPatchObjectId');
+    expect(text).toContain('objectAuthoringInputChanged(prev, s, seq)');
+    expect(text).toMatch(
+      /patchVar\(\{\s*value:\s*s,\s*rawInput:\s*undefined,?\s*\}\);/s,
+    );
+  });
+
+  it('keeps option<bool> authoring on boolean values instead of text strings', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('optionInnerIsBool');
+    expect(text).toContain('parseBoolEditorValue');
+    expect(text).not.toContain('Option<bool> also uses TextInput');
+  });
+
+  it('keeps vector<bool> editor buffers type-honest', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('type VectorEditorItem = string | boolean');
+    expect(text).toContain('useState<VectorEditorItem[]>');
+    expect(text).toContain('parseBoolEditorValue(variableValue ?? scalarBuf)');
+    expect(text).toContain('value={variableValue as boolean | undefined}');
+    expect(text).not.toContain('newVal as any');
+    expect(text).not.toContain('copy as any');
+  });
+
+  it('keeps Variable-node value patches off full RF-to-PTB conversion', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const start = text.indexOf('const onPatchVar = useCallback');
+    const end = text.indexOf(
+      '// Keep refs pointing to latest patchers/loaders',
+      start,
+    );
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain("if (!('varType' in patch))");
+    expect(segment.indexOf('safeRfToPTB(prev)')).toBeGreaterThan(
+      segment.indexOf("if (!('varType' in patch))"),
+    );
+  });
+
+  it('keeps React Flow node callback wrappers stable across unchanged nodes', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const start = text.indexOf('const nodeDataOnPatchUI = useCallback');
+    const end = text.indexOf(
+      '// ----- Node-level patchers (deferred to avoid setState in render)',
+      start,
+    );
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('data.onPatchUI === nodeDataOnPatchUI');
+    expect(segment).toContain('data.onPatchCommand === nodeDataOnPatchCommand');
+    expect(segment).toContain('data.onPatchVar === nodeDataOnPatchVar');
+    expect(segment).not.toMatch(/onPatchUI:\s*\(id: string/);
+  });
+
+  it('does not expose abstract option<number> authoring helpers', () => {
+    const factories = readFileSync(
+      join(sourceRoot, 'ptb', 'factories.ts'),
+      'utf8',
+    );
+    const menuActions = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'menu.actions.ts'),
+      'utf8',
+    );
+    const menuData = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'menu.data.tsx'),
+      'utf8',
+    );
+
+    expect(factories).not.toContain('makeNumberOption');
+    expect(menuActions).not.toContain('var/option/number');
+    expect(menuData).not.toContain('option<number>');
+  });
+
+  it('keeps IO handles memoized and out of full React Flow store subscriptions', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'handles', 'PTBHandleIO.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('useStoreApi');
+    expect(text).not.toMatch(/\buseStore\s*\(/);
+    expect(text).toContain('export const PTBHandleIO = React.memo');
+    expect(text).not.toMatch(/export function PTBHandleIO/);
+  });
+
+  it('keeps asset image fallback handling out of write-only React state', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'AssetsModal.tsx'),
+      'utf8',
+    );
+
+    expect(text).not.toContain('failedImages');
+    expect(text).not.toContain('setFailedImages');
+  });
+
+  it('keeps AssetsModal pagination side effects out of React state updaters', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'AssetsModal.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const onPrev = () =>');
+    const end = text.indexOf('useEffect(() => {', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).not.toMatch(/setPrevStack\(\(.*loadPage/s);
+  });
+
+  it('keeps auto-layout handle parsing aligned with model handle suffixes', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'utils', 'autoLayout.ts'),
+      'utf8',
+    );
+
+    expect(text).toContain('parseHandleTypeSuffix');
+    expect(text).not.toContain("split('|', 1)");
+    expect(text).not.toContain('nodeById');
+  });
+
+  it('does not let PTBFlow own the module-global factory id generator', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+
+    expect(text).not.toContain('setIdGenerator');
+  });
+
+  it('does not force refresh Move function metadata on normal Use clicks', () => {
+    const text = readFileSync(
+      join(
+        sourceRoot,
+        'ui',
+        'nodes',
+        'cmds',
+        'MoveCallCommand',
+        'MoveCallCommand.tsx',
+      ),
+      'utf8',
+    );
+
+    expect(text).not.toContain('forceRefresh: true');
+    expect(text).toContain('lookupSeqRef');
+  });
+
+  it('keeps deleted refactor debris from reappearing', () => {
+    expect(existsSync(join(sourceRoot, 'codegen'))).toBe(false);
+    expect(existsSync(join(sourceRoot, 'legacy'))).toBe(false);
+    expect(existsSync(join(sourceRoot, 'ptb', 'decodeTx'))).toBe(false);
+    expect(
+      existsSync(
+        join(sourceRoot, 'ui', 'nodes', 'vars', 'inputs', 'SmallSelect.tsx'),
+      ),
+    ).toBe(false);
+    expect(
+      readFileSync(
+        join(sourceRoot, 'ptb', 'move', 'toPTBModuleData.ts'),
+        'utf8',
+      ),
+    ).not.toContain('export function toPTBModuleData');
+    expect(
+      readFileSync(join(sourceRoot, 'ptb', 'portTemplates.ts'), 'utf8'),
+    ).not.toContain('export const UNKNOWN');
+    expect(
+      readFileSync(join(sourceRoot, 'ptb', 'registry.ts'), 'utf8'),
+    ).not.toContain('export function isGraphOnly');
+    expect(
+      readFileSync(join(sourceRoot, 'ptb', 'suiClient.ts'), 'utf8'),
+    ).not.toContain('export function chainToSuiNetwork');
+    expect(
+      readFileSync(
+        join(sourceRoot, 'ui', 'nodes', 'cmds', 'commandLayout.ts'),
+        'utf8',
+      ),
+    ).not.toContain('export function splitIO');
+  });
+
+  it('keeps internal-only helper exports from resurfacing', () => {
+    const graphTypes = readFileSync(
+      join(sourceRoot, 'ptb', 'graph', 'types.ts'),
+      'utf8',
+    );
+    const ptbDoc = readFileSync(join(sourceRoot, 'ptb', 'ptbDoc.ts'), 'utf8');
+    const metadataCache = readFileSync(
+      join(sourceRoot, 'ptb', 'metadataCache.ts'),
+      'utf8',
+    );
+
+    expect(graphTypes).not.toContain('export const findPort');
+    expect(graphTypes).not.toContain('export const portIdOf');
+    expect(ptbDoc).not.toContain('export function isPTBDoc');
+    expect(ptbDoc).not.toContain('export function isPTBModulesEmbed');
+    expect(ptbDoc).not.toContain('export function isPTBObjectsEmbed');
+    expect(metadataCache).not.toContain('export function getCachedObjectData');
+    expect(metadataCache).not.toContain('export function getCachedObjects');
+    expect(metadataCache).not.toContain('export function getCachedModules');
+    expect(metadataCache).not.toContain('export function replaceCachedObjects');
+    expect(metadataCache).not.toContain('export function replaceCachedModules');
   });
 
   it('checks import and export specifiers without flagging comments or strings', () => {
@@ -90,6 +428,12 @@ describe('builder source guardrails', () => {
         "import { rawTransactionToIR } from '@zktx.io/ptb-model/raw';",
       ),
     ).toContain('ptb-model subpath import');
+    expect(
+      importViolations("import { preprocess } from '../codegen/preprocess';"),
+    ).toContain('deleted builder codegen import');
+    expect(
+      importViolations("import { decodeTx } from '../ptb/decodeTx';"),
+    ).toContain('deleted builder decodeTx import');
   });
 });
 

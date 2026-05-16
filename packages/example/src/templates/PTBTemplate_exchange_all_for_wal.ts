@@ -30,6 +30,7 @@ const exchange_all_for_wal = {
         label: 'gas',
         name: 'gas',
         varType: { kind: 'object' },
+        semantic: { kind: 'GasCoin' },
         ports: [
           {
             id: 'out',
@@ -129,243 +130,10 @@ const exchange_all_for_wal = {
         label: 'MoveCall',
         command: 'moveCall',
         params: {
-          moveCall: {
-            package:
-              '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f',
-            module: 'wal_exchange',
-            function: 'exchange_all_for_wal',
-            typeArgs: [],
-          },
-          ui: {
-            pkgId:
-              '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f',
-            module: 'wal_exchange',
-            func: 'exchange_all_for_wal',
-            _fnTParams: [],
-            _fnIns: [
-              {
-                kind: 'object',
-                typeTag:
-                  '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-              },
-              { kind: 'object' },
-            ],
-            _fnOuts: [{ kind: 'object' }],
-            _nameModules_: ['wal_exchange'],
-            _moduleFunctions_: {
-              wal_exchange: [
-                'add_all_sui',
-                'add_all_wal',
-                'add_sui',
-                'add_wal',
-                'exchange_all_for_sui',
-                'exchange_all_for_wal',
-                'exchange_for_sui',
-                'exchange_for_wal',
-                'new',
-                'new_exchange_rate',
-                'new_funded',
-                'set_exchange_rate',
-                'withdraw_sui',
-                'withdraw_wal',
-              ],
-            },
-            _fnSigs_: {
-              wal_exchange: {
-                add_all_sui: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                  ],
-                  outs: [],
-                },
-                add_all_wal: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                  ],
-                  outs: [],
-                },
-                add_sui: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [],
-                },
-                add_wal: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [],
-                },
-                exchange_all_for_sui: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-                exchange_all_for_wal: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-                exchange_for_sui: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-                exchange_for_wal: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'object' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-                new: {
-                  tparamCount: 0,
-                  ins: [],
-                  outs: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::AdminCap',
-                    },
-                  ],
-                },
-                new_exchange_rate: {
-                  tparamCount: 0,
-                  ins: [
-                    { kind: 'move_numeric', width: 'u64' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::ExchangeRate',
-                    },
-                  ],
-                },
-                new_funded: {
-                  tparamCount: 0,
-                  ins: [
-                    { kind: 'object' },
-                    { kind: 'move_numeric', width: 'u64' },
-                  ],
-                  outs: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::AdminCap',
-                    },
-                  ],
-                },
-                set_exchange_rate: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'move_numeric', width: 'u64' },
-                    { kind: 'move_numeric', width: 'u64' },
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::AdminCap',
-                    },
-                  ],
-                  outs: [],
-                },
-                withdraw_sui: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'move_numeric', width: 'u64' },
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::AdminCap',
-                    },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-                withdraw_wal: {
-                  tparamCount: 0,
-                  ins: [
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::Exchange',
-                    },
-                    { kind: 'move_numeric', width: 'u64' },
-                    {
-                      kind: 'object',
-                      typeTag:
-                        '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::AdminCap',
-                    },
-                  ],
-                  outs: [{ kind: 'object' }],
-                },
-              },
-            },
-            pkgLocked: true,
+          runtime: {
+            target:
+              '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::exchange_all_for_wal',
+            typeArguments: [],
           },
         },
         ports: [
@@ -429,24 +197,6 @@ const exchange_all_for_wal = {
         ],
         position: { x: 917.5833333333334, y: 209.62499999999994 },
       },
-      {
-        id: '@my_wallet',
-        kind: 'Variable',
-        label: 'my wallet',
-        name: 'sender',
-        varType: { kind: 'scalar', name: 'address' },
-        ports: [
-          {
-            id: 'out',
-            role: 'io',
-            direction: 'out',
-            label: 'my wallet',
-            dataType: { kind: 'scalar', name: 'address' },
-            typeStr: 'address',
-          },
-        ],
-        position: { x: 597.5833333333334, y: 451.62499999999994 },
-      },
     ],
     edges: [
       {
@@ -462,16 +212,16 @@ const exchange_all_for_wal = {
         kind: 'io',
         source: '@gas',
         target: 'cmd-0',
-        sourceHandle: 'out:object',
-        targetHandle: 'in_coin:object',
+        sourceHandle: 'out',
+        targetHandle: 'in_coin',
       },
       {
         id: 'io:input-1->cmd-0[amount_0]',
         kind: 'io',
         source: 'input-1',
         target: 'cmd-0',
-        sourceHandle: 'out:number',
-        targetHandle: 'in_amount_0:number',
+        sourceHandle: 'out',
+        targetHandle: 'in_amount_0',
       },
       {
         id: 'flow:cmd-0->cmd-1',
@@ -486,16 +236,16 @@ const exchange_all_for_wal = {
         kind: 'io',
         source: 'input-0',
         target: 'cmd-1',
-        sourceHandle: 'out:object',
-        targetHandle: 'in_arg_0:object',
+        sourceHandle: 'out',
+        targetHandle: 'in_arg_0',
       },
       {
         id: 'io:cmd-0->cmd-1[arg_1]',
         kind: 'io',
         source: 'cmd-0',
         target: 'cmd-1',
-        sourceHandle: 'out_coin_0:object',
-        targetHandle: 'in_arg_1:object',
+        sourceHandle: 'out_coin_0',
+        targetHandle: 'in_arg_1',
       },
       {
         id: 'flow:cmd-1->cmd-2',
@@ -510,8 +260,8 @@ const exchange_all_for_wal = {
         kind: 'io',
         source: 'cmd-1',
         target: 'cmd-2',
-        sourceHandle: 'out_ret_0:object',
-        targetHandle: 'in_object_0:object',
+        sourceHandle: 'out_ret_0',
+        targetHandle: 'in_object_0',
       },
       {
         id: 'flow:cmd-2->@end',
@@ -520,14 +270,6 @@ const exchange_all_for_wal = {
         target: '@end',
         sourceHandle: 'next',
         targetHandle: 'prev',
-      },
-      {
-        id: 'edge-3',
-        kind: 'io',
-        source: '@my_wallet',
-        target: 'cmd-2',
-        sourceHandle: 'out:address',
-        targetHandle: 'in_recipient:address',
       },
     ],
   },

@@ -8,7 +8,7 @@ export function DragAndDrop({
   onDrop,
   onChancel,
 }: {
-  onDrop: (data: PTBDoc) => void;
+  onDrop: (data: PTBDoc) => void | { ok: false; message: string };
   onChancel: () => void;
 }) {
   const [isVisible, setIsVisible] = useState(true);
@@ -26,7 +26,11 @@ export function DragAndDrop({
   const parseAndLoad = (text: string) => {
     try {
       const json = JSON.parse(text);
-      onDrop(json);
+      const result = onDrop(json);
+      if (result?.ok === false) {
+        setMessage(result.message);
+        return;
+      }
       setIsVisible(false);
     } catch {
       setMessage('Invalid JSON file.');
@@ -72,7 +76,11 @@ export function DragAndDrop({
     if (!tpl) return;
     try {
       const doc = JSON.parse(tpl.file());
-      onDrop(doc as PTBDoc);
+      const result = onDrop(doc as PTBDoc);
+      if (result?.ok === false) {
+        setMessage(result.message);
+        return;
+      }
       setIsVisible(false);
     } catch {
       setMessage('Failed to load template.');

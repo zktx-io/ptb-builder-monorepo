@@ -10,7 +10,10 @@ import { describe, expect, it } from 'vitest';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClientForNetwork,
+  objectIdsFromRawProgrammableTransactionInput,
   selectCoreTransactionResult,
+  supportedNetworksForTransport,
+  supportsNetworkForTransport,
 } from '../src/ptb/suiClient';
 import type {
   PtbLoadedTransaction,
@@ -80,6 +83,7 @@ describe('SDK Core transaction bridge', () => {
     expect(ir.commands[0].kind).toBe('MakeMoveVec');
 
     const graph = transactionIRToGraph(ir);
+    expect(transactionIRToGraph(rawTransactionToIR(successful))).toEqual(graph);
     const roundTripIR = graphToTransactionIR(graph);
     expect(hasErrors(roundTripIR.diagnostics)).toBe(false);
     const code = transactionIRToTsSdkCode(roundTripIR);
@@ -105,9 +109,127 @@ describe('SDK Core transaction bridge', () => {
     ).toBeUndefined();
   });
 
+  it('collects object ids from SDK Core and model raw CallArg shapes', () => {
+    const ownedId =
+      '0x0000000000000000000000000000000000000000000000000000000000000001';
+    const sharedId =
+      '0x0000000000000000000000000000000000000000000000000000000000000002';
+    const receivingId =
+      '0x0000000000000000000000000000000000000000000000000000000000000003';
+    const modelId =
+      '0x0000000000000000000000000000000000000000000000000000000000000004';
+    const singleKeyId =
+      '0x0000000000000000000000000000000000000000000000000000000000000005';
+
+    expect(
+      objectIdsFromRawProgrammableTransactionInput({
+        inputs: [
+          { Pure: { bytes: 'AQID' } },
+          {
+            $kind: 'Object',
+            Object: {
+              $kind: 'ImmOrOwnedObject',
+              ImmOrOwnedObject: {
+                objectId: ownedId,
+                version: '1',
+                digest: 'digest',
+              },
+            },
+          },
+          {
+            $kind: 'Object',
+            Object: {
+              $kind: 'SharedObject',
+              SharedObject: {
+                objectId: sharedId,
+                initialSharedVersion: '2',
+                mutable: false,
+              },
+            },
+          },
+          {
+            $kind: 'Object',
+            Object: {
+              $kind: 'Receiving',
+              Receiving: {
+                objectId: receivingId,
+                version: '3',
+                digest: 'digest',
+              },
+            },
+          },
+          {
+            kind: 'Object',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: modelId,
+              version: '4',
+              digest: 'digest',
+            },
+          },
+          {
+            kind: 'Object',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: ownedId,
+              version: '1',
+              digest: 'digest',
+            },
+          },
+          {
+            kind: 'Object',
+            object: {
+              ImmOrOwnedObject: {
+                objectId: singleKeyId,
+                version: '5',
+                digest: 'digest',
+              },
+            },
+          },
+          {
+            kind: 'Object',
+            object: {
+              $kind: 'SharedObject',
+              kind: 'ImmOrOwnedObject',
+              SharedObject: {
+                objectId:
+                  '0x0000000000000000000000000000000000000000000000000000000000000006',
+                initialSharedVersion: '6',
+                mutable: false,
+              },
+              ImmOrOwnedObject: {
+                objectId:
+                  '0x0000000000000000000000000000000000000000000000000000000000000007',
+                version: '7',
+                digest: 'digest',
+              },
+            },
+          },
+        ],
+        commands: [],
+      }),
+    ).toEqual([ownedId, sharedId, receivingId, modelId, singleKeyId]);
+  });
+
   it('rejects unverified GraphQL networks instead of falling back to JSON-RPC', () => {
     expect(() =>
       createPtbCoreClientForNetwork('devnet', { transport: 'graphql' }),
-    ).toThrow('No verified Sui GraphQL endpoint for sui:devnet');
+    ).toThrow(
+      "No verified Sui GraphQL endpoint for sui:devnet. Use supportedNetworksForTransport('graphql') to discover supported networks.",
+    );
+  });
+
+  it('exposes transport-specific network capability without JSON-RPC fallback', () => {
+    expect(supportedNetworksForTransport('grpc')).toEqual([
+      'mainnet',
+      'testnet',
+      'devnet',
+    ]);
+    expect(supportedNetworksForTransport('graphql')).toEqual([
+      'mainnet',
+      'testnet',
+    ]);
+    expect(supportsNetworkForTransport('devnet', 'graphql')).toBe(false);
+    expect(supportsNetworkForTransport('devnet', 'grpc')).toBe(true);
   });
 });

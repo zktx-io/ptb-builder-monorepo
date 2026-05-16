@@ -1,5 +1,5 @@
 // src/ui/nodes/EndNode.tsx
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 

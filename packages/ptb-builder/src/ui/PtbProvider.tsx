@@ -12,7 +12,8 @@
 // - PTB is a persisted snapshot: loaded once to hydrate RF, then updated by
 //   the canvas (PTBFlow) immediately on every edit.
 // - We only inject PTB back to RF when the *document identity* changes.
-// - PTBDoc autosave (onDocChange) fires immediately on any change.
+// - PTBDoc autosave (onDocChange) is batched briefly for graph edits and
+//   debounced for viewport-only changes.
 // -----------------------------------------------------------------------------
 
 import React, {
@@ -30,58 +31,93 @@ import type { Transaction } from '@mysten/sui/transactions';
 import { rawTransactionToIR, transactionIRToGraph } from '@zktx.io/ptb-model';
 import type { PTBModelError } from '@zktx.io/ptb-model';
 
-import type { ExecOptions } from '../codegen/types';
+import {
+  PTB_ACTION_OK,
+  ptbActionError,
+  type PTBActionResult,
+  ptbExportDocError,
+  type PTBExportDocResult,
+} from './actionResult';
+import {
+  createDocumentEmissionScheduler,
+  type DocumentEmissionScheduler,
+} from './documentEmission';
+import { executionResultToast } from './executionResult';
+import type {
+  HostExecutionResult,
+  HostSimulationResult,
+} from './executionResult';
+import { stableGraphSig } from './graphSignature';
+import { createProviderLifecycleController } from './providerLifecycle';
+import {
+  clearProviderClientUnavailableNoticeState,
+  clearProviderNoticeState,
+  INITIAL_PROVIDER_UI_STATE,
+  providerClientUnavailable,
+  providerDocumentEmitError,
+  providerDocumentLoadError,
+  providerExportError,
+  providerReadyEditable,
+  providerReadyReadonlyTransaction,
+  providerTransactionLoadError,
+  type ProviderUiState,
+  type TxStatus,
+} from './providerUiState';
 import type { PTBGraph } from '../ptb/graph/types';
+import {
+  createPTBMetadataCache,
+  getCachedMoveFunction,
+  replaceCachedChainData,
+  upsertCachedMoveFunction,
+  upsertCachedObjectData,
+} from '../ptb/metadataCache';
 import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
 import {
+  type ObjectAuthoringInfo,
+  objectAuthoringInfoFromCoreObject,
+  type ObjectAuthoringLookupResult,
+} from '../ptb/objectAuthoring';
+import {
   buildDoc,
+  createEmptyPTBDoc,
+  DEFAULT_PTB_VIEW,
+  hasSameCanonicalPTBView,
   prepareLoadedDoc,
   type PTBDoc,
   PTBFunctionData,
   PTBModulesEmbed,
   PTBObjectData,
   PTBObjectsEmbed,
-  toBuilderGraph,
+  stablePTBDocSignature,
 } from '../ptb/ptbDoc';
-import {
-  KNOWN_IDS,
-  seedDefaultGraph,
-  type WellKnownId,
-} from '../ptb/seedGraph';
+import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
+import { KNOWN_IDS, type WellKnownId } from '../ptb/seedGraph';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClient,
+  objectIdsFromRawProgrammableTransactionInput,
   PTB_TRANSACTION_LOAD_INCLUDE,
   type PtbCoreClient,
   selectCoreTransactionResult,
 } from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 import { toColorMode } from '../types';
-import { executionResultToast } from './executionResult';
-import type {
-  HostExecutionResult,
-  HostSimulationResult,
-} from './executionResult';
 
 const VIEW_CHANGE_DEBOUNCE_MS = 250;
+const DOC_CHANGE_DEBOUNCE_MS = 150;
+const DOC_CHANGE_MAX_WAIT_MS = 1000;
+const DOC_EMIT_ERROR_REPEAT_MS = 30_000;
+const DOC_EMIT_ERROR_REPEAT_COUNT = 5;
+const EMPTY_OBJECTS = Object.freeze({}) as PTBObjectsEmbed;
+const EMPTY_MODULES = Object.freeze({}) as PTBModulesEmbed;
 
 // ===== Context shape ==========================================================
-
-type TxStatus = {
-  status: 'success' | 'failure';
-  error?: string;
-};
 
 type OwnedObjectsParams = {
   owner: string;
   cursor?: string | null;
   limit?: number;
   type?: string;
-  options?: {
-    showType?: boolean;
-    showContent?: boolean;
-    showDisplay?: boolean;
-  };
   clientOverride?: PtbCoreClient;
 };
 
@@ -90,6 +126,10 @@ type OwnedObjectsResponse = {
     data: {
       objectId: string;
       type: string;
+      version?: string;
+      digest?: string;
+      owner?: unknown;
+      authoring?: ObjectAuthoringInfo;
       content?: { dataType: 'moveObject'; type: string };
       display?: { data?: Record<string, unknown> | null };
     };
@@ -123,10 +163,10 @@ export type PtbContextValue = {
 
   // Chain caches & helpers (PTB-only)
   objects: PTBObjectsEmbed;
-  getObjectData: (
+  lookupObjectForAuthoring: (
     objectId: string,
-    opts?: { forceRefresh?: boolean; clientOverride?: PtbCoreClient },
-  ) => Promise<PTBObjectData | undefined>;
+    opts?: { clientOverride?: PtbCoreClient },
+  ) => Promise<ObjectAuthoringLookupResult>;
 
   modules: PTBModulesEmbed;
   getMoveFunction: (
@@ -141,18 +181,24 @@ export type PtbContextValue = {
   ) => Promise<OwnedObjectsResponse | undefined>;
 
   // Loaders
+  providerUiState: ProviderUiState;
+  clearProviderNotice: () => void;
   loadTxStatus: TxStatus | undefined;
-  loadFromOnChainTx: (chain: Chain, txDigest: string) => Promise<void>;
-  loadFromDoc: (data: PTBDoc | Chain) => void;
+  loadFromOnChainTx: (
+    chain: Chain,
+    txDigest: string,
+  ) => Promise<PTBActionResult>;
+  loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
 
   // Persistence
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
+  exportDocResult: (opts?: { sender?: string }) => PTBExportDocResult;
 
   // Monotonic ID generator
   createUniqueId: (prefix?: string) => string;
 
   // Execution
-  execOpts: ExecOptions;
+  execOpts: RuntimeEnvelope;
   runTx?: (tx?: Transaction) => Promise<{ digest?: string; error?: string }>;
   dryRunTx?: (tx?: Transaction) => Promise<void>;
 
@@ -160,9 +206,7 @@ export type PtbContextValue = {
   toast: ToastAdapter;
   showExportButton?: boolean;
 
-  wellKnown: Record<WellKnownId, boolean>;
   isWellKnownAvailable: (k: WellKnownId) => boolean;
-  setWellKnownPresent: (k: WellKnownId, present: boolean) => void;
 
   registerFlowActions: (a: {
     fitToContent?: () => void;
@@ -183,7 +227,7 @@ export type PtbProviderProps = {
   onDocChange?: (doc: PTBDoc) => void;
 
   initialTheme: Theme;
-  execOpts?: ExecOptions;
+  execOpts?: RuntimeEnvelope;
   showThemeSelector?: boolean;
 
   executeTx?: (
@@ -222,69 +266,6 @@ function seedNonceFromGraph(g: PTBGraph | undefined): number {
   for (const n of g.nodes || []) idBag.push(n.id);
   for (const e of g.edges || []) idBag.push(e.id);
   return maxNumericSuffix(idBag);
-}
-
-/** Build an order-insensitive, structural signature for a PTB graph. */
-function stableGraphSig(g: PTBGraph): string {
-  const round = (v: any) =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : v;
-
-  const nodes = [...(g.nodes || [])]
-    .map((n) => {
-      const ports = [...(n.ports || [])]
-        .map((p) => ({
-          id: p.id,
-          role: p.role,
-          direction: p.direction,
-          dataType: p.dataType ? JSON.stringify(p.dataType) : undefined,
-        }))
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-      const extra: Record<string, unknown> = {};
-      const anyN = n as any;
-      if (anyN.command !== undefined) extra.command = anyN.command;
-      if (anyN.params !== undefined) extra.params = anyN.params;
-      if (anyN.varType !== undefined) extra.varType = anyN.varType;
-      if (anyN.value !== undefined) extra.value = anyN.value;
-
-      const pos =
-        anyN.position &&
-        typeof anyN.position.x === 'number' &&
-        typeof anyN.position.y === 'number'
-          ? { x: round(anyN.position.x), y: round(anyN.position.y) }
-          : undefined;
-
-      return { id: n.id, kind: n.kind, ports, pos, ...extra };
-    })
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-  const edges = [...(g.edges || [])]
-    .map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle ?? undefined,
-      targetHandle: e.targetHandle ?? undefined,
-    }))
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-  return JSON.stringify({ nodes, edges });
-}
-
-function stableDocSig(doc: PTBDoc): string {
-  const orderObject = (value: unknown): unknown => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return value;
-    }
-    return Object.keys(value as Record<string, unknown>)
-      .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = orderObject((value as Record<string, unknown>)[key]);
-        return acc;
-      }, {});
-  };
-  return JSON.stringify(orderObject(doc));
 }
 
 function modelErrorMessage(error: unknown, fallback: string): string {
@@ -328,6 +309,23 @@ export function PtbProvider({
     applyTheme(theme);
   }, [theme, applyTheme]);
 
+  // Toast
+  const toastImpl: ToastAdapter = useMemo(() => {
+    if (toastProp) return toastProp;
+    return ({ message, variant }) => {
+      const tag =
+        variant === 'error'
+          ? '[ERROR]'
+          : variant === 'success'
+            ? '[SUCCESS]'
+            : variant === 'warning'
+              ? '[WARN]'
+              : '[INFO]';
+      // eslint-disable-next-line no-console
+      console.log(`${tag} ${message}`);
+    };
+  }, [toastProp]);
+
   // Flow actions
   const flowActionsRef = React.useRef<{
     fitToContent?: () => void;
@@ -359,8 +357,16 @@ export function PtbProvider({
       clientRef.current = undefined;
       return;
     }
-    clientRef.current = createCoreClient(activeChain);
-  }, [activeChain, createCoreClient]);
+    try {
+      clientRef.current = createCoreClient(activeChain);
+      setProviderUiState(clearProviderClientUnavailableNoticeState);
+    } catch (error) {
+      clientRef.current = undefined;
+      const message = modelErrorMessage(error, 'Failed to create Sui client.');
+      setProviderUiState((prev) => providerClientUnavailable(prev, message));
+      toastImpl({ message, variant: 'error' });
+    }
+  }, [activeChain, createCoreClient, toastImpl]);
   const activeChainRef = useRef(activeChain);
   activeChainRef.current = activeChain;
 
@@ -378,9 +384,7 @@ export function PtbProvider({
   );
 
   // Monotonic ID nonce (doc-scoped)
-  const [idNonce, setIdNonce] = useState<number>(() =>
-    seedNonceFromGraph(graph),
-  );
+  const [, setIdNonce] = useState<number>(() => seedNonceFromGraph(graph));
   const genId = useCallback((prefix = 'id') => {
     let nextVal!: number;
     setIdNonce((prev) => (nextVal = prev + 1));
@@ -391,39 +395,43 @@ export function PtbProvider({
   const [graphEpoch, setGraphEpoch] = useState(0);
 
   // Chain caches
-  const [objects, setObjects] = useState<PTBObjectsEmbed>(() => ({}));
-  const [modules, setModules] = useState<PTBModulesEmbed>(() => ({}));
+  const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
+  const [modules, setModules] = useState<PTBModulesEmbed>(() => EMPTY_MODULES);
+  const metadataCacheRef = useRef(createPTBMetadataCache());
   const docSlicesRef = useRef({ graph, modules, objects });
   docSlicesRef.current = { graph, modules, objects };
   const lastDocSigRef = useRef<string | undefined>(undefined);
+  const lifecycleRef = useRef(createProviderLifecycleController());
+  const [providerUiState, setProviderUiState] = useState<ProviderUiState>(
+    () => INITIAL_PROVIDER_UI_STATE,
+  );
+
+  const clearProviderNotice = useCallback(() => {
+    setProviderUiState(clearProviderNoticeState);
+  }, []);
 
   // Reset caches on chain change
   const resetBeforeLoad = () => {
-    canUpdate.current = false;
     lastDocSigRef.current = undefined;
+    lastDocEmitErrorRef.current = undefined;
     setActiveChain(undefined);
-    setObjects({});
-    setModules({});
+    setObjects(EMPTY_OBJECTS);
+    setModules(EMPTY_MODULES);
     setView(undefined);
     setCodePipOpenTick(0);
   };
 
-  // Toast
-  const toastImpl: ToastAdapter = useMemo(() => {
-    if (toastProp) return toastProp;
-    return ({ message, variant }) => {
-      const tag =
-        variant === 'error'
-          ? '[ERROR]'
-          : variant === 'success'
-            ? '[SUCCESS]'
-            : variant === 'warning'
-              ? '[WARN]'
-              : '[INFO]';
-      // eslint-disable-next-line no-console
-      console.log(`${tag} ${message}`);
-    };
-  }, [toastProp]);
+  const reportClientUnavailable = useCallback(
+    (operation: string) => {
+      const message = `${operation}: no Sui client is active for the selected chain.`;
+      setProviderUiState((prev) => providerClientUnavailable(prev, message));
+      toastImpl({
+        message,
+        variant: 'warning',
+      });
+    },
+    [toastImpl],
+  );
 
   // Host adapters
   const executeTx = useCallback(
@@ -521,12 +529,21 @@ export function PtbProvider({
     setGraphEpoch((e) => e + 1); // rehydrate RF once per load
   }, []);
 
-  // ---- PTBDoc: emit immediately for graph edits, debounce viewport ----------
+  // ---- PTBDoc: batch graph edits, debounce viewport-only changes ------------
 
-  const canUpdate = useRef(false);
   const onDocChangeRef = useRef(onDocChange);
   onDocChangeRef.current = onDocChange;
-  const viewDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+  const hadOnDocChangeRef = useRef(Boolean(onDocChange));
+  const lastDocEmitErrorRef = useRef<
+    | {
+        message: string;
+        count: number;
+        reportedAt: number;
+      }
+    | undefined
+  >(undefined);
+  const emitDocChangeRef = useRef<() => void>(() => undefined);
+  const docEmissionSchedulerRef = useRef<DocumentEmissionScheduler | undefined>(
     undefined,
   );
 
@@ -548,98 +565,191 @@ export function PtbProvider({
     });
   }, []);
 
-  const emitDocChange = useCallback(() => {
-    try {
-      const doc = buildDocFromRefs();
-      if (!doc) return;
-      if (!canUpdate.current) {
-        canUpdate.current = true;
+  const reportDocEmitError = useCallback(
+    (error: unknown, fallback: string) => {
+      const message = modelErrorMessage(error, fallback);
+      const previous = lastDocEmitErrorRef.current;
+      const now = Date.now();
+      const count = previous?.message === message ? previous.count + 1 : 1;
+      const shouldReport =
+        !previous ||
+        previous.message !== message ||
+        count % DOC_EMIT_ERROR_REPEAT_COUNT === 0 ||
+        now - previous.reportedAt >= DOC_EMIT_ERROR_REPEAT_MS;
+
+      if (shouldReport) {
+        toastImpl({
+          message: count > 1 ? `${message} (repeated ${count} times)` : message,
+          variant: 'error',
+        });
       }
-      const nextSig = stableDocSig(doc);
-      if (!onDocChangeRef.current) {
+      setProviderUiState((prev) =>
+        providerDocumentEmitError(
+          prev,
+          count > 1 ? `${message} (repeated ${count} times)` : message,
+        ),
+      );
+
+      lastDocEmitErrorRef.current = {
+        message,
+        count,
+        reportedAt: shouldReport ? now : (previous?.reportedAt ?? now),
+      };
+    },
+    [toastImpl],
+  );
+
+  const deliverDocChange = useCallback(
+    (doc: PTBDoc) => {
+      const nextSig = stablePTBDocSignature(doc);
+      const onDocChangeCurrent = onDocChangeRef.current;
+      if (!onDocChangeCurrent) {
         lastDocSigRef.current = undefined;
         return;
       }
       if (lastDocSigRef.current === nextSig) return;
-      lastDocSigRef.current = nextSig;
-      onDocChangeRef.current(doc);
-    } catch {
-      // Swallow to avoid breaking the edit loop
-    }
-  }, [buildDocFromRefs]);
 
-  useEffect(() => {
-    emitDocChange();
-  }, [graph, modules, objects, activeChain, emitDocChange]);
-
-  useEffect(() => {
-    if (viewDebounceRef.current) {
-      clearTimeout(viewDebounceRef.current);
-      viewDebounceRef.current = undefined;
-    }
-    if (!view || !onDocChangeRef.current) return;
-
-    viewDebounceRef.current = setTimeout(() => {
-      emitDocChange();
-      viewDebounceRef.current = undefined;
-    }, VIEW_CHANGE_DEBOUNCE_MS);
-
-    return () => {
-      if (viewDebounceRef.current) {
-        clearTimeout(viewDebounceRef.current);
-        viewDebounceRef.current = undefined;
+      try {
+        onDocChangeCurrent(doc);
+        lastDocSigRef.current = nextSig;
+        lastDocEmitErrorRef.current = undefined;
+      } catch (error) {
+        reportDocEmitError(error, 'PTB document change handler failed.');
       }
-    };
-  }, [view, emitDocChange]);
+    },
+    [reportDocEmitError],
+  );
+
+  const emitDocChange = useCallback(() => {
+    let doc: PTBDoc | undefined;
+    try {
+      doc = buildDocFromRefs();
+    } catch (error) {
+      reportDocEmitError(error, 'PTB document update failed.');
+      return;
+    }
+    if (!doc) return;
+    deliverDocChange(doc);
+  }, [buildDocFromRefs, deliverDocChange, reportDocEmitError]);
+  emitDocChangeRef.current = emitDocChange;
+
+  if (!docEmissionSchedulerRef.current) {
+    docEmissionSchedulerRef.current = createDocumentEmissionScheduler({
+      contentDelayMs: DOC_CHANGE_DEBOUNCE_MS,
+      viewDelayMs: VIEW_CHANGE_DEBOUNCE_MS,
+      maxWaitMs: DOC_CHANGE_MAX_WAIT_MS,
+      emit: () => emitDocChangeRef.current(),
+    });
+  }
+
+  const flushPendingDocChange = useCallback(() => {
+    docEmissionSchedulerRef.current?.flush();
+  }, []);
+
+  const scheduleDocChange = useCallback((reason: 'content' | 'view') => {
+    docEmissionSchedulerRef.current?.schedule(reason);
+  }, []);
 
   useEffect(() => {
-    if (onDocChange) {
+    if (!activeChainRef.current) return;
+    scheduleDocChange('content');
+  }, [graph, modules, objects, activeChain, scheduleDocChange]);
+
+  useEffect(() => {
+    if (!activeChainRef.current || !view) return;
+    scheduleDocChange('view');
+  }, [view, scheduleDocChange]);
+
+  useEffect(() => {
+    const hadOnDocChange = hadOnDocChangeRef.current;
+    const hasOnDocChange = Boolean(onDocChange);
+    hadOnDocChangeRef.current = hasOnDocChange;
+    if (!hadOnDocChange && hasOnDocChange) {
       emitDocChange();
     }
   }, [onDocChange, emitDocChange]);
 
+  useEffect(
+    () => () => {
+      lifecycleRef.current.cancel();
+      flushPendingDocChange();
+    },
+    [flushPendingDocChange],
+  );
+
   const setViewExternal = useCallback(
     (v: { x: number; y: number; zoom: number }) => {
       if (!activeChain) return;
-      setView((prev) =>
-        prev && prev.x === v.x && prev.y === v.y && prev.zoom === v.zoom
-          ? prev
-          : v,
-      );
+      setView((prev) => (prev && hasSameCanonicalPTBView(prev, v) ? prev : v));
     },
     [activeChain],
   );
 
   // ---- chain helpers ---------------------------------------------------------
 
-  const getObjectData = useCallback<PtbContextValue['getObjectData']>(
+  const fetchObjectData = useCallback(
+    async (client: PtbCoreClient, id: string): Promise<PTBObjectData> => {
+      const resp = await client.core.getObject({
+        objectId: id,
+        include: { content: true },
+      });
+
+      return {
+        objectId: resp.object.objectId,
+        typeTag: resp.object.type ?? '',
+      };
+    },
+    [],
+  );
+
+  const lookupObjectForAuthoring = useCallback<
+    PtbContextValue['lookupObjectForAuthoring']
+  >(
     async (objectId, opts) => {
       const id = objectId?.trim();
-      if (!id) return undefined;
+      if (!id) return { ok: false, error: 'Object id is required.' };
 
-      if (!opts?.forceRefresh && objects[id]) return objects[id];
+      const chain = activeChainRef.current;
+      if (!chain) return { ok: false, error: 'No active chain selected.' };
 
       const client = opts?.clientOverride ?? clientRef.current;
-      if (!client) return undefined;
+      if (!client) {
+        const error =
+          'Object authoring lookup unavailable: no Sui client is active for the selected chain.';
+        reportClientUnavailable('Object authoring lookup');
+        return { ok: false, error };
+      }
 
       try {
         const resp = await client.core.getObject({
           objectId: id,
           include: { content: true },
         });
+        const parsed = objectAuthoringInfoFromCoreObject(resp.object);
+        if (!parsed.ok) return parsed;
 
-        const obj: PTBObjectData = {
-          objectId: resp.object.objectId,
-          typeTag: resp.object.type ?? '',
+        const metadata: PTBObjectData = {
+          objectId: parsed.object.objectId,
+          typeTag: parsed.object.typeTag,
         };
-
-        setObjects((prev) => ({ ...prev, [id]: obj }));
-        return obj;
-      } catch {
-        return undefined;
+        const next = upsertCachedObjectData(
+          metadataCacheRef.current,
+          chain,
+          metadata,
+        );
+        metadataCacheRef.current = next.cache;
+        if (activeChainRef.current === chain) {
+          setObjects(next.objects);
+        }
+        return parsed;
+      } catch (error) {
+        return {
+          ok: false,
+          error: modelErrorMessage(error, `Failed to fetch object ${id}.`),
+        };
       }
     },
-    [objects],
+    [reportClientUnavailable],
   );
 
   const getMoveFunction = useCallback<PtbContextValue['getMoveFunction']>(
@@ -659,17 +769,25 @@ export function PtbProvider({
         return undefined;
       }
 
-      if (!opts?.forceRefresh && modules[id]?.[module]?.[name]) {
-        return {
-          packageId: id,
-          moduleName: module,
-          functionName: name,
-          signature: modules[id][module][name],
-        };
+      const chain = activeChainRef.current;
+      if (!chain) return undefined;
+
+      if (!opts?.forceRefresh) {
+        const cached = getCachedMoveFunction(
+          metadataCacheRef.current,
+          chain,
+          id,
+          module,
+          name,
+        );
+        if (cached) return cached;
       }
 
       const client = clientRef.current;
-      if (!client) return undefined;
+      if (!client) {
+        reportClientUnavailable('Move function lookup');
+        return undefined;
+      }
 
       try {
         const response = await client.core.getMoveFunction({
@@ -682,16 +800,16 @@ export function PtbProvider({
         const resolvedModuleName = response.function.moduleName || module;
         const resolvedFunctionName = response.function.name || name;
 
-        setModules((prev) => ({
-          ...prev,
-          [resolvedPackageId]: {
-            ...(prev[resolvedPackageId] ?? {}),
-            [resolvedModuleName]: {
-              ...(prev[resolvedPackageId]?.[resolvedModuleName] ?? {}),
-              [resolvedFunctionName]: signature,
-            },
-          },
-        }));
+        const next = upsertCachedMoveFunction(metadataCacheRef.current, chain, {
+          packageId: resolvedPackageId,
+          moduleName: resolvedModuleName,
+          functionName: resolvedFunctionName,
+          signature,
+        });
+        metadataCacheRef.current = next.cache;
+        if (activeChainRef.current === chain) {
+          setModules(next.modules);
+        }
 
         return {
           packageId: resolvedPackageId,
@@ -707,14 +825,17 @@ export function PtbProvider({
         return undefined;
       }
     },
-    [modules, toastImpl],
+    [reportClientUnavailable, toastImpl],
   );
 
   const getOwnedObjects = useCallback<PtbContextValue['getOwnedObjects']>(
     async (params) => {
-      const { clientOverride, options: _options, ...rest } = params ?? {};
+      const { clientOverride, ...rest } = params ?? {};
       const client = clientOverride ?? clientRef.current;
-      if (!client) return undefined;
+      if (!client) {
+        reportClientUnavailable('Owned object lookup');
+        return undefined;
+      }
 
       try {
         const page = await client.core.listOwnedObjects({
@@ -728,93 +849,118 @@ export function PtbProvider({
           },
         });
         return {
-          data: page.objects.map((object) => ({
-            data: {
-              objectId: object.objectId,
-              type: object.type,
-              content: { dataType: 'moveObject', type: object.type },
-              display: object.display
-                ? { data: object.display.output }
-                : undefined,
-            },
-          })),
+          data: page.objects.map((object) => {
+            const authoring = objectAuthoringInfoFromCoreObject(object);
+            return {
+              data: {
+                objectId: object.objectId,
+                type: object.type,
+                version: object.version,
+                digest: object.digest,
+                owner: object.owner,
+                authoring: authoring.ok ? authoring.object : undefined,
+                content: { dataType: 'moveObject', type: object.type },
+                display: object.display
+                  ? { data: object.display.output }
+                  : undefined,
+              },
+            };
+          }),
           hasNextPage: page.hasNextPage,
           nextCursor: page.cursor,
         };
-      } catch {
+      } catch (error) {
+        toastImpl({
+          message: modelErrorMessage(error, 'Failed to fetch owned objects.'),
+          variant: 'warning',
+        });
         return undefined;
       }
     },
-    [],
+    [reportClientUnavailable, toastImpl],
   );
 
   // ---- on-chain loader (viewer) ---------------------------------------------
 
   const [codePipOpenTick, setCodePipOpenTick] = useState(0);
-  const [loadTxStatus, setLoadTxStatus] = useState<TxStatus | undefined>(
-    undefined,
-  );
+  const loadTxStatus = providerUiState.transaction;
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
     async (chain, txDigest) => {
-      resetBeforeLoad();
+      const load = lifecycleRef.current.beginLoad('transaction');
       const digest = (txDigest || '').trim();
       if (!digest) {
-        toastImpl({ message: 'Empty transaction digest.', variant: 'warning' });
-        return;
+        const error = 'Empty transaction digest.';
+        lifecycleRef.current.fail(load, error);
+        setProviderUiState((prev) => providerTransactionLoadError(prev, error));
+        toastImpl({ message: error, variant: 'warning' });
+        return ptbActionError(error);
       }
 
-      const localClient = createCoreClient(chain);
-
       try {
+        const localClient = createCoreClient(chain);
         const res = await localClient.core.getTransaction({
           digest,
           include: PTB_TRANSACTION_LOAD_INCLUDE,
         });
+        if (!lifecycleRef.current.isCurrent(load)) {
+          return ptbActionError('Transaction load was superseded.');
+        }
 
         const txResult = selectCoreTransactionResult(res);
         const programmable =
           coreTransactionResultToRawProgrammableTransactionInput(res);
         const status = txResult.status;
-
-        if (status) {
-          setLoadTxStatus({
-            status: status.success ? 'success' : 'failure',
-            error: status.error?.message || status.error?.$kind,
-          });
-        }
+        const transactionStatus: TxStatus | undefined = status
+          ? {
+              status: status.success ? 'success' : 'failure',
+              error: status.error?.message || status.error?.$kind,
+            }
+          : undefined;
 
         if (
           !programmable ||
           !Array.isArray(programmable.inputs) ||
           !Array.isArray(programmable.commands)
         ) {
+          const error = 'Only ProgrammableTransaction is supported.';
+          lifecycleRef.current.fail(load, error);
+          setProviderUiState((prev) =>
+            providerTransactionLoadError(prev, error),
+          );
           toastImpl({
-            message: 'Only ProgrammableTransaction is supported.',
+            message: error,
             variant: 'warning',
           });
-          return;
+          return ptbActionError(error);
         }
 
-        // 1) Collect candidate object ids (from inputs).
-        const candidateIds = new Set<string>();
-        const inputs = Array.isArray(programmable?.inputs)
-          ? programmable.inputs
-          : [];
-        for (const inp of inputs) {
-          const object = (inp as any)?.object ?? (inp as any)?.Object;
-          const objectId = object?.objectId;
-          if (typeof objectId === 'string' && objectId.startsWith('0x')) {
-            candidateIds.add(objectId);
-          }
-        }
+        // 1) Collect candidate object ids (from SDK/model raw CallArg inputs).
+        const candidateIds =
+          objectIdsFromRawProgrammableTransactionInput(programmable);
 
         // 2) Fetch object metadata (best effort).
         const fetched = await Promise.all(
-          [...candidateIds].map((oid) =>
-            getObjectData(oid, { clientOverride: localClient }),
-          ),
+          candidateIds.map(async (oid) => {
+            try {
+              return await fetchObjectData(localClient, oid);
+            } catch (error) {
+              if (lifecycleRef.current.isCurrent(load)) {
+                toastImpl({
+                  message: modelErrorMessage(
+                    error,
+                    `Failed to fetch object ${oid}.`,
+                  ),
+                  variant: 'warning',
+                });
+              }
+              return undefined;
+            }
+          }),
         );
+        if (!lifecycleRef.current.isCurrent(load)) {
+          return ptbActionError('Transaction load was superseded.');
+        }
         const objectsEmbed: PTBObjectsEmbed = {};
         for (const o of fetched) {
           if (o) objectsEmbed[o.objectId] = o;
@@ -825,53 +971,78 @@ export function PtbProvider({
         ir.diagnostics.forEach(({ message }) => {
           toastImpl({ message, variant: 'warning' });
         });
-        const decoded = toBuilderGraph(transactionIRToGraph(ir));
+        const decoded = transactionIRToGraph(ir);
 
         // 4) Fix chain and prime caches (overwrite, no carry-over).
+        resetBeforeLoad();
+        metadataCacheRef.current = replaceCachedChainData(
+          metadataCacheRef.current,
+          chain,
+          { modules: EMPTY_MODULES, objects: objectsEmbed },
+        );
         setActiveChain(chain);
-        setModules({});
+        setModules(EMPTY_MODULES);
         setObjects(objectsEmbed);
+        const nextView = { ...DEFAULT_PTB_VIEW };
+        setView(nextView);
 
         // 5) Replace snapshot (viewer mode) and bump epoch.
         replaceGraphImmediate(decoded);
         setReadOnly(true);
+        setProviderUiState(providerReadyReadonlyTransaction(transactionStatus));
 
         setCodePipOpenTick(0);
+        lifecycleRef.current.complete(load, 'ready-readonly-transaction');
 
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            flowActionsRef.current.fitToContent?.();
-            canUpdate.current = true;
-          });
+        lifecycleRef.current.afterAnimationFrames(load, () => {
+          flowActionsRef.current.fitToContent?.();
         });
+        return PTB_ACTION_OK;
       } catch (e: any) {
+        if (!lifecycleRef.current.isCurrent(load)) {
+          return ptbActionError('Transaction load was superseded.');
+        }
+        const error = e?.message || 'Failed to load transaction from chain.';
+        lifecycleRef.current.fail(load, error);
+        setProviderUiState((prev) => providerTransactionLoadError(prev, error));
         toastImpl({
-          message: e?.message || 'Failed to load transaction from chain.',
+          message: error,
           variant: 'error',
         });
+        return ptbActionError(error);
       }
     },
-    [toastImpl, replaceGraphImmediate, getObjectData, createCoreClient],
+    [toastImpl, replaceGraphImmediate, fetchObjectData, createCoreClient],
   );
 
   // ---- document loader (editor) ---------------------------------------------
 
   const loadFromDoc = useCallback<PtbContextValue['loadFromDoc']>(
     (value) => {
+      const load = lifecycleRef.current.beginLoad('document');
+
       if (typeof value !== 'string') {
         let doc;
         try {
           doc = prepareLoadedDoc(value);
         } catch (e: any) {
+          const error = modelErrorMessage(e, 'Invalid PTB document.');
+          lifecycleRef.current.fail(load, error);
+          setProviderUiState((prev) => providerDocumentLoadError(prev, error));
           toastImpl({
-            message: modelErrorMessage(e, 'Invalid PTB document.'),
+            message: error,
             variant: 'error',
           });
-          return;
+          return ptbActionError(error);
         }
 
         resetBeforeLoad();
         const nextView = doc.view;
+        metadataCacheRef.current = replaceCachedChainData(
+          metadataCacheRef.current,
+          doc.chain,
+          { modules: doc.modules, objects: doc.objects },
+        );
 
         setView(nextView);
         setActiveChain(doc.chain);
@@ -879,46 +1050,122 @@ export function PtbProvider({
         setObjects(doc.objects);
         replaceGraphImmediate(doc.graph);
         setReadOnly(false);
+        setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            flowActionsRef.current.updateViewport?.(nextView);
-            canUpdate.current = true;
-          });
+        deliverDocChange(doc.doc);
+        lifecycleRef.current.complete(load, 'ready-editable');
+        lifecycleRef.current.afterAnimationFrames(load, () => {
+          flowActionsRef.current.updateViewport?.(nextView);
         });
+        return PTB_ACTION_OK;
       } else {
+        const chain = value;
+        let doc;
+        try {
+          doc = createEmptyPTBDoc(chain);
+        } catch (error) {
+          const message = modelErrorMessage(
+            error,
+            'Failed to create an empty PTB document.',
+          );
+          lifecycleRef.current.fail(load, message);
+          setProviderUiState((prev) =>
+            providerDocumentLoadError(prev, message),
+          );
+          toastImpl({ message, variant: 'error' });
+          return ptbActionError(message);
+        }
         resetBeforeLoad();
-        setActiveChain(value);
-        replaceGraphImmediate(seedDefaultGraph());
+        const nextView = doc.view;
+        const nextGraph = doc.graph;
+        metadataCacheRef.current = replaceCachedChainData(
+          metadataCacheRef.current,
+          chain,
+          { modules: EMPTY_MODULES, objects: EMPTY_OBJECTS },
+        );
+        setView(nextView);
+        setActiveChain(chain);
+        replaceGraphImmediate(nextGraph);
         setReadOnly(false);
+        setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            flowActionsRef.current.updateViewport?.();
-            canUpdate.current = true;
-          });
+        try {
+          deliverDocChange(doc);
+          lifecycleRef.current.complete(load, 'ready-editable');
+        } catch (error) {
+          lifecycleRef.current.fail(load, 'PTB document update failed.');
+          reportDocEmitError(error, 'PTB document update failed.');
+          return ptbActionError(
+            modelErrorMessage(error, 'PTB document update failed.'),
+          );
+        }
+        lifecycleRef.current.afterAnimationFrames(load, () => {
+          flowActionsRef.current.updateViewport?.(nextView);
         });
+        return PTB_ACTION_OK;
       }
     },
-    [replaceGraphImmediate, toastImpl],
+    [deliverDocChange, replaceGraphImmediate, reportDocEmitError, toastImpl],
   );
 
   // ---- export doc ------------------------------------------------------------
 
+  const exportDocResult = useCallback<PtbContextValue['exportDocResult']>(
+    (opts) => {
+      if (!activeChain) {
+        const error = 'Cannot export before a chain is selected.';
+        setProviderUiState((prev) => providerExportError(prev, error));
+        toastImpl({
+          message: error,
+          variant: 'warning',
+        });
+        return ptbExportDocError(error);
+      }
+      if (!view) {
+        const error = 'Cannot export before the viewport is initialized.';
+        setProviderUiState((prev) => providerExportError(prev, error));
+        toastImpl({
+          message: error,
+          variant: 'warning',
+        });
+        return ptbExportDocError(error);
+      }
+      const sender = opts?.sender;
+      try {
+        setProviderUiState(clearProviderNoticeState);
+        return {
+          ok: true,
+          doc: buildDoc({
+            chain: activeChain,
+            graph,
+            view,
+            sender,
+            modules: modules ?? {},
+            objects: objects ?? {},
+          }),
+        };
+      } catch (error) {
+        const message = modelErrorMessage(
+          error,
+          'Failed to export PTB document.',
+        );
+        setProviderUiState((prev) => providerExportError(prev, message));
+        toastImpl({
+          message,
+          variant: 'error',
+        });
+        return ptbExportDocError(message);
+      }
+    },
+    [activeChain, graph, modules, objects, toastImpl, view],
+  );
+
   const exportDoc = useCallback<PtbContextValue['exportDoc']>(
     (opts) => {
-      if (!activeChain || !view) return undefined;
-      const sender = opts?.sender;
-      return buildDoc({
-        chain: activeChain,
-        graph,
-        view,
-        sender,
-        modules: modules ?? {},
-        objects: objects ?? {},
-      });
+      const result = exportDocResult(opts);
+      return result.ok ? result.doc : undefined;
     },
-    [activeChain, graph, modules, objects, view],
+    [exportDocResult],
   );
 
   // ---- well-known helpers ----------------------------------------------------
@@ -932,7 +1179,6 @@ export function PtbProvider({
       [KNOWN_IDS.SYSTEM]: set.has(KNOWN_IDS.SYSTEM),
       [KNOWN_IDS.CLOCK]: set.has(KNOWN_IDS.CLOCK),
       [KNOWN_IDS.RANDOM]: set.has(KNOWN_IDS.RANDOM),
-      [KNOWN_IDS.MY_WALLET]: set.has(KNOWN_IDS.MY_WALLET),
     };
   }
 
@@ -997,13 +1243,6 @@ export function PtbProvider({
     [wellKnown],
   );
 
-  const setWellKnownPresent = useCallback(
-    (k: WellKnownId, present: boolean) => {
-      setWellKnown((prev) => ({ ...prev, [k]: present }));
-    },
-    [],
-  );
-
   // ---- context value ---------------------------------------------------------
 
   const ctx: PtbContextValue = useMemo(
@@ -1021,29 +1260,30 @@ export function PtbProvider({
       showExportButton,
 
       objects,
-      getObjectData,
+      lookupObjectForAuthoring,
 
       modules,
       getMoveFunction,
 
       getOwnedObjects,
 
+      providerUiState,
+      clearProviderNotice,
       loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
+      exportDocResult,
 
       createUniqueId: genId,
 
       execOpts: execOptsProp,
 
-      runTx,
-      dryRunTx,
+      runTx: executeTxProp ? runTx : undefined,
+      dryRunTx: simulateTxProp ? dryRunTx : undefined,
       toast: toastImpl,
 
-      wellKnown,
       isWellKnownAvailable,
-      setWellKnownPresent,
 
       registerFlowActions,
 
@@ -1060,22 +1300,25 @@ export function PtbProvider({
       showThemeSelector,
       showExportButton,
       objects,
-      getObjectData,
+      lookupObjectForAuthoring,
       modules,
       getMoveFunction,
       getOwnedObjects,
+      providerUiState,
+      clearProviderNotice,
       loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
       exportDoc,
+      exportDocResult,
       genId,
       execOptsProp,
+      executeTxProp,
       runTx,
+      simulateTxProp,
       dryRunTx,
       toastImpl,
-      wellKnown,
       isWellKnownAvailable,
-      setWellKnownPresent,
       registerFlowActions,
       graphEpoch,
       codePipOpenTick,

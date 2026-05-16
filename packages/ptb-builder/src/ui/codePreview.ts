@@ -1,0 +1,100 @@
+import {
+  graphToTransactionIR,
+  hasErrors,
+  PTBModelError,
+  transactionIRToTsSdkCode,
+} from '@zktx.io/ptb-model';
+import type { PTBGraph, TransactionDiagnostic } from '@zktx.io/ptb-model';
+
+import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
+import type { Chain } from '../types';
+
+export type CodePreviewResult = {
+  code: string;
+  ok: boolean;
+  modelCode?: string;
+};
+
+export function renderCodePreview(
+  graph: PTBGraph,
+  opts: {
+    chain?: Chain;
+    envelope?: RuntimeEnvelope;
+    previousModelCode?: string;
+  },
+): CodePreviewResult {
+  const metadata = previewMetadata(opts.chain, opts.envelope);
+
+  try {
+    const ir = graphToTransactionIR(graph);
+    if (hasErrors(ir.diagnostics)) {
+      return diagnosticPreview(
+        metadata,
+        ir.diagnostics,
+        opts.previousModelCode,
+      );
+    }
+
+    const modelCode = transactionIRToTsSdkCode(ir);
+    return {
+      code: [metadata, modelCode].filter(Boolean).join('\n'),
+      ok: true,
+      modelCode,
+    };
+  } catch (error) {
+    if (error instanceof PTBModelError) {
+      return diagnosticPreview(
+        metadata,
+        error.diagnostics,
+        opts.previousModelCode,
+      );
+    }
+    return diagnosticPreview(
+      metadata,
+      [
+        {
+          code: 'preview.unexpected',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Code preview generation failed.',
+        },
+      ],
+      opts.previousModelCode,
+    );
+  }
+}
+
+function diagnosticPreview(
+  metadata: string,
+  diagnostics: readonly TransactionDiagnostic[],
+  previousModelCode?: string,
+): CodePreviewResult {
+  const lines = [
+    metadata,
+    '// Code preview is stale because the current graph cannot be rendered.',
+    ...diagnostics.map(
+      (diagnostic) =>
+        `// [${diagnostic.code}] ${diagnostic.path ? `${diagnostic.path}: ` : ''}${diagnostic.message}`,
+    ),
+    previousModelCode ? `\n${previousModelCode}` : '',
+  ].filter(Boolean);
+
+  return {
+    code: lines.join('\n'),
+    ok: false,
+  };
+}
+
+function previewMetadata(chain?: Chain, envelope?: RuntimeEnvelope): string {
+  const lines = [
+    '// Preview metadata only. Wallet, signing, simulation, and execution stay with the host app.',
+    chain ? `// chain: ${chain}` : undefined,
+    envelope?.sender ? `// sender: ${envelope.sender}` : undefined,
+    typeof envelope?.gasBudget === 'number'
+      ? `// gasBudget: ${envelope.gasBudget}`
+      : undefined,
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}

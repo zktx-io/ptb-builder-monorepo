@@ -7,11 +7,9 @@
 //   NOTE: vector<object> is intentionally not offered at UI level.
 // - Options: grouped submenu (u8..u256, bool, string, address, id)
 //   NOTE: option<object> is intentionally not offered at UI level.
-// - Resources: grouped submenu (wallet, gas, clock, random, system)
+// - Resources: grouped submenu (gas, clock, random, system)
 // Scalars/vectors/options/resources use type markers (colored handles).
 // -----------------------------------------------------------------------------
-
-import React from 'react';
 
 import {
   /* Brackets ,*/ Download,
@@ -204,11 +202,6 @@ export const CanvasOption = {
 export const CanvasResources = {
   label: 'Resources',
   items: [
-    {
-      name: 'my wallet',
-      action: 'var/resource/wallet',
-      icon: <span className="ptb-marker ptb-marker--address" />,
-    },
     {
       name: 'gas',
       action: 'var/resource/gas',

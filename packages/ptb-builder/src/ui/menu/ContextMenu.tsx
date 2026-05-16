@@ -7,9 +7,9 @@
 //     NOTE: vector<object> is intentionally not offered at UI level.
 //   - Option (submenu: u8..u256, bool, string, address, id)
 //     NOTE: option<object> is intentionally not offered at UI level.
-//   - Resources (submenu: wallet/gas/clock/random/system)
+//   - Resources (submenu: gas/clock/random/system)
 //
-// Resource submenu keeps singleton gating (wallet/gas/clock/random/system).
+// Resource submenu keeps singleton gating (gas/clock/random/system).
 
 import React, {
   useCallback,
@@ -66,16 +66,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onAutoLayout,
 }) => {
   const { x, y, zoom } = useViewport();
-  const { isWellKnownAvailable } = usePtb();
+  const { createUniqueId, isWellKnownAvailable } = usePtb();
   const rootRef = useRef<HTMLDivElement | undefined>(undefined);
   const setRootEl = useCallback((el: HTMLDivElement | null) => {
     rootRef.current = el ?? undefined;
   }, []);
 
-  /** Map menu actions → well-known singleton keys (wallet/gas/clock/random/system). */
+  /** Map menu actions to well-known singleton keys. */
   const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
     () => ({
-      'var/resource/wallet': 'MY_WALLET',
       'var/resource/gas': 'GAS',
       'var/resource/clock': 'CLOCK',
       'var/resource/random': 'RANDOM',
@@ -118,6 +117,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         onDeleteNode,
         onDeleteEdge,
         onClose,
+        createUniqueId,
       );
     },
     [
@@ -127,6 +127,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       onDeleteNode,
       onDeleteEdge,
       onClose,
+      createUniqueId,
     ],
   );
 
@@ -147,14 +148,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       if (!inside) onClose();
     };
     window.addEventListener('pointerdown', onPointerDown, { capture: true });
-    return () =>
-      window.removeEventListener(
-        'pointerdown',
-        onPointerDown as any,
-        {
-          capture: true,
-        } as any,
-      );
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
   }, [onClose]);
 
   const [pos, setPos] = useState<{ top: number; left: number }>(() => ({

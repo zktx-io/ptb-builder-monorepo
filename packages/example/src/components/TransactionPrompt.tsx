@@ -1,6 +1,7 @@
 import type { ChangeEvent, KeyboardEvent } from 'react';
 
-import { NETWORKS, SuiNetwork } from '../network';
+import { DAPP_NETWORKS } from '../dapp-kit';
+import { SuiNetwork } from '../network';
 
 type Props = {
   network: SuiNetwork;
@@ -108,7 +109,7 @@ export function TransactionPrompt({
               boxSizing: 'border-box',
             }}
           >
-            {NETWORKS.map((n) => (
+            {DAPP_NETWORKS.map((n) => (
               <option key={n} value={n}>
                 {n.toUpperCase()}
               </option>

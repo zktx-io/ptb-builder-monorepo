@@ -24,12 +24,7 @@ import {
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { createTransactionIR } from '../ir/types.js';
-import type {
-  IRArgRef,
-  IRCommand,
-  IRInput,
-  TransactionIR,
-} from '../ir/types.js';
+import type { IRCommand, IRInput, TransactionIR } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
 import {
   asArray,

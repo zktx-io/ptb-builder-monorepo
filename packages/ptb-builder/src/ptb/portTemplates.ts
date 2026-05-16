@@ -4,14 +4,12 @@
 // Port builders and standard port sets.
 // - Flow ports carry no data typing; only optional label is kept.
 // - IO helpers accept PTBType or PortOptions; typeStr can override serialization.
-// - UNKNOWN is a placeholder type for UI when the real type is not yet known.
 // -----------------------------------------------------------------------------
 
 import type { Port, PTBType } from './graph/types';
 
 export const FLOW_PREV = 'prev' as const;
 export const FLOW_NEXT = 'next' as const;
-export const VAR_IN = 'in' as const;
 export const VAR_OUT = 'out' as const;
 
 /** UI-friendly options for building a Port */
@@ -69,9 +67,6 @@ export const ioOut = (id: string, opts?: PTBType | PortOptions): Port => ({
   role: 'io',
   ...normalizeOptions(opts),
 });
-
-/** Default unknown type (placeholder) */
-export const UNKNOWN: PTBType = { kind: 'unknown' };
 
 /** -------- Standard Port Sets -------- */
 export const PORTS = {
