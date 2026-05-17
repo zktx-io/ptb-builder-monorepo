@@ -6328,20 +6328,151 @@ describe('validateTransactionIR', () => {
     expect(() => transactionIRToTsSdkCode(roundTrip)).not.toThrow();
   });
 
-  it('auto-brands valid raw and graph conversion results without branding invalid IR', () => {
+  it('auto-brands structurally safe conversion results including source diagnostics', () => {
     const rawIR = rawTransactionToIR({
       inputs: [{ kind: 'Pure', bytes: 'AQID' }],
       commands: [],
     });
     const graphIR = graphToTransactionIR({ nodes: [], edges: [] });
-    const invalidRawIR = rawTransactionToIR({
+    const sourceDiagnosticIR = rawTransactionToIR({
       inputs: [{ kind: 'Pure', bytes: 'A' }],
       commands: [],
     });
+    const graphSourceDiagnosticIR = graphToTransactionIR({
+      nodes: [
+        {
+          id: 'bad-raw',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'badRaw',
+          rawInput: { kind: 'Pure', bytes: 'A' },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    });
+    const malformedIR = createTransactionIR(
+      [{ id: 'input_0', kind: 'Pure', bytes: 'A' }],
+      [],
+    );
 
     expect(isStructuralTransactionIR(rawIR)).toBe(true);
     expect(isStructuralTransactionIR(graphIR)).toBe(true);
-    expect(isStructuralTransactionIR(invalidRawIR)).toBe(false);
+    expect(isStructuralTransactionIR(sourceDiagnosticIR)).toBe(true);
+    expect(sourceDiagnosticIR.diagnostics.map(({ code }) => code)).toEqual([
+      'raw.base64Bytes',
+      'ir.input.unsupported',
+    ]);
+    expect(isStructuralTransactionIR(graphSourceDiagnosticIR)).toBe(true);
+    expect(
+      graphSourceDiagnosticIR.diagnostics.map(({ code }) => code),
+    ).toContain('graph.rawInput.pure');
+    expect(isStructuralTransactionIR(malformedIR)).toBe(false);
+  });
+
+  it('shares frozen canonicalRaw subtrees for model-created raw IR', () => {
+    const ir = rawTransactionToIR(sampleRawTransaction());
+    expect(isStructuralTransactionIR(ir)).toBe(true);
+
+    const objectInput = ir.inputs[1];
+    if (
+      objectInput.kind !== 'Object' ||
+      objectInput.canonicalRaw?.kind !== 'Object'
+    ) {
+      throw new Error('Expected object input with canonical raw origin');
+    }
+    expect(objectInput.object).toBe(objectInput.canonicalRaw.object);
+    expect(Object.isFrozen(objectInput.object)).toBe(true);
+    expect(Object.isFrozen(objectInput.canonicalRaw)).toBe(true);
+
+    const withdrawalInput = ir.inputs[2];
+    if (
+      withdrawalInput.kind !== 'FundsWithdrawal' ||
+      withdrawalInput.canonicalRaw?.kind !== 'FundsWithdrawal'
+    ) {
+      throw new Error(
+        'Expected FundsWithdrawal input with canonical raw origin',
+      );
+    }
+    expect(withdrawalInput.value).toBe(withdrawalInput.canonicalRaw.value);
+    expect(Object.isFrozen(withdrawalInput.value)).toBe(true);
+
+    const split = ir.commands[0];
+    if (
+      split.kind !== 'SplitCoins' ||
+      split.canonicalRaw?.kind !== 'SplitCoins'
+    ) {
+      throw new Error('Expected SplitCoins command with canonical raw origin');
+    }
+    expect(split.coin).toBe(split.canonicalRaw.coin);
+    expect(split.amounts).toBe(split.canonicalRaw.amounts);
+    expect(Object.isFrozen(split.amounts)).toBe(true);
+
+    const moveCall = ir.commands[3];
+    if (
+      moveCall.kind !== 'MoveCall' ||
+      moveCall.canonicalRaw?.kind !== 'MoveCall'
+    ) {
+      throw new Error('Expected MoveCall command with canonical raw origin');
+    }
+    expect(moveCall.typeArguments).toBe(
+      moveCall.canonicalRaw.call.typeArguments,
+    );
+    expect(moveCall.arguments).toBe(moveCall.canonicalRaw.call.arguments);
+    expect(Object.isFrozen(moveCall.arguments)).toBe(true);
+
+    const publish = ir.commands[5];
+    if (
+      publish.kind !== 'Publish' ||
+      publish.canonicalRaw?.kind !== 'Publish'
+    ) {
+      throw new Error('Expected Publish command with canonical raw origin');
+    }
+    expect(publish.modules).toBe(publish.canonicalRaw.modules);
+    expect(publish.dependencies).toBe(publish.canonicalRaw.dependencies);
+    expect(Object.isFrozen(publish.modules)).toBe(true);
+
+    const upgrade = ir.commands[6];
+    if (
+      upgrade.kind !== 'Upgrade' ||
+      upgrade.canonicalRaw?.kind !== 'Upgrade'
+    ) {
+      throw new Error('Expected Upgrade command with canonical raw origin');
+    }
+    expect(upgrade.ticket).toBe(upgrade.canonicalRaw.ticket);
+    expect(Object.isFrozen(upgrade.ticket)).toBe(true);
+  });
+
+  it('shares frozen canonicalRaw subtrees for graph rawInput conversion', () => {
+    const graphIR = graphToTransactionIR({
+      nodes: [
+        {
+          id: 'object-raw',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'objectRaw',
+          rawInput: {
+            kind: 'Object',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('7'),
+              version: '7',
+              digest: TEST_DIGEST_1,
+            },
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(isStructuralTransactionIR(graphIR)).toBe(true);
+    const input = graphIR.inputs[0];
+    if (input.kind !== 'Object' || input.canonicalRaw?.kind !== 'Object') {
+      throw new Error('Expected graph rawInput object conversion');
+    }
+    expect(input.object).toBe(input.canonicalRaw.object);
+    expect(Object.isFrozen(input.object)).toBe(true);
   });
 
   it('rejects canonicalRaw mismatch before structural branding', () => {

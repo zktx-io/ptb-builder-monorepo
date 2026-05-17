@@ -251,27 +251,33 @@ function rawCallArgToIRInput(raw: RawCallArg, index: number): IRInput {
   const id = `input_${index}`;
 
   switch (raw.kind) {
-    case 'Pure':
+    case 'Pure': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'Pure',
-        bytes: raw.bytes,
-        canonicalRaw: cloneJsonLike(raw),
+        bytes: canonicalRaw.bytes,
+        canonicalRaw,
       };
-    case 'Object':
+    }
+    case 'Object': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'Object',
-        object: cloneJsonLike(raw.object),
-        canonicalRaw: cloneJsonLike(raw),
+        object: canonicalRaw.object,
+        canonicalRaw,
       };
-    case 'FundsWithdrawal':
+    }
+    case 'FundsWithdrawal': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'FundsWithdrawal',
-        value: cloneJsonLike(raw.value),
-        canonicalRaw: cloneJsonLike(raw),
+        value: canonicalRaw.value,
+        canonicalRaw,
       };
+    }
   }
 }
 
@@ -279,76 +285,90 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
   const id = `command_${index}`;
 
   switch (raw.kind) {
-    case 'MoveCall':
+    case 'MoveCall': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'MoveCall',
-        package: raw.call.package,
-        module: raw.call.module,
-        function: raw.call.function,
-        typeArguments: [...raw.call.typeArguments],
-        arguments: cloneJsonLike(raw.call.arguments),
-        ...('_argumentTypes' in raw.call
-          ? { _argumentTypes: cloneJsonLike(raw.call._argumentTypes) }
+        package: canonicalRaw.call.package,
+        module: canonicalRaw.call.module,
+        function: canonicalRaw.call.function,
+        typeArguments: canonicalRaw.call.typeArguments,
+        arguments: canonicalRaw.call.arguments,
+        ...('_argumentTypes' in canonicalRaw.call
+          ? { _argumentTypes: canonicalRaw.call._argumentTypes }
           : {}),
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
-    case 'TransferObjects':
+    }
+    case 'TransferObjects': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'TransferObjects',
-        objects: cloneJsonLike(raw.objects),
-        address: cloneJsonLike(raw.address),
+        objects: canonicalRaw.objects,
+        address: canonicalRaw.address,
         resultCount: 0,
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
-    case 'SplitCoins':
+    }
+    case 'SplitCoins': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'SplitCoins',
-        coin: cloneJsonLike(raw.coin),
-        amounts: cloneJsonLike(raw.amounts),
-        resultCount: raw.amounts.length,
-        canonicalRaw: cloneJsonLike(raw),
+        coin: canonicalRaw.coin,
+        amounts: canonicalRaw.amounts,
+        resultCount: canonicalRaw.amounts.length,
+        canonicalRaw,
       };
-    case 'MergeCoins':
+    }
+    case 'MergeCoins': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'MergeCoins',
-        destination: cloneJsonLike(raw.destination),
-        sources: cloneJsonLike(raw.sources),
+        destination: canonicalRaw.destination,
+        sources: canonicalRaw.sources,
         resultCount: 0,
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
-    case 'Publish':
+    }
+    case 'Publish': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'Publish',
-        modules: [...raw.modules],
-        dependencies: [...raw.dependencies],
+        modules: canonicalRaw.modules,
+        dependencies: canonicalRaw.dependencies,
         resultCount: 1,
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
-    case 'MakeMoveVec':
+    }
+    case 'MakeMoveVec': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'MakeMoveVec',
-        type: raw.type,
-        elements: cloneJsonLike(raw.elements),
+        type: canonicalRaw.type,
+        elements: canonicalRaw.elements,
         resultCount: 1,
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
-    case 'Upgrade':
+    }
+    case 'Upgrade': {
+      const canonicalRaw = cloneJsonLike(raw);
       return {
         id,
         kind: 'Upgrade',
-        modules: [...raw.modules],
-        dependencies: [...raw.dependencies],
-        package: raw.package,
-        ticket: cloneJsonLike(raw.ticket),
+        modules: canonicalRaw.modules,
+        dependencies: canonicalRaw.dependencies,
+        package: canonicalRaw.package,
+        ticket: canonicalRaw.ticket,
         resultCount: 1,
-        canonicalRaw: cloneJsonLike(raw),
+        canonicalRaw,
       };
+    }
   }
 }
 

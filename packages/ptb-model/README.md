@@ -84,11 +84,15 @@ flowchart TD
 `PTBGraph` is not React Flow state. Screen positions, collapsed state, and viewport state are not transaction semantics. Port handles are stable graph-model identifiers, not React Flow layout state.
 
 `TransactionIR` values created from raw PTB may include `canonicalRaw` on inputs
-or commands. That field is a detached copy of the normalized raw PTB payload
-that produced the IR item. When `canonicalRaw` is absent, the item was
-synthesized from graph or manual IR data rather than directly from raw PTB.
-`validateTransactionIR()` rejects a `canonicalRaw` value that does not match the
-canonical raw PTB payload represented by its containing input or command.
+or commands. That field is a normalized raw PTB snapshot detached from the
+source raw or graph object that produced the IR item. In structural IR created
+by this package, `canonicalRaw` may share frozen nested objects or arrays with
+the containing input or command semantic fields. Treat structural IR as an
+immutable snapshot, not as mutable editing state. When `canonicalRaw` is absent,
+the item was synthesized from graph or manual IR data rather than directly from
+raw PTB. `validateTransactionIR()` rejects a `canonicalRaw` value that does not
+match the canonical raw PTB payload represented by its containing input or
+command.
 
 `StructuralTransactionIR` means the IR has passed shape, reference, semantic
 argument, Pure-value, and `canonicalRaw` consistency checks and has been
@@ -100,6 +104,8 @@ construction, and use `validateRawConvertibleIR()` / `assertRawConvertibleIR()`
 before raw PTB conversion. `parseStructuralTransactionIR()` clones host-provided
 IR before freezing it; `createTransactionIR()` only creates a frame and freezes
 diagnostics, so it does not produce a structural fast-path value.
+Serialization or `structuredClone()` removes this package's structural brand.
+Validate cloned or deserialized IR again before relying on projection fast paths.
 
 Parsed documents are detached only after the whole document is validated as JSON-like data. `parsePTBDocV4()` rejects exotic class instances, sparse arrays, and cyclic references in `modules`, `objects`, graph values, and other document fields. Direct in-memory conversion helpers also detach arrays and plain objects for graph variable values and `Unsupported.value`; non-plain objects passed directly to those helpers are outside the JSON-like guarantee and may be returned by reference.
 

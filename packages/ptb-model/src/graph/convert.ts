@@ -535,29 +535,35 @@ function rawInputToIRInput(
   type: VariableNode['varType'],
 ): IRInput {
   switch (rawInput.kind) {
-    case 'Pure':
+    case 'Pure': {
+      const canonicalRaw = cloneJsonLike(rawInput);
       return {
         id,
         kind: 'Pure',
-        bytes: rawInput.bytes,
+        bytes: canonicalRaw.bytes,
         type,
-        canonicalRaw: cloneJsonLike(rawInput),
+        canonicalRaw,
       };
-    case 'Object':
+    }
+    case 'Object': {
+      const canonicalRaw = cloneJsonLike(rawInput);
       return {
         id,
         kind: 'Object',
-        object: cloneJsonLike(rawInput.object),
+        object: canonicalRaw.object,
         type,
-        canonicalRaw: cloneJsonLike(rawInput),
+        canonicalRaw,
       };
-    case 'FundsWithdrawal':
+    }
+    case 'FundsWithdrawal': {
+      const canonicalRaw = cloneJsonLike(rawInput);
       return {
         id,
         kind: 'FundsWithdrawal',
-        value: cloneJsonLike(rawInput.value),
-        canonicalRaw: cloneJsonLike(rawInput),
+        value: canonicalRaw.value,
+        canonicalRaw,
       };
+    }
   }
 }
 

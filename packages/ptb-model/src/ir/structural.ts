@@ -57,7 +57,15 @@ export function structuralTransactionIRDiagnostics(
   diagnostics: readonly TransactionDiagnostic[],
 ): readonly TransactionDiagnostic[] {
   return diagnostics.filter(
-    (diagnostic) => !STRUCTURAL_IGNORED_DIAGNOSTIC_CODES.has(diagnostic.code),
+    (diagnostic) => !isStructurallyIgnoredDiagnostic(diagnostic.code),
+  );
+}
+
+function isStructurallyIgnoredDiagnostic(code: string): boolean {
+  return (
+    STRUCTURAL_IGNORED_DIAGNOSTIC_CODES.has(code) ||
+    code.startsWith('graph.') ||
+    (code.startsWith('raw.') && !code.startsWith('raw.ir.'))
   );
 }
 
