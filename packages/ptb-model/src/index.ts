@@ -45,6 +45,11 @@ export type {
   TransactionIR,
 } from './ir/types.js';
 export { createTransactionIR } from './ir/types.js';
+export type { StructuralTransactionIR } from './ir/structural.js';
+export {
+  isStructuralTransactionIR,
+  parseStructuralTransactionIR,
+} from './ir/structural.js';
 
 export type {
   Base64Bytes,
@@ -77,12 +82,21 @@ export {
 export { jsonStringifyWithBigInt, NULL_VALUE } from './utils.js';
 
 export { graphToTransactionIR, transactionIRToGraph } from './graph/convert.js';
-export { rawTransactionToIR, transactionIRToRaw } from './raw/convert.js';
+export {
+  assertRawConvertibleIR,
+  rawTransactionToIR,
+  transactionIRToRaw,
+  validateRawConvertibleIR,
+} from './raw/convert.js';
 export { transactionIRToMermaid } from './render/mermaid.js';
 export type {
   MermaidDirection,
   TransactionIRToMermaidOptions,
 } from './render/mermaid.js';
-export { transactionIRToTsSdkCode } from './render/tsSdkCode.js';
+export {
+  assertTsSdkRenderableIR,
+  transactionIRToTsSdkCode,
+  validateTsSdkRenderableIR,
+} from './render/tsSdkCode.js';
 export { validateTransactionIR } from './ir/validate.js';
 export type { ValidateTransactionIROptions } from './ir/validate.js';

@@ -99,6 +99,7 @@ const IR_ARG_REF_KEYS_BY_KIND = {
 
 export interface ValidateTransactionIROptions {
   includeExistingDiagnostics?: boolean;
+  includeUnsupportedDiagnostics?: boolean;
 }
 
 type ExpectedInputArgumentType = 'pure' | 'object' | 'withdrawal';
@@ -114,6 +115,8 @@ export function validateTransactionIR(
   options: ValidateTransactionIROptions = {},
 ): readonly TransactionDiagnostic[] {
   const includeExistingDiagnostics = options.includeExistingDiagnostics ?? true;
+  const includeUnsupportedDiagnostics =
+    options.includeUnsupportedDiagnostics ?? true;
   const diagnostics: TransactionDiagnostic[] = [];
 
   if (!isRecord(value)) {
@@ -215,7 +218,7 @@ export function validateTransactionIR(
       return;
     }
 
-    if (input.kind === 'Unsupported') {
+    if (input.kind === 'Unsupported' && includeUnsupportedDiagnostics) {
       diagnostics.push(
         errorDiagnostic(
           'ir.input.unsupported',
@@ -234,6 +237,9 @@ export function validateTransactionIR(
     validateCommandResultCount(command, commandIndex, diagnostics);
 
     if (command.kind === 'Unsupported') {
+      if (!includeUnsupportedDiagnostics) {
+        return;
+      }
       diagnostics.push(
         errorDiagnostic(
           'ir.command.unsupported',

@@ -10,6 +10,7 @@ import {
   normalizePureValueForRender,
   pureTypeName,
 } from '../ir/pure.js';
+import { isStructuralTransactionIR } from '../ir/structural.js';
 import type {
   IRArgRef,
   IRCommand,
@@ -24,11 +25,7 @@ const TS_CODE_UNSAFE_LITERAL_CHAR =
   /[\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
 export function transactionIRToTsSdkCode(ir: TransactionIR): string {
-  const diagnostics = validateTsSdkRenderableIR(ir);
-  assertNoErrors(
-    'TransactionIR cannot be rendered to TS SDK code.',
-    diagnostics,
-  );
+  assertTsSdkRenderableIR(ir);
 
   const lines = [`import { Transaction } from '@mysten/sui/transactions';`, ''];
 
@@ -121,11 +118,23 @@ function renderInput(input: IRInput, index: number): string {
   }
 }
 
-function validateTsSdkRenderableIR(ir: TransactionIR): TransactionDiagnostic[] {
+export function assertTsSdkRenderableIR(ir: TransactionIR): void {
+  assertNoErrors(
+    'TransactionIR cannot be rendered to TS SDK code.',
+    validateTsSdkRenderableIR(ir),
+  );
+}
+
+export function validateTsSdkRenderableIR(
+  ir: TransactionIR,
+): TransactionDiagnostic[] {
   const diagnostics = [
-    ...validateTransactionIR(ir, {
-      includeExistingDiagnostics: false,
-    }),
+    ...(isStructuralTransactionIR(ir)
+      ? []
+      : validateTransactionIR(ir, {
+          includeExistingDiagnostics: false,
+          includeUnsupportedDiagnostics: false,
+        })),
   ];
   if (hasErrors(diagnostics)) {
     return diagnostics;
@@ -158,8 +167,26 @@ function validateTsSdkRenderableIR(ir: TransactionIR): TransactionDiagnostic[] {
         }
         return;
       case 'Unsupported':
+        diagnostics.push(
+          errorDiagnostic(
+            'codegen.input.unsupported',
+            `Unsupported input ${input.id} cannot be rendered to TS SDK code.`,
+            `$.inputs[${index}]`,
+          ),
+        );
         return;
     }
+  });
+
+  ir.commands.forEach((command, index) => {
+    if (command.kind !== 'Unsupported') return;
+    diagnostics.push(
+      errorDiagnostic(
+        'codegen.command.unsupported',
+        `Unsupported command ${command.id} cannot be rendered to TS SDK code.`,
+        `$.commands[${index}]`,
+      ),
+    );
   });
 
   return diagnostics;

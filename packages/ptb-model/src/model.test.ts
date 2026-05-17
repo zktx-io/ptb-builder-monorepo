@@ -6,10 +6,13 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertRawConvertibleIR,
+  assertTsSdkRenderableIR,
   createTransactionIR,
   detectPTBDocVersion,
   freezeDiagnostics,
   graphToTransactionIR,
+  isStructuralTransactionIR,
   jsonStringifyWithBigInt,
   NULL_VALUE,
   parseBase64Bytes,
@@ -19,6 +22,7 @@ import {
   parseObjectDigest,
   parseObjectId,
   parsePTBDocV4,
+  parseStructuralTransactionIR,
   PTBModelError,
   rawTransactionToIR,
   transactionIRToGraph,
@@ -28,7 +32,9 @@ import {
   validatePTBDocV4,
   validatePTBGraph,
   validatePTBType,
+  validateRawConvertibleIR,
   validateTransactionIR,
+  validateTsSdkRenderableIR,
 } from './index.js';
 import type {
   CommandNode,
@@ -6235,6 +6241,138 @@ describe('validateTransactionIR', () => {
     expect(Object.isFrozen(ir.diagnostics[0])).toBe(true);
     expect(Object.isFrozen(literal.diagnostics)).toBe(false);
     expect(Object.isFrozen(literal.diagnostics[0])).toBe(false);
+  });
+
+  it('distinguishes structural IR validation from unsupported projection diagnostics', () => {
+    const unsupportedIR: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'input_0',
+          kind: 'Unsupported',
+          sourceKind: 'FutureInput',
+        },
+      ],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'Unsupported',
+          sourceKind: 'FutureCommand',
+          resultCount: 0,
+        },
+      ],
+      diagnostics: [],
+    };
+
+    expect(
+      validateTransactionIR(unsupportedIR).map((diagnostic) => diagnostic.code),
+    ).toEqual(['ir.input.unsupported', 'ir.command.unsupported']);
+    expect(
+      validateTransactionIR(unsupportedIR, {
+        includeExistingDiagnostics: false,
+        includeUnsupportedDiagnostics: false,
+      }),
+    ).toEqual([]);
+
+    const structural = parseStructuralTransactionIR(unsupportedIR);
+    expect(isStructuralTransactionIR(structural)).toBe(true);
+    expect(structural).not.toBe(unsupportedIR);
+    expect(structural.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(
+      ['ir.input.unsupported', 'ir.command.unsupported'],
+    );
+    expect(() => transactionIRToGraph(structural)).not.toThrow();
+    expect(
+      validateTsSdkRenderableIR(structural).map(({ code }) => code),
+    ).toEqual(['codegen.input.unsupported', 'codegen.command.unsupported']);
+    expect(
+      validateRawConvertibleIR(structural).map(({ code }) => code),
+    ).toEqual(['raw.ir.unsupportedInput', 'raw.ir.unsupportedCommand']);
+    expect(() => assertTsSdkRenderableIR(structural)).toThrow(PTBModelError);
+    expect(() => assertRawConvertibleIR(structural)).toThrow(PTBModelError);
+  });
+
+  it('brands only structurally checked IR and falls back after JSON round-trips', () => {
+    const literal: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AQID' }],
+      commands: [],
+      diagnostics: [],
+    };
+    const parsed = parseStructuralTransactionIR(literal);
+
+    expect(isStructuralTransactionIR(literal)).toBe(false);
+    expect(isStructuralTransactionIR(createTransactionIR([], []))).toBe(false);
+    expect(isStructuralTransactionIR(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.inputs)).toBe(true);
+    expect(Object.isFrozen(parsed.inputs[0])).toBe(true);
+    expect(parsed).not.toBe(literal);
+
+    literal.inputs[0] = { id: 'input_1', kind: 'Pure', bytes: 'BAUG' };
+    expect(parsed.inputs[0]).toEqual({
+      id: 'input_0',
+      kind: 'Pure',
+      bytes: 'AQID',
+    });
+    expect(() => {
+      (parsed.inputs as IRInput[]).push({
+        id: 'input_1',
+        kind: 'Pure',
+        bytes: 'BAUG',
+      });
+    }).toThrow();
+
+    const roundTrip = JSON.parse(JSON.stringify(parsed)) as TransactionIR;
+    expect(isStructuralTransactionIR(roundTrip)).toBe(false);
+    expect(validateTsSdkRenderableIR(roundTrip)).toEqual([]);
+    expect(() => transactionIRToTsSdkCode(roundTrip)).not.toThrow();
+  });
+
+  it('auto-brands valid raw and graph conversion results without branding invalid IR', () => {
+    const rawIR = rawTransactionToIR({
+      inputs: [{ kind: 'Pure', bytes: 'AQID' }],
+      commands: [],
+    });
+    const graphIR = graphToTransactionIR({ nodes: [], edges: [] });
+    const invalidRawIR = rawTransactionToIR({
+      inputs: [{ kind: 'Pure', bytes: 'A' }],
+      commands: [],
+    });
+
+    expect(isStructuralTransactionIR(rawIR)).toBe(true);
+    expect(isStructuralTransactionIR(graphIR)).toBe(true);
+    expect(isStructuralTransactionIR(invalidRawIR)).toBe(false);
+  });
+
+  it('rejects canonicalRaw mismatch before structural branding', () => {
+    const ir = rawTransactionToIR({
+      inputs: [
+        {
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('5'),
+            version: '7',
+            digest: TEST_DIGEST_1,
+          },
+        },
+      ],
+      commands: [],
+    });
+    const tampered = JSON.parse(JSON.stringify(ir)) as TransactionIR;
+    const input = tampered.inputs[0];
+    if (input.kind !== 'Object' || !input.object) {
+      throw new Error('Expected object input');
+    }
+    input.object.objectId = normalizedObjectId('6');
+
+    expect(() => parseStructuralTransactionIR(tampered)).toThrow(PTBModelError);
+    expect(
+      validateTransactionIR(tampered, {
+        includeExistingDiagnostics: false,
+        includeUnsupportedDiagnostics: false,
+      }).map((diagnostic) => diagnostic.code),
+    ).toContain('ir.input.canonicalRaw');
   });
 });
 

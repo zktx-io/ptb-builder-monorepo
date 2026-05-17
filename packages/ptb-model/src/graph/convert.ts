@@ -14,6 +14,10 @@ import {
   hasErrors,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import {
+  finalizeStructuralTransactionIR,
+  isStructuralTransactionIR,
+} from '../ir/structural.js';
 import { createTransactionIR, irCommandArgRefs } from '../ir/types.js';
 import type {
   IRArgRef,
@@ -165,10 +169,7 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
   });
 
   const ir = createTransactionIR(inputs, commands, diagnostics);
-  return {
-    ...ir,
-    diagnostics: validateTransactionIR(ir),
-  };
+  return finalizeStructuralTransactionIR(ir, validateTransactionIR(ir));
 }
 
 function collectGraphInputPlans(
@@ -519,13 +520,12 @@ function inputSemantic(input: IRInput): VariableNode['semantic'] | undefined {
 }
 
 function assertGraphableTransactionIR(ir: TransactionIR): void {
-  const diagnostics = validateTransactionIR(ir, {
-    includeExistingDiagnostics: false,
-  }).filter(
-    (diagnostic) =>
-      diagnostic.code !== 'ir.input.unsupported' &&
-      diagnostic.code !== 'ir.command.unsupported',
-  );
+  const diagnostics = isStructuralTransactionIR(ir)
+    ? []
+    : validateTransactionIR(ir, {
+        includeExistingDiagnostics: false,
+        includeUnsupportedDiagnostics: false,
+      });
   assertNoErrors('TransactionIR cannot be converted to PTBGraph.', diagnostics);
 }
 

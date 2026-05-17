@@ -47,6 +47,7 @@ The root entrypoint exposes:
 - validation and diagnostic helpers;
 - raw/IR/graph conversion functions;
 - Mermaid and TypeScript SDK code string renderers;
+- structural IR parsing helpers and projection-specific IR validators;
 - scalar and byte normalizers needed before constructing model values;
 - `NULL_VALUE`, the canonical JSON-stable representation for `option<T>` `None`.
 
@@ -88,6 +89,17 @@ that produced the IR item. When `canonicalRaw` is absent, the item was
 synthesized from graph or manual IR data rather than directly from raw PTB.
 `validateTransactionIR()` rejects a `canonicalRaw` value that does not match the
 canonical raw PTB payload represented by its containing input or command.
+
+`StructuralTransactionIR` means the IR has passed shape, reference, semantic
+argument, Pure-value, and `canonicalRaw` consistency checks and has been
+deep-frozen by this package. It does not mean the IR can be rendered to every
+projection. Unsupported inputs or commands may still be present for inspection
+and graph round-trips. Use `validateTsSdkRenderableIR()` /
+`assertTsSdkRenderableIR()` before TS SDK code generation or runtime adapter
+construction, and use `validateRawConvertibleIR()` / `assertRawConvertibleIR()`
+before raw PTB conversion. `parseStructuralTransactionIR()` clones host-provided
+IR before freezing it; `createTransactionIR()` only creates a frame and freezes
+diagnostics, so it does not produce a structural fast-path value.
 
 Parsed documents are detached only after the whole document is validated as JSON-like data. `parsePTBDocV4()` rejects exotic class instances, sparse arrays, and cyclic references in `modules`, `objects`, graph values, and other document fields. Direct in-memory conversion helpers also detach arrays and plain objects for graph variable values and `Unsupported.value`; non-plain objects passed directly to those helpers are outside the JSON-like guarantee and may be returned by reference.
 
@@ -339,7 +351,7 @@ as omitted elements.
 
 `transactionIRToRaw()` emits canonical raw PTB data only. A `Pure` input must already have raw `bytes`, and an `Object` input must already have a resolved object argument. Typed pure display values can be rendered to TS SDK code when the SDK pure helper supports the type, but they are not silently BCS-encoded by this package.
 
-`transactionIRToRaw()`, `transactionIRToGraph()`, and `transactionIRToTsSdkCode()` validate the IR shape instead of treating stored `diagnostics` as authoritative state. `transactionIRToMermaid()` preserves diagnostics in the diagram because it is an inspection renderer.
+`transactionIRToRaw()`, `transactionIRToGraph()`, and `transactionIRToTsSdkCode()` validate the IR shape instead of treating stored `diagnostics` as authoritative state. IR values that were structurally checked by this package can skip the repeated structural validation step, but projection-specific checks still run. `transactionIRToMermaid()` preserves diagnostics in the diagram because it is an inspection renderer and does not treat structural branding as a rendering precondition.
 
 When a graph is authored manually, `rawInput` is the canonical way to represent `SharedObject`, `Receiving`, and `FundsWithdrawal` inputs. A value-only object variable is interpreted only as an owned or immutable object when it has `objectId`, `version`, and `digest`.
 

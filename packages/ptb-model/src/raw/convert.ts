@@ -26,6 +26,10 @@ import {
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import {
+  finalizeStructuralTransactionIR,
+  isStructuralTransactionIR,
+} from '../ir/structural.js';
 import { createTransactionIR } from '../ir/types.js';
 import type { IRCommand, IRInput, TransactionIR } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
@@ -123,17 +127,13 @@ export function rawTransactionToIR(value: unknown): TransactionIR {
   });
 
   const ir = createTransactionIR(inputs, commands, diagnostics);
-  return {
-    ...ir,
-    diagnostics: validateTransactionIR(ir),
-  };
+  return finalizeStructuralTransactionIR(ir, validateTransactionIR(ir));
 }
 
 export function transactionIRToRaw(
   ir: TransactionIR,
 ): RawProgrammableTransaction {
-  const diagnostics = validateRawConvertibleIR(ir);
-  assertNoErrors('TransactionIR cannot be converted to raw PTB.', diagnostics);
+  assertRawConvertibleIR(ir);
 
   return {
     inputs: ir.inputs.map((input, index) => {
@@ -173,11 +173,23 @@ export function transactionIRToRaw(
   };
 }
 
-function validateRawConvertibleIR(ir: TransactionIR): TransactionDiagnostic[] {
+export function assertRawConvertibleIR(ir: TransactionIR): void {
+  assertNoErrors(
+    'TransactionIR cannot be converted to raw PTB.',
+    validateRawConvertibleIR(ir),
+  );
+}
+
+export function validateRawConvertibleIR(
+  ir: TransactionIR,
+): TransactionDiagnostic[] {
   const diagnostics = [
-    ...validateTransactionIR(ir, {
-      includeExistingDiagnostics: false,
-    }),
+    ...(isStructuralTransactionIR(ir)
+      ? []
+      : validateTransactionIR(ir, {
+          includeExistingDiagnostics: false,
+          includeUnsupportedDiagnostics: false,
+        })),
   ];
   if (hasErrors(diagnostics)) {
     return diagnostics;
@@ -208,9 +220,28 @@ function validateRawConvertibleIR(ir: TransactionIR): TransactionDiagnostic[] {
         }
         return;
       case 'FundsWithdrawal':
+        return;
       case 'Unsupported':
+        diagnostics.push(
+          errorDiagnostic(
+            'raw.ir.unsupportedInput',
+            `Unsupported input ${index} cannot be converted to raw PTB.`,
+            `$.inputs[${index}]`,
+          ),
+        );
         return;
     }
+  });
+
+  ir.commands.forEach((command, index) => {
+    if (command.kind !== 'Unsupported') return;
+    diagnostics.push(
+      errorDiagnostic(
+        'raw.ir.unsupportedCommand',
+        `Unsupported command ${index} cannot be converted to raw PTB.`,
+        `$.commands[${index}]`,
+      ),
+    );
   });
 
   return diagnostics;
