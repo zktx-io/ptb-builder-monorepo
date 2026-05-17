@@ -120,6 +120,7 @@ const BASE64_ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const MAX_MOVE_TYPE_TAG_DEPTH = 64;
 const MAX_RAW_OPEN_SIGNATURE_DEPTH = 64;
 const MAX_MOVE_IDENTIFIER_LENGTH = 128;
+const SCALAR_PARSE_CACHE_LIMIT = 2_048;
 const MOVE_IDENTIFIER_PATTERN = /^([a-zA-Z][a-zA-Z0-9_]*|_[a-zA-Z0-9_]+)$/;
 const TYPE_TAG_PRIMITIVES = [
   'address',
@@ -170,6 +171,9 @@ const OPEN_SIGNATURE_SCALAR_KINDS = [
   'u256',
   'unknown',
 ] as const;
+
+const objectDigestParseCache = new Map<string, ObjectDigest | undefined>();
+const moveTypeTagParseCache = new Map<string, string | undefined>();
 
 export function parseJsonU64(value: unknown): JsonU64 | undefined {
   if (
@@ -222,6 +226,12 @@ export function parseObjectId(value: unknown): ObjectId | undefined {
 export function parseObjectDigest(value: unknown): ObjectDigest | undefined {
   const text = asString(value);
   if (text === undefined) return undefined;
+  return cachedStringParse(objectDigestParseCache, text, () =>
+    parseObjectDigestUncached(text),
+  );
+}
+
+function parseObjectDigestUncached(text: string): ObjectDigest | undefined {
   try {
     bcs.ObjectDigest.serialize(text);
     return text;
@@ -242,6 +252,12 @@ export function parseMoveIdentifier(value: unknown): string | undefined {
 export function parseMoveTypeTag(value: unknown): string | undefined {
   const text = asString(value);
   if (text === undefined) return undefined;
+  return cachedStringParse(moveTypeTagParseCache, text, () =>
+    parseMoveTypeTagUncached(text),
+  );
+}
+
+function parseMoveTypeTagUncached(text: string): string | undefined {
   if (maxAngleDepth(text) > MAX_MOVE_TYPE_TAG_DEPTH) return undefined;
   const scanned = scanMoveTypeTag(text, 0, 0);
   if (scanned === undefined || scanned !== text.length) return undefined;
@@ -254,6 +270,21 @@ export function parseMoveTypeTag(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function cachedStringParse<T extends string>(
+  cache: Map<string, T | undefined>,
+  text: string,
+  parse: () => T | undefined,
+): T | undefined {
+  if (cache.has(text)) return cache.get(text);
+
+  const result = parse();
+  if (cache.size >= SCALAR_PARSE_CACHE_LIMIT) {
+    cache.clear();
+  }
+  cache.set(text, result);
+  return result;
 }
 
 export function isRawInputArgumentType(

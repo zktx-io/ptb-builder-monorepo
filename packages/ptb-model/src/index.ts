@@ -35,12 +35,7 @@ export type {
   StartNode,
   VariableNode,
 } from './graph/types.js';
-export {
-  isPTBGraph,
-  isPTBType,
-  validatePTBGraph,
-  validatePTBType,
-} from './graph/types.js';
+export { isPTBType, validatePTBGraph, validatePTBType } from './graph/types.js';
 
 export type {
   IRArgRef,

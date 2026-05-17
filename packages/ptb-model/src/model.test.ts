@@ -3081,6 +3081,32 @@ describe('graph conversion', () => {
     expect(codes).toContain('graph.edge.cast');
   });
 
+  it('rejects unsafe integer graph UI counts', () => {
+    const diagnostics = validatePTBGraph({
+      nodes: [
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'splitCoins',
+          params: {
+            ui: {
+              amountsCount: Number.MAX_SAFE_INTEGER + 1,
+            },
+          },
+          ports: [],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.params.ui.count',
+        path: '$.nodes[0].params.ui.amountsCount',
+      }),
+    );
+  });
+
   it('rejects graph port ids outside the canonical model handle form', () => {
     const graph: PTBGraph = {
       nodes: [
@@ -4277,6 +4303,58 @@ describe('graph conversion', () => {
         code: 'graph.variable.duplicateName',
         path: '$.nodes[1].name',
       }),
+    );
+  });
+
+  it('allocates generated variable ids without colliding with explicit input-like names', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: '',
+          value: 'first generated',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'var-1',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'input_0',
+          value: 'explicit zero',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'var-2',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: '',
+          value: 'second generated',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'var-3',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'input_1',
+          value: 'explicit one',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.inputs.map((input) => input.id)).toEqual([
+      'input_2',
+      'input_0',
+      'input_3',
+      'input_1',
+    ]);
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'ir.input.duplicateId',
     );
   });
 

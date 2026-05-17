@@ -89,7 +89,7 @@ synthesized from graph or manual IR data rather than directly from raw PTB.
 `validateTransactionIR()` rejects a `canonicalRaw` value that does not match the
 canonical raw PTB payload represented by its containing input or command.
 
-Parsed documents and conversion outputs are detached for JSON-like PTB data. Mutating a parsed `PTBDocV4`, raw value, or graph value returned by this package should not mutate the source value it was created from. `PTBDocV4.modules`, `PTBDocV4.objects`, graph variable values, and `Unsupported.value` are expected to hold JSON-like data; exotic class instances in those extension channels are outside that guarantee and may be returned by reference.
+Parsed documents are detached only after the whole document is validated as JSON-like data. `parsePTBDocV4()` rejects exotic class instances, sparse arrays, and cyclic references in `modules`, `objects`, graph values, and other document fields. Direct in-memory conversion helpers also detach arrays and plain objects for graph variable values and `Unsupported.value`; non-plain objects passed directly to those helpers are outside the JSON-like guarantee and may be returned by reference.
 
 ## Supported Raw PTB Surface
 
@@ -345,7 +345,9 @@ When a graph is authored manually, `rawInput` is the canonical way to represent 
 
 Gas is semantic, not name-based. A graph variable becomes `GasCoin` only when `semantic.kind` is `GasCoin`; an id or name such as `gas` is not enough.
 Variable names are optional graph labels. Empty variable names are converted to
-generated IR input ids during graph-to-IR conversion; non-empty duplicate
+generated IR input ids during graph-to-IR conversion. Generated ids avoid
+non-empty variable names in the same executable graph so hand-authored names
+such as `input_0` do not collide with unnamed variables. Non-empty duplicate
 variable names are rejected because they would create duplicate IR input ids.
 When a graph contains command nodes, value-only variables that are not
 referenced by any command input edge are authoring state only and are omitted

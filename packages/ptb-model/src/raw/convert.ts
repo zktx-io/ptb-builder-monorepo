@@ -32,7 +32,6 @@ import { validateTransactionIR } from '../ir/validate.js';
 import {
   asArray,
   asBoolean,
-  asString,
   cloneJsonLike,
   isDenseArray,
   isRecord,

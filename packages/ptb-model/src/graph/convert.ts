@@ -57,6 +57,29 @@ interface GraphSingleArgRead {
   invalid: boolean;
 }
 
+interface IndexedGraphEdge {
+  edge: PTBEdge;
+  edgeIndex: number;
+}
+
+interface GraphConversionIndex {
+  flowEdgeBySource: Map<string, PTBEdge>;
+  incomingIoEdgesByTarget: Map<string, IndexedGraphEdge[]>;
+}
+
+interface GraphInputPlan {
+  node: VariableNode;
+  nodeIndex: number;
+  referencedOutPorts: Port[];
+}
+
+interface GraphInputPlans {
+  plans: GraphInputPlan[];
+  reservedInputIds: Set<string>;
+}
+
+const EMPTY_INDEXED_GRAPH_EDGES: readonly IndexedGraphEdge[] = [];
+
 export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
   const graphDiagnostics = validatePTBGraph(graph);
   const blockingGraphDiagnostics = graphDiagnostics.filter(
@@ -71,32 +94,21 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
   const nodeIndexesById = new Map(
     graph.nodes.map((node, index) => [node.id, index]),
   );
+  const graphIndex = buildGraphConversionIndex(graph);
   const hasCommandNodes = graph.nodes.some((node) => node.kind === 'Command');
   const referencedInputKeys = hasCommandNodes
-    ? referencedGraphInputKeys(graph, nodesById)
+    ? referencedGraphInputKeys(graphIndex.incomingIoEdgesByTarget, nodesById)
     : new Set<string>();
   const inputRefs = new Map<string, IRArgRef>();
   const inputs: IRInput[] = [];
+  const { plans: inputPlans, reservedInputIds } = collectGraphInputPlans(
+    graph,
+    hasCommandNodes,
+    referencedInputKeys,
+  );
+  let nextGeneratedInputIndex = 0;
 
-  graph.nodes.forEach((node, nodeIndex) => {
-    if (node.kind !== 'Variable') return;
-    const outputPorts = node.ports.filter(
-      (port) => port.role === 'io' && port.direction === 'out',
-    );
-    const referencedOutPorts = hasCommandNodes
-      ? outputPorts.filter((port) =>
-          referencedInputKeys.has(edgeKey(node.id, port.id)),
-        )
-      : outputPorts;
-    const preservesRawOrigin =
-      node.rawInput !== undefined || node.semantic?.kind === 'UnsupportedInput';
-    if (
-      hasCommandNodes &&
-      referencedOutPorts.length === 0 &&
-      !preservesRawOrigin
-    ) {
-      return;
-    }
+  inputPlans.forEach(({ node, nodeIndex, referencedOutPorts }) => {
     if (isGasVariable(node)) {
       referencedOutPorts.forEach((port) => {
         inputRefs.set(edgeKey(node.id, port.id), { kind: 'GasCoin' });
@@ -104,9 +116,18 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
       return;
     }
 
+    if (!node.name) {
+      while (reservedInputIds.has(`input_${nextGeneratedInputIndex}`)) {
+        nextGeneratedInputIndex += 1;
+      }
+    }
+    const resolvedInputId = node.name || `input_${nextGeneratedInputIndex}`;
+    reservedInputIds.add(resolvedInputId);
+    if (!node.name) nextGeneratedInputIndex += 1;
+
     const input = variableNodeToInput(
       node,
-      inputs.length,
+      resolvedInputId,
       `$.nodes[${nodeIndex}]`,
       diagnostics,
     );
@@ -119,7 +140,11 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     });
   });
 
-  const commandNodes = orderCommandNodes(graph, nodesById);
+  const commandNodes = orderCommandNodes(
+    graph,
+    nodesById,
+    graphIndex.flowEdgeBySource,
+  );
   const commandIndexes = new Map<string, number>();
   const commands: IRCommand[] = [];
 
@@ -130,7 +155,8 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     const command = commandNodeToIRCommand(
       node,
       nodePath,
-      graph.edges,
+      graphIndex.incomingIoEdgesByTarget.get(node.id) ??
+        EMPTY_INDEXED_GRAPH_EDGES,
       inputRefs,
       commandIndexes,
       diagnostics,
@@ -145,6 +171,54 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
   };
 }
 
+function collectGraphInputPlans(
+  graph: PTBGraph,
+  hasCommandNodes: boolean,
+  referencedInputKeys: Set<string>,
+): GraphInputPlans {
+  const plans: GraphInputPlan[] = [];
+  const reservedInputIds = new Set<string>();
+
+  graph.nodes.forEach((node, nodeIndex) => {
+    if (node.kind !== 'Variable') return;
+    const referencedOutPorts = referencedOutputPortsForVariable(
+      node,
+      hasCommandNodes,
+      referencedInputKeys,
+    );
+    const preservesRawOrigin =
+      node.rawInput !== undefined || node.semantic?.kind === 'UnsupportedInput';
+    if (
+      hasCommandNodes &&
+      referencedOutPorts.length === 0 &&
+      !preservesRawOrigin
+    ) {
+      return;
+    }
+    plans.push({ node, nodeIndex, referencedOutPorts });
+    if (!isGasVariable(node) && node.name) {
+      reservedInputIds.add(node.name);
+    }
+  });
+
+  return { plans, reservedInputIds };
+}
+
+function referencedOutputPortsForVariable(
+  node: VariableNode,
+  hasCommandNodes: boolean,
+  referencedInputKeys: Set<string>,
+): Port[] {
+  const outputPorts = node.ports.filter(
+    (port) => port.role === 'io' && port.direction === 'out',
+  );
+  return hasCommandNodes
+    ? outputPorts.filter((port) =>
+        referencedInputKeys.has(edgeKey(node.id, port.id)),
+      )
+    : outputPorts;
+}
+
 function isBlockingGraphDiagnostic(diagnostic: TransactionDiagnostic): boolean {
   // Invalid rawInput and invalid command params can be represented as
   // Unsupported IR values. Other graph errors can make ordering, endpoints,
@@ -155,17 +229,42 @@ function isBlockingGraphDiagnostic(diagnostic: TransactionDiagnostic): boolean {
   ].some((prefix) => diagnostic.code.startsWith(prefix));
 }
 
+function buildGraphConversionIndex(graph: PTBGraph): GraphConversionIndex {
+  const flowEdgeBySource = new Map<string, PTBEdge>();
+  const incomingIoEdgesByTarget = new Map<string, IndexedGraphEdge[]>();
+
+  graph.edges.forEach((edge, edgeIndex) => {
+    if (edge.kind === 'flow') {
+      if (!flowEdgeBySource.has(edge.source)) {
+        flowEdgeBySource.set(edge.source, edge);
+      }
+      return;
+    }
+
+    const indexedEdge = { edge, edgeIndex };
+    const incomingEdges = incomingIoEdgesByTarget.get(edge.target);
+    if (incomingEdges) {
+      incomingEdges.push(indexedEdge);
+    } else {
+      incomingIoEdgesByTarget.set(edge.target, [indexedEdge]);
+    }
+  });
+
+  return { flowEdgeBySource, incomingIoEdgesByTarget };
+}
+
 function referencedGraphInputKeys(
-  graph: PTBGraph,
+  incomingIoEdgesByTarget: Map<string, IndexedGraphEdge[]>,
   nodesById: Map<string, PTBNode>,
 ): Set<string> {
   const result = new Set<string>();
-  graph.edges.forEach((edge) => {
-    if (edge.kind !== 'io') return;
-    const source = nodesById.get(edge.source);
-    const target = nodesById.get(edge.target);
-    if (source?.kind !== 'Variable' || target?.kind !== 'Command') return;
-    result.add(edgeKey(edge.source, edge.sourceHandle));
+  incomingIoEdgesByTarget.forEach((incomingEdges) => {
+    incomingEdges.forEach(({ edge }) => {
+      const source = nodesById.get(edge.source);
+      const target = nodesById.get(edge.target);
+      if (source?.kind !== 'Variable' || target?.kind !== 'Command') return;
+      result.add(edgeKey(edge.source, edge.sourceHandle));
+    });
   });
   return result;
 }
@@ -287,11 +386,10 @@ function inputType(input: IRInput) {
 
 function variableNodeToInput(
   node: VariableNode,
-  index: number,
+  id: string,
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): IRInput {
-  const id = node.name || `input_${index}`;
   const hasRawInput = node.rawInput !== undefined;
   // validatePTBGraph checks rawInput diagnostics for document validation;
   // conversion parses again here because it needs the normalized value.
@@ -480,7 +578,7 @@ function canonicalJsonU64(value: unknown): string | undefined {
 function commandNodeToIRCommand(
   node: CommandNode,
   nodePath: string,
-  edges: PTBEdge[],
+  incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
   diagnostics: TransactionDiagnostic[],
@@ -489,7 +587,7 @@ function commandNodeToIRCommand(
     readIncomingArg(
       node,
       nodePath,
-      edges,
+      incomingEdges,
       inputRefs,
       commandIndexes,
       handle,
@@ -497,8 +595,7 @@ function commandNodeToIRCommand(
     );
   const args = (match: (handle: string) => boolean) =>
     readIncomingArgs(
-      node,
-      edges,
+      incomingEdges,
       inputRefs,
       commandIndexes,
       match,
@@ -755,15 +852,14 @@ function requireNonEmptyGraphArgs(
 function readIncomingArg(
   node: CommandNode,
   nodePath: string,
-  edges: PTBEdge[],
+  incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
   handleNeedle: string,
   diagnostics: TransactionDiagnostic[],
 ): GraphSingleArgRead {
   const result = readIncomingArgs(
-    node,
-    edges,
+    incomingEdges,
     inputRefs,
     commandIndexes,
     (handle) => matchesInputHandle(handle, handleNeedle),
@@ -789,8 +885,7 @@ function readIncomingArg(
 }
 
 function readIncomingArgs(
-  node: CommandNode,
-  edges: PTBEdge[],
+  incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
   match: (handle: string) => boolean,
@@ -799,14 +894,8 @@ function readIncomingArgs(
   const refs: IRArgRef[] = [];
   let invalid = false;
 
-  edges
-    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
-    .filter(
-      ({ edge }) =>
-        edge.kind === 'io' &&
-        edge.target === node.id &&
-        match(baseHandle(edge.targetHandle)),
-    )
+  incomingEdges
+    .filter(({ edge }) => match(baseHandle(edge.targetHandle)))
     .sort((a, b) => compareHandles(a.edge.targetHandle, b.edge.targetHandle))
     .map(({ edge, edgeIndex }): IRArgRef | undefined => {
       const directInput = inputRefs.get(
@@ -842,6 +931,7 @@ function readIncomingArgs(
 function orderCommandNodes(
   graph: PTBGraph,
   nodesById: Map<string, PTBNode>,
+  flowEdgeBySource: Map<string, PTBEdge>,
 ): CommandNode[] {
   const start = graph.nodes.find((node) => node.kind === 'Start');
   if (!start) {
@@ -856,9 +946,7 @@ function orderCommandNodes(
 
   while (!visited.has(current)) {
     visited.add(current);
-    const next = graph.edges.find(
-      (edge) => edge.kind === 'flow' && edge.source === current,
-    );
+    const next = flowEdgeBySource.get(current);
     if (!next) break;
     const node = nodesById.get(next.target);
     if (!node) break;
@@ -1183,11 +1271,19 @@ function moveCallTypeArguments(
   const runtime = isRecord(params?.runtime) ? params.runtime : undefined;
   const typeArguments = runtime?.typeArguments;
   if (typeArguments === undefined) return [];
-  if (
-    isDenseArray(typeArguments) &&
-    typeArguments.every((item) => parseMoveTypeTag(item) !== undefined)
-  ) {
-    return typeArguments.map((item) => parseMoveTypeTag(item) as string);
+  if (isDenseArray(typeArguments)) {
+    const parsedTypeArguments: string[] = [];
+    for (const item of typeArguments) {
+      const parsed = parseMoveTypeTag(item);
+      if (parsed === undefined) {
+        parsedTypeArguments.length = 0;
+        break;
+      }
+      parsedTypeArguments.push(parsed);
+    }
+    if (parsedTypeArguments.length === typeArguments.length) {
+      return parsedTypeArguments;
+    }
   }
 
   diagnostics.push(

@@ -287,10 +287,6 @@ export function validatePTBGraph(
   return freezeDiagnostics(diagnostics);
 }
 
-export function isPTBGraph(value: unknown): value is PTBGraph {
-  return validatePTBGraph(value).length === 0;
-}
-
 export function validatePTBType(
   value: unknown,
   path = '$',
@@ -1603,7 +1599,7 @@ function validateOptionalNonNegativeIntegerField(
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
     return;
   }
   diagnostics.push(errorDiagnostic(code, message, path));
