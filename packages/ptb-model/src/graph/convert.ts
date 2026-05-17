@@ -2,10 +2,12 @@ import { normalizeGraphRawInput } from './rawInput.js';
 import { validatePTBGraph } from './types.js';
 import type {
   CommandNode,
+  NumericWidth,
   Port,
   PTBEdge,
   PTBGraph,
   PTBNode,
+  PTBType,
   VariableNode,
 } from './types.js';
 import {
@@ -82,6 +84,11 @@ interface GraphInputPlans {
   reservedInputIds: Set<string>;
 }
 
+interface GraphInputConstraint {
+  cast?: NumericWidth;
+  path: string;
+}
+
 const EMPTY_INDEXED_GRAPH_EDGES: readonly IndexedGraphEdge[] = [];
 
 export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
@@ -99,6 +106,10 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     graph.nodes.map((node, index) => [node.id, index]),
   );
   const graphIndex = buildGraphConversionIndex(graph);
+  const inputConstraints = collectGraphInputConstraints(
+    graphIndex.incomingIoEdgesByTarget,
+    nodesById,
+  );
   const hasCommandNodes = graph.nodes.some((node) => node.kind === 'Command');
   const referencedInputKeys = hasCommandNodes
     ? referencedGraphInputKeys(graphIndex.incomingIoEdgesByTarget, nodesById)
@@ -129,11 +140,19 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     reservedInputIds.add(resolvedInputId);
     if (!node.name) nextGeneratedInputIndex += 1;
 
+    const inputType = resolveGraphInputType(
+      node,
+      referencedOutPorts,
+      inputConstraints,
+      `$.nodes[${nodeIndex}]`,
+      diagnostics,
+    );
     const input = variableNodeToInput(
       node,
       resolvedInputId,
       `$.nodes[${nodeIndex}]`,
       diagnostics,
+      inputType,
     );
     inputs.push(input);
     referencedOutPorts.forEach((port) => {
@@ -270,6 +289,82 @@ function referencedGraphInputKeys(
   return result;
 }
 
+function collectGraphInputConstraints(
+  incomingIoEdgesByTarget: Map<string, IndexedGraphEdge[]>,
+  nodesById: Map<string, PTBNode>,
+): Map<string, GraphInputConstraint[]> {
+  const result = new Map<string, GraphInputConstraint[]>();
+
+  incomingIoEdgesByTarget.forEach((incomingEdges, targetId) => {
+    const target = nodesById.get(targetId);
+    if (target?.kind !== 'Command') return;
+
+    incomingEdges.forEach(({ edge, edgeIndex }) => {
+      const source = nodesById.get(edge.source);
+      if (source?.kind !== 'Variable') return;
+
+      if (edge.cast === undefined) return;
+
+      const key = edgeKey(edge.source, edge.sourceHandle);
+      const constraints = result.get(key) ?? [];
+      constraints.push({
+        cast: edge.cast.to,
+        path: `$.edges[${edgeIndex}]`,
+      });
+      result.set(key, constraints);
+    });
+  });
+
+  return result;
+}
+
+function resolveGraphInputType(
+  node: VariableNode,
+  referencedOutPorts: readonly Port[],
+  constraintsByInputKey: Map<string, GraphInputConstraint[]>,
+  nodePath: string,
+  diagnostics: TransactionDiagnostic[],
+): PTBType {
+  let resolved = node.varType;
+
+  referencedOutPorts.forEach((port) => {
+    const constraints = constraintsByInputKey.get(edgeKey(node.id, port.id)) ?? [];
+    constraints.forEach((constraint) => {
+      resolved = applyGraphInputCast(node, resolved, constraint, diagnostics);
+    });
+  });
+
+  return resolved;
+}
+
+function applyGraphInputCast(
+  node: VariableNode,
+  currentType: PTBType,
+  constraint: GraphInputConstraint,
+  diagnostics: TransactionDiagnostic[],
+): PTBType {
+  if (constraint.cast === undefined) return currentType;
+
+  if (currentType.kind === 'scalar' && currentType.name === 'number') {
+    return { kind: 'move_numeric', width: constraint.cast };
+  }
+  if (
+    currentType.kind === 'move_numeric' &&
+    currentType.width === constraint.cast
+  ) {
+    return currentType;
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.edge.cast',
+      `Edge cast on variable ${node.id} can only bind an abstract number input to a concrete Move integer width.`,
+      constraint.path,
+    ),
+  );
+  return currentType;
+}
+
 export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
   assertGraphableTransactionIR(ir);
 
@@ -390,6 +485,7 @@ function variableNodeToInput(
   id: string,
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
+  inputType: PTBType = node.varType,
 ): IRInput {
   const hasRawInput = node.rawInput !== undefined;
   // validatePTBGraph checks rawInput diagnostics for document validation;
@@ -401,7 +497,7 @@ function variableNodeToInput(
   );
 
   if (rawInput) {
-    return rawInputToIRInput(id, rawInput, node.varType);
+    return rawInputToIRInput(id, rawInput, inputType);
   }
 
   if (hasRawInput) {
@@ -422,7 +518,7 @@ function variableNodeToInput(
     };
   }
 
-  if (node.varType.kind === 'object') {
+  if (inputType.kind === 'object') {
     const object = isRecord(node.value) ? node.value : undefined;
     const objectId = canonicalObjectId(object?.objectId);
     const version = canonicalJsonU64(object?.version);
@@ -443,7 +539,7 @@ function variableNodeToInput(
           version,
           digest,
         },
-        type: node.varType,
+        type: inputType,
       };
     }
 
@@ -457,14 +553,14 @@ function variableNodeToInput(
     return {
       id,
       kind: 'Object',
-      type: node.varType,
+      type: inputType,
     };
   }
 
   const pureInput: Extract<IRInput, { kind: 'Pure' }> = {
     id,
     kind: 'Pure',
-    type: node.varType,
+    type: inputType,
   };
   return Object.prototype.hasOwnProperty.call(node, 'value')
     ? {

@@ -15,7 +15,13 @@ import {
   parseMoveTypeTag,
   parseObjectId,
 } from '../raw/types.js';
-import { isDenseArray, isRecord, jsonLikeEqual, NULL_VALUE } from '../utils.js';
+import {
+  findNonPlainData,
+  isDenseArray,
+  isRecord,
+  jsonLikeEqual,
+  NULL_VALUE,
+} from '../utils.js';
 
 const RAW_ARGUMENT_INDEX_MAX = 65_535;
 // This is the raw argument index address space, not a Sui protocol execution limit.
@@ -108,6 +114,7 @@ interface CommandArgValidationEntry {
   arg: IRArgRef;
   path: string;
   expectedInputType?: ExpectedInputArgumentType;
+  expectedPureType?: PTBType;
 }
 
 export function validateTransactionIR(
@@ -251,7 +258,7 @@ export function validateTransactionIR(
     }
 
     commandArgValidationEntries(command, commandIndex).forEach(
-      ({ arg, path, expectedInputType }) => {
+      ({ arg, path, expectedInputType, expectedPureType }) => {
         validateArgRef(
           ir,
           commandIndex,
@@ -259,6 +266,7 @@ export function validateTransactionIR(
           path,
           diagnostics,
           expectedInputType,
+          expectedPureType,
         );
       },
     );
@@ -549,7 +557,16 @@ function isIRInputShape(
       return false;
     case 'Unsupported':
       validateIRInputUnknownFields(value, 'Unsupported', path, diagnostics);
-      if (typeof value.sourceKind === 'string') return true;
+      if (typeof value.sourceKind === 'string') {
+        validateUnsupportedPayload(
+          value,
+          `${path}.value`,
+          'input',
+          inputIndex,
+          diagnostics,
+        );
+        return true;
+      }
       diagnostics.push(
         errorDiagnostic(
           'ir.input.unsupportedShape',
@@ -580,6 +597,26 @@ function validateOptionalInputType(
   const typeDiagnostics = validatePTBType(value, path);
   diagnostics.push(...typeDiagnostics);
   return typeDiagnostics.length === 0;
+}
+
+function validateUnsupportedPayload(
+  value: { value?: unknown },
+  path: string,
+  ownerKind: 'input' | 'command',
+  ownerIndex: number,
+  diagnostics: TransactionDiagnostic[],
+) {
+  if (!Object.prototype.hasOwnProperty.call(value, 'value')) return;
+  const issue = findNonPlainData(value.value, path);
+  if (!issue) return;
+
+  diagnostics.push(
+    errorDiagnostic(
+      `ir.${ownerKind}.unsupportedValue`,
+      `Unsupported ${ownerKind} ${ownerIndex} value must be plain data owned by TransactionIR. ${issue.message}`,
+      issue.path,
+    ),
+  );
 }
 
 function isIRCommandShape(
@@ -877,12 +914,24 @@ function isIRCommandShape(
         commandIndex,
         diagnostics,
       );
-      return requireString(
-        value.sourceKind,
+      if (
+        !requireString(
+          value.sourceKind,
+          commandIndex,
+          'sourceKind',
+          diagnostics,
+        )
+      ) {
+        return false;
+      }
+      validateUnsupportedPayload(
+        value,
+        `$.commands[${commandIndex}].value`,
+        'command',
         commandIndex,
-        'sourceKind',
         diagnostics,
       );
+      return true;
     default:
       diagnostics.push(
         errorDiagnostic(
@@ -1233,6 +1282,7 @@ function commandArgValidationEntries(
           arg: command.address,
           path: `$.commands[${commandIndex}].address`,
           expectedInputType: 'pure',
+          expectedPureType: { kind: 'scalar', name: 'address' },
         },
       ];
     case 'SplitCoins':
@@ -1246,6 +1296,7 @@ function commandArgValidationEntries(
           arg,
           path: `$.commands[${commandIndex}].amounts[${index}]`,
           expectedInputType: 'pure' as const,
+          expectedPureType: { kind: 'move_numeric' as const, width: 'u64' as const },
         })),
       ];
     case 'MergeCoins':
@@ -1261,11 +1312,25 @@ function commandArgValidationEntries(
           expectedInputType: 'object' as const,
         })),
       ];
-    case 'MakeMoveVec':
+    case 'MakeMoveVec': {
+      const expectedPureType =
+        typeof command.type === 'string'
+          ? pureTypeFromMoveTypeTag(command.type)
+          : undefined;
       return command.elements.map((arg, index) => ({
         arg,
         path: `$.commands[${commandIndex}].elements[${index}]`,
+        ...(command.type === NULL_VALUE
+          ? { expectedInputType: 'object' as const }
+          : {}),
+        ...(expectedPureType
+          ? {
+              expectedInputType: 'pure' as const,
+              expectedPureType,
+            }
+          : {}),
       }));
+    }
     case 'Upgrade':
       return [
         {
@@ -1357,6 +1422,7 @@ function validateArgRef(
   path: string,
   diagnostics: TransactionDiagnostic[],
   expectedInputType?: ExpectedInputArgumentType,
+  expectedPureType?: PTBType,
 ) {
   switch (arg.kind) {
     case 'GasCoin':
@@ -1397,6 +1463,24 @@ function validateArgRef(
           );
         }
       }
+      if (expectedPureType !== undefined) {
+        const input = ir.inputs[arg.index];
+        if (
+          input?.kind === 'Pure' &&
+          input.type !== undefined &&
+          input.bytes === undefined
+        ) {
+          if (!ptbTypeSatisfiesExpectation(input.type, expectedPureType)) {
+            diagnostics.push(
+              errorDiagnostic(
+                'ir.arg.pureType',
+                `Input reference ${arg.index} must use ${describePTBType(expectedPureType)} for this command argument.`,
+                path,
+              ),
+            );
+          }
+        }
+      }
       return;
     case 'Result':
       validateResultRef(
@@ -1434,6 +1518,82 @@ function rawArgumentTypeForInput(
     case 'Unsupported':
     case undefined:
       return undefined;
+  }
+}
+
+function pureTypeFromMoveTypeTag(type: string): PTBType | undefined {
+  switch (type) {
+    case 'bool':
+      return { kind: 'scalar', name: 'bool' };
+    case 'address':
+      return { kind: 'scalar', name: 'address' };
+    case 'u8':
+    case 'u16':
+    case 'u32':
+    case 'u64':
+    case 'u128':
+    case 'u256':
+      return { kind: 'move_numeric', width: type };
+    default:
+      return undefined;
+  }
+}
+
+function ptbTypeSatisfiesExpectation(
+  actual: PTBType,
+  expected: PTBType,
+): boolean {
+  if (actual.kind !== expected.kind) return false;
+
+  switch (expected.kind) {
+    case 'scalar':
+      return actual.kind === 'scalar' && actual.name === expected.name;
+    case 'move_numeric':
+      return actual.kind === 'move_numeric' && actual.width === expected.width;
+    case 'object':
+      return (
+        actual.kind === 'object' &&
+        (expected.typeTag === undefined || actual.typeTag === expected.typeTag)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypeSatisfiesExpectation(elem, expected.elems[index]!),
+        )
+      );
+    case 'unknown':
+      return actual.kind === 'unknown';
+  }
+}
+
+function describePTBType(type: PTBType): string {
+  switch (type.kind) {
+    case 'scalar':
+      return type.name;
+    case 'move_numeric':
+      return type.width;
+    case 'object':
+      return type.typeTag ? `object ${type.typeTag}` : 'object';
+    case 'vector':
+      return `vector<${describePTBType(type.elem)}>`;
+    case 'option':
+      return `option<${describePTBType(type.elem)}>`;
+    case 'tuple':
+      return `(${type.elems.map(describePTBType).join(', ')})`;
+    case 'unknown':
+      return 'unknown';
   }
 }
 

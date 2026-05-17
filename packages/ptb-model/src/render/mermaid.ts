@@ -10,7 +10,7 @@ import type {
 import { validateTransactionIR } from '../ir/validate.js';
 import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
-import { isDenseArray, isRecord, jsonStringifyWithBigInt } from '../utils.js';
+import { isDenseArray, isRecord } from '../utils.js';
 
 export type MermaidDirection = 'TD' | 'LR';
 
@@ -351,9 +351,23 @@ function inputValueLabel(input: unknown): string {
 }
 
 function renderMermaidValue(value: unknown): string {
-  if (!Array.isArray(value)) return String(value);
-  const rendered = jsonStringifyWithBigInt(value);
-  return typeof rendered === 'string' ? rendered : String(value);
+  if (!Array.isArray(value) && !isRecord(value)) return String(value);
+  const seen = new WeakSet<object>();
+  try {
+    const rendered = JSON.stringify(value, (_key, item) => {
+      if (typeof item === 'bigint') return item.toString();
+      if (typeof item === 'function') return '[Function]';
+      if (typeof item === 'symbol') return item.toString();
+      if (typeof item === 'object' && item !== null) {
+        if (seen.has(item)) return '[Circular]';
+        seen.add(item);
+      }
+      return item;
+    });
+    return typeof rendered === 'string' ? rendered : String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function objectValueLabel(object: RawObjectArg): string {

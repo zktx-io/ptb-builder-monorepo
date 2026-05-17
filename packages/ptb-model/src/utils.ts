@@ -41,6 +41,11 @@ export function jsonStringifyWithBigInt(value: unknown): string {
   );
 }
 
+export interface PlainDataIssue {
+  path: string;
+  message: string;
+}
+
 type CloneFrame =
   | { kind: 'array'; source: unknown[]; target: unknown[] }
   | {
@@ -92,6 +97,61 @@ export function cloneJsonLike<T>(value: T): T {
   }
 
   return root as T;
+}
+
+export function findNonPlainData(
+  value: unknown,
+  path = '$',
+): PlainDataIssue | undefined {
+  const stack: Array<{ value: unknown; path: string }> = [{ value, path }];
+  const seen = new WeakSet<object>();
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const item = current.value;
+
+    if (
+      item === NULL_VALUE ||
+      item === undefined ||
+      typeof item === 'string' ||
+      typeof item === 'number' ||
+      typeof item === 'boolean' ||
+      typeof item === 'bigint'
+    ) {
+      continue;
+    }
+
+    if (Array.isArray(item)) {
+      if (!isDenseArray(item)) {
+        return {
+          path: current.path,
+          message: 'Plain data arrays must be dense.',
+        };
+      }
+      if (seen.has(item)) continue;
+      seen.add(item);
+      for (let index = item.length - 1; index >= 0; index -= 1) {
+        stack.push({ value: item[index], path: `${current.path}[${index}]` });
+      }
+      continue;
+    }
+
+    if (isPlainObject(item)) {
+      if (seen.has(item)) continue;
+      seen.add(item);
+      Object.entries(item).forEach(([key, child]) => {
+        stack.push({ value: child, path: `${current.path}.${key}` });
+      });
+      continue;
+    }
+
+    return {
+      path: current.path,
+      message: `Plain data must not contain ${describeNonPlainData(item)} values.`,
+    };
+  }
+
+  return undefined;
 }
 
 function cloneJsonLikeChild(
@@ -170,9 +230,18 @@ export function jsonLikeEqual(left: unknown, right: unknown): boolean {
   return true;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
 
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
+}
+
+function describeNonPlainData(value: unknown): string {
+  if (typeof value === 'function') return 'function';
+  if (typeof value === 'symbol') return 'symbol';
+  if (typeof value === 'object' && value !== NULL_VALUE) {
+    return value.constructor?.name ?? 'non-plain object';
+  }
+  return typeof value;
 }

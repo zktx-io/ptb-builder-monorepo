@@ -3432,7 +3432,7 @@ describe('graph conversion', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       diagnostics: [],
-      inputs: [{ id: 'elem', kind: 'Pure', bytes: 'AA==' }],
+      inputs: [{ id: 'elem', kind: 'Object', type: { kind: 'object' } }],
       commands: [
         {
           id: 'cmd-0',
@@ -6592,6 +6592,173 @@ function graphEdgesHaveDeclaredHandles(graph: PTBGraph): boolean {
     );
   });
 }
+
+describe('model graph command argument semantics', () => {
+  function splitCoinsAmountGraph(
+    amountType: PTBType,
+    cast?: { to: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256' },
+  ): PTBGraph {
+    return {
+      nodes: [
+        {
+          id: 'gas',
+          kind: 'Variable',
+          name: 'gas',
+          semantic: { kind: 'GasCoin' },
+          varType: { kind: 'object' },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: amountType,
+          value: '5',
+          ports: [
+            {
+              id: 'out',
+              direction: 'out',
+              role: 'io',
+              dataType: amountType,
+            },
+          ],
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          command: 'splitCoins',
+          ports: [
+            { id: 'in_coin', direction: 'in', role: 'io' },
+            { id: 'in_amount_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'coin-edge',
+          kind: 'io',
+          source: 'gas',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_coin',
+        },
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+          ...(cast ? { cast } : {}),
+        },
+      ],
+    };
+  }
+
+  it('binds abstract numeric graph inputs through edge casts before rendering SplitCoins', () => {
+    const ir = graphToTransactionIR(
+      splitCoinsAmountGraph({ kind: 'scalar', name: 'number' }, { to: 'u64' }),
+    );
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'move_numeric', width: 'u64' },
+      value: '5',
+    });
+    const source = transactionIRToTsSdkCode(ir);
+    expect(source).toContain('tx.pure("u64", "5")');
+    expect(source).toContain('tx.splitCoins(tx.gas, [input0])');
+  });
+
+  it('rejects concrete non-u64 inputs for SplitCoins amounts', () => {
+    const ir = graphToTransactionIR(
+      splitCoinsAmountGraph({ kind: 'move_numeric', width: 'u8' }),
+    );
+
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'ir.arg.pureType',
+    );
+    expect(() => transactionIRToTsSdkCode(ir)).toThrow(PTBModelError);
+  });
+
+  it('rejects host-authored SplitCoins amounts that use the wrong pure width', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      inputs: [
+        { id: 'coin', kind: 'Object' },
+        {
+          id: 'amount',
+          kind: 'Pure',
+          type: { kind: 'move_numeric', width: 'u8' },
+          value: 5,
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0, type: 'object' },
+          amounts: [{ kind: 'Input', index: 1, type: 'pure' }],
+          resultCount: 1,
+        },
+      ],
+      diagnostics: [],
+    });
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'ir.arg.pureType',
+    );
+  });
+});
+
+describe('structural ownership and defensive renderers', () => {
+  it('does not brand unsupported payloads that contain non-plain objects', () => {
+    const date = new Date('2024-01-01T00:00:00Z');
+
+    expectModelErrorCodes(
+      () =>
+        parseStructuralTransactionIR({
+          version: 'transaction_ir_1',
+          inputs: [
+            {
+              id: 'unsupported',
+              kind: 'Unsupported',
+              sourceKind: 'Date',
+              value: date,
+            },
+          ],
+          commands: [],
+          diagnostics: [],
+        }),
+      ['ir.input.unsupportedValue'],
+    );
+  });
+
+  it('renders cyclic malformed Pure values in Mermaid without throwing', () => {
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+
+    const mermaid = transactionIRToMermaid(
+      {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'cyclic',
+            kind: 'Pure',
+            type: { kind: 'vector', elem: { kind: 'move_numeric', width: 'u8' } },
+            value: cyclic,
+          },
+        ],
+        commands: [],
+        diagnostics: [],
+      },
+      { showArgumentValues: true },
+    );
+
+    expect(mermaid).toContain('[Circular]');
+  });
+});
 
 function expectValidTypeScriptSource(source: string): void {
   const fileName = `${ts.sys.getCurrentDirectory()}/packages/ptb-model/generated-ptb.ts`;

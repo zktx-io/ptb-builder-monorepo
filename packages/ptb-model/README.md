@@ -107,7 +107,7 @@ diagnostics, so it does not produce a structural fast-path value.
 Serialization or `structuredClone()` removes this package's structural brand.
 Validate cloned or deserialized IR again before relying on projection fast paths.
 
-Parsed documents are detached only after the whole document is validated as JSON-like data. `parsePTBDocV4()` rejects exotic class instances, sparse arrays, and cyclic references in `modules`, `objects`, graph values, and other document fields. Direct in-memory conversion helpers also detach arrays and plain objects for graph variable values and `Unsupported.value`; non-plain objects passed directly to those helpers are outside the JSON-like guarantee and may be returned by reference.
+Parsed documents are detached only after the whole document is validated as JSON-like data. `parsePTBDocV4()` rejects exotic class instances, sparse arrays, and cyclic references in `modules`, `objects`, graph values, and other document fields. Direct in-memory conversion helpers detach arrays and plain objects for graph variable values and `Unsupported.value`. `Unsupported.value` payloads that contain functions, symbols, sparse arrays, or non-plain class instances are not eligible for structural branding because the model cannot own and freeze them honestly.
 
 ## Supported Raw PTB Surface
 
@@ -389,6 +389,8 @@ runtime validation. Builder-shaped sections such as `params.moveCall` are
 rejected instead of being preserved.
 
 Command input ports use canonical ids such as `in_arg_0`, `in_elem_0`, `in_amount_0`, `in_object_0`, `in_source_0`, `in_coin`, `in_destination`, `in_recipient`, and `in_upgradeCap`. Commands with exactly one known result use `out_result`. Commands with multiple known results use nested result handles such as `out_0` and `out_1`; `Result(i)` is valid only for a command with exactly one result, matching Sui execution arity checks. A nested handle for a single-result command is emitted only when an existing `NestedResult(i, 0)` reference must be preserved. Separate `outputs` arrays are not transaction semantics.
+
+Graph edge casts bind the abstract graph scalar type `number` to a concrete Move integer width such as `u64`. They are not general numeric conversions: concrete `move_numeric` values are not widened or narrowed by an edge cast. Known command arguments also enforce the SDK/Sui input class or pure type when the model can verify it from typed inputs. For example, `SplitCoins.amounts` must be typed Pure `u64`, `TransferObjects.address` must be typed Pure `address`, and `MakeMoveVec` without an explicit type requires object inputs. Raw Pure byte inputs can omit a type hint because this package does not BCS-decode arbitrary byte payloads.
 
 ## Mermaid Rendering
 

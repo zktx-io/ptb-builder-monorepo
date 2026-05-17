@@ -2,7 +2,7 @@ import { assertNoErrors } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import type { TransactionIR } from './types.js';
 import { validateTransactionIR } from './validate.js';
-import { cloneJsonLike, isRecord, NULL_VALUE } from '../utils.js';
+import { cloneJsonLike, isPlainObject, NULL_VALUE } from '../utils.js';
 
 declare const STRUCTURAL_TRANSACTION_IR_BRAND: unique symbol;
 
@@ -94,10 +94,4 @@ function deepFreezeJsonLike(value: unknown): void {
     }
     Object.freeze(item);
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype == undefined;
 }
