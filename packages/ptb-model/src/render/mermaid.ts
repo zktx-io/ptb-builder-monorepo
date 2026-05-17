@@ -10,7 +10,7 @@ import type {
 import { validateTransactionIR } from '../ir/validate.js';
 import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
-import { isDenseArray, isRecord } from '../utils.js';
+import { isDenseArray, isRecord, jsonStringifyWithBigInt } from '../utils.js';
 
 export type MermaidDirection = 'TD' | 'LR';
 
@@ -19,6 +19,12 @@ export interface TransactionIRToMermaidOptions {
   showArgumentValues?: boolean;
   theme?: 'none' | 'semantic';
 }
+
+const MERMAID_OPTION_FIELDS = [
+  'direction',
+  'showArgumentValues',
+  'theme',
+] as const;
 
 export function transactionIRToMermaid(
   ir: TransactionIR,
@@ -133,6 +139,19 @@ function validateMermaidOptions(
     );
     return diagnostics;
   }
+  Object.keys(options)
+    .filter(
+      (key) => !(MERMAID_OPTION_FIELDS as readonly string[]).includes(key),
+    )
+    .forEach((key) => {
+      diagnostics.push(
+        errorDiagnostic(
+          'mermaid.options.unknownField',
+          `Mermaid options do not support field ${key}.`,
+          `$.options.${key}`,
+        ),
+      );
+    });
   if (
     options.direction !== undefined &&
     options.direction !== 'TD' &&
@@ -306,7 +325,7 @@ function inputValueLabel(input: unknown): string {
   switch (input.kind) {
     case 'Pure':
       if (Object.prototype.hasOwnProperty.call(input, 'value')) {
-        return `value ${shorten(String(input.value))}`;
+        return `value ${shorten(renderMermaidValue(input.value))}`;
       }
       return typeof input.bytes === 'string'
         ? `bytes ${shorten(input.bytes)}`
@@ -329,6 +348,12 @@ function inputValueLabel(input: unknown): string {
     default:
       return `unsupported ${input.kind}`;
   }
+}
+
+function renderMermaidValue(value: unknown): string {
+  if (!Array.isArray(value)) return String(value);
+  const rendered = jsonStringifyWithBigInt(value);
+  return typeof rendered === 'string' ? rendered : String(value);
 }
 
 function objectValueLabel(object: RawObjectArg): string {
@@ -368,10 +393,60 @@ function labelValue(value: unknown): string {
 }
 
 function escapeMermaid(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
+  let escaped = '';
+  const normalized = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (const char of normalized) {
+    if (char === '\n') {
+      escaped += '<br/>';
+      continue;
+    }
+    if (char === '\t') {
+      escaped += ' ';
+      continue;
+    }
+
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (isUnsafeMermaidControl(codePoint)) {
+      escaped += `[U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}]`;
+      continue;
+    }
+
+    escaped += escapeMermaidTextChar(char);
+  }
+  return escaped;
+}
+
+function escapeMermaidTextChar(value: string): string {
+  switch (value) {
+    case '&':
+      return '&amp;';
+    case '<':
+      return '&lt;';
+    case '>':
+      return '&gt;';
+    case '\\':
+      return '\\\\';
+    case '"':
+      return '&quot;';
+    default:
+      return value;
+  }
+}
+
+function isUnsafeMermaidControl(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x00 && codePoint <= 0x1f) ||
+    codePoint === 0x7f ||
+    (codePoint >= 0x80 && codePoint <= 0x9f) ||
+    (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
+    codePoint === 0x200b ||
+    codePoint === 0x200c ||
+    codePoint === 0x200d ||
+    codePoint === 0x200e ||
+    codePoint === 0x200f ||
+    (codePoint >= 0x2028 && codePoint <= 0x202e) ||
+    codePoint === 0x2060 ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+    codePoint === 0xfeff
+  );
 }

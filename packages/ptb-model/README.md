@@ -6,7 +6,7 @@ UI-independent Sui Programmable Transaction Block model utilities.
 
 - normalize Sui PTB-shaped raw data into `TransactionIR`;
 - convert between `TransactionIR` and `PTBGraph`;
-- validate transaction references and unsupported input shapes;
+- validate transaction references, typed Pure values, and unsupported input shapes;
 - render `TransactionIR` to Mermaid;
 - render `TransactionIR` to a TypeScript SDK transaction-building code string.
 
@@ -22,7 +22,11 @@ This package does not provide:
 - network clients or RPC calls;
 - runtime Sui `Transaction` construction.
 
-`@mysten/sui` is used only as a development-time source of truth for SDK compatibility. The runtime package surface is pure TypeScript data conversion and text rendering. It does not draw UI or depend on a UI framework.
+`@mysten/sui` is used for public SDK utility and BCS helpers that define Sui
+address, object digest, and type-tag behavior. The runtime package surface is
+data conversion and text rendering. It does not draw UI, depend on a UI
+framework, construct runtime `Transaction` objects, connect to wallets, or use
+network clients.
 
 This package must not use JSON-RPC APIs such as `@mysten/sui/jsonRpc`, `SuiJsonRpcClient`, or `getJsonRpcFullnodeUrl`.
 
@@ -78,7 +82,14 @@ flowchart TD
 
 `PTBGraph` is not React Flow state. Screen positions, collapsed state, and viewport state are not transaction semantics. Port handles are stable graph-model identifiers, not React Flow layout state.
 
-Conversion outputs are detached for JSON-like PTB data. Mutating a raw or graph value returned by this package should not mutate the source `TransactionIR`. `PTBDocV4.modules`, `PTBDocV4.objects`, graph variable values, and `Unsupported.value` are expected to hold JSON-like data; exotic class instances in those extension channels are outside that guarantee and may be returned by reference.
+`TransactionIR` values created from raw PTB may include `canonicalRaw` on inputs
+or commands. That field is a detached copy of the normalized raw PTB payload
+that produced the IR item. When `canonicalRaw` is absent, the item was
+synthesized from graph or manual IR data rather than directly from raw PTB.
+`validateTransactionIR()` rejects a `canonicalRaw` value that does not match the
+canonical raw PTB payload represented by its containing input or command.
+
+Parsed documents and conversion outputs are detached for JSON-like PTB data. Mutating a parsed `PTBDocV4`, raw value, or graph value returned by this package should not mutate the source value it was created from. `PTBDocV4.modules`, `PTBDocV4.objects`, graph variable values, and `Unsupported.value` are expected to hold JSON-like data; exotic class instances in those extension channels are outside that guarantee and may be returned by reference.
 
 ## Supported Raw PTB Surface
 
@@ -124,7 +135,7 @@ SDK builder convenience shapes such as `$Intent`, `UnresolvedPure`, and `Unresol
   closed-shape; both sections use exported closed TypeScript shapes and
   command-specific runtime key validation. Builder-shaped sections such as
   `params.moveCall` are rejected as unknown fields.
-- Sponsor `FundsWithdrawal` is preserved in raw, IR, graph, and Mermaid inspection paths, but TS SDK code string rendering rejects it because the public `@mysten/sui@2.16.2` transaction helper surface cannot represent it honestly.
+- Sponsor `FundsWithdrawal` is preserved in raw, IR, graph, and Mermaid inspection paths, but TS SDK code string rendering rejects it because the public `@mysten/sui` transaction helper surface cannot represent it honestly.
 - Empty raw Pure byte strings are accepted at the raw byte layer because the installed SDK byte schema and decoder accept them. This package does not infer the consuming Move type for raw Pure bytes.
 - `IRPureValue` may contain `bigint` for typed pure code generation; use `jsonStringifyWithBigInt()` when serializing such IR values to JSON text.
 - Runtime `Transaction` construction, wallet connection, signing, simulation, execution, network clients, and JSON-RPC APIs are outside this package.
@@ -132,37 +143,55 @@ SDK builder convenience shapes such as `$Intent`, `UnresolvedPure`, and `Unresol
 ## Raw Scalar Policy
 
 Raw PTB parsing normalizes protocol integer fields before they enter `TransactionIR`.
-`JsonU64` strings must be non-empty, accepted by `BigInt(value)`, and within
-`0..=18446744073709551615`. `TransactionIR` stores accepted values as decimal
-strings. Number inputs are intentionally stricter than the SDK schema and are
-accepted only when they are safe JavaScript integers; callers should use strings
-for protocol integers outside that safe range. Empty strings are rejected at the
-model boundary instead of being coerced to zero.
+`JsonU64` strings must already be canonical decimal strings: either `0` or a
+non-zero decimal string with no sign, whitespace, hex prefix, decimal point,
+exponent, or leading zero. Accepted values must fit
+`0..=18446744073709551615`, and `TransactionIR` stores them as decimal strings.
+JavaScript `number` inputs are accepted only when they are safe non-negative
+integers and are converted to decimal strings. Callers should use strings for
+protocol integers outside the safe integer range.
 
-`Base64Bytes` acceptance follows the SDK's `fromBase64()` behavior, which uses
-global `atob`. Pure input bytes and Publish/Upgrade module bytes must be
-atob-decodable strings. `TransactionIR` stores accepted bytes with ASCII
-base64 whitespace removed so equivalent byte strings compare the same. Invalid
-module bytes are reported at the failing array element path. The exported
-`parseBase64Bytes()` helper requires `globalThis.atob`; it returns `undefined`
-when no compatible decoder is available.
+`Base64Bytes` acceptance follows the installed SDK's base64 byte behavior. Pure
+input bytes and Publish/Upgrade module bytes must be base64-decodable strings.
+`TransactionIR` stores accepted bytes with ASCII base64 whitespace removed and
+re-encoded through the SDK base64 encoder so equivalent byte strings compare the
+same. Raw PTB parsing may accept non-canonical but SDK-decodable base64 text and
+store the SDK-canonical base64 result; graph `rawInput`, `canonicalRaw`, and IR
+command byte arrays must already be in that canonical form. Invalid module bytes
+are reported at the failing array element path. The exported
+`parseBase64Bytes()` helper uses the SDK decoder when available and falls back to
+a standard Node `Buffer` decoder before returning SDK-canonical base64 text.
 
 Object IDs and package IDs follow the SDK `SuiAddress`/`ObjectID` schema and are
-normalized to 32-byte `0x`-prefixed lowercase hex strings. Object digests are
-kept as strings because the installed SDK raw schema treats them as strings.
-Move type tags and MoveCall module/function identifiers remain separate
-validation boundaries.
+normalized to 32-byte `0x`-prefixed lowercase hex strings. Inputs must include
+an explicit `0x`/`0X` prefix; canonical output always uses lowercase `0x` and
+lowercase hex digits. Empty strings, bare `0x`, and prefixless hex strings are
+rejected instead of being coerced to another address. Object digests follow the
+SDK `ObjectDigest` base58 schema and must decode to 32 bytes. MoveCall
+module/function values must be ASCII Move identifiers following the Sui Move
+identifier rule and the configured Sui verifier length limit. Move type tags are
+pre-screened for full-input syntax, validated with the installed SDK's type-tag
+parser, and stored in canonical form after raw or graph conversion. Address
+components inside type tags follow the same `0x`/`0X` input and lowercase
+canonical-output rule. `signer` type tags are not accepted in canonical PTB
+type-tag fields.
 
-The local address normalizer mirrors `@mysten/sui@2.16.2`
-`packages/sui/src/utils/sui-types.ts` so this package can stay free of runtime
-SDK dependencies. Re-check that mirror whenever the target SDK version changes.
+Address, object digest, and Move type-tag checks call the installed
+`@mysten/sui@2.16.2` public utility and BCS helpers directly. The helper-backed
+normalizers are `parseObjectId()`, `parseObjectDigest()`, and
+`parseMoveTypeTag()`.
 
 Sui source validity rules are enforced where they do not require live
 `ProtocolConfig`: `TransferObjects.objects`, `SplitCoins.amounts`,
 `MergeCoins.sources`, and Publish/Upgrade module arrays must be non-empty.
-`MakeMoveVec` may be empty only when an explicit type is present. Protocol
-size limits and config-dependent Move identifier checks are left to the host
-application or Sui execution/simulation layer.
+`MakeMoveVec` may be empty only when an explicit type is present. Command
+arguments that reference `Input` values must refer to the expected raw input
+class when the command shape defines one, for example transfer recipients and
+coin split amounts use pure inputs while coin/object arguments use object
+inputs. Result and nested-result references remain structurally validated
+because their precise Move value type can depend on prior commands or package
+metadata. Protocol size limits and config-dependent Move identifier checks are
+left to the host application or Sui execution/simulation layer.
 
 `RawCommand.Upgrade` uses the installed SDK command field name `package`.
 `packageId` command payloads are not accepted by the canonical raw parser;
@@ -176,8 +205,8 @@ accepted only as SDK envelope context and are not preserved by
 
 SDK raw metadata fields `Argument.Input.type` and MoveCall `_argumentTypes` are
 preserved during raw/IR/raw conversion when present. `_argumentTypes` must match
-the exported `RawOpenSignature` shape, which mirrors the installed SDK
-`OpenSignature` shape and adds model constraints such as non-negative type
+the exported `RawOpenSignature` shape, which is checked against the installed
+SDK `OpenSignature` payload shape and adds model constraints such as non-negative type
 parameter indexes and no unsupported fields. These fields are SDK metadata, not
 transaction semantics, and renderers do not infer protocol meaning from them.
 `PTBGraph` is the visual editing model and does not preserve those metadata
@@ -186,23 +215,30 @@ fidelity matters.
 
 When a `PTBGraph` declares flow nodes or flow edges, validation requires a
 single Start-to-End flow path containing every command node. Graph fragments
-without flow are still accepted for programmatic construction. Flow edges are
+without flow are accepted for programmatic construction. Flow edges are
 transaction-order graph semantics; positions and viewport data are layout only.
 Variable `rawInput` values must already be canonical raw inputs. "Canonical"
 means the value already equals the corresponding parser result: object and
 package IDs are normalized 32-byte `0x`-prefixed lowercase hex, `JsonU64` values
-are decimal strings, and base64 bytes contain no ASCII whitespace. Graph command
-runtime params for MoveCall targets and type arguments, package IDs,
-dependencies, module bytes, and MakeMoveVec explicit types are transaction
-inputs; UI params are never read as transaction semantics. Value-only object
-variables are a separate graph convenience and emit
+are decimal strings, object digests are SDK-valid base58 32-byte digests, and
+base64 bytes contain no ASCII whitespace. Graph command runtime params for
+MoveCall targets and type arguments, package IDs, dependencies, module bytes,
+and MakeMoveVec explicit types are transaction inputs; UI params are never read
+as transaction semantics. Value-only object variables are a separate graph
+convenience and emit
 `graph.input.object.unresolved` when they cannot be resolved into raw PTB object
 inputs. Mermaid rendering shows diagnostics for invalid references and omits
 edges whose source node does not exist.
 
-The scalar normalizers, SDK metadata guard, and diagnostic freezer are exported for host-side
-validation before creating raw or graph values: `parseJsonU64()`,
-`parseBase64Bytes()`, `parseObjectId()`, and
+Graph `rawInput` values are closed-shape canonical raw inputs. Pure `rawInput`
+cannot also carry a typed graph `value`. Object and `FundsWithdrawal` rawInput
+may carry a graph `value` only when that value structurally equals the canonical
+raw payload.
+
+The scalar normalizers, SDK metadata guard, and diagnostic freezer are exported
+for host-side validation before creating raw or graph values:
+`parseJsonU64()`, `parseBase64Bytes()`, `parseObjectId()`,
+`parseObjectDigest()`, `parseMoveIdentifier()`, `parseMoveTypeTag()`,
 `isRawInputArgumentType()`, `isRawMoveCallArgumentTypes()`, and
 `freezeDiagnostics()`.
 
@@ -254,7 +290,7 @@ The generated source targets the public helper surface in `@mysten/sui@2.16.2`, 
 
 Code string rendering validates the `TransactionIR` shape and conversion requirements before rendering. Unsupported inputs, unresolved object data, and shapes that cannot be represented honestly with the public SDK helper surface throw instead of emitting incomplete or misleading code.
 
-In particular, Sponsor `FundsWithdrawal` is preserved in raw/IR/graph/Mermaid conversion, but TS SDK code string rendering rejects it because the `@mysten/sui@2.16.2` public `Transaction.withdrawal()` helper only exposes sender withdrawal behavior.
+In particular, Sponsor `FundsWithdrawal` is preserved in raw/IR/graph/Mermaid conversion, but TS SDK code string rendering rejects it because the public `Transaction.withdrawal()` helper only exposes sender withdrawal behavior.
 
 Typed pure `option<T>` values render through `tx.pure.option(...)`. Canonical
 IR and graph documents use `null` for `None`; explicit `undefined` is rejected
@@ -270,18 +306,26 @@ rendering step.
 Pure inputs may use raw `bytes` or a typed (`value`, `type`) pair. Typed pure
 inputs must include both fields; `option<T>` `None` must be stored as explicit
 `null`. Raw `bytes` may also carry a `type` hint from graph editing, but they
-must not carry a typed `value`.
+must not carry a typed `value`. When raw `bytes` carry a fixed-width scalar or
+Move numeric type hint, validation checks the decoded byte length and bool byte
+content. String, vector, and option byte payloads are not BCS-decoded by this
+package.
 `validateTransactionIR()` rejects ambiguous Pure inputs instead of letting raw,
 graph, or code rendering paths silently choose one representation.
 
 Empty base64 strings are accepted at the raw byte layer because the SDK
-`BCSBytes` schema is a string and the SDK base64 decoder accepts `atob('')`.
+`BCSBytes` schema is a string and the SDK base64 decoder accepts empty strings.
 `ptb-model` does not infer the expected Move type for raw Pure bytes; Move
 argument decoding may reject the bytes when a command consumes them.
 
 Generated code that includes raw Pure bytes uses `globalThis.atob` to decode
-base64. It is intended for modern browser runtimes and Node versions that expose
-`atob`.
+base64. Generated code is intended for runtimes that expose `atob`; the model
+parser itself can validate base64 in Node environments without `atob`.
+Generated string and JSON literals escape DEL, C1 control characters,
+zero-width controls including WORD JOINER and the byte-order mark / zero-width
+no-break space, bidirectional formatting controls, and Unicode line and
+paragraph separators as `\uXXXX` sequences so invisible data is visible in the
+emitted TypeScript source.
 
 `IRPureValue` may contain `bigint` for typed pure code generation. Use the
 exported `jsonStringifyWithBigInt()` helper when serializing such IR values to
@@ -300,8 +344,18 @@ as omitted elements.
 When a graph is authored manually, `rawInput` is the canonical way to represent `SharedObject`, `Receiving`, and `FundsWithdrawal` inputs. A value-only object variable is interpreted only as an owned or immutable object when it has `objectId`, `version`, and `digest`.
 
 Gas is semantic, not name-based. A graph variable becomes `GasCoin` only when `semantic.kind` is `GasCoin`; an id or name such as `gas` is not enough.
+Variable names are optional graph labels. Empty variable names are converted to
+generated IR input ids during graph-to-IR conversion; non-empty duplicate
+variable names are rejected because they would create duplicate IR input ids.
+When a graph contains command nodes, value-only variables that are not
+referenced by any command input edge are authoring state only and are omitted
+from executable `TransactionIR` inputs. Variables carrying canonical `rawInput`
+or unsupported-input semantics are preserved so raw PTB inspection round-trips
+do not silently discard source payloads. `Input.index` values are derived for
+each graph-to-IR conversion from the referenced and preserved variables in graph
+order, so callers must not cache indexes across graph edits.
 
-Graph validation checks top-level graph fields, node ids, port ids, edge ids, handle existence, edge direction, edge role, and duplicate incoming command input edges before conversion. Invalid graphs return diagnostics instead of partially converting through implicit fallbacks.
+Graph validation checks top-level graph fields, node ids, port ids, edge ids, handle existence, edge direction, edge role, and duplicate incoming command input edges before conversion. Port ids must start with an ASCII letter and contain only ASCII letters, digits, and underscores. This keeps typed handle suffixes and UI aliases out of canonical `PTBGraph` data. Invalid graphs return diagnostics instead of partially converting through implicit fallbacks.
 It also validates optional public graph fields such as node positions, port
 labels and type strings, edge casts, variable semantics, PTB type hints, and
 command params. `PTBGraph` supports only `nodes` and `edges` at the graph
@@ -339,15 +393,12 @@ base64 transaction strings, or live `Transaction` instances directly. For
 example, a host can deserialize transaction-kind bytes with the SDK, call
 `restored.getData()`, convert that value with `rawTransactionToIR()`, and render
 the returned `TransactionIR` to Mermaid text. Serialized SDK builder data that
-still contains unresolved convenience shapes such as `UnresolvedObject` is
+contains unresolved convenience shapes such as `UnresolvedObject` is
 reported as diagnostics instead of being treated as canonical PTB.
 
 ```ts
 import { Transaction } from '@mysten/sui/transactions';
-import {
-  rawTransactionToIR,
-  transactionIRToMermaid,
-} from '@zktx.io/ptb-model';
+import { rawTransactionToIR, transactionIRToMermaid } from '@zktx.io/ptb-model';
 
 export function transactionKindBytesToMermaid(bytes: Uint8Array): string {
   const restored = Transaction.fromKind(bytes);
@@ -373,15 +424,18 @@ SDK transaction-kind data returned by `Transaction.fromKind(...).getData()`.
 are `version`, `graph`, `chain`, `sender`, `modules`, `objects`, and `view`.
 Host-owned extension data should live in the explicit `modules` / `objects`
 records or outside the PTBDocV4 object.
+When present, `sender` must be a canonical Sui address. `chain` is a host-owned
+string label; applications such as `@zktx.io/ptb-builder` may apply their own
+supported-chain policy after model parsing. When present, `view.zoom` must be a
+positive finite number.
 
 Unsupported document versions are rejected by `@zktx.io/ptb-model`. Convert
 them outside this package before calling `parsePTBDocV4()`.
 
 `detectPTBDocVersion()` reports only the canonical document version: `ptb_4`.
 
-No document-version conversion utility is exposed by the current root API. If a
-host needs to upgrade another document shape, that conversion must happen before
-calling the canonical parser.
+The root API does not expose document-version conversion utilities. Convert
+other document shapes before calling the canonical parser.
 
 ## Diagnostics
 

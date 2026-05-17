@@ -3,9 +3,16 @@ import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
+  parseBase64Bytes,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
+  parseObjectId,
+} from '../raw/types.js';
+import {
   isDenseArray,
   isFiniteNumber,
   isRecord,
+  MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
 
@@ -166,6 +173,7 @@ const PORT_KEYS = [
   'typeStr',
   'label',
 ] as const;
+const PORT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 const EDGE_KEYS = [
   'id',
   'kind',
@@ -212,7 +220,6 @@ const COMMAND_UI_KEYS = [
   'policyWidth',
   'readOnly',
 ] as const;
-
 interface GraphNodeIndex {
   kind: PTBNode['kind'];
   ports: Map<string, Port>;
@@ -432,7 +439,202 @@ function validateVariableNode(
     }
   }
   validateVariableSemantic(value.semantic, `${path}.semantic`, diagnostics);
-  normalizeGraphRawInput(value.rawInput, `${path}.rawInput`, diagnostics);
+  const rawInput = normalizeGraphRawInput(
+    value.rawInput,
+    `${path}.rawInput`,
+    diagnostics,
+  );
+  validateVariableRawInputValue(rawInput, value, path, diagnostics);
+  validateVariableSourceCompatibility(rawInput, value, path, diagnostics);
+}
+
+function validateVariableRawInputValue(
+  rawInput: RawCallArg | undefined,
+  node: Record<string, unknown>,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (!rawInput) return;
+  const hasValue = Object.prototype.hasOwnProperty.call(node, 'value');
+  if (rawInput.kind === 'Pure') {
+    if (!hasValue) return;
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.variable.rawInputValue',
+        'PTB graph Pure rawInput must not also store a typed value.',
+        `${path}.value`,
+      ),
+    );
+    return;
+  }
+  if (!hasValue) return;
+
+  const matches =
+    rawInput.kind === 'Object'
+      ? rawObjectValueMatches(rawInput.object, node.value)
+      : rawFundsWithdrawalValueMatches(rawInput.value, node.value);
+  if (matches) return;
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.variable.rawInputValue',
+      'PTB graph variable value must match its canonical rawInput payload when both are present.',
+      `${path}.value`,
+    ),
+  );
+}
+
+function rawObjectValueMatches(
+  raw: Extract<RawCallArg, { kind: 'Object' }>['object'],
+  value: unknown,
+): boolean {
+  if (!isRecord(value) || value.kind !== raw.kind) return false;
+  switch (raw.kind) {
+    case 'ImmOrOwnedObject':
+    case 'Receiving':
+      return (
+        value.objectId === raw.objectId &&
+        value.version === raw.version &&
+        value.digest === raw.digest &&
+        Object.keys(value).every((key) =>
+          ['kind', 'objectId', 'version', 'digest'].includes(key),
+        )
+      );
+    case 'SharedObject':
+      return (
+        value.objectId === raw.objectId &&
+        value.initialSharedVersion === raw.initialSharedVersion &&
+        value.mutable === raw.mutable &&
+        Object.keys(value).every((key) =>
+          ['kind', 'objectId', 'initialSharedVersion', 'mutable'].includes(key),
+        )
+      );
+  }
+}
+
+function rawFundsWithdrawalValueMatches(
+  raw: Extract<RawCallArg, { kind: 'FundsWithdrawal' }>['value'],
+  value: unknown,
+): boolean {
+  if (!isRecord(value)) return false;
+  const reservation = isRecord(value.reservation)
+    ? value.reservation
+    : undefined;
+  const typeArg = isRecord(value.typeArg) ? value.typeArg : undefined;
+  const withdrawFrom = isRecord(value.withdrawFrom)
+    ? value.withdrawFrom
+    : undefined;
+
+  return (
+    Object.keys(value).every((key) =>
+      ['reservation', 'typeArg', 'withdrawFrom'].includes(key),
+    ) &&
+    reservation?.kind === raw.reservation.kind &&
+    reservation.amount === raw.reservation.amount &&
+    Object.keys(reservation).every((key) => ['kind', 'amount'].includes(key)) &&
+    typeArg?.kind === raw.typeArg.kind &&
+    typeArg.type === raw.typeArg.type &&
+    Object.keys(typeArg).every((key) => ['kind', 'type'].includes(key)) &&
+    withdrawFrom?.kind === raw.withdrawFrom.kind &&
+    Object.keys(withdrawFrom).every((key) => key === 'kind')
+  );
+}
+
+function validateVariableSourceCompatibility(
+  rawInput: RawCallArg | undefined,
+  node: Record<string, unknown>,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  const semantic = isRecord(node.semantic) ? node.semantic : undefined;
+  const varType = isRecord(node.varType) ? node.varType : undefined;
+
+  if (semantic?.kind === 'GasCoin') {
+    if (rawInput !== undefined) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.variable.sourceConflict',
+          'GasCoin semantic variables must not also contain rawInput.',
+          `${path}.rawInput`,
+        ),
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(node, 'value')) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.variable.sourceConflict',
+          'GasCoin semantic variables must not also contain a value.',
+          `${path}.value`,
+        ),
+      );
+    }
+    return;
+  }
+
+  if (semantic?.kind === 'UnsupportedInput' && rawInput !== undefined) {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.variable.sourceConflict',
+        'UnsupportedInput semantic variables must not also contain rawInput.',
+        `${path}.rawInput`,
+      ),
+    );
+    return;
+  }
+
+  if (!rawInput) return;
+  if (rawInput.kind === 'Pure') {
+    if (!isPureGraphType(varType)) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.variable.rawInputType',
+          'Pure rawInput requires a pure-compatible or unknown variable type.',
+          `${path}.varType`,
+        ),
+      );
+    }
+    return;
+  }
+  if (rawInput.kind === 'Object') {
+    if (varType?.kind !== 'object') {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.variable.rawInputType',
+          'Object rawInput requires an object variable type.',
+          `${path}.varType`,
+        ),
+      );
+    }
+    return;
+  }
+  if (varType?.kind !== 'unknown') {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.variable.rawInputType',
+        'FundsWithdrawal rawInput requires an unknown variable type.',
+        `${path}.varType`,
+      ),
+    );
+  }
+}
+
+function isPureGraphType(type: Record<string, unknown> | undefined): boolean {
+  if (!type || typeof type.kind !== 'string') return false;
+  switch (type.kind) {
+    case 'unknown':
+    case 'move_numeric':
+      return true;
+    case 'scalar':
+      return type.name !== 'number';
+    case 'vector':
+    case 'option':
+      return isRecord(type.elem) && isPureGraphType(type.elem);
+    case 'object':
+    case 'tuple':
+      return false;
+    default:
+      return false;
+  }
 }
 
 function validatePort(
@@ -461,6 +663,14 @@ function validatePort(
       errorDiagnostic(
         'graph.port.id',
         'PTB graph port id must be a string.',
+        `${path}.id`,
+      ),
+    );
+  } else if (!PORT_ID_PATTERN.test(value.id)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.port.id',
+        'PTB graph port id must start with an ASCII letter and contain only ASCII letters, digits, and underscores.',
         `${path}.id`,
       ),
     );
@@ -680,6 +890,7 @@ function validateGraphReferences(
 ): void {
   const nodesById = new Map<string, GraphNodeIndex>();
   const seenNodeIds = new Set<string>();
+  const seenInputNames = new Set<string>();
 
   nodes.forEach((node, index) => {
     if (
@@ -702,6 +913,24 @@ function validateGraphReferences(
       return;
     }
     seenNodeIds.add(node.id);
+
+    if (
+      node.kind === 'Variable' &&
+      typeof node.name === 'string' &&
+      node.name.length > 0 &&
+      !isGasSemantic(node.semantic)
+    ) {
+      if (seenInputNames.has(node.name)) {
+        diagnostics.push(
+          errorDiagnostic(
+            'graph.variable.duplicateName',
+            `PTB graph variable name ${node.name} is duplicated and would produce a duplicate TransactionIR input id.`,
+            `${path}.nodes[${index}].name`,
+          ),
+        );
+      }
+      seenInputNames.add(node.name);
+    }
 
     const ports = new Map<string, Port>();
     const seenPortIds = new Set<string>();
@@ -825,6 +1054,10 @@ function validateGraphReferences(
   });
 
   validateFlowTopology(nodes, edges, path, diagnostics);
+}
+
+function isGasSemantic(value: unknown): boolean {
+  return isRecord(value) && value.kind === 'GasCoin';
 }
 
 function validateEdgeEndpoint(
@@ -1073,18 +1306,12 @@ function validateCommandRuntimeParams(
 
   switch (commandKind) {
     case 'moveCall':
-      validateOptionalStringField(
-        value.target,
-        `${path}.target`,
-        'graph.command.params.runtime.field',
-        'PTB graph MoveCall runtime target must be a string when present.',
-        diagnostics,
-      );
-      validateOptionalStringArrayField(
+      validateMoveCallTargetField(value.target, `${path}.target`, diagnostics);
+      validateOptionalMoveTypeTagArrayField(
         value.typeArguments,
         `${path}.typeArguments`,
         'graph.command.params.runtime.typeArguments',
-        'PTB graph MoveCall runtime typeArguments must be a dense string array when present.',
+        'PTB graph MoveCall runtime typeArguments must be a dense array of valid Move type tags when present.',
         diagnostics,
       );
       return;
@@ -1092,53 +1319,54 @@ function validateCommandRuntimeParams(
       if (
         value.type !== undefined &&
         value.type !== NULL_VALUE &&
-        typeof value.type !== 'string'
+        (typeof value.type !== 'string' ||
+          parseMoveTypeTag(value.type) === undefined)
       ) {
         diagnostics.push(
           errorDiagnostic(
             'graph.command.params.runtime.type',
-            'PTB graph MakeMoveVec runtime type must be a string or null when present.',
+            'PTB graph MakeMoveVec runtime type must be a valid Move type tag or null when present.',
             `${path}.type`,
           ),
         );
       }
       return;
     case 'publish':
-      validateOptionalDenseArrayField(
+      validateOptionalNonEmptyBase64ArrayField(
         value.modules,
         `${path}.modules`,
-        'graph.command.params.runtime.array',
-        'PTB graph Publish runtime modules must be a dense array when present.',
+        'graph.command.params.runtime.modules',
+        'PTB graph Publish runtime modules must be a non-empty dense canonical base64 array when present.',
         diagnostics,
       );
-      validateOptionalDenseArrayField(
+      validateOptionalObjectIdArrayField(
         value.dependencies,
         `${path}.dependencies`,
-        'graph.command.params.runtime.array',
-        'PTB graph Publish runtime dependencies must be a dense array when present.',
+        'graph.command.params.runtime.dependencies',
+        'PTB graph Publish runtime dependencies must be a dense canonical object ID array when present.',
         diagnostics,
       );
       return;
     case 'upgrade':
-      validateOptionalDenseArrayField(
+      validateOptionalNonEmptyBase64ArrayField(
         value.modules,
         `${path}.modules`,
-        'graph.command.params.runtime.array',
-        'PTB graph Upgrade runtime modules must be a dense array when present.',
+        'graph.command.params.runtime.modules',
+        'PTB graph Upgrade runtime modules must be a non-empty dense canonical base64 array when present.',
         diagnostics,
       );
-      validateOptionalDenseArrayField(
+      validateOptionalObjectIdArrayField(
         value.dependencies,
         `${path}.dependencies`,
-        'graph.command.params.runtime.array',
-        'PTB graph Upgrade runtime dependencies must be a dense array when present.',
+        'graph.command.params.runtime.dependencies',
+        'PTB graph Upgrade runtime dependencies must be a dense canonical object ID array when present.',
         diagnostics,
       );
-      validateOptionalStringField(
+      validateOptionalObjectIdField(
         value.package,
         `${path}.package`,
         'graph.command.params.runtime.field',
-        'PTB graph Upgrade runtime package must be a string when present.',
+        'PTB graph Upgrade runtime package must be a canonical object ID when present.',
         diagnostics,
       );
       return;
@@ -1263,7 +1491,7 @@ function validateOptionalStringField(
   diagnostics.push(errorDiagnostic(code, message, path));
 }
 
-function validateOptionalStringArrayField(
+function validateOptionalMoveTypeTagArrayField(
   value: unknown,
   path: string,
   code: string,
@@ -1271,21 +1499,100 @@ function validateOptionalStringArrayField(
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
-  if (isDenseArray(value) && value.every((item) => typeof item === 'string')) {
+  if (
+    isDenseArray(value) &&
+    value.every((item) => parseMoveTypeTag(item) !== undefined)
+  ) {
     return;
   }
   diagnostics.push(errorDiagnostic(code, message, path));
 }
 
-function validateOptionalDenseArrayField(
+function validateOptionalNonEmptyBase64ArrayField(
   value: unknown,
   path: string,
   code: string,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
-  if (value === undefined || isDenseArray(value)) return;
+  if (value === undefined) return;
+  if (
+    isDenseArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) => typeof item === 'string' && parseBase64Bytes(item) === item,
+    )
+  ) {
+    return;
+  }
   diagnostics.push(errorDiagnostic(code, message, path));
+}
+
+function validateOptionalObjectIdArrayField(
+  value: unknown,
+  path: string,
+  code: string,
+  message: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (value === undefined) return;
+  if (
+    isDenseArray(value) &&
+    value.every(
+      (item) => typeof item === 'string' && parseObjectId(item) === item,
+    )
+  ) {
+    return;
+  }
+  diagnostics.push(errorDiagnostic(code, message, path));
+}
+
+function validateOptionalObjectIdField(
+  value: unknown,
+  path: string,
+  code: string,
+  message: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (value === undefined) return;
+  if (typeof value === 'string' && parseObjectId(value) === value) return;
+  diagnostics.push(errorDiagnostic(code, message, path));
+}
+
+function validateMoveCallTargetField(
+  value: unknown,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'string') {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.command.params.runtime.field',
+        'PTB graph MoveCall runtime target must be a string when present.',
+        path,
+      ),
+    );
+    return;
+  }
+
+  const parts = value.split('::');
+  if (
+    parts.length === 3 &&
+    parseObjectId(parts[0]) === parts[0] &&
+    parseMoveIdentifier(parts[1]) === parts[1] &&
+    parseMoveIdentifier(parts[2]) === parts[2]
+  ) {
+    return;
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.params.runtime.target',
+      'PTB graph MoveCall runtime target must be canonical package::module::function.',
+      path,
+    ),
+  );
 }
 
 function validateOptionalNonNegativeIntegerField(
@@ -1388,7 +1695,19 @@ function validatePTBTypeShape(
   path: string,
   diagnostics: TransactionDiagnostic[],
   seen: WeakSet<object>,
+  depth = 0,
 ): void {
+  if (depth > MAX_PTB_TYPE_DEPTH) {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.type.depth',
+        `PTB graph type nesting must not exceed ${MAX_PTB_TYPE_DEPTH}.`,
+        path,
+      ),
+    );
+    return;
+  }
+
   if (!isRecord(value) || typeof value.kind !== 'string') {
     diagnostics.push(
       errorDiagnostic(
@@ -1454,7 +1773,13 @@ function validatePTBTypeShape(
     case 'vector':
     case 'option':
       validateTypeUnknownFields(value, path, diagnostics);
-      validatePTBTypeShape(value.elem, `${path}.elem`, diagnostics, seen);
+      validatePTBTypeShape(
+        value.elem,
+        `${path}.elem`,
+        diagnostics,
+        seen,
+        depth + 1,
+      );
       seen.delete(value);
       return;
     case 'tuple':
@@ -1476,17 +1801,22 @@ function validatePTBTypeShape(
           `${path}.elems[${index}]`,
           diagnostics,
           seen,
+          depth + 1,
         );
       });
       seen.delete(value);
       return;
     case 'object':
       validateTypeUnknownFields(value, path, diagnostics);
-      if (value.typeTag !== undefined && typeof value.typeTag !== 'string') {
+      if (
+        value.typeTag !== undefined &&
+        (typeof value.typeTag !== 'string' ||
+          parseMoveTypeTag(value.typeTag) === undefined)
+      ) {
         diagnostics.push(
           errorDiagnostic(
             'graph.type.object',
-            'Object PTB graph type typeTag must be a string when present.',
+            'Object PTB graph type typeTag must be a valid Move type tag when present.',
             `${path}.typeTag`,
           ),
         );

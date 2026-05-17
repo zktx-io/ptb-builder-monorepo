@@ -14,6 +14,9 @@ import {
   NULL_VALUE,
   parseBase64Bytes,
   parseJsonU64,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
+  parseObjectDigest,
   parseObjectId,
   parsePTBDocV4,
   PTBModelError,
@@ -43,6 +46,13 @@ function normalizedObjectId(value: string): string {
   return `0x${value.replace(/^0x/i, '').padStart(64, '0').toLowerCase()}`;
 }
 
+const TEST_DIGEST_1 = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
+const TEST_DIGEST_2 = '7msXn7aieHy73WkRxh3Xdqh9PEoPYBmJW59iE4TVvz62';
+const TEST_DIGEST_3 = 'C6G8PsqwNpMqrK7ApwuQUvDgzkFcUaUy6Y5ycrAN2q3F';
+const TEST_SUI_TYPE = `${normalizedObjectId('2')}::sui::SUI`;
+const TEST_COIN_TYPE = `${normalizedObjectId('2')}::coin::Coin`;
+const TEST_COIN_SUI_TYPE = `${TEST_COIN_TYPE}<${TEST_SUI_TYPE}>`;
+
 const modelSourceRoot = fileURLToPath(new URL('.', import.meta.url));
 const modelPackageJsonPath = fileURLToPath(
   new URL('../package.json', import.meta.url),
@@ -65,7 +75,9 @@ describe('public package surface', () => {
       },
     });
     expect(packageJson.files).toEqual(['dist/', 'README.md']);
-    expect(packageJson.dependencies ?? {}).toEqual({});
+    expect(packageJson.dependencies ?? {}).toEqual({
+      '@mysten/sui': '2.16.2',
+    });
   });
 
   it('keeps model source free of UI framework and runtime client imports', () => {
@@ -127,6 +139,142 @@ describe('PTBDocV4', () => {
     expect(detectPTBDocVersion({ version: 'ptb_99' })).toBeUndefined();
   });
 
+  it('returns a detached JSON-like ptb_4 document', () => {
+    const doc = {
+      version: 'ptb_4',
+      graph: { nodes: [] as unknown[], edges: [] as unknown[] },
+      modules: { pkg: { cached: true } },
+      objects: { object: { type: '0x2::sui::SUI' } },
+      view: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const parsed = parsePTBDocV4(doc);
+
+    expect(parsed).toEqual(doc);
+    expect(parsed).not.toBe(doc);
+    expect(parsed.graph).not.toBe(doc.graph);
+    expect(parsed.modules).not.toBe(doc.modules);
+    expect(parsed.objects).not.toBe(doc.objects);
+    doc.graph.nodes.push({
+      id: 'after-parse',
+      kind: 'Start',
+      ports: [],
+    });
+    (doc.modules.pkg as { cached: boolean }).cached = false;
+    (doc.objects.object as { type: string }).type = 'mutated';
+
+    expect(parsed.graph.nodes).toEqual([]);
+    expect((parsed.modules?.pkg as { cached: boolean }).cached).toBe(true);
+    expect((parsed.objects?.object as { type: string }).type).toBe(
+      '0x2::sui::SUI',
+    );
+  });
+
+  it('accepts shared acyclic document references and still rejects cycles', () => {
+    const shared = { type: TEST_SUI_TYPE };
+    const doc = {
+      version: 'ptb_4',
+      graph: { nodes: [], edges: [] },
+      objects: {
+        coinA: shared,
+        coinB: shared,
+      },
+    };
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    const parsed = parsePTBDocV4(doc);
+
+    expect(parsed.objects?.coinA).toEqual(shared);
+    expect(parsed.objects?.coinB).toEqual(shared);
+    expect(validatePTBDocV4(doc)).toEqual([]);
+    expect(validatePTBDocV4({ ...doc, modules: cyclic })).toContainEqual(
+      expect.objectContaining({ code: 'doc.json', path: '$.modules.self' }),
+    );
+  });
+
+  it('rejects non-JSON document values at the parser boundary', () => {
+    class FakeDoc {
+      version = 'ptb_4';
+      graph = { nodes: [], edges: [] };
+    }
+
+    const sparseNodes = [] as unknown[];
+    sparseNodes[1] = { id: 'start', kind: 'Start', ports: [] };
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    const cases = [
+      { value: new FakeDoc(), path: '$' },
+      {
+        value: {
+          version: 'ptb_4',
+          graph: { nodes: [], edges: [] },
+          modules: { nested: new FakeDoc() },
+        },
+        path: '$.modules.nested',
+      },
+      {
+        value: {
+          version: 'ptb_4',
+          graph: { nodes: sparseNodes, edges: [] },
+        },
+        path: '$.graph.nodes',
+      },
+      {
+        value: {
+          version: 'ptb_4',
+          graph: { nodes: [], edges: [] },
+          modules: cyclic,
+        },
+        path: '$.modules.self',
+      },
+      {
+        value: {
+          version: 'ptb_4',
+          graph: { nodes: [], edges: [] },
+          modules: { missing: undefined },
+        },
+        path: '$.modules.missing',
+      },
+    ];
+
+    cases.forEach(({ value, path }) => {
+      const diagnostics = validatePTBDocV4(value);
+      expect(diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'doc.json', path }),
+      );
+      expect(() => parsePTBDocV4(value)).toThrow(PTBModelError);
+    });
+  });
+
+  it('parses deeply nested document embeds without recursive cloning', () => {
+    const root: Record<string, unknown> = {};
+    let cursor = root;
+    for (let index = 0; index < 2000; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.next = next;
+      cursor = next;
+    }
+    cursor.done = true;
+
+    const doc = {
+      version: 'ptb_4',
+      graph: { nodes: [], edges: [] },
+      modules: root,
+    };
+
+    const parsed = parsePTBDocV4(doc);
+
+    expect(parsed.modules).not.toBe(root);
+    let parsedCursor = parsed.modules as Record<string, unknown>;
+    for (let index = 0; index < 2000; index += 1) {
+      parsedCursor = parsedCursor.next as Record<string, unknown>;
+    }
+    expect(parsedCursor.done).toBe(true);
+  });
+
   it('rejects non-current document versions at the canonical boundary', () => {
     const diagnostics = validatePTBDocV4({
       version: 'ptb_old',
@@ -172,6 +320,34 @@ describe('PTBDocV4', () => {
     );
   });
 
+  it('requires canonical sender addresses when present', () => {
+    expect(
+      validatePTBDocV4({
+        version: 'ptb_4',
+        graph: { nodes: [], edges: [] },
+        sender: normalizedObjectId('1'),
+      }),
+    ).toEqual([]);
+    expect(
+      validatePTBDocV4({
+        version: 'ptb_4',
+        graph: { nodes: [], edges: [] },
+        sender: '0x1',
+      }),
+    ).toContainEqual(
+      expect.objectContaining({ code: 'doc.sender', path: '$.sender' }),
+    );
+    expect(
+      validatePTBDocV4({
+        version: 'ptb_4',
+        graph: { nodes: [], edges: [] },
+        sender: 'garbage',
+      }),
+    ).toContainEqual(
+      expect.objectContaining({ code: 'doc.sender', path: '$.sender' }),
+    );
+  });
+
   it('rejects unknown top-level document fields', () => {
     const diagnostics = validatePTBDocV4({
       version: 'ptb_4',
@@ -214,6 +390,18 @@ describe('PTBDocV4', () => {
       version: 'ptb_4',
       graph: { nodes: [], edges: [] },
       view: { x: Number.NaN, y: 0, zoom: Number.POSITIVE_INFINITY },
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'doc.view', path: '$.view' }),
+    );
+  });
+
+  it('rejects non-positive PTB document view zoom', () => {
+    const diagnostics = validatePTBDocV4({
+      version: 'ptb_4',
+      graph: { nodes: [], edges: [] },
+      view: { x: 0, y: 0, zoom: 0 },
     });
 
     expect(diagnostics).toContainEqual(
@@ -386,6 +574,30 @@ describe('rawTransactionToIR', () => {
     );
   });
 
+  it('preserves deeply nested unsupported raw values without recursive cloning', () => {
+    const root: Record<string, unknown> = { kind: 'FutureInput' };
+    let cursor = root;
+    for (let index = 0; index < 10000; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.next = next;
+      cursor = next;
+    }
+    cursor.done = true;
+
+    const ir = rawTransactionToIR({ inputs: [root], commands: [] });
+
+    expect(ir.inputs[0].kind).toBe('Unsupported');
+    if (ir.inputs[0].kind === 'Unsupported') {
+      expect(ir.inputs[0].sourceKind).toBe('FutureInput');
+      expect(Object.is(ir.inputs[0].value, root)).toBe(false);
+      let cloned = ir.inputs[0].value as Record<string, unknown>;
+      for (let index = 0; index < 10000; index += 1) {
+        cloned = cloned.next as Record<string, unknown>;
+      }
+      expect(cloned.done).toBe(true);
+    }
+  });
+
   it('rejects non-current SDK TransactionData envelope versions', () => {
     const ir = rawTransactionToIR({
       version: 1,
@@ -409,7 +621,7 @@ describe('rawTransactionToIR', () => {
     );
   });
 
-  it('normalizes SDK JsonU64 raw values to decimal strings', () => {
+  it('normalizes canonical JsonU64 raw values to decimal strings', () => {
     const ir = rawTransactionToIR({
       inputs: [
         {
@@ -418,7 +630,7 @@ describe('rawTransactionToIR', () => {
             kind: 'ImmOrOwnedObject',
             objectId: '0x1',
             version: Number.MAX_SAFE_INTEGER,
-            digest: 'digest1',
+            digest: TEST_DIGEST_1,
           },
         },
         {
@@ -426,7 +638,7 @@ describe('rawTransactionToIR', () => {
           object: {
             kind: 'SharedObject',
             objectId: '0x2',
-            initialSharedVersion: '0x10',
+            initialSharedVersion: '16',
             mutable: true,
           },
         },
@@ -436,14 +648,14 @@ describe('rawTransactionToIR', () => {
             kind: 'Receiving',
             objectId: '0x3',
             version: '18446744073709551615',
-            digest: 'digest3',
+            digest: TEST_DIGEST_3,
           },
         },
         {
           kind: 'FundsWithdrawal',
           value: {
             reservation: { kind: 'MaxAmountU64', amount: 0 },
-            typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
             withdrawFrom: { kind: 'Sender' },
           },
         },
@@ -475,9 +687,14 @@ describe('rawTransactionToIR', () => {
 
   it('rejects values outside the SDK JsonU64 boundary', () => {
     const invalidValues: unknown[] = [
+      '',
       '-1',
+      '+1',
       '1.5',
       '1e3',
+      '0x10',
+      ' 100 ',
+      '007',
       '18446744073709551616',
       Number.MAX_SAFE_INTEGER + 1,
       123n,
@@ -492,7 +709,7 @@ describe('rawTransactionToIR', () => {
               kind: 'ImmOrOwnedObject',
               objectId: '0x1',
               version,
-              digest: 'digest',
+              digest: TEST_DIGEST_1,
             },
           },
         ],
@@ -513,7 +730,7 @@ describe('rawTransactionToIR', () => {
               kind: 'MaxAmountU64',
               amount: '18446744073709551616',
             },
-            typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
             withdrawFrom: { kind: 'Sender' },
           },
         },
@@ -525,27 +742,109 @@ describe('rawTransactionToIR', () => {
       'raw.funds.payload',
     );
 
-    const normalized = rawTransactionToIR({
+    const leadingZeroFunds = rawTransactionToIR({
       inputs: [
         {
           kind: 'FundsWithdrawal',
           value: {
             reservation: { kind: 'MaxAmountU64', amount: '007' },
-            typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
             withdrawFrom: { kind: 'Sender' },
           },
         },
       ],
       commands: [],
     });
-    expect(normalized.diagnostics).toEqual([]);
-    expect(normalized.inputs[0]).toMatchObject({
-      kind: 'FundsWithdrawal',
-      value: { reservation: { amount: '7' } },
+    expect(
+      leadingZeroFunds.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain('raw.funds.payload');
+  });
+
+  it('validates Sui object digests using the SDK base58 length rule', () => {
+    expect(parseObjectDigest(TEST_DIGEST_1)).toBe(TEST_DIGEST_1);
+    ['', 'a', '!@#%', '1'.repeat(10_000)].forEach((digest) => {
+      expect(parseObjectDigest(digest)).toBeUndefined();
+    });
+
+    const ir = rawTransactionToIR({
+      inputs: [
+        {
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('1'),
+            version: '1',
+            digest: 'a',
+          },
+        },
+      ],
+      commands: [],
+    });
+
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.object.ref',
+        path: '$.inputs[0].Object',
+      }),
+    );
+  });
+
+  it('validates and normalizes Move identifiers and type tags', () => {
+    expect(parseMoveIdentifier('module_name')).toBe('module_name');
+    expect(parseMoveIdentifier('_module')).toBe('_module');
+    expect(parseMoveIdentifier('__init__')).toBe('__init__');
+    expect(parseMoveIdentifier('a'.repeat(128))).toBe('a'.repeat(128));
+    ['', ' ', '_', '2bad', 'bad-name', 'a'.repeat(129), '모듈'].forEach(
+      (identifier) => {
+        expect(parseMoveIdentifier(identifier)).toBeUndefined();
+      },
+    );
+
+    expect(parseMoveTypeTag('u64')).toBe('u64');
+    expect(parseMoveTypeTag('vector<0x2::sui::SUI>')).toBe(
+      `vector<${TEST_SUI_TYPE}>`,
+    );
+    expect(parseMoveTypeTag('0x2::_module::__Struct')).toBe(
+      `${normalizedObjectId('2')}::_module::__Struct`,
+    );
+    expect(parseMoveTypeTag('0x2::coin::Coin<u8, u64>')).toBe(
+      `${TEST_COIN_TYPE}<u8, u64>`,
+    );
+    [
+      '',
+      ' ',
+      '0x2:: ::SUI',
+      'vector<>',
+      '0x2::sui::SUI<>',
+      '0x2::sui::SUI trailing',
+      'u64extra',
+      'signer',
+      'vector<signer>',
+    ].forEach((typeTag) => {
+      expect(parseMoveTypeTag(typeTag)).toBeUndefined();
     });
   });
 
-  it('validates raw base64 byte fields with SDK atob-compatible behavior', () => {
+  it('returns diagnostics for excessively nested PTB types instead of throwing', () => {
+    let type: PTBType = { kind: 'move_numeric', width: 'u8' };
+    for (let index = 0; index < 80; index += 1) {
+      type = { kind: 'vector', elem: type };
+    }
+
+    expect(validatePTBType(type)).toContainEqual(
+      expect.objectContaining({ code: 'graph.type.depth' }),
+    );
+    expect(
+      validateTransactionIR({
+        version: 'transaction_ir_1',
+        diagnostics: [],
+        inputs: [{ id: 'deep', kind: 'Pure', value: [], type }],
+        commands: [],
+      }),
+    ).toContainEqual(expect.objectContaining({ code: 'graph.type.depth' }));
+  });
+
+  it('validates raw base64 byte fields with SDK base64-compatible behavior', () => {
     ['', 'AQ==', 'AQI=', 'AQID', 'AQI', 'AQID\n', 'AB==', 'AQJ='].forEach(
       (bytes) => {
         expect(
@@ -558,18 +857,18 @@ describe('rawTransactionToIR', () => {
     );
 
     const normalized = rawTransactionToIR({
-      inputs: [{ kind: 'Pure', bytes: 'AQID\n' }],
-      commands: [{ kind: 'Publish', modules: ['AQID '], dependencies: [] }],
+      inputs: [{ kind: 'Pure', bytes: 'AQI\n' }],
+      commands: [{ kind: 'Publish', modules: ['YQA '], dependencies: [] }],
     });
 
     expect(normalized.diagnostics).toEqual([]);
     expect(normalized.inputs[0]).toMatchObject({
       kind: 'Pure',
-      bytes: 'AQID',
+      bytes: 'AQI=',
     });
     expect(normalized.commands[0]).toMatchObject({
       kind: 'Publish',
-      modules: ['AQID'],
+      modules: ['YQA='],
     });
 
     ['A', '@@@', 'AQ-ID'].forEach((bytes) => {
@@ -593,7 +892,29 @@ describe('rawTransactionToIR', () => {
       writable: true,
     });
     try {
-      expect(parseBase64Bytes('AQID')).toBeUndefined();
+      expect(parseBase64Bytes('AQID')).toBe('AQID');
+      expect(parseBase64Bytes('YQA')).toBe('YQA=');
+      expect(parseBase64Bytes('@@@')).toBeUndefined();
+      expect(
+        validateTransactionIR({
+          version: 'transaction_ir_1',
+          diagnostics: [],
+          inputs: [
+            {
+              id: 'flag',
+              kind: 'Pure',
+              bytes: 'Ag==',
+              type: { kind: 'scalar', name: 'bool' },
+            },
+          ],
+          commands: [],
+        }),
+      ).toContainEqual(
+        expect.objectContaining({
+          code: 'ir.input.pureBytesType',
+          path: '$.inputs[0].bytes',
+        }),
+      );
     } finally {
       if (atobDescriptor) {
         Object.defineProperty(globalThis, 'atob', atobDescriptor);
@@ -664,6 +985,37 @@ describe('rawTransactionToIR', () => {
     expect((irCommand.value as { extra?: unknown }).extra).toBeUndefined();
   });
 
+  it('stores normalized raw PTB origin payloads as canonicalRaw in IR', () => {
+    const raw = sampleRawTransaction();
+    const ir = rawTransactionToIR(raw);
+
+    expect(ir.inputs[0]).toHaveProperty('canonicalRaw');
+    expect(ir.inputs[0]).not.toHaveProperty('raw');
+    expect(ir.commands[0]).toHaveProperty('canonicalRaw');
+    expect(ir.commands[0]).not.toHaveProperty('raw');
+
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'old_raw_field',
+          kind: 'Pure',
+          bytes: 'AQID',
+          raw: { kind: 'Pure', bytes: 'AQID' },
+        } as never,
+      ],
+      commands: [],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.unknownField',
+        path: '$.inputs[0].raw',
+      }),
+    );
+  });
+
   it('preserves Receiving object inputs across raw, graph, Mermaid, and code renderers', () => {
     const raw: RawProgrammableTransaction = {
       inputs: [
@@ -673,7 +1025,7 @@ describe('rawTransactionToIR', () => {
             kind: 'Receiving',
             objectId: normalizedObjectId('8'),
             version: '9',
-            digest: 'recvDigest',
+            digest: TEST_DIGEST_2,
           },
         },
         { kind: 'Pure', bytes: 'AQID' },
@@ -710,7 +1062,9 @@ describe('rawTransactionToIR', () => {
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
     expect(roundTripped.diagnostics).toEqual([]);
     expect(transactionIRToRaw(roundTripped)).toEqual(raw);
-    expect(mermaid).toContain('receiving 0x00000000...000008 v9 recvDigest');
+    expect(mermaid).toContain(
+      'receiving 0x00000000...000008 v9 7msXn7aieHy73WkRxh3Xdqh9PEoPY...',
+    );
     expect(code).toContain('tx.receivingRef');
   });
 
@@ -785,6 +1139,36 @@ describe('rawTransactionToIR', () => {
     });
   });
 
+  it('requires MoveCall _argumentTypes to align with arguments', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AA==' }],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'module',
+          function: 'call',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [
+            { reference: NULL_VALUE, body: { $kind: 'u64' } },
+            { reference: NULL_VALUE, body: { $kind: 'bool' } },
+          ],
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.command.argumentTypesLength',
+        path: '$.commands[0]._argumentTypes',
+      }),
+    );
+  });
+
   it('rejects MoveCall _argumentTypes outside the SDK OpenSignature schema', () => {
     const ir = rawTransactionToIR({
       inputs: [],
@@ -848,6 +1232,41 @@ describe('rawTransactionToIR', () => {
                 hiddenSignatureField: true,
               },
             ],
+          },
+        },
+      ],
+    });
+
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'MoveCall',
+    });
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.command.moveCall.argumentTypes',
+        path: '$.commands[0]._argumentTypes',
+      }),
+    );
+  });
+
+  it('rejects excessively nested MoveCall _argumentTypes without throwing', () => {
+    let body: Record<string, unknown> = { $kind: 'u64' };
+    for (let index = 0; index < 80; index += 1) {
+      body = { $kind: 'vector', vector: body };
+    }
+
+    const ir = rawTransactionToIR({
+      inputs: [],
+      commands: [
+        {
+          kind: 'MoveCall',
+          call: {
+            package: '0x2',
+            module: 'module',
+            function: 'call',
+            typeArguments: [],
+            arguments: [],
+            _argumentTypes: [{ reference: NULL_VALUE, body }],
           },
         },
       ],
@@ -956,6 +1375,137 @@ describe('rawTransactionToIR', () => {
     );
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'raw.command.intent',
+    );
+  });
+
+  it('diagnoses conflicting raw enum discriminators', () => {
+    const ir = rawTransactionToIR({
+      inputs: [
+        {
+          kind: 'Object',
+          object: {
+            kind: 'SharedObject',
+            $kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('2'),
+            initialSharedVersion: '1',
+            mutable: true,
+          },
+        },
+      ],
+      commands: [
+        {
+          kind: 'Publish',
+          $kind: 'Upgrade',
+          modules: ['AQID'],
+          dependencies: [],
+        },
+      ],
+    });
+
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.enum.conflict',
+        path: '$.inputs[0].Object',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.enum.conflict',
+        path: '$.commands[0]',
+      }),
+    );
+  });
+
+  it('rejects invalid raw MoveCall identifiers and type tags', () => {
+    const ir = rawTransactionToIR({
+      inputs: [],
+      commands: [
+        {
+          kind: 'MoveCall',
+          call: {
+            package: normalizedObjectId('2'),
+            module: ' ',
+            function: 'call',
+            typeArguments: [],
+            arguments: [],
+          },
+        },
+        {
+          kind: 'MoveCall',
+          call: {
+            package: normalizedObjectId('2'),
+            module: 'module',
+            function: 'call',
+            typeArguments: [''],
+            arguments: [],
+          },
+        },
+      ],
+    });
+
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'MoveCall',
+    });
+    expect(ir.commands[1]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'MoveCall',
+    });
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.moveIdentifier',
+        path: '$.commands[0].module',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.moveTypeTag',
+        path: '$.commands[1].typeArguments[0]',
+      }),
+    );
+  });
+
+  it('rejects unknown fields in raw object and funds withdrawal payloads', () => {
+    const ir = rawTransactionToIR({
+      inputs: [
+        {
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('2'),
+            version: '1',
+            digest: TEST_DIGEST_1,
+            extraObjectField: true,
+          },
+        },
+        {
+          kind: 'FundsWithdrawal',
+          value: {
+            reservation: {
+              kind: 'MaxAmountU64',
+              amount: '1',
+              extraReservationField: true,
+            },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
+            withdrawFrom: { kind: 'Sender' },
+            extraFundsField: true,
+          },
+        },
+      ],
+      commands: [],
+    });
+
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.object.unknownField',
+        path: '$.inputs[0].Object.extraObjectField',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'raw.funds.unknownField',
+        path: '$.inputs[1].FundsWithdrawal.extraFundsField',
+      }),
     );
   });
 
@@ -1203,6 +1753,10 @@ describe('TransactionIR renderers', () => {
       ['mermaid.showArgumentValues'],
     );
     expectModelErrorCodes(
+      () => transactionIRToMermaid(ir, { showArgsValues: true } as never),
+      ['mermaid.options.unknownField'],
+    );
+    expectModelErrorCodes(
       () => transactionIRToMermaid(ir, NULL_VALUE as never),
       ['mermaid.options'],
     );
@@ -1270,13 +1824,20 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).toContain('class command0,command1 coin');
   });
 
-  it('renders Mermaid labels through one escape path and preserves explicit null values', () => {
+  it('renders Mermaid labels through one escape path for HTML and control characters', () => {
     const mermaid = transactionIRToMermaid(
       {
         version: 'transaction_ir_1',
         inputs: [
           {
             id: 'maybeAmount',
+            kind: 'Pure',
+            value:
+              'line\nnext\t\u202E\u200B\uD800\u2028\u2029\u0080\u009F\uD83C\uDF89',
+            type: { kind: 'scalar', name: 'string' },
+          },
+          {
+            id: 'none',
             kind: 'Pure',
             value: NULL_VALUE,
             type: {
@@ -1291,7 +1852,7 @@ describe('TransactionIR renderers', () => {
             id: 'command_0',
             kind: 'MoveCall',
             package: normalizedObjectId('2'),
-            module: 'mod<ule',
+            module: 'mod"ule<',
             function: 'f',
             typeArguments: [],
             arguments: [{ kind: 'Input', index: 0 }],
@@ -1301,11 +1862,47 @@ describe('TransactionIR renderers', () => {
       { showArgumentValues: true },
     );
 
-    expect(mermaid).toContain('Input 0: Pure<br/>value null');
     expect(mermaid).toContain(
-      `MoveCall ${normalizedObjectId('2')}::mod&lt;ule::f`,
+      'Input 0: Pure<br/>value line<br/>next [U+202E][U+200B][U+D800][U+2028][U+2029][U+0080][U+009F]\uD83C\uDF89',
     );
-    expect(mermaid).toContain('input0 -- "input 0: value null" --> command0');
+    expect(mermaid).toContain('Input 1: Pure<br/>value null');
+    expect(mermaid).toContain(
+      `MoveCall ${normalizedObjectId('2')}::mod&quot;ule&lt;::f`,
+    );
+    expect(mermaid).toContain(
+      'input0 -- "input 0: value line<br/>next [U+202E][U+200B][U+D800][U+2028][U+2029][U+0080][U+009F]\uD83C\uDF89" --> command0',
+    );
+  });
+
+  it('preserves nested pure value structure in Mermaid value labels', () => {
+    const mermaid = transactionIRToMermaid(
+      {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'nested',
+            kind: 'Pure',
+            value: [
+              [1, 2],
+              [3, 4],
+            ],
+            type: {
+              kind: 'vector',
+              elem: {
+                kind: 'vector',
+                elem: { kind: 'move_numeric', width: 'u8' },
+              },
+            },
+          },
+        ],
+        diagnostics: [],
+        commands: [],
+      },
+      { showArgumentValues: true },
+    );
+
+    expect(mermaid).toContain('Input 0: Pure<br/>value [[1,2],[3,4]]');
+    expect(mermaid).not.toContain('value 1,2,3,4');
   });
 
   it('generates SDK 2.16.2 style transaction code', () => {
@@ -1338,7 +1935,7 @@ describe('TransactionIR renderers', () => {
             kind: 'ImmOrOwnedObject',
             objectId: normalizedObjectId('1'),
             version: '1',
-            digest: 'ownedDigest',
+            digest: TEST_DIGEST_1,
           },
         },
         {
@@ -1358,7 +1955,7 @@ describe('TransactionIR renderers', () => {
             kind: 'Receiving',
             objectId: normalizedObjectId('3'),
             version: '3',
-            digest: 'receivingDigest',
+            digest: TEST_DIGEST_2,
           },
         },
         {
@@ -1366,7 +1963,7 @@ describe('TransactionIR renderers', () => {
           kind: 'FundsWithdrawal',
           value: {
             reservation: { kind: 'MaxAmountU64', amount: '4' },
-            typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
             withdrawFrom: { kind: 'Sender' },
           },
         },
@@ -1446,6 +2043,74 @@ describe('TransactionIR renderers', () => {
     expectValidTypeScriptSource(code);
   });
 
+  it('escapes invisible and separator characters in generated SDK code literals', () => {
+    const unsafe =
+      'line1\u2028line2\u2029x\u0080y\u009Fz\u007F\u202E\u200B\u2066\uFEFF';
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'plain',
+          kind: 'Pure',
+          value: unsafe,
+          type: { kind: 'scalar', name: 'string' },
+        },
+        {
+          id: 'vector',
+          kind: 'Pure',
+          value: ['a\u2028b', 'safe'],
+          type: {
+            kind: 'vector',
+            elem: { kind: 'scalar', name: 'string' },
+          },
+        },
+        {
+          id: 'option',
+          kind: 'Pure',
+          value: 'c\u2029d',
+          type: {
+            kind: 'option',
+            elem: { kind: 'scalar', name: 'string' },
+          },
+        },
+      ],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+        },
+      ],
+    };
+
+    const code = transactionIRToTsSdkCode(ir);
+
+    expect(code).toContain(
+      'tx.pure("string", "line1\\u2028line2\\u2029x\\u0080y\\u009Fz\\u007F\\u202E\\u200B\\u2066\\uFEFF")',
+    );
+    expect(code).toContain('tx.pure("vector<string>", ["a\\u2028b","safe"])');
+    expect(code).toContain('tx.pure.option("string", "c\\u2029d")');
+    [
+      '\u007F',
+      '\u0080',
+      '\u009F',
+      '\u200B',
+      '\u2028',
+      '\u2029',
+      '\u202E',
+      '\u2066',
+      '\uFEFF',
+    ].forEach((char) => {
+      expect(code).not.toContain(char);
+    });
+    expectValidTypeScriptSource(code);
+  });
+
   it('rejects typed pure integer values outside SDK BCS numeric ranges', () => {
     const cases: Array<{
       width: 'u64' | 'u128' | 'u256';
@@ -1480,7 +2145,7 @@ describe('TransactionIR renderers', () => {
 
       expectModelErrorCodes(
         () => transactionIRToTsSdkCode(ir),
-        ['codegen.input.pure'],
+        ['ir.input.pureValue'],
       );
     });
   });
@@ -1623,7 +2288,7 @@ describe('TransactionIR renderers', () => {
         {
           id: 'amount',
           kind: 'Pure',
-          value: '1',
+          value: '01',
           type: { kind: 'move_numeric', width: 'u8' },
         },
       ],
@@ -1632,7 +2297,73 @@ describe('TransactionIR renderers', () => {
 
     expectModelErrorCodes(
       () => transactionIRToTsSdkCode(ir),
-      ['codegen.input.pure'],
+      ['ir.input.pureValue'],
+    );
+  });
+
+  it('validates typed pure value compatibility at the IR boundary', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'badU8Type',
+          kind: 'Pure',
+          value: '02',
+          type: { kind: 'move_numeric', width: 'u8' },
+        },
+        {
+          id: 'badU8Range',
+          kind: 'Pure',
+          value: 999,
+          type: { kind: 'move_numeric', width: 'u8' },
+        },
+        {
+          id: 'badOption',
+          kind: 'Pure',
+          value: NULL_VALUE,
+          type: { kind: 'option', elem: { kind: 'object' } },
+        },
+        {
+          id: 'badTuple',
+          kind: 'Pure',
+          value: [],
+          type: { kind: 'tuple', elems: [] },
+        },
+      ],
+      commands: [],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.pureValue',
+        message:
+          'Pure input badU8Type requires a canonical unsigned integer string, bigint, or safe integer number for u8.',
+        path: '$.inputs[0].value',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.pureValue',
+        message:
+          'Pure input badU8Range requires a u8 value within the supported unsigned integer range.',
+        path: '$.inputs[1].value',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.pureValue',
+        message:
+          'Pure input badOption cannot use object as a pure value type. Use an Object input instead.',
+        path: '$.inputs[2].type.elem',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.pureValue',
+        message: 'Pure input badTuple cannot use tuple as a pure value type.',
+        path: '$.inputs[3].type',
+      }),
     );
   });
 
@@ -1656,7 +2387,7 @@ describe('TransactionIR renderers', () => {
 
       expectModelErrorCodes(
         () => transactionIRToTsSdkCode(ir),
-        ['codegen.input.pure'],
+        ['ir.input.pureValue'],
       );
     });
   });
@@ -1686,10 +2417,16 @@ describe('TransactionIR renderers', () => {
   it('rejects empty address and JSON-U64 parser inputs instead of silently normalizing them', () => {
     expect(parseObjectId('')).toBeUndefined();
     expect(parseObjectId('0x')).toBeUndefined();
+    expect(parseObjectId('abc')).toBeUndefined();
     expect(parseObjectId('0x0')).toBe(normalizedObjectId('0'));
     expect(parseObjectId('0x2')).toBe(normalizedObjectId('2'));
     expect(parseJsonU64('')).toBeUndefined();
+    expect(parseJsonU64('0x10')).toBeUndefined();
+    expect(parseJsonU64(' 100 ')).toBeUndefined();
+    expect(parseJsonU64('007')).toBeUndefined();
+    expect(parseJsonU64('+1')).toBeUndefined();
     expect(parseJsonU64('0')).toBe('0');
+    expect(parseJsonU64(7)).toBe('7');
   });
 
   it('renders bigint typed pure values and serializes them through the JSON helper', () => {
@@ -1713,6 +2450,47 @@ describe('TransactionIR renderers', () => {
     expect(code).toContain('tx.pure("u64", "100")');
     expect(() => JSON.stringify(graph)).toThrow(/BigInt/);
     expect(jsonStringifyWithBigInt(graph)).toContain('"value":"100"');
+    expectValidTypeScriptSource(code);
+  });
+
+  it('renders u8, u16, and u32 typed pure values as SDK-compatible numbers', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'small',
+          kind: 'Pure',
+          value: '100',
+          type: { kind: 'move_numeric', width: 'u8' },
+        },
+        {
+          id: 'list',
+          kind: 'Pure',
+          value: ['1', '2'],
+          type: {
+            kind: 'vector',
+            elem: { kind: 'move_numeric', width: 'u16' },
+          },
+        },
+        {
+          id: 'maybe',
+          kind: 'Pure',
+          value: '3',
+          type: {
+            kind: 'option',
+            elem: { kind: 'move_numeric', width: 'u32' },
+          },
+        },
+      ],
+      commands: [],
+    };
+
+    const code = transactionIRToTsSdkCode(ir);
+
+    expect(code).toContain('tx.pure("u8", 100)');
+    expect(code).toContain('tx.pure("vector<u16>", [1,2])');
+    expect(code).toContain('tx.pure.option("u32", 3)');
     expectValidTypeScriptSource(code);
   });
 
@@ -1825,7 +2603,7 @@ describe('TransactionIR renderers', () => {
         const diagnostics = (error as PTBModelError).diagnostics;
         expect(diagnostics[0]).toEqual(
           expect.objectContaining({
-            code: 'codegen.input.pure',
+            code: 'ir.input.pureValue',
             message,
             path,
           }),
@@ -1858,9 +2636,9 @@ describe('TransactionIR renderers', () => {
       const diagnostics = (error as PTBModelError).diagnostics;
       expect(diagnostics[0]).toEqual(
         expect.objectContaining({
-          code: 'codegen.input.pure',
+          code: 'ir.input.pureValue',
           message:
-            'Pure input amount requires a non-empty integer string for u64.',
+            'Pure input amount requires a canonical unsigned integer string, bigint, or safe integer number for u64.',
           path: '$.inputs[0].value',
         }),
       );
@@ -1928,7 +2706,7 @@ describe('TransactionIR renderers', () => {
         {
           id: 'rawPureWithTypeHint',
           kind: 'Pure',
-          bytes: 'AQID',
+          bytes: 'AQIDBAUGBwg=',
           type: { kind: 'move_numeric', width: 'u64' },
         },
       ],
@@ -1937,8 +2715,35 @@ describe('TransactionIR renderers', () => {
 
     const code = transactionIRToTsSdkCode(ir);
 
-    expect(code).toContain('tx.pure(fromBase64("AQID"))');
+    expect(code).toContain('tx.pure(fromBase64("AQIDBAUGBwg="))');
     expectValidTypeScriptSource(code);
+  });
+
+  it('rejects fixed-width raw pure bytes that conflict with the type hint', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'rawPureWithBadTypeHint',
+          kind: 'Pure',
+          bytes: 'AQID',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+      ],
+      commands: [],
+    };
+
+    expect(validateTransactionIR(ir)).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.pureBytesType',
+        path: '$.inputs[0].bytes',
+      }),
+    );
+    expectModelErrorCodes(
+      () => transactionIRToTsSdkCode(ir),
+      ['ir.input.pureBytesType'],
+    );
   });
 
   it('diagnoses invalid pure type shapes before TS SDK rendering', () => {
@@ -2057,6 +2862,48 @@ describe('graph conversion', () => {
     );
   });
 
+  it('omits graph variables that are not referenced by command inputs from executable IR', () => {
+    const graph = transactionIRToGraph({
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          value: normalizedObjectId('1'),
+          type: { kind: 'scalar', name: 'address' },
+        },
+      ],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'sui',
+          function: 'transfer',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          resultCount: 0,
+        },
+      ],
+    });
+    graph.nodes.push({
+      id: 'orphan',
+      kind: 'Variable',
+      name: 'orphan',
+      varType: { kind: 'scalar', name: 'string' },
+      value: 'not used',
+      ports: [{ id: 'out', direction: 'out', role: 'io' }],
+      position: { x: 999, y: 999 },
+    });
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.inputs).toHaveLength(1);
+    expect(ir.inputs.map((input) => input.id)).toEqual(['recipient']);
+  });
+
   it('validates graph rawInput shape before accepting a graph document', () => {
     const diagnostics = validatePTBGraph({
       nodes: [
@@ -2071,7 +2918,7 @@ describe('graph conversion', () => {
               kind: 'ImmOrOwnedObject',
               objectId: '0xnot-hex',
               version: '1',
-              digest: 'digest',
+              digest: TEST_DIGEST_1,
             },
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
@@ -2084,6 +2931,72 @@ describe('graph conversion', () => {
       expect.objectContaining({
         code: 'graph.rawInput.object',
         path: '$.nodes[0].rawInput.object',
+      }),
+    );
+  });
+
+  it('rejects graph rawInput unknown fields and value conflicts', () => {
+    const ownedObject = {
+      kind: 'ImmOrOwnedObject' as const,
+      objectId: normalizedObjectId('7'),
+      version: '7',
+      digest: TEST_DIGEST_1,
+    };
+    const diagnostics = validatePTBGraph({
+      nodes: [
+        {
+          id: 'pure-raw',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'pureRaw',
+          value: 'display',
+          rawInput: { kind: 'Pure', bytes: 'AQID' },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'object-raw',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'objectRaw',
+          value: { ...ownedObject, version: '8' },
+          rawInput: {
+            kind: 'Object',
+            object: ownedObject,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'object-raw-unknown',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'objectRawUnknown',
+          rawInput: {
+            kind: 'Object',
+            object: ownedObject,
+            extraRawInputField: true,
+          } as never,
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.variable.rawInputValue',
+        path: '$.nodes[0].value',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.rawInput.unknownField',
+        path: '$.nodes[2].rawInput.extraRawInputField',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.variable.rawInputValue',
+        path: '$.nodes[1].value',
       }),
     );
   });
@@ -2168,6 +3081,74 @@ describe('graph conversion', () => {
     expect(codes).toContain('graph.edge.cast');
   });
 
+  it('rejects graph port ids outside the canonical model handle form', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'source',
+          kind: 'Variable',
+          name: 'source',
+          varType: { kind: 'scalar', name: 'address' },
+          value: normalizedObjectId('1'),
+          ports: [
+            { id: 'out:address', direction: 'out', role: 'io' },
+            { id: 'out-string', direction: 'out', role: 'io' },
+            { id: '0out', direction: 'out', role: 'io' },
+          ],
+        },
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+            { id: 'in_object_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-0',
+          kind: 'io',
+          source: 'source',
+          sourceHandle: 'out:address',
+          target: 'cmd-0',
+          targetHandle: 'in_recipient',
+        },
+        {
+          id: 'edge-1',
+          kind: 'io',
+          source: 'source',
+          sourceHandle: 'out-string',
+          target: 'cmd-0',
+          targetHandle: 'in_object_0',
+        },
+      ],
+    };
+
+    const diagnostics = validatePTBGraph(graph);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.port.id',
+        path: '$.nodes[0].ports[0].id',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.port.id',
+        path: '$.nodes[0].ports[1].id',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.port.id',
+        path: '$.nodes[0].ports[2].id',
+      }),
+    );
+    expect(graphToTransactionIR(graph).inputs).toHaveLength(0);
+  });
+
   it('uses graph runtime params as the only MoveCall transaction source', () => {
     const graph: PTBGraph = {
       nodes: [
@@ -2195,7 +3176,7 @@ describe('graph conversion', () => {
       package: normalizedObjectId('2'),
       module: 'module',
       function: 'call',
-      typeArguments: ['0x2::coin::Coin'],
+      typeArguments: [TEST_COIN_TYPE],
     });
   });
 
@@ -2252,13 +3233,56 @@ describe('graph conversion', () => {
 
     const ir = graphToTransactionIR(graph);
 
-    expect(ir.commands).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidMoveCallTypeArguments',
+    });
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'graph.command.params.runtime.typeArguments',
         path: '$.nodes[0].params.runtime.typeArguments',
       }),
     );
+  });
+
+  it('rejects non-string Publish and Upgrade runtime module arrays', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'publish',
+          kind: 'Command',
+          command: 'publish',
+          params: {
+            runtime: {
+              modules: ['AQID', 7] as never,
+              dependencies: [normalizedObjectId('2')],
+            },
+          },
+          ports: [],
+        },
+        {
+          id: 'upgrade',
+          kind: 'Command',
+          command: 'upgrade',
+          params: {
+            runtime: {
+              modules: ['AQID'],
+              dependencies: [normalizedObjectId('2'), 7] as never,
+              package: normalizedObjectId('3'),
+            },
+          },
+          ports: [],
+        },
+      ],
+      edges: [],
+    };
+
+    const codes = graphToTransactionIR(graph).diagnostics.map(
+      (diagnostic) => diagnostic.code,
+    );
+
+    expect(codes).toContain('graph.command.params.runtime.modules');
+    expect(codes).toContain('graph.command.params.runtime.dependencies');
   });
 
   it('rejects runtime command params outside the command-specific schema', () => {
@@ -2324,7 +3348,7 @@ describe('graph conversion', () => {
           command: 'makeMoveVec',
           params: {
             ui: {
-              elemTypeTag: '0x2::coin::Coin<0x2::sui::SUI>',
+              elemTypeTag: TEST_COIN_SUI_TYPE,
             } as never,
           },
           ports: [],
@@ -2360,13 +3384,45 @@ describe('graph conversion', () => {
 
     const ir = graphToTransactionIR(graph);
 
-    expect(ir.commands).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidMakeMoveVecType',
+    });
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'graph.command.params.runtime.type',
         path: '$.nodes[0].params.runtime.type',
       }),
     );
+  });
+
+  it('preserves explicit MakeMoveVec null type through IR and graph conversion', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [{ id: 'elem', kind: 'Pure', bytes: 'AA==' }],
+      commands: [
+        {
+          id: 'cmd-0',
+          kind: 'MakeMoveVec',
+          type: NULL_VALUE,
+          elements: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+    const roundTripped = graphToTransactionIR(graph);
+
+    expect(command?.params).toEqual({ runtime: { type: NULL_VALUE } });
+    expect(roundTripped.commands[0]).toMatchObject({
+      kind: 'MakeMoveVec',
+      type: NULL_VALUE,
+    });
   });
 
   it('rejects declared graph flow paths that leave commands disconnected', () => {
@@ -2656,7 +3712,7 @@ describe('graph conversion', () => {
               kind: 'ImmOrOwnedObject',
               objectId: '0xnot-hex',
               version: '1',
-              digest: 'digest',
+              digest: TEST_DIGEST_1,
             },
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
@@ -2716,7 +3772,7 @@ describe('graph conversion', () => {
           value: {
             objectId: '0xvalidFallback',
             version: '1',
-            digest: 'validFallbackDigest',
+            digest: TEST_DIGEST_2,
           },
           rawInput: {
             kind: 'Object',
@@ -2757,7 +3813,7 @@ describe('graph conversion', () => {
               kind: 'ImmOrOwnedObject',
               objectId: '0xobject',
               version: '0x10',
-              digest: 'digest',
+              digest: TEST_DIGEST_1,
             },
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
@@ -2836,7 +3892,7 @@ describe('graph conversion', () => {
           kind: 'Variable',
           varType: { kind: 'move_numeric', width: 'u64' },
           name: 'rawAmountBytes',
-          rawInput: { kind: 'Pure', bytes: 'AQID' },
+          rawInput: { kind: 'Pure', bytes: 'AQIDBAUGBwg=' },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
       ],
@@ -2849,10 +3905,10 @@ describe('graph conversion', () => {
     expect(ir.diagnostics).toEqual([]);
     expect(ir.inputs[0]).toMatchObject({
       kind: 'Pure',
-      bytes: 'AQID',
+      bytes: 'AQIDBAUGBwg=',
       type: { kind: 'move_numeric', width: 'u64' },
     });
-    expect(code).toContain('tx.pure(fromBase64("AQID"))');
+    expect(code).toContain('tx.pure(fromBase64("AQIDBAUGBwg="))');
     expectValidTypeScriptSource(code);
   });
 
@@ -2867,7 +3923,7 @@ describe('graph conversion', () => {
           value: {
             objectId: normalizedObjectId('7'),
             version: '7',
-            digest: 'digest',
+            digest: TEST_DIGEST_1,
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
@@ -2876,7 +3932,7 @@ describe('graph conversion', () => {
           kind: 'Variable',
           varType: { kind: 'object' },
           name: 'nonCanonicalObject',
-          value: { objectId: '0x7', version: '0x10', digest: 'digest' },
+          value: { objectId: '0x7', version: '0x10', digest: TEST_DIGEST_1 },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
         {
@@ -2884,7 +3940,11 @@ describe('graph conversion', () => {
           kind: 'Variable',
           varType: { kind: 'object' },
           name: 'invalidObject',
-          value: { objectId: '0xinvalid', version: '16', digest: 'digest' },
+          value: {
+            objectId: '0xinvalid',
+            version: '16',
+            digest: TEST_DIGEST_1,
+          },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
       ],
@@ -3026,7 +4086,7 @@ describe('graph conversion', () => {
     expect(ir.diagnostics).toEqual([]);
     expect(ir.commands[0]).toMatchObject({
       kind: 'MoveCall',
-      typeArguments: ['0x2::sui::SUI'],
+      typeArguments: [TEST_SUI_TYPE],
     });
     expect(ir.commands[1]).toMatchObject({
       kind: 'Publish',
@@ -3184,6 +4244,39 @@ describe('graph conversion', () => {
     expect(ir.inputs).toEqual([]);
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'graph.node.duplicate',
+    );
+  });
+
+  it('rejects duplicate non-empty variable names before they become duplicate IR ids', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'same',
+          value: 'a',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'var-1',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'same',
+          value: 'b',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const diagnostics = validatePTBGraph(graph);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.variable.duplicateName',
+        path: '$.nodes[1].name',
+      }),
     );
   });
 
@@ -3509,7 +4602,7 @@ describe('graph conversion', () => {
               kind: 'ImmOrOwnedObject',
               objectId: normalizedObjectId('9'),
               version: '1',
-              digest: 'ticketDigest',
+              digest: TEST_DIGEST_1,
             },
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
@@ -3594,7 +4687,18 @@ describe('graph conversion', () => {
   it('does not expose nested result handles for single-result package commands', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
-      inputs: [{ id: 'ticket', kind: 'Pure', bytes: 'AA==' }],
+      inputs: [
+        {
+          id: 'ticket',
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('7'),
+            version: '1',
+            digest: TEST_DIGEST_1,
+          },
+        },
+      ],
       diagnostics: [],
       commands: [
         {
@@ -3638,7 +4742,18 @@ describe('graph conversion', () => {
   it('declares nested handles for single-result package commands when IR references them', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
-      inputs: [{ id: 'ticket', kind: 'Pure', bytes: 'AA==' }],
+      inputs: [
+        {
+          id: 'ticket',
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('7'),
+            version: '1',
+            digest: TEST_DIGEST_1,
+          },
+        },
+      ],
       diagnostics: [],
       commands: [
         {
@@ -3824,6 +4939,43 @@ describe('graph conversion', () => {
       sourceKind: 'FutureInput',
       value: { kind: 'FutureInput', payload: 1 },
     });
+  });
+
+  it('preserves deeply nested unsupported graph values without recursive cloning', () => {
+    const root: Record<string, unknown> = { kind: 'FutureInput' };
+    let cursor = root;
+    for (let index = 0; index < 10000; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.next = next;
+      cursor = next;
+    }
+    cursor.done = true;
+
+    const roundTripped = graphToTransactionIR({
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          name: 'input_0',
+          varType: { kind: 'unknown' },
+          ports: [],
+          semantic: { kind: 'UnsupportedInput', sourceKind: 'FutureInput' },
+          value: root,
+        },
+      ],
+      edges: [],
+    });
+
+    expect(roundTripped.inputs[0].kind).toBe('Unsupported');
+    if (roundTripped.inputs[0].kind === 'Unsupported') {
+      expect(roundTripped.inputs[0].sourceKind).toBe('FutureInput');
+      expect(Object.is(roundTripped.inputs[0].value, root)).toBe(false);
+      let cloned = roundTripped.inputs[0].value as Record<string, unknown>;
+      for (let index = 0; index < 10000; index += 1) {
+        cloned = cloned.next as Record<string, unknown>;
+      }
+      expect(cloned.done).toBe(true);
+    }
   });
 
   it('returns graph diagnostics instead of throwing for malformed graph input', () => {
@@ -4256,7 +5408,7 @@ describe('validateTransactionIR', () => {
             kind: 'ImmOrOwnedObject',
             objectId: normalizedObjectId('2'),
             version: '1',
-            digest: 'digest',
+            digest: TEST_DIGEST_1,
           },
         },
       ],
@@ -4270,7 +5422,7 @@ describe('validateTransactionIR', () => {
             kind: 'ImmOrOwnedObject',
             objectId: normalizedObjectId('2'),
             version: '1',
-            digest: 'digest',
+            digest: TEST_DIGEST_1,
           },
         },
       ],
@@ -4314,6 +5466,180 @@ describe('validateTransactionIR', () => {
     expect(codes).toContain('ir.input');
     expect(codes).toContain('ir.command.field');
     expect(codes).toContain('ir.diagnostic');
+  });
+
+  it('rejects duplicate TransactionIR input and command ids', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        { id: 'input_0', kind: 'Pure', bytes: 'AA==' },
+        { id: 'input_0', kind: 'Pure', bytes: 'AQ==' },
+      ],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'Publish',
+          modules: ['AA=='],
+          dependencies: [],
+        },
+        {
+          id: 'command_0',
+          kind: 'Publish',
+          modules: ['AQ=='],
+          dependencies: [],
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.duplicateId',
+        path: '$.inputs[1].id',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.command.duplicateId',
+        path: '$.commands[1].id',
+      }),
+    );
+  });
+
+  it('rejects empty TransactionIR input and command ids', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [{ id: '', kind: 'Pure', bytes: 'AA==' }],
+      commands: [
+        { id: '', kind: 'Publish', modules: ['AA=='], dependencies: [] },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.id',
+        path: '$.inputs[0].id',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.command.id',
+        path: '$.commands[0].id',
+      }),
+    );
+  });
+
+  it('rejects Input argument type metadata that does not match the referenced input kind', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AA==' }],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'Input', index: 0, type: 'object' }],
+          address: { kind: 'Input', index: 0, type: 'pure' },
+          resultCount: 0,
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg.typeMismatch',
+        path: '$.commands[0].objects[0].type',
+      }),
+    );
+  });
+
+  it('rejects command input references whose source kind cannot satisfy the command argument', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        { id: 'recipientObject', kind: 'Object' },
+        { id: 'coinValue', kind: 'Pure', bytes: 'AA==' },
+      ],
+      commands: [
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'GasCoin' }],
+          address: { kind: 'Input', index: 0 },
+          resultCount: 0,
+        },
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 1 },
+          amounts: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg.semanticType',
+        path: '$.commands[0].address',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg.semanticType',
+        path: '$.commands[1].coin',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg.semanticType',
+        path: '$.commands[1].amounts[0]',
+      }),
+    );
+  });
+
+  it('rejects canonicalRaw values that do not match the IR item', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'input_0',
+          kind: 'Pure',
+          bytes: 'AA==',
+          canonicalRaw: { kind: 'Pure', bytes: 'AQ==' },
+        },
+      ],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'Publish',
+          modules: ['AA=='],
+          dependencies: [],
+          resultCount: 1,
+          canonicalRaw: {
+            kind: 'Publish',
+            modules: ['AQ=='],
+            dependencies: [],
+          },
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.input.canonicalRaw',
+        path: '$.inputs[0].canonicalRaw',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.command.canonicalRaw',
+        path: '$.commands[0].canonicalRaw',
+      }),
+    );
   });
 
   it('rejects diagnostic level fields instead of accepting inert warnings', () => {
@@ -4427,7 +5753,7 @@ describe('validateTransactionIR', () => {
             kind: 'ImmOrOwnedObject',
             objectId: 'not-an-object-id',
             version: '-1',
-            digest: 'digest',
+            digest: TEST_DIGEST_1,
           },
         },
         {
@@ -4438,7 +5764,7 @@ describe('validateTransactionIR', () => {
               kind: 'MaxAmountU64',
               amount: '18446744073709551616',
             },
-            typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+            typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
             withdrawFrom: { kind: 'Sender' },
           },
         },
@@ -4801,7 +6127,7 @@ describe('validateTransactionIR', () => {
         ],
         edges: [],
       }).diagnostics.map((diagnostic) => diagnostic.code),
-    ).toContain('graph.command.params.runtime.array');
+    ).toContain('graph.command.params.runtime.dependencies');
   });
 
   it('freezes diagnostics through createTransactionIR but not direct literals', () => {
@@ -4848,14 +6174,14 @@ function sampleRawTransaction(
           kind: 'ImmOrOwnedObject',
           objectId: normalizedObjectId('5'),
           version: '7',
-          digest: 'digest',
+          digest: TEST_DIGEST_1,
         },
       },
       {
         kind: 'FundsWithdrawal',
         value: {
           reservation: { kind: 'MaxAmountU64', amount: '1000' },
-          typeArg: { kind: 'Balance', type: '0x2::sui::SUI' },
+          typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
           withdrawFrom: { kind: fundsWithdrawalFrom },
         },
       },
@@ -4882,13 +6208,13 @@ function sampleRawTransaction(
           package: normalizedObjectId('2'),
           module: 'coin',
           function: 'value',
-          typeArguments: ['0x2::sui::SUI'],
+          typeArguments: [TEST_SUI_TYPE],
           arguments: [{ kind: 'Input', index: 1 }],
         },
       },
       {
         kind: 'MakeMoveVec',
-        type: '0x2::coin::Coin<0x2::sui::SUI>',
+        type: TEST_COIN_SUI_TYPE,
         elements: [{ kind: 'Input', index: 1 }],
       },
       {

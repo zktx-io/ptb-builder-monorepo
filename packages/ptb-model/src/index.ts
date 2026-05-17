@@ -74,6 +74,9 @@ export {
   isRawMoveCallArgumentTypes,
   parseBase64Bytes,
   parseJsonU64,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
+  parseObjectDigest,
   parseObjectId,
 } from './raw/types.js';
 export { jsonStringifyWithBigInt, NULL_VALUE } from './utils.js';

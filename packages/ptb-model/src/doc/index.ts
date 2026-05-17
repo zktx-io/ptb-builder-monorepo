@@ -7,7 +7,8 @@ import {
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
-import { isFiniteNumber, isRecord } from '../utils.js';
+import { parseObjectId } from '../raw/types.js';
+import { isFiniteNumber, isRecord, NULL_VALUE } from '../utils.js';
 
 export const PTB_DOC_VERSION_V4 = 'ptb_4' as const;
 export type PTBDocVersion = typeof PTB_DOC_VERSION_V4;
@@ -50,6 +51,8 @@ export function validatePTBDocV4(
     return freezeDiagnostics(diagnostics);
   }
 
+  validateDocumentJsonLike(value, '$', diagnostics);
+
   if (value.version !== PTB_DOC_VERSION_V4) {
     diagnostics.push(
       errorDiagnostic(
@@ -73,7 +76,7 @@ export function validatePTBDocV4(
 
   diagnostics.push(...validatePTBGraph(value.graph, '$.graph'));
   validateOptionalString(value.chain, '$.chain', 'chain', diagnostics);
-  validateOptionalString(value.sender, '$.sender', 'sender', diagnostics);
+  validateOptionalSender(value.sender, '$.sender', diagnostics);
   validateOptionalRecord(value.modules, '$.modules', 'modules', diagnostics);
   validateOptionalRecord(value.objects, '$.objects', 'objects', diagnostics);
   validateOptionalView(value.view, '$.view', diagnostics);
@@ -87,7 +90,7 @@ export function parsePTBDocV4(value: unknown): PTBDocV4 {
     throwDocError(diagnostics);
   }
 
-  return value as PTBDocV4;
+  return cloneDocumentJsonLike(value) as PTBDocV4;
 }
 
 function throwDocError(diagnostics: readonly TransactionDiagnostic[]): never {
@@ -106,6 +109,34 @@ function validateOptionalString(
     errorDiagnostic(
       `doc.${field}`,
       `PTB document ${field} must be a string when present.`,
+      path,
+    ),
+  );
+}
+
+function validateOptionalSender(
+  value: unknown,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'string') {
+    diagnostics.push(
+      errorDiagnostic(
+        'doc.sender',
+        'PTB document sender must be a string when present.',
+        path,
+      ),
+    );
+    return;
+  }
+
+  const sender = parseObjectId(value);
+  if (sender !== undefined && sender === value) return;
+  diagnostics.push(
+    errorDiagnostic(
+      'doc.sender',
+      'PTB document sender must be a canonical Sui address when present.',
       path,
     ),
   );
@@ -153,6 +184,190 @@ function validateOptionalView(
   );
 }
 
+function validateDocumentJsonLike(
+  value: unknown,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  const active = new WeakSet<object>();
+  const stack: Array<{ value: unknown; path: string; exit?: boolean }> = [
+    { value, path },
+  ];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    const { value: item, path: itemPath } = current;
+
+    if (current.exit) {
+      if (typeof item === 'object' && item !== NULL_VALUE) {
+        active.delete(item);
+      }
+      continue;
+    }
+
+    if (item === NULL_VALUE) continue;
+    const itemType = typeof item;
+    if (
+      itemType === 'string' ||
+      itemType === 'boolean' ||
+      (itemType === 'number' && Number.isFinite(item))
+    ) {
+      continue;
+    }
+
+    if (Array.isArray(item)) {
+      if (!isDenseJsonArray(item)) {
+        diagnostics.push(
+          errorDiagnostic(
+            'doc.json',
+            'PTB document values must use dense JSON arrays.',
+            itemPath,
+          ),
+        );
+        continue;
+      }
+      if (active.has(item)) {
+        diagnostics.push(
+          errorDiagnostic(
+            'doc.json',
+            'PTB document values must not contain cyclic references.',
+            itemPath,
+          ),
+        );
+        continue;
+      }
+      active.add(item);
+      stack.push({ value: item, path: itemPath, exit: true });
+      for (let index = item.length - 1; index >= 0; index -= 1) {
+        stack.push({ value: item[index], path: `${itemPath}[${index}]` });
+      }
+      continue;
+    }
+
+    if (isPlainDocumentObject(item)) {
+      if (active.has(item)) {
+        diagnostics.push(
+          errorDiagnostic(
+            'doc.json',
+            'PTB document values must not contain cyclic references.',
+            itemPath,
+          ),
+        );
+        continue;
+      }
+      active.add(item);
+      stack.push({ value: item, path: itemPath, exit: true });
+      Object.keys(item)
+        .reverse()
+        .forEach((key) => {
+          stack.push({
+            value: item[key],
+            path: `${itemPath}.${key}`,
+          });
+        });
+      continue;
+    }
+
+    diagnostics.push(
+      errorDiagnostic(
+        'doc.json',
+        'PTB document values must be JSON primitives, dense arrays, or plain objects.',
+        itemPath,
+      ),
+    );
+  }
+}
+
+function cloneDocumentJsonLike<T>(value: T): T {
+  if (value === NULL_VALUE || typeof value !== 'object') return value;
+
+  const root = Array.isArray(value) ? [] : {};
+  const seen = new WeakMap<object, unknown>([[value, root]]);
+  const stack: Array<{
+    source: Record<string, unknown> | unknown[];
+    target: Record<string, unknown> | unknown[];
+  }> = [
+    {
+      source: value as Record<string, unknown> | unknown[],
+      target: root as Record<string, unknown> | unknown[],
+    },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) continue;
+    const { source, target } = frame;
+
+    if (Array.isArray(source)) {
+      source.forEach((item, index) => {
+        assignJsonClone(item, target as unknown[], index, seen, stack);
+      });
+      continue;
+    }
+
+    Object.entries(source).forEach(([key, item]) => {
+      assignJsonClone(
+        item,
+        target as Record<string, unknown>,
+        key,
+        seen,
+        stack,
+      );
+    });
+  }
+
+  return root as T;
+}
+
+function assignJsonClone(
+  item: unknown,
+  target: Record<string, unknown> | unknown[],
+  key: string | number,
+  seen: WeakMap<object, unknown>,
+  stack: Array<{
+    source: Record<string, unknown> | unknown[];
+    target: Record<string, unknown> | unknown[];
+  }>,
+): void {
+  if (item === NULL_VALUE || typeof item !== 'object') {
+    if (Array.isArray(target)) target[key as number] = item;
+    else target[key as string] = item;
+    return;
+  }
+
+  const existing = seen.get(item);
+  if (existing) {
+    if (Array.isArray(target)) target[key as number] = existing;
+    else target[key as string] = existing;
+    return;
+  }
+
+  const clone = Array.isArray(item) ? [] : {};
+  seen.set(item, clone);
+  if (Array.isArray(target)) target[key as number] = clone;
+  else target[key as string] = clone;
+  stack.push({
+    source: item as Record<string, unknown> | unknown[],
+    target: clone as Record<string, unknown> | unknown[],
+  });
+}
+
+function isPlainDocumentObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === NULL_VALUE;
+}
+
+function isDenseJsonArray(value: unknown[]): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
+  }
+  return true;
+}
+
 function validateUnknownFields(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
@@ -181,6 +396,7 @@ function isView(
     isRecord(value) &&
     isFiniteNumber(value.x) &&
     isFiniteNumber(value.y) &&
-    isFiniteNumber(value.zoom)
+    isFiniteNumber(value.zoom) &&
+    value.zoom > 0
   );
 }

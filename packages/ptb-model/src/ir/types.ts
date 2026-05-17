@@ -33,20 +33,20 @@ export type IRInput =
       bytes?: string;
       value?: IRPureValue;
       type?: PTBType;
-      raw?: RawCallArg;
+      canonicalRaw?: RawCallArg;
     }
   | {
       id: string;
       kind: 'Object';
       object?: RawObjectArg;
       type?: PTBType;
-      raw?: RawCallArg;
+      canonicalRaw?: RawCallArg;
     }
   | {
       id: string;
       kind: 'FundsWithdrawal';
       value: RawFundsWithdrawalArg;
-      raw?: RawCallArg;
+      canonicalRaw?: RawCallArg;
     }
   | {
       id: string;
@@ -66,7 +66,7 @@ export type IRCommand =
       arguments: IRArgRef[];
       _argumentTypes?: RawMoveCallArgumentTypes;
       resultCount?: number;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -74,7 +74,7 @@ export type IRCommand =
       objects: IRArgRef[];
       address: IRArgRef;
       resultCount: 0;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -82,7 +82,7 @@ export type IRCommand =
       coin: IRArgRef;
       amounts: IRArgRef[];
       resultCount: number;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -90,7 +90,7 @@ export type IRCommand =
       destination: IRArgRef;
       sources: IRArgRef[];
       resultCount: 0;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -98,7 +98,7 @@ export type IRCommand =
       modules: string[];
       dependencies: string[];
       resultCount: 1;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -106,7 +106,7 @@ export type IRCommand =
       type: string | null;
       elements: IRArgRef[];
       resultCount: 1;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;
@@ -116,7 +116,7 @@ export type IRCommand =
       package: string;
       ticket: IRArgRef;
       resultCount: 1;
-      raw?: RawCommand;
+      canonicalRaw?: RawCommand;
     }
   | {
       id: string;

@@ -14,6 +14,9 @@ import {
   isRawMoveCallArgumentTypes,
   parseBase64Bytes,
   parseJsonU64,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
+  parseObjectDigest,
   parseObjectId,
 } from './types.js';
 import {
@@ -219,20 +222,25 @@ function rawCallArgToIRInput(raw: RawCallArg, index: number): IRInput {
 
   switch (raw.kind) {
     case 'Pure':
-      return { id, kind: 'Pure', bytes: raw.bytes, raw: cloneJsonLike(raw) };
+      return {
+        id,
+        kind: 'Pure',
+        bytes: raw.bytes,
+        canonicalRaw: cloneJsonLike(raw),
+      };
     case 'Object':
       return {
         id,
         kind: 'Object',
         object: cloneJsonLike(raw.object),
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'FundsWithdrawal':
       return {
         id,
         kind: 'FundsWithdrawal',
         value: cloneJsonLike(raw.value),
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
   }
 }
@@ -253,7 +261,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         ...('_argumentTypes' in raw.call
           ? { _argumentTypes: cloneJsonLike(raw.call._argumentTypes) }
           : {}),
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'TransferObjects':
       return {
@@ -262,7 +270,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         objects: cloneJsonLike(raw.objects),
         address: cloneJsonLike(raw.address),
         resultCount: 0,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'SplitCoins':
       return {
@@ -271,7 +279,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         coin: cloneJsonLike(raw.coin),
         amounts: cloneJsonLike(raw.amounts),
         resultCount: raw.amounts.length,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'MergeCoins':
       return {
@@ -280,7 +288,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         destination: cloneJsonLike(raw.destination),
         sources: cloneJsonLike(raw.sources),
         resultCount: 0,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'Publish':
       return {
@@ -289,7 +297,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         modules: [...raw.modules],
         dependencies: [...raw.dependencies],
         resultCount: 1,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'MakeMoveVec':
       return {
@@ -298,7 +306,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         type: raw.type,
         elements: cloneJsonLike(raw.elements),
         resultCount: 1,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
     case 'Upgrade':
       return {
@@ -309,7 +317,7 @@ function rawCommandToIRCommand(raw: RawCommand, index: number): IRCommand {
         package: raw.package,
         ticket: cloneJsonLike(raw.ticket),
         resultCount: 1,
-        raw: cloneJsonLike(raw),
+        canonicalRaw: cloneJsonLike(raw),
       };
   }
 }
@@ -412,7 +420,7 @@ function normalizeRawCallArg(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawCallArg | undefined {
-  const view = enumView(value);
+  const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
       errorDiagnostic('raw.input', 'Input must be an enum object.', path),
@@ -442,7 +450,7 @@ function normalizeRawCallArg(
         diagnostics.push(
           errorDiagnostic(
             'raw.base64Bytes',
-            'Pure input requires atob-decodable base64 bytes.',
+            'Pure input requires base64-decodable base64 bytes.',
             `${path}.bytes`,
           ),
         );
@@ -541,7 +549,7 @@ function normalizeRawObjectArg(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawObjectArg | undefined {
-  const view = enumView(value);
+  const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
       errorDiagnostic(
@@ -580,7 +588,7 @@ function normalizeRawObjectArg(
       }
       const objectId = parseObjectId(view.payload.objectId);
       const version = parseJsonU64(view.payload.version);
-      const digest = asString(view.payload.digest);
+      const digest = parseObjectDigest(view.payload.digest);
       if (!objectId || !version || !digest) {
         diagnostics.push(
           errorDiagnostic(
@@ -638,7 +646,7 @@ function normalizeRawObjectArg(
       }
       const objectId = parseObjectId(view.payload.objectId);
       const version = parseJsonU64(view.payload.version);
-      const digest = asString(view.payload.digest);
+      const digest = parseObjectDigest(view.payload.digest);
       if (!objectId || !version || !digest) {
         diagnostics.push(
           errorDiagnostic(
@@ -679,17 +687,29 @@ function normalizeFundsWithdrawal(
     return undefined;
   }
 
-  const reservation = enumView(value.reservation);
-  const typeArg = enumView(value.typeArg);
-  const withdrawFrom = enumView(value.withdrawFrom);
-  validateOnlyKeys(
-    value,
-    RAW_FUNDS_WITHDRAWAL_KEYS,
-    'raw.funds.unknownField',
-    path,
-    'Raw FundsWithdrawal payload',
+  const reservation = enumView(
+    value.reservation,
     diagnostics,
+    `${path}.reservation`,
   );
+  const typeArg = enumView(value.typeArg, diagnostics, `${path}.typeArg`);
+  const withdrawFrom = enumView(
+    value.withdrawFrom,
+    diagnostics,
+    `${path}.withdrawFrom`,
+  );
+  if (
+    !validateOnlyKeys(
+      value,
+      RAW_FUNDS_WITHDRAWAL_KEYS,
+      'raw.funds.unknownField',
+      path,
+      'Raw FundsWithdrawal payload',
+      diagnostics,
+    )
+  ) {
+    return undefined;
+  }
 
   if (reservation?.kind !== 'MaxAmountU64') {
     diagnostics.push(
@@ -765,7 +785,7 @@ function normalizeFundsWithdrawal(
       ? reservation.payload.amount
       : reservation.payload,
   );
-  const type = asString(
+  const type = parseMoveTypeTag(
     isRecord(typeArg.payload) ? typeArg.payload.type : typeArg.payload,
   );
   if (!amount || !type) {
@@ -791,7 +811,7 @@ function normalizeRawCommand(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawCommand | undefined {
-  const view = enumView(value);
+  const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
       errorDiagnostic('raw.command', 'Command must be an enum object.', path),
@@ -952,7 +972,9 @@ function normalizeRawCommand(
       let type: string | null | undefined;
       if (hasType) {
         type =
-          payload.type === NULL_VALUE ? NULL_VALUE : asString(payload.type);
+          payload.type === NULL_VALUE
+            ? NULL_VALUE
+            : parseMoveTypeTag(payload.type);
       }
       if (type === undefined) {
         diagnostics.push(
@@ -1050,9 +1072,9 @@ function normalizeMoveCall(
     return undefined;
   }
   const packageId = parseObjectId(value.package);
-  const module = asString(value.module);
-  const fn = asString(value.function);
-  const typeArguments = stringArray(
+  const module = parseMoveIdentifier(value.module);
+  const fn = parseMoveIdentifier(value.function);
+  const typeArguments = moveTypeTagArray(
     value.typeArguments,
     `${path}.typeArguments`,
     'MoveCall typeArguments',
@@ -1069,14 +1091,34 @@ function normalizeMoveCall(
     diagnostics,
   );
 
-  if (!packageId || !module || !fn) {
+  if (!packageId) {
     diagnostics.push(
       errorDiagnostic(
-        'raw.command.moveCall',
-        'MoveCall requires package, module, and function.',
-        path,
+        'raw.objectId',
+        'MoveCall package must be a Sui object ID.',
+        `${path}.package`,
       ),
     );
+  }
+  if (!module) {
+    diagnostics.push(
+      errorDiagnostic(
+        'raw.moveIdentifier',
+        'MoveCall module must be a Move identifier.',
+        `${path}.module`,
+      ),
+    );
+  }
+  if (!fn) {
+    diagnostics.push(
+      errorDiagnostic(
+        'raw.moveIdentifier',
+        'MoveCall function must be a Move identifier.',
+        `${path}.function`,
+      ),
+    );
+  }
+  if (!packageId || !module || !fn) {
     return undefined;
   }
 
@@ -1171,7 +1213,7 @@ function normalizeRawArgument(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawArgument | undefined {
-  const view = enumView(value);
+  const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
       errorDiagnostic('raw.argument', 'Argument must be an enum object.', path),
@@ -1332,17 +1374,35 @@ function unsupportedCommand(value: unknown, index: number): IRCommand {
   };
 }
 
-function enumView(value: unknown): EnumView | undefined {
+function enumView(
+  value: unknown,
+  diagnostics?: TransactionDiagnostic[],
+  path = '$',
+): EnumView | undefined {
   if (!isRecord(value)) return undefined;
 
-  if (typeof value.kind === 'string') {
-    return { kind: value.kind, payload: value, source: value, shape: 'kind' };
+  const modelKind = typeof value.kind === 'string' ? value.kind : undefined;
+  const sdkKind = typeof value.$kind === 'string' ? value.$kind : undefined;
+
+  if (modelKind && sdkKind && modelKind !== sdkKind) {
+    diagnostics?.push(
+      errorDiagnostic(
+        'raw.enum.conflict',
+        `Raw enum object has conflicting kind ${modelKind} and $kind ${sdkKind}.`,
+        path,
+      ),
+    );
+    return undefined;
   }
 
-  if (typeof value.$kind === 'string') {
+  if (modelKind) {
+    return { kind: modelKind, payload: value, source: value, shape: 'kind' };
+  }
+
+  if (sdkKind) {
     return {
-      kind: value.$kind,
-      payload: value[value.$kind],
+      kind: sdkKind,
+      payload: value[sdkKind],
       source: value,
       shape: '$kind',
     };
@@ -1522,7 +1582,7 @@ function base64BytesArray(
     diagnostics.push(
       errorDiagnostic(
         'raw.base64Bytes',
-        `${label} must be an array of atob-decodable base64 byte strings.`,
+        `${label} must be an array of base64-decodable base64 byte strings.`,
         path,
       ),
     );
@@ -1535,7 +1595,7 @@ function base64BytesArray(
       diagnostics.push(
         errorDiagnostic(
           'raw.base64Bytes',
-          `${label} item ${index} must be atob-decodable base64 bytes.`,
+          `${label} item ${index} must be base64-decodable base64 bytes.`,
           `${path}[${index}]`,
         ),
       );
@@ -1604,22 +1664,38 @@ function objectIdArray(
     : undefined;
 }
 
-function stringArray(
+function moveTypeTagArray(
   value: unknown,
   path: string,
   label: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  if (isDenseArray(value) && value.every((item) => typeof item === 'string')) {
-    return [...value];
+  if (!isDenseArray(value)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'raw.moveTypeTagArray',
+        `${label} must be an array of Move type tag strings.`,
+        path,
+      ),
+    );
+    return undefined;
   }
 
-  diagnostics.push(
-    errorDiagnostic(
-      'raw.stringArray',
-      `${label} must be an array of strings.`,
-      path,
-    ),
-  );
-  return undefined;
+  const items = value.map((item, index) => {
+    const typeTag = parseMoveTypeTag(item);
+    if (typeTag === undefined) {
+      diagnostics.push(
+        errorDiagnostic(
+          'raw.moveTypeTag',
+          `${label} item ${index} must be a valid Move type tag string.`,
+          `${path}[${index}]`,
+        ),
+      );
+    }
+    return typeTag;
+  });
+
+  return items.every((item): item is string => item !== undefined)
+    ? items
+    : undefined;
 }

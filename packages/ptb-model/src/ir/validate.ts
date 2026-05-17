@@ -1,19 +1,24 @@
 import { errorDiagnostic, freezeDiagnostics } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
+import { pureBytesTypeHintDiagnostic, pureValueDiagnostic } from './pure.js';
 import { isIRArgRef } from './types.js';
 import type { IRArgRef, IRCommand, IRInput, TransactionIR } from './types.js';
 import { validatePTBType } from '../graph/types.js';
+import type { PTBType } from '../graph/types.js';
 import {
   isRawFundsWithdrawalArg,
   isRawInputArgumentType,
   isRawMoveCallArgumentTypes,
   isRawObjectArg,
   parseBase64Bytes,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
   parseObjectId,
 } from '../raw/types.js';
-import { isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
+import { isDenseArray, isRecord, jsonLikeEqual, NULL_VALUE } from '../utils.js';
 
 const RAW_ARGUMENT_INDEX_MAX = 65_535;
+// This is the raw argument index address space, not a Sui protocol execution limit.
 const MAX_RESULT_COUNT = RAW_ARGUMENT_INDEX_MAX + 1;
 const TRANSACTION_IR_KEYS = [
   'version',
@@ -22,9 +27,9 @@ const TRANSACTION_IR_KEYS = [
   'diagnostics',
 ] as const;
 const IR_INPUT_KEYS_BY_KIND = {
-  Pure: ['id', 'kind', 'bytes', 'value', 'type', 'raw'],
-  Object: ['id', 'kind', 'object', 'type', 'raw'],
-  FundsWithdrawal: ['id', 'kind', 'value', 'raw'],
+  Pure: ['id', 'kind', 'bytes', 'value', 'type', 'canonicalRaw'],
+  Object: ['id', 'kind', 'object', 'type', 'canonicalRaw'],
+  FundsWithdrawal: ['id', 'kind', 'value', 'canonicalRaw'],
   Unsupported: ['id', 'kind', 'sourceKind', 'value'],
 } as const satisfies Record<IRInput['kind'], readonly string[]>;
 const IR_COMMAND_KEYS_BY_KIND = {
@@ -38,13 +43,41 @@ const IR_COMMAND_KEYS_BY_KIND = {
     'arguments',
     '_argumentTypes',
     'resultCount',
-    'raw',
+    'canonicalRaw',
   ],
-  TransferObjects: ['id', 'kind', 'objects', 'address', 'resultCount', 'raw'],
-  SplitCoins: ['id', 'kind', 'coin', 'amounts', 'resultCount', 'raw'],
-  MergeCoins: ['id', 'kind', 'destination', 'sources', 'resultCount', 'raw'],
-  Publish: ['id', 'kind', 'modules', 'dependencies', 'resultCount', 'raw'],
-  MakeMoveVec: ['id', 'kind', 'type', 'elements', 'resultCount', 'raw'],
+  TransferObjects: [
+    'id',
+    'kind',
+    'objects',
+    'address',
+    'resultCount',
+    'canonicalRaw',
+  ],
+  SplitCoins: ['id', 'kind', 'coin', 'amounts', 'resultCount', 'canonicalRaw'],
+  MergeCoins: [
+    'id',
+    'kind',
+    'destination',
+    'sources',
+    'resultCount',
+    'canonicalRaw',
+  ],
+  Publish: [
+    'id',
+    'kind',
+    'modules',
+    'dependencies',
+    'resultCount',
+    'canonicalRaw',
+  ],
+  MakeMoveVec: [
+    'id',
+    'kind',
+    'type',
+    'elements',
+    'resultCount',
+    'canonicalRaw',
+  ],
   Upgrade: [
     'id',
     'kind',
@@ -53,7 +86,7 @@ const IR_COMMAND_KEYS_BY_KIND = {
     'package',
     'ticket',
     'resultCount',
-    'raw',
+    'canonicalRaw',
   ],
   Unsupported: ['id', 'kind', 'sourceKind', 'value', 'resultCount'],
 } as const satisfies Record<IRCommand['kind'], readonly string[]>;
@@ -66,6 +99,14 @@ const IR_ARG_REF_KEYS_BY_KIND = {
 
 export interface ValidateTransactionIROptions {
   includeExistingDiagnostics?: boolean;
+}
+
+type ExpectedInputArgumentType = 'pure' | 'object' | 'withdrawal';
+
+interface CommandArgValidationEntry {
+  arg: IRArgRef;
+  path: string;
+  expectedInputType?: ExpectedInputArgumentType;
 }
 
 export function validateTransactionIR(
@@ -166,6 +207,9 @@ export function validateTransactionIR(
     diagnostics,
   } as TransactionIR;
 
+  validateUniqueIds(ir.inputs, 'input', '$.inputs', diagnostics);
+  validateUniqueIds(ir.commands, 'command', '$.commands', diagnostics);
+
   ir.inputs.forEach((input, index) => {
     if (!isIRInputShape(input, index, diagnostics)) {
       return;
@@ -201,8 +245,15 @@ export function validateTransactionIR(
     }
 
     commandArgValidationEntries(command, commandIndex).forEach(
-      ({ arg, path }) => {
-        validateArgRef(ir, commandIndex, arg, path, diagnostics);
+      ({ arg, path, expectedInputType }) => {
+        validateArgRef(
+          ir,
+          commandIndex,
+          arg,
+          path,
+          diagnostics,
+          expectedInputType,
+        );
       },
     );
   });
@@ -222,6 +273,76 @@ function isTransactionDiagnosticShape(
       (key) => key === 'code' || key === 'message' || key === 'path',
     )
   );
+}
+
+function validateUniqueIds(
+  items: readonly { id?: unknown }[],
+  label: 'input' | 'command',
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  const firstIndexById = new Map<string, number>();
+  items.forEach((item, index) => {
+    if (!isRecord(item)) return;
+    if (typeof item.id !== 'string') return;
+    const firstIndex = firstIndexById.get(item.id);
+    if (firstIndex === undefined) {
+      firstIndexById.set(item.id, index);
+      return;
+    }
+    diagnostics.push(
+      errorDiagnostic(
+        `ir.${label}.duplicateId`,
+        `TransactionIR ${label} id ${item.id} is duplicated; first occurrence is at index ${firstIndex}.`,
+        `${path}[${index}].id`,
+      ),
+    );
+  });
+}
+
+function validateNonEmptyId(
+  value: string,
+  label: 'input' | 'command',
+  index: number,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  if (value.length > 0) return true;
+
+  diagnostics.push(
+    errorDiagnostic(
+      `ir.${label}.id`,
+      `TransactionIR ${label} ${index} requires a non-empty id string.`,
+      path,
+    ),
+  );
+  return false;
+}
+
+function validateCanonicalRawField(
+  value: Record<string, unknown>,
+  expected: unknown | undefined,
+  label: 'input' | 'command',
+  index: number,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  if (!Object.prototype.hasOwnProperty.call(value, 'canonicalRaw')) return true;
+  if (value.canonicalRaw === undefined) return true;
+
+  if (expected !== undefined && jsonLikeEqual(value.canonicalRaw, expected)) {
+    return true;
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      `ir.${label}.canonicalRaw`,
+      expected === undefined
+        ? `TransactionIR ${label} ${index} cannot carry canonicalRaw because this ${label} does not represent a canonical raw PTB payload.`
+        : `TransactionIR ${label} ${index} canonicalRaw must match the canonical raw PTB payload represented by this ${label}.`,
+      `$${label === 'input' ? '.inputs' : '.commands'}[${index}].canonicalRaw`,
+    ),
+  );
+  return false;
 }
 
 function isIRInputShape(
@@ -244,72 +365,147 @@ function isIRInputShape(
     );
     return false;
   }
+  if (
+    !validateNonEmptyId(
+      value.id,
+      'input',
+      inputIndex,
+      `${path}.id`,
+      diagnostics,
+    )
+  ) {
+    return false;
+  }
 
   switch (value.kind) {
     case 'Pure':
       validateIRInputUnknownFields(value, 'Pure', path, diagnostics);
-      if (!validateOptionalInputType(value.type, `${path}.type`, diagnostics)) {
-        return false;
-      }
-      if ('bytes' in value && value.bytes !== undefined) {
-        if (Object.prototype.hasOwnProperty.call(value, 'value')) {
+      {
+        const inputType = value.type;
+        if (
+          !validateOptionalInputType(inputType, `${path}.type`, diagnostics)
+        ) {
+          return false;
+        }
+        if ('bytes' in value && value.bytes !== undefined) {
+          const bytes = value.bytes;
+          if (Object.prototype.hasOwnProperty.call(value, 'value')) {
+            diagnostics.push(
+              errorDiagnostic(
+                'ir.input.pureRedundant',
+                `Pure input ${inputIndex} must choose raw bytes or a typed pure value, not both.`,
+                path,
+              ),
+            );
+            return false;
+          }
+          if (typeof bytes === 'string' && parseBase64Bytes(bytes) === bytes) {
+            if (inputType !== undefined) {
+              const diagnostic = pureBytesTypeHintDiagnostic(
+                value.id,
+                inputType,
+                bytes,
+                `${path}.bytes`,
+              );
+              if (diagnostic) {
+                diagnostics.push(diagnostic);
+                return false;
+              }
+            }
+            return validateCanonicalRawField(
+              value,
+              { kind: 'Pure', bytes },
+              'input',
+              inputIndex,
+              diagnostics,
+            );
+          }
           diagnostics.push(
             errorDiagnostic(
-              'ir.input.pureRedundant',
-              `Pure input ${inputIndex} must choose raw bytes or a typed pure value, not both.`,
+              'ir.input.pure',
+              `Pure input ${inputIndex} bytes must be base64-decodable base64 bytes when provided.`,
+              `${path}.bytes`,
+            ),
+          );
+          return false;
+        }
+        if (!Object.prototype.hasOwnProperty.call(value, 'value')) {
+          diagnostics.push(
+            errorDiagnostic(
+              'ir.input.pureValue',
+              `Pure input ${inputIndex} requires an explicit typed value when raw bytes are absent.`,
               path,
             ),
           );
           return false;
         }
-        if (parseBase64Bytes(value.bytes) === value.bytes) return true;
-        diagnostics.push(
-          errorDiagnostic(
-            'ir.input.pure',
-            `Pure input ${inputIndex} bytes must be atob-decodable base64 bytes when provided.`,
-            `${path}.bytes`,
-          ),
+        if (value.value === undefined) {
+          diagnostics.push(
+            errorDiagnostic(
+              'ir.input.pureValue',
+              `Pure input ${inputIndex} must use null for None values; undefined is not canonical.`,
+              `${path}.value`,
+            ),
+          );
+          return false;
+        }
+        if (inputType === undefined) {
+          diagnostics.push(
+            errorDiagnostic(
+              'ir.input.pureType',
+              `Pure input ${inputIndex} requires an explicit type when raw bytes are absent.`,
+              `${path}.type`,
+            ),
+          );
+          return false;
+        }
+        const diagnostic = pureValueDiagnostic(
+          value.id,
+          inputType,
+          value.value,
+          `${path}.value`,
+          `${path}.type`,
         );
-        return false;
+        if (diagnostic) {
+          diagnostics.push(diagnostic);
+          return false;
+        }
       }
-      if (!Object.prototype.hasOwnProperty.call(value, 'value')) {
-        diagnostics.push(
-          errorDiagnostic(
-            'ir.input.pureValue',
-            `Pure input ${inputIndex} requires an explicit typed value when raw bytes are absent.`,
-            path,
-          ),
-        );
-        return false;
-      }
-      if (value.value === undefined) {
-        diagnostics.push(
-          errorDiagnostic(
-            'ir.input.pureValue',
-            `Pure input ${inputIndex} must use null for None values; undefined is not canonical.`,
-            `${path}.value`,
-          ),
-        );
-        return false;
-      }
-      if (value.type === undefined) {
-        diagnostics.push(
-          errorDiagnostic(
-            'ir.input.pureType',
-            `Pure input ${inputIndex} requires an explicit type when raw bytes are absent.`,
-            `${path}.type`,
-          ),
-        );
-        return false;
-      }
-      return true;
+      return validateCanonicalRawField(
+        value,
+        undefined,
+        'input',
+        inputIndex,
+        diagnostics,
+      );
     case 'Object':
       validateIRInputUnknownFields(value, 'Object', path, diagnostics);
       if (!validateOptionalInputType(value.type, `${path}.type`, diagnostics)) {
         return false;
       }
+      if (
+        value.type !== undefined &&
+        (!isRecord(value.type) || value.type.kind !== 'object')
+      ) {
+        diagnostics.push(
+          errorDiagnostic(
+            'ir.input.objectType',
+            `Object input ${inputIndex} type hint must be an object PTB type when present.`,
+            `${path}.type`,
+          ),
+        );
+        return false;
+      }
       if ('object' in value && value.object !== undefined) {
-        if (isRawObjectArg(value.object)) return true;
+        if (isRawObjectArg(value.object)) {
+          return validateCanonicalRawField(
+            value,
+            { kind: 'Object', object: value.object },
+            'input',
+            inputIndex,
+            diagnostics,
+          );
+        }
         diagnostics.push(
           errorDiagnostic(
             'ir.input.object',
@@ -319,10 +515,24 @@ function isIRInputShape(
         );
         return false;
       }
-      return true;
+      return validateCanonicalRawField(
+        value,
+        undefined,
+        'input',
+        inputIndex,
+        diagnostics,
+      );
     case 'FundsWithdrawal':
       validateIRInputUnknownFields(value, 'FundsWithdrawal', path, diagnostics);
-      if (isRawFundsWithdrawalArg(value.value)) return true;
+      if (isRawFundsWithdrawalArg(value.value)) {
+        return validateCanonicalRawField(
+          value,
+          { kind: 'FundsWithdrawal', value: value.value },
+          'input',
+          inputIndex,
+          diagnostics,
+        );
+      }
       diagnostics.push(
         errorDiagnostic(
           'ir.input.fundsWithdrawal',
@@ -358,7 +568,7 @@ function validateOptionalInputType(
   value: unknown,
   path: string,
   diagnostics: TransactionDiagnostic[],
-): boolean {
+): value is PTBType | undefined {
   if (value === undefined) return true;
 
   const typeDiagnostics = validatePTBType(value, path);
@@ -385,6 +595,17 @@ function isIRCommandShape(
     );
     return false;
   }
+  if (
+    !validateNonEmptyId(
+      value.id,
+      'command',
+      commandIndex,
+      `$.commands[${commandIndex}].id`,
+      diagnostics,
+    )
+  ) {
+    return false;
+  }
 
   switch (value.kind) {
     case 'MoveCall':
@@ -396,9 +617,19 @@ function isIRCommandShape(
       );
       return (
         requireObjectId(value.package, commandIndex, 'package', diagnostics) &&
-        requireString(value.module, commandIndex, 'module', diagnostics) &&
-        requireString(value.function, commandIndex, 'function', diagnostics) &&
-        requireStringArray(
+        requireMoveIdentifier(
+          value.module,
+          commandIndex,
+          'module',
+          diagnostics,
+        ) &&
+        requireMoveIdentifier(
+          value.function,
+          commandIndex,
+          'function',
+          diagnostics,
+        ) &&
+        requireMoveTypeTagArray(
           value.typeArguments,
           commandIndex,
           'typeArguments',
@@ -415,6 +646,31 @@ function isIRCommandShape(
           commandIndex,
           '_argumentTypes',
           diagnostics,
+        ) &&
+        validateMoveCallArgumentTypesLength(
+          value._argumentTypes,
+          value.arguments,
+          commandIndex,
+          diagnostics,
+        ) &&
+        validateCanonicalRawField(
+          value,
+          {
+            kind: 'MoveCall',
+            call: {
+              package: value.package,
+              module: value.module,
+              function: value.function,
+              typeArguments: value.typeArguments,
+              arguments: value.arguments,
+              ...(value._argumentTypes !== undefined
+                ? { _argumentTypes: value._argumentTypes }
+                : {}),
+            },
+          },
+          'command',
+          commandIndex,
+          diagnostics,
         )
       );
     case 'TransferObjects':
@@ -430,7 +686,19 @@ function isIRCommandShape(
           commandIndex,
           'objects',
           diagnostics,
-        ) && requireArgRef(value.address, commandIndex, 'address', diagnostics)
+        ) &&
+        requireArgRef(value.address, commandIndex, 'address', diagnostics) &&
+        validateCanonicalRawField(
+          value,
+          {
+            kind: 'TransferObjects',
+            objects: value.objects,
+            address: value.address,
+          },
+          'command',
+          commandIndex,
+          diagnostics,
+        )
       );
     case 'SplitCoins':
       validateIRCommandUnknownFields(
@@ -445,6 +713,13 @@ function isIRCommandShape(
           value.amounts,
           commandIndex,
           'amounts',
+          diagnostics,
+        ) &&
+        validateCanonicalRawField(
+          value,
+          { kind: 'SplitCoins', coin: value.coin, amounts: value.amounts },
+          'command',
+          commandIndex,
           diagnostics,
         )
       );
@@ -467,6 +742,17 @@ function isIRCommandShape(
           commandIndex,
           'sources',
           diagnostics,
+        ) &&
+        validateCanonicalRawField(
+          value,
+          {
+            kind: 'MergeCoins',
+            destination: value.destination,
+            sources: value.sources,
+          },
+          'command',
+          commandIndex,
+          diagnostics,
         )
       );
     case 'Publish':
@@ -488,6 +774,17 @@ function isIRCommandShape(
           commandIndex,
           'dependencies',
           diagnostics,
+        ) &&
+        validateCanonicalRawField(
+          value,
+          {
+            kind: 'Publish',
+            modules: value.modules,
+            dependencies: value.dependencies,
+          },
+          'command',
+          commandIndex,
+          diagnostics,
         )
       );
     case 'MakeMoveVec':
@@ -499,7 +796,7 @@ function isIRCommandShape(
       );
       if (
         !(
-          requireNullableString(
+          requireNullableMoveTypeTag(
             value.type,
             commandIndex,
             'type',
@@ -524,7 +821,13 @@ function isIRCommandShape(
         );
         return false;
       }
-      return true;
+      return validateCanonicalRawField(
+        value,
+        { kind: 'MakeMoveVec', type: value.type, elements: value.elements },
+        'command',
+        commandIndex,
+        diagnostics,
+      );
     case 'Upgrade':
       validateIRCommandUnknownFields(
         value,
@@ -546,7 +849,20 @@ function isIRCommandShape(
           diagnostics,
         ) &&
         requireObjectId(value.package, commandIndex, 'package', diagnostics) &&
-        requireArgRef(value.ticket, commandIndex, 'ticket', diagnostics)
+        requireArgRef(value.ticket, commandIndex, 'ticket', diagnostics) &&
+        validateCanonicalRawField(
+          value,
+          {
+            kind: 'Upgrade',
+            modules: value.modules,
+            dependencies: value.dependencies,
+            package: value.package,
+            ticket: value.ticket,
+          },
+          'command',
+          commandIndex,
+          diagnostics,
+        )
       );
     case 'Unsupported':
       validateIRCommandUnknownFields(
@@ -591,6 +907,26 @@ function requireString(
   return false;
 }
 
+function requireMoveIdentifier(
+  value: unknown,
+  commandIndex: number,
+  key: string,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  if (typeof value === 'string' && parseMoveIdentifier(value) === value) {
+    return true;
+  }
+
+  diagnostics.push(
+    errorDiagnostic(
+      'ir.command.moveIdentifier',
+      `Command ${commandIndex} field ${key} must be a valid Move identifier.`,
+      `$.commands[${commandIndex}].${key}`,
+    ),
+  );
+  return false;
+}
+
 function requireObjectId(
   value: unknown,
   commandIndex: number,
@@ -611,24 +947,36 @@ function requireObjectId(
   return false;
 }
 
-function requireStringArray(
+function requireMoveTypeTagArray(
   value: unknown,
   commandIndex: number,
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): boolean {
-  if (isDenseArray(value) && value.every((item) => typeof item === 'string')) {
-    return true;
+  if (!isDenseArray(value)) {
+    diagnostics.push(
+      errorDiagnostic(
+        'ir.command.moveTypeTagArray',
+        `Command ${commandIndex} requires Move type tag array field ${key}.`,
+        `$.commands[${commandIndex}].${key}`,
+      ),
+    );
+    return false;
   }
 
-  diagnostics.push(
-    errorDiagnostic(
-      'ir.command.field',
-      `Command ${commandIndex} requires string array field ${key}.`,
-      `$.commands[${commandIndex}].${key}`,
-    ),
-  );
-  return false;
+  let valid = true;
+  value.forEach((item, index) => {
+    if (typeof item === 'string' && parseMoveTypeTag(item) === item) return;
+    valid = false;
+    diagnostics.push(
+      errorDiagnostic(
+        'ir.command.moveTypeTag',
+        `Command ${commandIndex} field ${key} item ${index} must be a canonical Move type tag string.`,
+        `$.commands[${commandIndex}].${key}[${index}]`,
+      ),
+    );
+  });
+  return valid;
 }
 
 function requireOptionalMoveCallArgumentTypes(
@@ -646,6 +994,26 @@ function requireOptionalMoveCallArgumentTypes(
       'ir.command.argumentTypes',
       `Command ${commandIndex} field ${key} must match the SDK OpenSignature array schema or null when provided.`,
       `$.commands[${commandIndex}].${key}`,
+    ),
+  );
+  return false;
+}
+
+function validateMoveCallArgumentTypesLength(
+  argumentTypes: unknown,
+  args: unknown,
+  commandIndex: number,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  if (argumentTypes === undefined || argumentTypes === NULL_VALUE) return true;
+  if (!isDenseArray(argumentTypes) || !isDenseArray(args)) return true;
+  if (argumentTypes.length === args.length) return true;
+
+  diagnostics.push(
+    errorDiagnostic(
+      'ir.command.argumentTypesLength',
+      `Command ${commandIndex} _argumentTypes length must match arguments length.`,
+      `$.commands[${commandIndex}]._argumentTypes`,
     ),
   );
   return false;
@@ -694,7 +1062,7 @@ function requireBase64StringArray(
     diagnostics.push(
       errorDiagnostic(
         'ir.command.field',
-        `Command ${commandIndex} requires atob-decodable base64 string array field ${key}.`,
+        `Command ${commandIndex} requires base64-decodable base64 string array field ${key}.`,
         `$.commands[${commandIndex}].${key}`,
       ),
     );
@@ -708,7 +1076,7 @@ function requireBase64StringArray(
     diagnostics.push(
       errorDiagnostic(
         'ir.command.base64Bytes',
-        `Command ${commandIndex} field ${key} item ${index} must be atob-decodable base64 bytes.`,
+        `Command ${commandIndex} field ${key} item ${index} must be base64-decodable base64 bytes.`,
         `$.commands[${commandIndex}].${key}[${index}]`,
       ),
     );
@@ -739,18 +1107,21 @@ function requireNonEmptyBase64StringArray(
   return false;
 }
 
-function requireNullableString(
+function requireNullableMoveTypeTag(
   value: unknown,
   commandIndex: number,
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): boolean {
-  if (typeof value === 'string' || value === NULL_VALUE) return true;
+  if (value === NULL_VALUE) return true;
+  if (typeof value === 'string' && parseMoveTypeTag(value) === value) {
+    return true;
+  }
 
   diagnostics.push(
     errorDiagnostic(
-      'ir.command.field',
-      `Command ${commandIndex} requires string or null field ${key}.`,
+      'ir.command.moveTypeTag',
+      `Command ${commandIndex} field ${key} must be a canonical Move type tag string or null.`,
       `$.commands[${commandIndex}].${key}`,
     ),
   );
@@ -838,7 +1209,7 @@ function requireArgRef(
 function commandArgValidationEntries(
   command: IRCommand,
   commandIndex: number,
-): Array<{ arg: IRArgRef; path: string }> {
+): CommandArgValidationEntry[] {
   switch (command.kind) {
     case 'MoveCall':
       return command.arguments.map((arg, index) => ({
@@ -850,10 +1221,12 @@ function commandArgValidationEntries(
         ...command.objects.map((arg, index) => ({
           arg,
           path: `$.commands[${commandIndex}].objects[${index}]`,
+          expectedInputType: 'object' as const,
         })),
         {
           arg: command.address,
           path: `$.commands[${commandIndex}].address`,
+          expectedInputType: 'pure',
         },
       ];
     case 'SplitCoins':
@@ -861,10 +1234,12 @@ function commandArgValidationEntries(
         {
           arg: command.coin,
           path: `$.commands[${commandIndex}].coin`,
+          expectedInputType: 'object',
         },
         ...command.amounts.map((arg, index) => ({
           arg,
           path: `$.commands[${commandIndex}].amounts[${index}]`,
+          expectedInputType: 'pure' as const,
         })),
       ];
     case 'MergeCoins':
@@ -872,10 +1247,12 @@ function commandArgValidationEntries(
         {
           arg: command.destination,
           path: `$.commands[${commandIndex}].destination`,
+          expectedInputType: 'object',
         },
         ...command.sources.map((arg, index) => ({
           arg,
           path: `$.commands[${commandIndex}].sources[${index}]`,
+          expectedInputType: 'object' as const,
         })),
       ];
     case 'MakeMoveVec':
@@ -888,6 +1265,7 @@ function commandArgValidationEntries(
         {
           arg: command.ticket,
           path: `$.commands[${commandIndex}].ticket`,
+          expectedInputType: 'object',
         },
       ];
     case 'Publish':
@@ -972,6 +1350,7 @@ function validateArgRef(
   arg: IRArgRef,
   path: string,
   diagnostics: TransactionDiagnostic[],
+  expectedInputType?: ExpectedInputArgumentType,
 ) {
   switch (arg.kind) {
     case 'GasCoin':
@@ -985,6 +1364,32 @@ function validateArgRef(
             path,
           ),
         );
+        return;
+      }
+
+      if (arg.type !== undefined) {
+        const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
+        if (actual === undefined || arg.type !== actual) {
+          diagnostics.push(
+            errorDiagnostic(
+              'ir.arg.typeMismatch',
+              `Input reference ${arg.index} type metadata ${arg.type} does not match the referenced ${ir.inputs[arg.index]?.kind ?? 'unknown'} input.`,
+              `${path}.type`,
+            ),
+          );
+        }
+      }
+      if (expectedInputType !== undefined) {
+        const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
+        if (actual === undefined || actual !== expectedInputType) {
+          diagnostics.push(
+            errorDiagnostic(
+              'ir.arg.semanticType',
+              `Input reference ${arg.index} must refer to a ${expectedInputType} input for this command argument.`,
+              path,
+            ),
+          );
+        }
       }
       return;
     case 'Result':
@@ -1007,6 +1412,22 @@ function validateArgRef(
         diagnostics,
       );
       return;
+  }
+}
+
+function rawArgumentTypeForInput(
+  input: IRInput | undefined,
+): 'pure' | 'object' | 'withdrawal' | undefined {
+  switch (input?.kind) {
+    case 'Pure':
+      return 'pure';
+    case 'Object':
+      return 'object';
+    case 'FundsWithdrawal':
+      return 'withdrawal';
+    case 'Unsupported':
+    case undefined:
+      return undefined;
   }
 }
 

@@ -1,5 +1,3 @@
-import { isPTBType } from '../graph/types.js';
-import type { PTBType } from '../graph/types.js';
 import {
   assertNoErrors,
   errorDiagnostic,
@@ -7,6 +5,11 @@ import {
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import {
+  isPureValueCompatible,
+  normalizePureValueForRender,
+  pureTypeName,
+} from '../ir/pure.js';
 import type {
   IRArgRef,
   IRCommand,
@@ -14,18 +17,11 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
-import { parseObjectId } from '../raw/types.js';
 import type { RawFundsWithdrawalArg } from '../raw/types.js';
-import {
-  isDenseArray,
-  jsonStringifyWithBigInt,
-  NULL_VALUE,
-  quote,
-} from '../utils.js';
+import { jsonStringifyWithBigInt } from '../utils.js';
 
-const U64_MAX = 2n ** 64n - 1n;
-const U128_MAX = 2n ** 128n - 1n;
-const U256_MAX = 2n ** 256n - 1n;
+const TS_CODE_UNSAFE_LITERAL_CHAR =
+  /[\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
 export function transactionIRToTsSdkCode(ir: TransactionIR): string {
   const diagnostics = validateTsSdkRenderableIR(ir);
@@ -76,7 +72,7 @@ function renderInput(input: IRInput, index: number): string {
   switch (input.kind) {
     case 'Pure':
       if (input.bytes !== undefined) {
-        return `  const ${name} = tx.pure(fromBase64(${quote(input.bytes)}));`;
+        return `  const ${name} = tx.pure(fromBase64(${renderCodeString(input.bytes)}));`;
       }
       return renderTypedPureInput(name, input);
     case 'Object':
@@ -89,21 +85,19 @@ function renderInput(input: IRInput, index: number): string {
       }
       switch (input.object.kind) {
         case 'ImmOrOwnedObject':
-          return `  const ${name} = tx.objectRef(${jsonStringifyWithBigInt({
+          return `  const ${name} = tx.objectRef(${renderCodeJson({
             objectId: input.object.objectId,
             version: input.object.version,
             digest: input.object.digest,
           })});`;
         case 'SharedObject':
-          return `  const ${name} = tx.sharedObjectRef(${jsonStringifyWithBigInt(
-            {
-              objectId: input.object.objectId,
-              initialSharedVersion: input.object.initialSharedVersion,
-              mutable: input.object.mutable,
-            },
-          )});`;
+          return `  const ${name} = tx.sharedObjectRef(${renderCodeJson({
+            objectId: input.object.objectId,
+            initialSharedVersion: input.object.initialSharedVersion,
+            mutable: input.object.mutable,
+          })});`;
         case 'Receiving':
-          return `  const ${name} = tx.receivingRef(${jsonStringifyWithBigInt({
+          return `  const ${name} = tx.receivingRef(${renderCodeJson({
             objectId: input.object.objectId,
             version: input.object.version,
             digest: input.object.digest,
@@ -140,17 +134,6 @@ function validateTsSdkRenderableIR(ir: TransactionIR): TransactionDiagnostic[] {
   ir.inputs.forEach((input, index) => {
     switch (input.kind) {
       case 'Pure':
-        if (input.bytes === undefined && !canRenderTypedPureInput(input)) {
-          const specific = pureValueRenderDiagnostic(input, index);
-          diagnostics.push(
-            errorDiagnostic(
-              'codegen.input.pure',
-              specific?.message ??
-                `Pure input ${input.id} requires raw bytes or a supported SDK pure type/value pair for TS SDK code generation.`,
-              specific?.path ?? `$.inputs[${index}]`,
-            ),
-          );
-        }
         return;
       case 'Object':
         if (!input.object) {
@@ -168,7 +151,7 @@ function validateTsSdkRenderableIR(ir: TransactionIR): TransactionDiagnostic[] {
           diagnostics.push(
             errorDiagnostic(
               'codegen.input.fundsWithdrawalSponsor',
-              'Sponsor FundsWithdrawal cannot be rendered with @mysten/sui@2.16.2 Transaction public helpers.',
+              'Sponsor FundsWithdrawal cannot be rendered with the public @mysten/sui Transaction helper surface.',
               `$.inputs[${index}].value.withdrawFrom`,
             ),
           );
@@ -187,10 +170,10 @@ function renderCommand(command: IRCommand, index: number): string[] {
     case 'MoveCall':
       return [
         `  const ${resultName(index)} = tx.moveCall({`,
-        `    package: ${quote(command.package)},`,
-        `    module: ${quote(command.module)},`,
-        `    function: ${quote(command.function)},`,
-        `    typeArguments: ${jsonStringifyWithBigInt(command.typeArguments)},`,
+        `    package: ${renderCodeString(command.package)},`,
+        `    module: ${renderCodeString(command.module)},`,
+        `    function: ${renderCodeString(command.function)},`,
+        `    typeArguments: ${renderCodeJson(command.typeArguments)},`,
         `    arguments: [${command.arguments.map(renderArg).join(', ')}],`,
         '  });',
       ];
@@ -212,9 +195,9 @@ function renderCommand(command: IRCommand, index: number): string[] {
       ];
     case 'Publish':
       return [
-        `  const ${resultName(index)} = tx.publish({ modules: ${jsonStringifyWithBigInt(
+        `  const ${resultName(index)} = tx.publish({ modules: ${renderCodeJson(
           command.modules,
-        )}, dependencies: ${jsonStringifyWithBigInt(command.dependencies)} });`,
+        )}, dependencies: ${renderCodeJson(command.dependencies)} });`,
       ];
     case 'MakeMoveVec':
       return [
@@ -224,9 +207,9 @@ function renderCommand(command: IRCommand, index: number): string[] {
       ];
     case 'Upgrade':
       return [
-        `  const ${resultName(index)} = tx.upgrade({ modules: ${jsonStringifyWithBigInt(
+        `  const ${resultName(index)} = tx.upgrade({ modules: ${renderCodeJson(
           command.modules,
-        )}, dependencies: ${jsonStringifyWithBigInt(command.dependencies)}, package: ${quote(
+        )}, dependencies: ${renderCodeJson(command.dependencies)}, package: ${renderCodeString(
           command.package,
         )}, ticket: ${renderArg(command.ticket)} });`,
       ];
@@ -254,23 +237,23 @@ function renderArg(arg: IRArgRef): string {
 
 function renderUnknownValue(value: unknown): string {
   if (typeof value === 'undefined') return 'undefined';
-  return jsonStringifyWithBigInt(value);
+  return renderCodeJson(value);
 }
 
 function renderNullableString(value: string | null): string {
-  return typeof value === 'string' ? quote(value) : 'undefined';
+  return typeof value === 'string' ? renderCodeString(value) : 'undefined';
 }
 
 function renderFundsWithdrawal(value: RawFundsWithdrawalArg): string {
   if (value.withdrawFrom.kind !== 'Sender') {
     throwTsSdkCodeError(
       'codegen.input.fundsWithdrawalSponsor',
-      'Sponsor FundsWithdrawal cannot be rendered with @mysten/sui@2.16.2 Transaction public helpers.',
+      'Sponsor FundsWithdrawal cannot be rendered with the public @mysten/sui Transaction helper surface.',
       '$.inputs[].value.withdrawFrom',
     );
   }
 
-  return jsonStringifyWithBigInt({
+  return renderCodeJson({
     amount: value.reservation.amount,
     type: value.typeArg.type,
   });
@@ -295,30 +278,18 @@ function renderTypedPureInput(
   return `  const ${name} = ${expression};`;
 }
 
-function canRenderTypedPureInput(
-  input: Extract<IRInput, { kind: 'Pure' }>,
-): boolean {
-  return (
-    input.type !== undefined &&
-    isPTBType(input.type) &&
-    pureTypeName(input.type) !== undefined &&
-    hasPureValue(input) &&
-    isPureValueCompatible(input.type, input.value)
-  );
-}
-
 function renderPureInputExpression(
-  type: PTBType,
+  type: NonNullable<Extract<IRInput, { kind: 'Pure' }>['type']>,
   value: unknown,
 ): string | undefined {
-  if (!isPTBType(type) || !isPureValueCompatible(type, value)) {
+  if (!isPureValueCompatible(type, value)) {
     return undefined;
   }
 
   if (type.kind === 'option') {
     const elemTypeName = pureTypeName(type.elem);
     return elemTypeName
-      ? `tx.pure.option(${quote(elemTypeName)}, ${renderUnknownValue(
+      ? `tx.pure.option(${renderCodeString(elemTypeName)}, ${renderUnknownValue(
           normalizePureValueForRender(type, value),
         )})`
       : undefined;
@@ -326,235 +297,29 @@ function renderPureInputExpression(
 
   const typeName = pureTypeName(type);
   return typeName
-    ? `tx.pure(${quote(typeName)}, ${renderUnknownValue(
+    ? `tx.pure(${renderCodeString(typeName)}, ${renderUnknownValue(
         normalizePureValueForRender(type, value),
       )})`
     : undefined;
 }
 
+function renderCodeString(value: string): string {
+  return escapeTsCodeLiteral(JSON.stringify(value));
+}
+
+function renderCodeJson(value: unknown): string {
+  return escapeTsCodeLiteral(jsonStringifyWithBigInt(value));
+}
+
+function escapeTsCodeLiteral(value: string): string {
+  return value.replace(TS_CODE_UNSAFE_LITERAL_CHAR, (char) => {
+    const codePoint = char.codePointAt(0) ?? 0;
+    return `\\u${codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
+  });
+}
+
 function hasPureValue(input: Extract<IRInput, { kind: 'Pure' }>): boolean {
   return Object.prototype.hasOwnProperty.call(input, 'value');
-}
-
-function pureTypeName(type: PTBType | undefined): string | undefined {
-  if (!isPTBType(type)) return undefined;
-
-  switch (type.kind) {
-    case 'move_numeric':
-      return type.width;
-    case 'scalar':
-      return type.name === 'number' ? undefined : type.name;
-    case 'vector': {
-      const elem = pureTypeName(type.elem);
-      return elem ? `vector<${elem}>` : undefined;
-    }
-    case 'option': {
-      const elem = pureTypeName(type.elem);
-      return elem ? `option<${elem}>` : undefined;
-    }
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return undefined;
-  }
-}
-
-function normalizePureValueForRender(type: PTBType, value: unknown): unknown {
-  switch (type.kind) {
-    case 'scalar':
-      return type.name === 'address' || type.name === 'id'
-        ? (parseObjectId(value) ?? value)
-        : value;
-    case 'vector':
-      return isDenseArray(value)
-        ? value.map((item) => normalizePureValueForRender(type.elem, item))
-        : value;
-    case 'option':
-      return value === NULL_VALUE
-        ? value
-        : normalizePureValueForRender(type.elem, value);
-    case 'move_numeric':
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return value;
-  }
-}
-
-function isPureValueCompatible(type: PTBType, value: unknown): boolean {
-  switch (type.kind) {
-    case 'move_numeric':
-      return isNumericPureValue(type.width, value);
-    case 'scalar':
-      switch (type.name) {
-        case 'bool':
-          return typeof value === 'boolean';
-        case 'string':
-          return typeof value === 'string';
-        case 'address':
-        case 'id':
-          return parseObjectId(value) !== undefined;
-        case 'number':
-          return false;
-      }
-      return false;
-    case 'vector':
-      return (
-        isDenseArray(value) &&
-        value.every((item) => isPureValueCompatible(type.elem, item))
-      );
-    case 'option':
-      return value === NULL_VALUE || isPureValueCompatible(type.elem, value);
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return false;
-  }
-}
-
-function pureValueRenderDiagnostic(
-  input: Extract<IRInput, { kind: 'Pure' }>,
-  index: number,
-): { message: string; path: string } | undefined {
-  if (!input.type || !isPTBType(input.type) || !hasPureValue(input)) {
-    return undefined;
-  }
-  return describePureValueIssue(
-    input.id,
-    input.type,
-    input.value,
-    `$.inputs[${index}].value`,
-  );
-}
-
-function describePureValueIssue(
-  inputId: string,
-  type: PTBType,
-  value: unknown,
-  path: string,
-): { message: string; path: string } | undefined {
-  switch (type.kind) {
-    case 'move_numeric':
-      return isNumericPureValue(type.width, value)
-        ? undefined
-        : {
-            message:
-              value === ''
-                ? `Pure input ${inputId} requires a non-empty integer string for ${type.width}.`
-                : `Pure input ${inputId} requires a ${type.width} value within the supported unsigned integer range.`,
-            path,
-          };
-    case 'scalar':
-      switch (type.name) {
-        case 'address':
-        case 'id':
-          return parseObjectId(value) !== undefined
-            ? undefined
-            : {
-                message:
-                  typeof value === 'string' &&
-                  value.replace(/^0x/i, '').length === 0
-                    ? `Pure input ${inputId} requires a non-empty Sui ${type.name === 'id' ? 'object ID' : 'address'}.`
-                    : `Pure input ${inputId} requires a valid Sui ${type.name === 'id' ? 'object ID' : 'address'}.`,
-                path,
-              };
-        case 'bool':
-          return typeof value === 'boolean'
-            ? undefined
-            : {
-                message: `Pure input ${inputId} requires a boolean value.`,
-                path,
-              };
-        case 'string':
-          return typeof value === 'string'
-            ? undefined
-            : {
-                message: `Pure input ${inputId} requires a string value.`,
-                path,
-              };
-        case 'number':
-          return {
-            message: `Pure input ${inputId} uses the abstract number placeholder; choose a concrete Move integer width before rendering TS SDK code.`,
-            path,
-          };
-      }
-      return undefined;
-    case 'vector':
-      if (!isDenseArray(value)) {
-        return {
-          message: `Pure input ${inputId} requires an array value for vector pure input.`,
-          path,
-        };
-      }
-      for (let index = 0; index < value.length; index += 1) {
-        const issue = describePureValueIssue(
-          inputId,
-          type.elem,
-          value[index],
-          `${path}[${index}]`,
-        );
-        if (issue) return issue;
-      }
-      return undefined;
-    case 'option':
-      return value === NULL_VALUE
-        ? undefined
-        : describePureValueIssue(inputId, type.elem, value, path);
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return undefined;
-  }
-}
-
-function isNumericPureValue(
-  width: Extract<PTBType, { kind: 'move_numeric' }>['width'],
-  value: unknown,
-): boolean {
-  switch (width) {
-    case 'u8':
-      return isIntegerInRange(value, 0, 255);
-    case 'u16':
-      return isIntegerInRange(value, 0, 65_535);
-    case 'u32':
-      return isIntegerInRange(value, 0, 4_294_967_295);
-    case 'u64':
-      return isBigUnsignedIntegerInRange(value, U64_MAX);
-    case 'u128':
-      return isBigUnsignedIntegerInRange(value, U128_MAX);
-    case 'u256':
-      return isBigUnsignedIntegerInRange(value, U256_MAX);
-  }
-}
-
-function isIntegerInRange(
-  value: unknown,
-  min: number,
-  max: number,
-): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= min &&
-    value <= max
-  );
-}
-
-function isNonNegativeIntegerString(value: unknown): value is string {
-  return typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
-}
-
-function isBigUnsignedIntegerInRange(value: unknown, max: bigint): boolean {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value >= 0 && BigInt(value) <= max;
-  }
-  if (typeof value === 'bigint') {
-    return value >= 0n && value <= max;
-  }
-  if (!isNonNegativeIntegerString(value)) {
-    return false;
-  }
-  return BigInt(value) <= max;
 }
 
 function throwTsSdkCodeError(

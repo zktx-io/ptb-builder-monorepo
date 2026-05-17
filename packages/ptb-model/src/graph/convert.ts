@@ -24,13 +24,28 @@ import type {
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
 import type { RawCallArg } from '../raw/types.js';
-import { parseBase64Bytes, parseJsonU64, parseObjectId } from '../raw/types.js';
+import {
+  parseBase64Bytes,
+  parseJsonU64,
+  parseMoveIdentifier,
+  parseMoveTypeTag,
+  parseObjectDigest,
+  parseObjectId,
+} from '../raw/types.js';
 import { cloneJsonLike, isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
 
 const GAS_NODE_ID = 'gas';
 const GAS_HANDLE_ID = 'out';
 const RESULT_HANDLE_ID = 'out_result';
 const NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES = ['graph.rawInput'] as const;
+const NON_BLOCKING_GRAPH_COMMAND_DIAGNOSTIC_PREFIXES = [
+  'graph.command.params.runtime.target',
+  'graph.command.params.runtime.field',
+  'graph.command.params.runtime.typeArguments',
+  'graph.command.params.runtime.type',
+  'graph.command.params.runtime.modules',
+  'graph.command.params.runtime.dependencies',
+] as const;
 
 interface GraphArgRead {
   refs: IRArgRef[];
@@ -51,22 +66,41 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
     return createTransactionIR([], [], graphDiagnostics);
   }
 
-  const diagnostics: TransactionDiagnostic[] = [];
+  const diagnostics: TransactionDiagnostic[] = [...graphDiagnostics];
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const nodeIndexesById = new Map(
     graph.nodes.map((node, index) => [node.id, index]),
   );
+  const hasCommandNodes = graph.nodes.some((node) => node.kind === 'Command');
+  const referencedInputKeys = hasCommandNodes
+    ? referencedGraphInputKeys(graph, nodesById)
+    : new Set<string>();
   const inputRefs = new Map<string, IRArgRef>();
   const inputs: IRInput[] = [];
 
   graph.nodes.forEach((node, nodeIndex) => {
     if (node.kind !== 'Variable') return;
+    const outputPorts = node.ports.filter(
+      (port) => port.role === 'io' && port.direction === 'out',
+    );
+    const referencedOutPorts = hasCommandNodes
+      ? outputPorts.filter((port) =>
+          referencedInputKeys.has(edgeKey(node.id, port.id)),
+        )
+      : outputPorts;
+    const preservesRawOrigin =
+      node.rawInput !== undefined || node.semantic?.kind === 'UnsupportedInput';
+    if (
+      hasCommandNodes &&
+      referencedOutPorts.length === 0 &&
+      !preservesRawOrigin
+    ) {
+      return;
+    }
     if (isGasVariable(node)) {
-      node.ports
-        .filter((port) => port.role === 'io' && port.direction === 'out')
-        .forEach((port) => {
-          inputRefs.set(edgeKey(node.id, port.id), { kind: 'GasCoin' });
-        });
+      referencedOutPorts.forEach((port) => {
+        inputRefs.set(edgeKey(node.id, port.id), { kind: 'GasCoin' });
+      });
       return;
     }
 
@@ -77,14 +111,12 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
       diagnostics,
     );
     inputs.push(input);
-    node.ports
-      .filter((port) => port.role === 'io' && port.direction === 'out')
-      .forEach((port) => {
-        inputRefs.set(edgeKey(node.id, port.id), {
-          kind: 'Input',
-          index: inputs.length - 1,
-        });
+    referencedOutPorts.forEach((port) => {
+      inputRefs.set(edgeKey(node.id, port.id), {
+        kind: 'Input',
+        index: inputs.length - 1,
       });
+    });
   });
 
   const commandNodes = orderCommandNodes(graph, nodesById);
@@ -114,11 +146,28 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
 }
 
 function isBlockingGraphDiagnostic(diagnostic: TransactionDiagnostic): boolean {
-  // Invalid rawInput is still representable as an Unsupported IR input; other
-  // graph errors make command ordering, endpoints, or flow semantics unreliable.
-  return !NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES.some((prefix) =>
-    diagnostic.code.startsWith(prefix),
-  );
+  // Invalid rawInput and invalid command params can be represented as
+  // Unsupported IR values. Other graph errors can make ordering, endpoints,
+  // or flow semantics unreliable.
+  return ![
+    ...NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES,
+    ...NON_BLOCKING_GRAPH_COMMAND_DIAGNOSTIC_PREFIXES,
+  ].some((prefix) => diagnostic.code.startsWith(prefix));
+}
+
+function referencedGraphInputKeys(
+  graph: PTBGraph,
+  nodesById: Map<string, PTBNode>,
+): Set<string> {
+  const result = new Set<string>();
+  graph.edges.forEach((edge) => {
+    if (edge.kind !== 'io') return;
+    const source = nodesById.get(edge.source);
+    const target = nodesById.get(edge.target);
+    if (source?.kind !== 'Variable' || target?.kind !== 'Command') return;
+    result.add(edgeKey(edge.source, edge.sourceHandle));
+  });
+  return result;
 }
 
 export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
@@ -278,11 +327,13 @@ function variableNodeToInput(
     const object = isRecord(node.value) ? node.value : undefined;
     const objectId = canonicalObjectId(object?.objectId);
     const version = canonicalJsonU64(object?.version);
+    const digest = parseObjectDigest(object?.digest);
     if (
       object &&
       objectId !== undefined &&
       version !== undefined &&
-      typeof object.digest === 'string'
+      digest !== undefined &&
+      digest === object.digest
     ) {
       return {
         id,
@@ -291,7 +342,7 @@ function variableNodeToInput(
           kind: 'ImmOrOwnedObject',
           objectId,
           version,
-          digest: object.digest,
+          digest,
         },
         type: node.varType,
       };
@@ -392,7 +443,7 @@ function rawInputToIRInput(
         kind: 'Pure',
         bytes: rawInput.bytes,
         type,
-        raw: cloneJsonLike(rawInput),
+        canonicalRaw: cloneJsonLike(rawInput),
       };
     case 'Object':
       return {
@@ -400,14 +451,14 @@ function rawInputToIRInput(
         kind: 'Object',
         object: cloneJsonLike(rawInput.object),
         type,
-        raw: cloneJsonLike(rawInput),
+        canonicalRaw: cloneJsonLike(rawInput),
       };
     case 'FundsWithdrawal':
       return {
         id,
         kind: 'FundsWithdrawal',
         value: cloneJsonLike(rawInput.value),
-        raw: cloneJsonLike(rawInput),
+        canonicalRaw: cloneJsonLike(rawInput),
       };
   }
 }
@@ -584,17 +635,19 @@ function commandNodeToIRCommand(
         );
         return invalidGraphCommand(node, 'InvalidMoveCallTarget');
       }
-      const [packageIdInput, moduleName, functionName] = parts as [
+      const [packageIdInput, moduleNameInput, functionNameInput] = parts as [
         string,
         string,
         string,
       ];
       const packageId = canonicalObjectId(packageIdInput);
-      if (!packageId) {
+      const moduleName = parseMoveIdentifier(moduleNameInput);
+      const functionName = parseMoveIdentifier(functionNameInput);
+      if (!packageId || !moduleName || !functionName) {
         diagnostics.push(
           errorDiagnostic(
             'graph.command.moveCall.package',
-            `MoveCall ${node.id} requires a canonical Sui object ID package.`,
+            `MoveCall ${node.id} requires a canonical package ID and Move module/function identifiers.`,
             nodePath,
           ),
         );
@@ -980,13 +1033,11 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
         },
       };
     case 'MakeMoveVec':
-      return typeof command.type === 'string'
-        ? {
-            runtime: {
-              type: command.type,
-            },
-          }
-        : undefined;
+      return {
+        runtime: {
+          type: command.type,
+        },
+      };
     case 'Unsupported':
       return {
         runtime: {
@@ -1134,15 +1185,15 @@ function moveCallTypeArguments(
   if (typeArguments === undefined) return [];
   if (
     isDenseArray(typeArguments) &&
-    typeArguments.every((item) => typeof item === 'string')
+    typeArguments.every((item) => parseMoveTypeTag(item) !== undefined)
   ) {
-    return [...typeArguments];
+    return typeArguments.map((item) => parseMoveTypeTag(item) as string);
   }
 
   diagnostics.push(
     errorDiagnostic(
       'graph.command.moveCall.typeArguments',
-      `MoveCall ${node.id} runtime typeArguments must be a dense string array when present.`,
+      `MoveCall ${node.id} runtime typeArguments must be a dense array of valid Move type tags when present.`,
       `${nodePath}.params.runtime.typeArguments`,
     ),
   );
@@ -1227,7 +1278,7 @@ function base64BytesArrayParam(
     diagnostics.push(
       errorDiagnostic(
         'graph.command.base64BytesParam',
-        `Command ${node.id} requires a canonical atob-decodable base64 byte array runtime param ${key}.`,
+        `Command ${node.id} requires a canonical base64-decodable base64 byte array runtime param ${key}.`,
         path,
       ),
     );
@@ -1240,7 +1291,7 @@ function base64BytesArrayParam(
       diagnostics.push(
         errorDiagnostic(
           'graph.command.base64BytesParam',
-          `Command ${node.id} runtime param ${key} item ${index} must be canonical atob-decodable base64 bytes.`,
+          `Command ${node.id} runtime param ${key} item ${index} must be canonical base64-decodable base64 bytes.`,
           `${path}[${index}]`,
         ),
       );
@@ -1283,14 +1334,18 @@ function typeTagFromNode(
     ? node.params.runtime
     : undefined;
   if (runtime === undefined || runtime.type === undefined) return NULL_VALUE;
-  if (runtime.type === NULL_VALUE || typeof runtime.type === 'string') {
+  if (runtime.type === NULL_VALUE) {
     return runtime.type;
+  }
+  if (typeof runtime.type === 'string') {
+    const type = parseMoveTypeTag(runtime.type);
+    if (type) return type;
   }
 
   diagnostics.push(
     errorDiagnostic(
       'graph.command.makeMoveVec.type',
-      `MakeMoveVec ${node.id} runtime type must be a string or null when present.`,
+      `MakeMoveVec ${node.id} runtime type must be a valid Move type tag or null when present.`,
       `${nodePath}.params.runtime.type`,
     ),
   );

@@ -5,8 +5,40 @@ import type {
   RawFundsWithdrawalArg,
   RawObjectArg,
 } from '../raw/types.js';
-import { parseBase64Bytes, parseJsonU64, parseObjectId } from '../raw/types.js';
+import {
+  parseBase64Bytes,
+  parseJsonU64,
+  parseMoveTypeTag,
+  parseObjectDigest,
+  parseObjectId,
+} from '../raw/types.js';
 import { isRecord } from '../utils.js';
+
+const RAW_INPUT_KEYS_BY_KIND = {
+  Pure: ['kind', 'bytes'],
+  Object: ['kind', 'object'],
+  FundsWithdrawal: ['kind', 'value'],
+} as const;
+const RAW_OWNED_OBJECT_KEYS = [
+  'kind',
+  'objectId',
+  'version',
+  'digest',
+] as const;
+const RAW_SHARED_OBJECT_KEYS = [
+  'kind',
+  'objectId',
+  'initialSharedVersion',
+  'mutable',
+] as const;
+const RAW_FUNDS_WITHDRAWAL_KEYS = [
+  'reservation',
+  'typeArg',
+  'withdrawFrom',
+] as const;
+const RAW_FUNDS_RESERVATION_KEYS = ['kind', 'amount'] as const;
+const RAW_FUNDS_TYPE_ARG_KEYS = ['kind', 'type'] as const;
+const RAW_FUNDS_WITHDRAW_FROM_KEYS = ['kind'] as const;
 
 export function normalizeGraphRawInput(
   value: unknown,
@@ -27,6 +59,11 @@ export function normalizeGraphRawInput(
 
   switch (value.kind) {
     case 'Pure': {
+      if (
+        !validateOnlyKeys(value, RAW_INPUT_KEYS_BY_KIND.Pure, path, diagnostics)
+      ) {
+        return undefined;
+      }
       const bytes = parseBase64Bytes(value.bytes);
       if (bytes !== undefined && bytes === value.bytes) {
         return { kind: 'Pure', bytes };
@@ -41,6 +78,16 @@ export function normalizeGraphRawInput(
       return undefined;
     }
     case 'Object': {
+      if (
+        !validateOnlyKeys(
+          value,
+          RAW_INPUT_KEYS_BY_KIND.Object,
+          path,
+          diagnostics,
+        )
+      ) {
+        return undefined;
+      }
       const object = normalizeGraphRawObject(
         value.object,
         `${path}.object`,
@@ -49,6 +96,16 @@ export function normalizeGraphRawInput(
       return object ? { kind: 'Object', object } : undefined;
     }
     case 'FundsWithdrawal': {
+      if (
+        !validateOnlyKeys(
+          value,
+          RAW_INPUT_KEYS_BY_KIND.FundsWithdrawal,
+          path,
+          diagnostics,
+        )
+      ) {
+        return undefined;
+      }
       const funds = normalizeGraphFundsWithdrawal(
         value.value,
         `${path}.value`,
@@ -87,20 +144,25 @@ function normalizeGraphRawObject(
   switch (value.kind) {
     case 'ImmOrOwnedObject':
     case 'Receiving': {
+      if (!validateOnlyKeys(value, RAW_OWNED_OBJECT_KEYS, path, diagnostics)) {
+        return undefined;
+      }
       const objectId = parseObjectId(value.objectId);
       const version = parseJsonU64(value.version);
+      const digest = parseObjectDigest(value.digest);
       if (
         objectId !== undefined &&
         objectId === value.objectId &&
         version !== undefined &&
         version === value.version &&
-        typeof value.digest === 'string'
+        digest !== undefined &&
+        digest === value.digest
       ) {
         return {
           kind: value.kind,
           objectId,
           version,
-          digest: value.digest,
+          digest,
         };
       }
       diagnostics.push(
@@ -113,6 +175,9 @@ function normalizeGraphRawObject(
       return undefined;
     }
     case 'SharedObject': {
+      if (!validateOnlyKeys(value, RAW_SHARED_OBJECT_KEYS, path, diagnostics)) {
+        return undefined;
+      }
       const objectId = parseObjectId(value.objectId);
       const initialSharedVersion = parseJsonU64(value.initialSharedVersion);
       if (
@@ -165,6 +230,9 @@ function normalizeGraphFundsWithdrawal(
     );
     return undefined;
   }
+  if (!validateOnlyKeys(value, RAW_FUNDS_WITHDRAWAL_KEYS, path, diagnostics)) {
+    return undefined;
+  }
   const reservation = isRecord(value.reservation)
     ? value.reservation
     : undefined;
@@ -174,12 +242,35 @@ function normalizeGraphFundsWithdrawal(
     : undefined;
 
   const amount = parseJsonU64(reservation?.amount);
+  const type = parseMoveTypeTag(typeArg?.type);
   if (
+    !reservation ||
+    !validateOnlyKeys(
+      reservation,
+      RAW_FUNDS_RESERVATION_KEYS,
+      `${path}.reservation`,
+      diagnostics,
+    ) ||
+    !typeArg ||
+    !validateOnlyKeys(
+      typeArg,
+      RAW_FUNDS_TYPE_ARG_KEYS,
+      `${path}.typeArg`,
+      diagnostics,
+    ) ||
+    !withdrawFrom ||
+    !validateOnlyKeys(
+      withdrawFrom,
+      RAW_FUNDS_WITHDRAW_FROM_KEYS,
+      `${path}.withdrawFrom`,
+      diagnostics,
+    ) ||
     reservation?.kind !== 'MaxAmountU64' ||
     amount === undefined ||
     amount !== reservation.amount ||
     typeArg?.kind !== 'Balance' ||
-    typeof typeArg.type !== 'string' ||
+    type === undefined ||
+    type !== typeArg.type ||
     (withdrawFrom?.kind !== 'Sender' && withdrawFrom?.kind !== 'Sponsor')
   ) {
     diagnostics.push(
@@ -194,10 +285,31 @@ function normalizeGraphFundsWithdrawal(
 
   return {
     reservation: { kind: 'MaxAmountU64', amount },
-    typeArg: { kind: 'Balance', type: typeArg.type },
+    typeArg: { kind: 'Balance', type },
     withdrawFrom:
       withdrawFrom.kind === 'Sponsor'
         ? { kind: 'Sponsor' }
         : { kind: 'Sender' },
   };
+}
+
+function validateOnlyKeys(
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  const unknownKeys = Object.keys(value).filter(
+    (key) => !allowedKeys.includes(key),
+  );
+  unknownKeys.forEach((key) => {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.rawInput.unknownField',
+        `PTB graph rawInput does not support field ${key}.`,
+        `${path}.${key}`,
+      ),
+    );
+  });
+  return unknownKeys.length === 0;
 }
