@@ -34,6 +34,17 @@ export type {
 export { validatePTBGraph } from './graph/types.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export { isPTBType, validatePTBType } from './ptbType.js';
+export type {
+  MoveFunctionSignatureEvidence,
+  MoveModuleSignatureEvidence,
+  MovePackageSignatureEvidence,
+} from './move/evidence.js';
+export {
+  isMoveFunctionSignatureEvidence,
+  isMoveModuleSignatureEvidence,
+  isMovePackageSignatureEvidence,
+  isTxContextOpenSignature,
+} from './move/evidence.js';
 export type { IndexedHandleSuffix } from './graph/handles.js';
 export {
   indexedHandleSuffix,
@@ -91,6 +102,8 @@ export type {
 export {
   isRawInputArgumentType,
   isRawMoveCallArgumentTypes,
+  isRawOpenSignature,
+  isRawOpenSignatureList,
   parseBase64Bytes,
   parseJsonU64,
   parseMoveIdentifier,

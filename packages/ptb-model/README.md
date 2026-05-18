@@ -65,6 +65,8 @@ The root entrypoint exposes:
 - Mermaid and TypeScript SDK code string renderers;
 - structural IR parsing helpers and projection-specific IR validators;
 - the pure type-name helper used by SDK-facing adapters;
+- Move function signature evidence types and guards for host-provided package
+  metadata;
 - canonical graph handle helpers and protocol index/result-count limit helpers;
 - scalar and byte normalizers needed before constructing model values;
 - `NULL_VALUE`, the canonical JSON-stable representation for `option<T>` `None`.
@@ -131,6 +133,27 @@ model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
 report `graph.type.*` diagnostics for graph-authored `varType` and port
 `dataType` fields so graph source diagnostics remain clearly attributable to
 the graph layer.
+
+Use the Move signature evidence guards when a host has fetched package metadata
+and wants to pass that verified metadata into later model validation steps. The
+model does not fetch package data. Evidence must be keyed by canonical package
+id, module name, and function name, and each function signature must use
+SDK-shaped `RawOpenSignature` arrays with `TxContext` already removed:
+
+```ts
+import {
+  isMovePackageSignatureEvidence,
+  isTxContextOpenSignature,
+} from '@zktx.io/ptb-model';
+
+const filteredParameters = openSignatures.filter(
+  (signature) => !isTxContextOpenSignature(signature),
+);
+```
+
+These helpers define the model evidence shape only. Evidence-aware `MoveCall`
+result/type validation is a separate validation step and should not be inferred
+from the existence of metadata fields alone.
 
 Do not store transaction semantics in `params.ui`. MoveCall targets and type
 arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
@@ -243,8 +266,10 @@ Current partial or unsupported areas are:
   present, the bytes must round-trip through the installed SDK BCS schema for
   that type. The consuming Move type is not inferred;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
-  inferred from package metadata, so result and nested-result references remain
-  structural unless a command-specific rule can be verified locally;
+  inferred from package metadata by default, so result and nested-result
+  references remain structural unless a command-specific rule can be verified
+  locally. The package exports host-provided Move signature evidence types and
+  guards, but it does not fetch package metadata itself;
 - raw PTB `MoveCall` data does not carry result-count metadata. The model does
   not infer that count from package metadata; graph or manual IR authors may
   provide `CommandNode.params.runtime.resultCount` / `IRCommand.resultCount`
@@ -369,12 +394,20 @@ accepted only as SDK envelope context and are not preserved by
 SDK raw metadata fields `Argument.Input.type` and MoveCall `_argumentTypes` are
 preserved during raw/IR/raw conversion when present. `_argumentTypes` must match
 the exported `RawOpenSignature` shape, which is checked against the installed
-SDK `OpenSignature` payload shape and adds model constraints such as non-negative type
-parameter indexes and no unsupported fields. These fields are SDK metadata, not
-transaction semantics, and renderers do not infer protocol meaning from them.
+SDK `OpenSignature` payload shape and adds model constraints such as
+non-negative type parameter indexes and no unsupported fields. These fields are
+SDK metadata, not transaction semantics, and renderers do not infer protocol
+meaning from them.
 `PTBGraph` is the visual editing model and does not preserve those metadata
 fields through graph round-trips; use the raw/IR boundary when SDK metadata
 fidelity matters.
+
+Move signature evidence uses the same `RawOpenSignature` body shape, but it is a
+model evidence channel rather than SDK raw metadata. Function evidence requires
+plain dense `parameters` and `returns` arrays, a non-negative
+`typeParameterCount`, in-bounds `typeParameter` indexes, and no remaining
+`TxContext` types anywhere in parameter or return signature trees. Package
+evidence keys must be canonical object ids.
 
 When a `PTBGraph` declares flow nodes or flow edges, validation requires a
 single Start-to-End flow path containing every command node. Graph fragments

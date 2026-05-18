@@ -118,7 +118,7 @@ export interface RawProgrammableMoveCall {
 const U64_MAX = 18_446_744_073_709_551_615n;
 const BASE64_ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const MAX_MOVE_TYPE_TAG_DEPTH = 64;
-const MAX_RAW_OPEN_SIGNATURE_DEPTH = 64;
+export const MAX_RAW_OPEN_SIGNATURE_DEPTH = 64;
 const MAX_MOVE_IDENTIFIER_LENGTH = 128;
 const SCALAR_PARSE_CACHE_LIMIT = 2_048;
 const MOVE_IDENTIFIER_PATTERN = /^([a-zA-Z][a-zA-Z0-9_]*|_[a-zA-Z0-9_]+)$/;
@@ -299,11 +299,22 @@ export function isRawInputArgumentType(
 export function isRawMoveCallArgumentTypes(
   value: unknown,
 ): value is RawMoveCallArgumentTypes {
+  return value === NULL_VALUE || isRawOpenSignatureList(value);
+}
+
+export function isRawOpenSignatureList(
+  value: unknown,
+): value is RawOpenSignature[] {
   return (
-    value === NULL_VALUE ||
-    (isDenseArray(value) &&
-      value.every((item) => isRawOpenSignature(item, new WeakSet<object>(), 0)))
+    isDenseArray(value) &&
+    value.every((item) => checkRawOpenSignature(item, new WeakSet<object>(), 0))
   );
+}
+
+export function isRawOpenSignature(
+  value: unknown,
+): value is RawOpenSignature {
+  return checkRawOpenSignature(value, new WeakSet<object>(), 0);
 }
 
 function maxAngleDepth(value: string): number {
@@ -489,7 +500,7 @@ export function isRawFundsWithdrawalArg(
   );
 }
 
-function isRawOpenSignature(
+function checkRawOpenSignature(
   value: unknown,
   seen: WeakSet<object>,
   depth: number,

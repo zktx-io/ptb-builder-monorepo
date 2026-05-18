@@ -23,9 +23,16 @@ import {
   inputHandle,
   isIndexedInputHandle,
   isInputHandle,
+  isMoveFunctionSignatureEvidence,
+  isMoveModuleSignatureEvidence,
+  isMovePackageSignatureEvidence,
   isNestedResultHandle,
   isNonNegativeSafeInteger,
+  isRawMoveCallArgumentTypes,
+  isRawOpenSignature,
+  isRawOpenSignatureList,
   isStructuralTransactionIR,
+  isTxContextOpenSignature,
   isU16Index,
   isUnknownResultOutputHandle,
   jsonStringifyWithBigInt,
@@ -63,8 +70,10 @@ import type {
   Port,
   PTBGraph,
   PTBType,
+  MovePackageSignatureEvidence,
   RawCallArg,
   RawCommand,
+  RawOpenSignature,
   RawProgrammableTransaction,
   TransactionIR,
   VariableNode,
@@ -90,6 +99,10 @@ const TEST_DIGEST_3 = 'C6G8PsqwNpMqrK7ApwuQUvDgzkFcUaUy6Y5ycrAN2q3F';
 const TEST_SUI_TYPE = `${normalizedObjectId('2')}::sui::SUI`;
 const TEST_COIN_TYPE = `${normalizedObjectId('2')}::coin::Coin`;
 const TEST_COIN_SUI_TYPE = `${TEST_COIN_TYPE}<${TEST_SUI_TYPE}>`;
+
+function rawSignature(body: RawOpenSignature['body']): RawOpenSignature {
+  return { reference: NULL_VALUE, body };
+}
 
 const modelSourceRoot = fileURLToPath(new URL('.', import.meta.url));
 const modelPackageJsonPath = fileURLToPath(
@@ -166,6 +179,151 @@ describe('public package surface', () => {
       );
 
     expect(violations).toEqual([]);
+  });
+});
+
+describe('Move signature evidence guards', () => {
+  const u64Signature = rawSignature({ $kind: 'u64' });
+  const txContextSignature = rawSignature({
+    $kind: 'datatype',
+    datatype: {
+      typeName: '0x2::tx_context::TxContext',
+      typeParameters: [],
+    },
+  });
+  const voidFunction = {
+    typeParameterCount: 0,
+    parameters: [],
+    returns: [],
+  };
+
+  it('exposes raw OpenSignature guards without changing _argumentTypes null semantics', () => {
+    const sparse: unknown[] = [];
+    sparse[1] = u64Signature;
+
+    expect(isRawOpenSignature(u64Signature)).toBe(true);
+    expect(isRawOpenSignature({ ...u64Signature, reference: 'readonly' }))
+      .toBe(false);
+    expect(isRawOpenSignatureList([])).toBe(true);
+    expect(isRawOpenSignatureList([u64Signature])).toBe(true);
+    expect(isRawOpenSignatureList(sparse)).toBe(false);
+    expect(isRawOpenSignatureList(NULL_VALUE)).toBe(false);
+    expect(isRawMoveCallArgumentTypes([])).toBe(true);
+    expect(isRawMoveCallArgumentTypes(NULL_VALUE)).toBe(true);
+  });
+
+  it('accepts canonical function, module, and package signature evidence', () => {
+    const parameterOnlyFunction = {
+      typeParameterCount: 0,
+      parameters: [u64Signature],
+      returns: [],
+    };
+    const genericFunction = {
+      typeParameterCount: 1,
+      parameters: [
+        rawSignature({
+          $kind: 'datatype',
+          datatype: {
+            typeName: `${normalizedObjectId('2')}::coin::Coin`,
+            typeParameters: [{ $kind: 'typeParameter', index: 0 }],
+          },
+        }),
+      ],
+      returns: [rawSignature({ $kind: 'typeParameter', index: 0 })],
+    };
+    const moduleEvidence = {
+      empty: voidFunction,
+      consume: parameterOnlyFunction,
+      generic: genericFunction,
+    };
+    const packageEvidence = {
+      [normalizedObjectId('2')]: {
+        sui: moduleEvidence,
+      },
+    };
+    const typedPackageEvidence: MovePackageSignatureEvidence = {
+      [normalizedObjectId('2')]: {
+        sui: {
+          transfer: voidFunction,
+        },
+      },
+    };
+
+    expect(isMoveFunctionSignatureEvidence(voidFunction)).toBe(true);
+    expect(isMoveFunctionSignatureEvidence(parameterOnlyFunction)).toBe(true);
+    expect(isMoveFunctionSignatureEvidence(genericFunction)).toBe(true);
+    expect(isMoveModuleSignatureEvidence(moduleEvidence)).toBe(true);
+    expect(isMoveModuleSignatureEvidence({})).toBe(true);
+    expect(isMovePackageSignatureEvidence(packageEvidence)).toBe(true);
+    expect(isMovePackageSignatureEvidence(typedPackageEvidence)).toBe(true);
+    expect(isMovePackageSignatureEvidence({})).toBe(true);
+  });
+
+  it('rejects non-canonical or host-unfiltered Move signature evidence', () => {
+    const sparseParameters: unknown[] = [];
+    sparseParameters[1] = u64Signature;
+    const classShapedEvidence = new (class Evidence {
+      typeParameterCount = 0;
+      parameters: RawOpenSignature[] = [];
+      returns: RawOpenSignature[] = [];
+    })();
+
+    expect(
+      isMoveFunctionSignatureEvidence({
+        ...voidFunction,
+        readOnly: true,
+      }),
+    ).toBe(false);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 0,
+        parameters: sparseParameters,
+        returns: [],
+      }),
+    ).toBe(false);
+    expect(isMoveFunctionSignatureEvidence(classShapedEvidence)).toBe(false);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 1,
+        parameters: [rawSignature({ $kind: 'typeParameter', index: 1 })],
+        returns: [],
+      }),
+    ).toBe(false);
+    expect(isTxContextOpenSignature(txContextSignature)).toBe(true);
+    expect(
+      isTxContextOpenSignature(
+        rawSignature({
+          $kind: 'datatype',
+          datatype: {
+            typeName: `${normalizedObjectId('2')}::tx_context::TxContext`,
+            typeParameters: [],
+          },
+        }),
+      ),
+    ).toBe(true);
+    expect(isTxContextOpenSignature(undefined)).toBe(false);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 0,
+        parameters: [txContextSignature],
+        returns: [],
+      }),
+    ).toBe(false);
+    expect(
+      isMovePackageSignatureEvidence({
+        '0x2': { sui: { transfer: voidFunction } },
+      }),
+    ).toBe(false);
+    expect(
+      isMovePackageSignatureEvidence({
+        [normalizedObjectId('2')]: { 'bad-module': { transfer: voidFunction } },
+      }),
+    ).toBe(false);
+    expect(
+      isMovePackageSignatureEvidence({
+        [normalizedObjectId('2')]: { sui: { 'bad-function': voidFunction } },
+      }),
+    ).toBe(false);
   });
 });
 
