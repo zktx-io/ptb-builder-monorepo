@@ -21,6 +21,7 @@ Inspect the actual repository before assuming any path, script, package, or API 
 Current structure:
 
 - `packages/ptb-model/`: package `@zktx.io/ptb-model`; UI-independent PTB model, TransactionIR, raw PTB conversion, Mermaid renderer, and TS SDK code string renderer.
+- `packages/ptb-cli/`: package `@zktx.io/ptb-cli`; CLI for converting local or read-only fetched PTB transaction data to Mermaid through `@zktx.io/ptb-model`.
 - `packages/ptb-builder/`: published package `@zktx.io/ptb-builder`.
 - `packages/example/`: local Vite example app.
 - `.WORK/`: ignored local investigation and planning notes.
@@ -39,9 +40,10 @@ Inspect `package.json` before running project commands. Do not invent scripts.
 Current root commands, as of the current `package.json`:
 
 - Install: `npm install`
-- Build model package then builder package: `npm run build`
+- Build model package, CLI package, then builder package: `npm run build`
 - Run example after build: `npm run dev`
 - Run builder-flow tests sequentially: `npm run test:builder-flow`
+- Test CLI package with test-source type checking: `npm run test:cli`
 - Test model package: `npm run test:model`
 - Lint: `npm run lint`
 - Format: `npm run format`
@@ -51,6 +53,10 @@ Current package commands:
 - Model build: `npm run build --workspace @zktx.io/ptb-model`
 - Model type check: `npm run typecheck --workspace @zktx.io/ptb-model`
 - Model test: `npm run test --workspace @zktx.io/ptb-model`
+- CLI build: `npm run build --workspace @zktx.io/ptb-cli`
+- CLI type check: `npm run typecheck --workspace @zktx.io/ptb-cli`
+- CLI test source type check: `npm run typecheck:test --workspace @zktx.io/ptb-cli`
+- CLI test: `npm run test --workspace @zktx.io/ptb-cli`
 - Builder build: `cd packages/ptb-builder && npm run build`
 - Builder test: `cd packages/ptb-builder && npm run test`
 - Builder lint: `cd packages/ptb-builder && npm run lint`
@@ -171,10 +177,8 @@ The current direction is:
 Do not create a separate `ptb-sui` package or rename the model package unless a new explicit decision replaces this one.
 Do not keep builder-internal graph shapes, decoder fallbacks, or codegen shortcuts inside `@zktx.io/ptb-model` for compatibility. The builder package should adapt to the model boundary, not the other way around.
 
-Use these local planning documents before changing the model boundary:
+Use these local evidence inputs before changing the model boundary:
 
-- `.WORK/PTB_MODEL_REFACTOR_DECISION.md`
-- `.WORK/PTB_MODEL_DEVELOPMENT_SPEC.md`
 - `.WORK/sui-mainnet-v1.71.1/`
 - `.WORK/ts-sdks/`
 
@@ -190,14 +194,20 @@ The model package should stay independent from UI and execution runtime concerns
 - No runtime `Transaction` object as a required dependency.
 
 `@mysten/sui` may be used as the source of truth for SDK types, BCS schemas, fixtures, and compatibility tests. Do not duplicate SDK behavior from memory. Client, wallet, signer, execution, and runtime transaction-building behavior should remain in `@zktx.io/ptb-builder` or a later explicitly approved adapter package.
+When the model needs SDK-defined address, digest, type-tag, or BCS behavior, prefer installed public SDK exports over copying SDK implementation code into this repository. If a needed SDK rule is not available through a public export, document that limitation and add a narrowly scoped local rule only after checking source evidence and affected conversion paths.
 
 Package responsibilities during this refactor:
 
 - `@zktx.io/ptb-model` owns protocol-facing logical data structures and deterministic data transforms: canonical file/document shape, document validation, raw PTB conversion, `TransactionIR`, `PTBGraph`, graph-to-IR and IR-to-graph conversion, Mermaid text rendering, and TypeScript SDK code string rendering.
 - `@zktx.io/ptb-model` must stay UI-independent and runtime-execution-independent. It may use pinned SDK source, BCS schemas, fixtures, and compatibility tests as evidence, but it must not depend on React, React Flow, DOM, CSS, UI drawing/layout frameworks, wallet state, Sui clients, host callbacks, or runtime `Transaction` instances.
 - Treat `@zktx.io/ptb-model` as the source of truth. A builder defect, UI convenience, non-canonical document, example behavior, or test fixture must not bend the model boundary. If the model changes, it must be because the canonical PTB/document/IR/graph/renderer rule is wrong or incomplete after checking all model conversions and the pinned SDK/source evidence.
+- Optimize `@zktx.io/ptb-model` for the cleanest canonical model contract, not for downstream compatibility with builder, CLI, example, previous releases, saved fixtures, or legacy authoring habits. Backward compatibility is not a model-package design goal during this refactor because the model is the repository's PTB source-of-truth package consumed primarily by `@zktx.io/ptb-cli` and `@zktx.io/ptb-builder`, not a broad stable user-facing import API. When a consumer uses non-canonical graph handles, params, raw shapes, aliases, root exports, or repair assumptions, document the correct model usage and update that consumer; do not add aliases, fallbacks, repair paths, compatibility branches, deprecated duplicate fields, or public exports solely to preserve older usage unless a new explicit product decision changes the canonical contract.
+- Compatibility work belongs only to an explicitly named PTB flow compatibility utility or separate migration tool, not to the normal model parser, converter, validator, renderer, or graph APIs. The canonical model path must remain legacy-free and reject non-canonical shapes. A compatibility utility may translate older PTB flow or document shapes into the canonical model contract only when that utility is an explicit product decision and is not invoked silently by canonical model APIs.
+- Improve `@zktx.io/ptb-model` only when the change makes Sui PTB representation, validation, conversion, graph authoring, inspection rendering, or TypeScript SDK code-string rendering more correct against the pinned SDK or verified Sui source. Do not add non-PTB workflow behavior, UI behavior, or speculative support. When Sui PTB has a command, input, argument, metadata field, or execution semantic that the model cannot faithfully represent in raw, IR, graph, Mermaid, or SDK-code output, document it as unsupported in the model README before expanding support, and keep the supported/unsupported PTB surface list current with the implementation.
 - Changes to `@zktx.io/ptb-model` require a stricter review than builder-only changes. Before editing it, inspect the affected parser, validator, converter, renderer, public exports, README claims, model tests, builder call sites, and example call sites. After editing it, re-check every conversion direction it touches (`doc`, `raw`, `IR`, `graph`, Mermaid, TS SDK code) before moving back to builder code.
 - `@zktx.io/ptb-model` should be consumed through its root package export. Opening a new package subpath or adding a new root export is a source-of-truth decision: update the model README, public-surface tests, and downstream builder/example imports in the same change.
+- `@zktx.io/ptb-cli` owns command-line input/output around the model: local files, stdin, base64 transaction-kind or transaction-data bytes, read-only Sui Core/gRPC transaction fetch by digest, stdout/stderr output, process exit codes, and machine-readable JSON envelopes for agents and scripts.
+- `@zktx.io/ptb-cli` must call `@zktx.io/ptb-model` for PTB semantics, validation, and Mermaid rendering. It must not duplicate model conversion rules, parse legacy builder shapes, sign transactions, simulate transactions, execute transactions, connect wallets, or use JSON-RPC.
 - `@zktx.io/ptb-builder` owns the React product surface around the model: graph editing, drawing, node placement, React Flow screen state, user interactions, Sui Core reads needed for inspection, local metadata caches, builder-specific document requirements such as supported chain/view/module embeds/object embeds, pseudocode/code preview display, and host-owned runtime `Transaction` construction from a model `TransactionIR`.
 - `@zktx.io/ptb-builder` must depend on model boundaries instead of re-implementing, repairing, or forking them. It may adapt a parsed model `PTBGraph` to React Flow and back, but it does not define file format, graph semantics, transaction semantics, canonical parser behavior, Mermaid rules, or TypeScript SDK code-rendering rules.
 - Host applications own wallet connection, signing, simulation, execution, custody, and final authorization. Builder may expose callbacks and runtime `Transaction` construction helpers for host-owned flows, but it must not present those flows as builder-owned authority.
@@ -232,7 +242,7 @@ Rules:
 - Keep `TransactionIR` and `PTBGraph` separate unless implementation evidence proves one structure can replace the other cleanly.
 - Do not treat React Flow positions, handles, viewport state, collapsed state, or UI layout as transaction semantics.
 - Keep file/document format and file-to-graph conversion in `@zktx.io/ptb-model`. Builder code should call model utilities and then render or edit the resulting `PTBGraph`; it must not own parallel document conversion rules.
-- Keep legacy migration separate from normal model parsing and out of `@zktx.io/ptb-builder`. New canonical parsers should reject legacy shapes; migration utilities may convert them explicitly outside the normal `@zktx.io/ptb-model` parser path only when that utility is an explicit product decision.
+- Keep legacy migration separate from normal model parsing and out of `@zktx.io/ptb-builder`. New canonical parsers should reject legacy shapes. The only allowed compatibility bridge is an explicitly named PTB flow compatibility utility or separate migration tool, outside the normal `@zktx.io/ptb-model` parser/converter/validator path, and it must not be invoked implicitly by canonical model APIs.
 - Include Sui `FundsWithdrawal` in raw PTB coverage.
 - Do not treat SDK builder conveniences such as `$Intent`, `UnresolvedPure`, or `UnresolvedObject` as canonical raw PTB commands.
 - Mermaid, TypeScript SDK code strings, raw PTB conversion, and runtime adapters should use `TransactionIR` as their transaction-semantics input unless implementation evidence proves a different boundary is safer.

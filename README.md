@@ -3,10 +3,12 @@
 React and TypeScript packages for authoring, inspecting, converting, and
 rendering Sui Programmable Transaction Block data.
 
-This repository contains two package boundaries:
+This repository contains three package boundaries:
 
 - `@zktx.io/ptb-model`: UI-independent PTB data model, validation, conversion,
   Mermaid rendering, and TypeScript SDK code string rendering.
+- `@zktx.io/ptb-cli`: command-line conversion and read-only fetch tooling around
+  the model package.
 - `@zktx.io/ptb-builder`: React UI package for graph-based PTB editing. It uses
   `@zktx.io/ptb-model` as its transaction data boundary.
 
@@ -20,7 +22,8 @@ make it the owner of wallet authorization or transaction execution.
 
 | Package                | Path                    | Purpose                                                                                                                                                                                                                                                      |
 | ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@zktx.io/ptb-model`   | `packages/ptb-model/`   | Canonical PTB data boundary. Converts supported raw Sui PTB-shaped data into `TransactionIR`, converts between `TransactionIR` and `PTBGraph`, validates model shapes, renders Mermaid text, and renders TypeScript SDK transaction-building source strings. |
+| `@zktx.io/ptb-model`   | `packages/ptb-model/`   | Canonical PTB data boundary and repository source of truth consumed primarily by CLI and builder packages. Converts supported raw Sui PTB-shaped data into `TransactionIR`, converts between `TransactionIR` and `PTBGraph`, validates model shapes, renders Mermaid text, and renders TypeScript SDK transaction-building source strings. |
+| `@zktx.io/ptb-cli`     | `packages/ptb-cli/`     | CLI surface for local/stdin PTB conversion and read-only digest fetch workflows through `@zktx.io/ptb-model`.                                                                                                                                               |
 | `@zktx.io/ptb-builder` | `packages/ptb-builder/` | Published React package with the PTB editor UI, graph workspace, styling exports, and host integration points.                                                                                                                                               |
 | Example app            | `packages/example/`     | Local Vite app for trying the builder package during development.                                                                                                                                                                                            |
 
@@ -58,6 +61,22 @@ The model package does not accept serialized BCS bytes, base64 transaction
 strings, or live SDK `Transaction` instances directly. Use the Sui SDK to turn
 those into SDK transaction-kind data first, then pass that data to
 `rawTransactionToIR()`.
+
+During this refactor, the model package is optimized as the canonical source of
+truth for repository-owned consumers such as `@zktx.io/ptb-cli` and
+`@zktx.io/ptb-builder`, not as a broad stable user-facing import API. Downstream
+packages should adapt to the model's canonical graph, raw, and IR contracts
+instead of the model carrying aliases, repair paths, or compatibility fields for
+older consumer shapes.
+
+Normal model APIs stay legacy-free. If legacy PTB flow or document
+compatibility is needed, it must be provided through an explicitly named
+compatibility utility or migration tool that converts into the canonical model
+contract; it must not run silently inside the canonical parser, validator, or
+converter path. Model changes are evaluated by whether they improve faithful
+Sui PTB representation as raw data, `TransactionIR`, `PTBGraph`, Mermaid text,
+or TypeScript SDK code strings. Unsupported Sui PTB surface should be named in
+the model README before support is expanded.
 
 ```ts
 import { Transaction } from '@mysten/sui/transactions';
@@ -109,6 +128,7 @@ Useful root commands:
 
 ```sh
 npm run test:model
+npm run test:cli
 npm run build
 npm run lint
 npm run dev
@@ -121,6 +141,11 @@ npm run typecheck --workspace @zktx.io/ptb-model
 npm run test --workspace @zktx.io/ptb-model
 npm run build --workspace @zktx.io/ptb-model
 
+npm run typecheck --workspace @zktx.io/ptb-cli
+npm run typecheck:test --workspace @zktx.io/ptb-cli
+npm run test --workspace @zktx.io/ptb-cli
+npm run build --workspace @zktx.io/ptb-cli
+
 cd packages/ptb-builder && npm run build
 cd packages/example && npm run dev
 ```
@@ -131,6 +156,18 @@ cd packages/example && npm run dev
   client, JSON-RPC, or runtime `Transaction` dependency.
 - The builder package is UI and integration code. It should use the model
   package for canonical PTB validation and conversion.
+- Consumer packages should adapt to the canonical model contract. Do not add
+  model aliases, repair paths, or fallback parsing only because a downstream
+  builder, CLI, example, or saved fixture uses a different shape.
+- During the model refactor, backward compatibility with older model releases is
+  not a model-package design goal. Prefer one canonical shape over compatibility
+  fields or aliases.
+- PTB flow compatibility, when explicitly needed, belongs in a named
+  compatibility utility or migration tool outside the normal model parser,
+  validator, and converter path.
+- Model package changes should focus on representing Sui PTB faithfully as raw
+  PTB data, `TransactionIR`, `PTBGraph`, Mermaid text, and TypeScript SDK code
+  strings. Do not add non-PTB workflow behavior to the model package.
 - Document parsing accepts supported package document versions only. Convert
   unsupported document shapes before calling model package APIs.
 - SDK builder convenience shapes such as `$Intent`, `UnresolvedPure`, and
