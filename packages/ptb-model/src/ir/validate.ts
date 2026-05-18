@@ -1296,7 +1296,10 @@ function commandArgValidationEntries(
           arg,
           path: `$.commands[${commandIndex}].amounts[${index}]`,
           expectedInputType: 'pure' as const,
-          expectedPureType: { kind: 'move_numeric' as const, width: 'u64' as const },
+          expectedPureType: {
+            kind: 'move_numeric' as const,
+            width: 'u64' as const,
+          },
         })),
       ];
     case 'MergeCoins':

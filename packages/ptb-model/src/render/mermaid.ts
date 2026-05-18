@@ -10,7 +10,7 @@ import type {
 import { validateTransactionIR } from '../ir/validate.js';
 import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
-import { isDenseArray, isRecord } from '../utils.js';
+import { isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
 
 export type MermaidDirection = 'TD' | 'LR';
 
@@ -358,7 +358,7 @@ function renderMermaidValue(value: unknown): string {
       if (typeof item === 'bigint') return item.toString();
       if (typeof item === 'function') return '[Function]';
       if (typeof item === 'symbol') return item.toString();
-      if (typeof item === 'object' && item !== null) {
+      if (typeof item === 'object' && item !== NULL_VALUE) {
         if (seen.has(item)) return '[Circular]';
         seen.add(item);
       }

@@ -230,7 +230,9 @@ export function jsonLikeEqual(left: unknown, right: unknown): boolean {
   return true;
 }
 
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
 
   const proto = Object.getPrototypeOf(value);

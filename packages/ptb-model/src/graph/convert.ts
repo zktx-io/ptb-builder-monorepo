@@ -328,7 +328,8 @@ function resolveGraphInputType(
   let resolved = node.varType;
 
   referencedOutPorts.forEach((port) => {
-    const constraints = constraintsByInputKey.get(edgeKey(node.id, port.id)) ?? [];
+    const constraints =
+      constraintsByInputKey.get(edgeKey(node.id, port.id)) ?? [];
     constraints.forEach((constraint) => {
       resolved = applyGraphInputCast(node, resolved, constraint, diagnostics);
     });

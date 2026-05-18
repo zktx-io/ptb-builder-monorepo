@@ -6746,7 +6746,10 @@ describe('structural ownership and defensive renderers', () => {
           {
             id: 'cyclic',
             kind: 'Pure',
-            type: { kind: 'vector', elem: { kind: 'move_numeric', width: 'u8' } },
+            type: {
+              kind: 'vector',
+              elem: { kind: 'move_numeric', width: 'u8' },
+            },
             value: cyclic,
           },
         ],
