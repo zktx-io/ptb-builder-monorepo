@@ -4,7 +4,7 @@
   "description": "CLI tools for rendering Sui PTB transaction data with @zktx.io/ptb-model",
   "type": "module",
   "bin": {
-    "ptb": "./dist/bin.js"
+    "ptb": "dist/bin.js"
   },
   "exports": {
     ".": {
