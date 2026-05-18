@@ -7239,7 +7239,7 @@ describe('validateTransactionIR', () => {
     );
   });
 
-  it('raw conversion validates the current IR shape instead of stale stored diagnostics', () => {
+  it('projection conversions validate the current IR shape instead of stale stored diagnostics', () => {
     const stale = rawTransactionToIR({
       inputs: [
         { $kind: 'UnresolvedObject', UnresolvedObject: { objectId: '0x2' } },
@@ -7276,6 +7276,15 @@ describe('validateTransactionIR', () => {
       ],
       commands: [],
     });
+    expect(transactionIRToGraph(current).nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'Variable',
+          rawInput: expect.objectContaining({ kind: 'Object' }),
+        }),
+      ]),
+    );
+    expect(transactionIRToTsSdkCode(current)).toContain('tx.objectRef');
   });
 
   it('conversion APIs still reject malformed stored diagnostics', () => {
