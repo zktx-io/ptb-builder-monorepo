@@ -19,10 +19,82 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
+      - name: verify model dependents
+        run: >-
+          node -e 'const fs = require("node:fs"); const model = JSON.parse(fs.readFileSync("packages/ptb-model/package.json", "utf8")); for (const path of ["packages/ptb-cli/package.json","packages/ptb-builder/package.json"]) { const pkg = JSON.parse(fs.readFileSync(path, "utf8")); const actual = pkg.dependencies?.[model.name]; if (actual !== model.version) { throw new Error(pkg.name + " must depend on " + model.name + "@" + model.version + ", found " + (actual ?? "missing")); } }'
+      - name: verify ptb cli network boundary
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const sourceRoot = 'packages/ptb-cli/src';
+          const files = [];
+
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                walk(fullPath);
+              } else if (/\.(js|ts|tsx)$/.test(entry.name)) {
+                files.push(fullPath);
+              }
+            }
+          }
+
+          walk(sourceRoot);
+
+          const source = files
+            .map((file) => `${file}\n${fs.readFileSync(file, 'utf8')}`)
+            .join('\n');
+          const forbidden = [
+            '@mysten/sui/jsonRpc',
+            'SuiJsonRpcClient',
+            'getJsonRpcFullnodeUrl',
+            'sui_getTransaction',
+            'jsonrpc',
+            'JSON-RPC',
+          ];
+
+          for (const pattern of forbidden) {
+            if (source.includes(pattern)) {
+              throw new Error(`ptb-cli must use Sui Core gRPC/GraphQL only; found forbidden pattern: ${pattern}`);
+            }
+          }
+
+          const networkSource = fs.readFileSync('packages/ptb-cli/src/network.ts', 'utf8');
+          for (const required of ['@mysten/sui/grpc', 'GrpcWebFetchTransport', '@mysten/sui/graphql', 'SuiGraphQLClient']) {
+            if (!networkSource.includes(required)) {
+              throw new Error(`ptb-cli digest lookup must support gRPC and GraphQL transports; missing: ${required}`);
+            }
+          }
+          NODE
+      - run: npm run test:cli
       - run: npm run build
+      - run: npm pack --workspace @zktx.io/ptb-cli --dry-run
+
+      - name: publish ptb model package
+        uses: JS-DevTools/npm-publish@v3
+        id: ptb-model
+        with:
+          access: public
+          provenance: true
+          token: ${{ secrets.NPM_TOKEN }}
+          package: "packages/ptb-model/package.json"
+          strategy: upgrade
+
+      - name: publish ptb cli package
+        uses: JS-DevTools/npm-publish@v3
+        id: ptb-cli
+        with:
+          access: public
+          provenance: true
+          token: ${{ secrets.NPM_TOKEN }}
+          package: "packages/ptb-cli/package.json"
+          strategy: upgrade
 
       - name: publish programmable transaction blocks builder package
         uses: JS-DevTools/npm-publish@v3

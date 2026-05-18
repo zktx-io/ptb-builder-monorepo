@@ -1,0 +1,60 @@
+{
+  "name": "@zktx.io/ptb-cli",
+  "version": "0.5.0",
+  "description": "CLI tools for rendering Sui PTB transaction data with @zktx.io/ptb-model",
+  "type": "module",
+  "bin": {
+    "ptb": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{force:true,recursive:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('fs').chmodSync('dist/bin.js', 0o755)\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "pretypecheck:test": "npm run build --workspace @zktx.io/ptb-model",
+    "pretest": "npm run build --workspace @zktx.io/ptb-model",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sui",
+    "ptb",
+    "transaction",
+    "mermaid",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zktx-io/ptb-builder-monorepo.git"
+  },
+  "author": "daoauth",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zktx-io/ptb-builder-monorepo/issues"
+  },
+  "homepage": "https://github.com/zktx-io/ptb-builder-monorepo#readme",
+  "dependencies": {
+    "@mysten/bcs": "2.0.5",
+    "@mysten/sui": "2.16.2",
+    "@protobuf-ts/grpcweb-transport": "2.11.1",
+    "@zktx.io/ptb-model": "0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "4.1.6"
+  }
+}
