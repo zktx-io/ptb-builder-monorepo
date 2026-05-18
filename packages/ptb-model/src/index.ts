@@ -32,6 +32,7 @@ export type {
   VariableNode,
 } from './graph/types.js';
 export { validatePTBGraph } from './graph/types.js';
+export type { ValidatePTBGraphOptions } from './graph/types.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export { isPTBType, validatePTBType } from './ptbType.js';
 export type {
@@ -118,6 +119,7 @@ export {
 export { jsonStringifyWithBigInt, NULL_VALUE } from './utils.js';
 
 export { graphToTransactionIR, transactionIRToGraph } from './graph/convert.js';
+export type { GraphToTransactionIROptions } from './graph/convert.js';
 export {
   assertRawConvertibleIR,
   rawTransactionToIR,

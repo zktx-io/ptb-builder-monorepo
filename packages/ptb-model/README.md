@@ -143,10 +143,12 @@ already removed:
 
 ```ts
 import {
+  graphToTransactionIR,
   isMovePackageSignatureEvidence,
   isTxContextOpenSignature,
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
+  validatePTBGraph,
   validateTransactionIR,
   type MovePackageSignatureEvidence,
 } from '@zktx.io/ptb-model';
@@ -166,7 +168,9 @@ const moveSignatures: MovePackageSignatureEvidence = buildHostEvidence();
 if (!isMovePackageSignatureEvidence(moveSignatures)) {
   throw new Error('Host evidence must match the model evidence shape.');
 }
-const diagnostics = validateTransactionIR(ir, { moveSignatures });
+const irDiagnostics = validateTransactionIR(ir, { moveSignatures });
+const graphDiagnostics = validatePTBGraph(graph, { moveSignatures });
+const graphIR = graphToTransactionIR(graph, { moveSignatures });
 ```
 
 `isTxContextOpenSignature()` is a top-level parameter filter. The evidence
@@ -178,10 +182,17 @@ argument strings preserve their full object `typeTag`; open generic signatures
 remain generic object types even when runtime type arguments are supplied. These
 helpers define the model evidence shape only. Evidence-aware `MoveCall` result
 arity and limited `MakeMoveVec` element type validation are available only when
-the host explicitly passes `moveSignatures` to `validateTransactionIR()`. The
-model does not fetch package metadata, persist evidence in PTB documents, or
+the host explicitly passes `moveSignatures` to `validateTransactionIR()`,
+`validatePTBGraph()`, or `graphToTransactionIR()`. Graph-to-IR conversion may
+materialize an evidence-derived MoveCall `resultCount` into the returned IR, and
+IR-to-graph conversion then preserves that count in `params.runtime.resultCount`.
+The model does not fetch package metadata, persist evidence in PTB documents, or
 infer result arity from metadata fields that happen to be present on raw PTB
-data.
+data. Malformed `moveSignatures` options are treated as absent evidence; validate
+host evidence with `isMovePackageSignatureEvidence()` before passing it. Mermaid
+rendering can surface evidence diagnostics already stored on the IR. Raw
+conversion and TS SDK renderability validators do not accept Move signature
+evidence and recompute their own evidence-free checks.
 
 Do not store transaction semantics in `params.ui`. MoveCall targets and type
 arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
@@ -295,9 +306,12 @@ Current partial or unsupported areas are:
   that type. The consuming Move type is not inferred;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata by default. When a host passes verified
-  `moveSignatures` to `validateTransactionIR()`, the validator can use the
-  matching function signature to check `MoveCall` result arity,
-  Result/NestedResult bounds, and comparable `MakeMoveVec` element types.
+  `moveSignatures` to `validateTransactionIR()`, `validatePTBGraph()`, or
+  `graphToTransactionIR()`, the model can use the matching function signature to
+  check `MoveCall` result arity, Result/NestedResult bounds, graph output ports,
+  and comparable `MakeMoveVec` element types. Graph-to-IR conversion can fill a
+  missing MoveCall `IRCommand.resultCount` from matching evidence; IR-to-graph
+  conversion preserves that materialized count as `params.runtime.resultCount`.
   `MakeMoveVec` type checking only runs when the target MoveCall evidence has
   matching type arguments and result count, or when an input already carries a
   concrete PTB type. Generic, unknown, and object types without concrete

@@ -7,16 +7,25 @@ import {
   nestedResultHandleIndex,
   RESULT_HANDLE_ID,
 } from './handles.js';
+import {
+  graphCommandRuntimeParams,
+  graphMoveCallEvidenceState,
+  parseGraphMoveCallTarget,
+  type GraphMoveCallEvidenceState,
+} from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
+import {
+  isMovePackageSignatureEvidence,
+  type MovePackageSignatureEvidence,
+} from '../move/evidence.js';
 import { NUMERIC_WIDTHS, validateGraphPTBTypeInto } from '../ptbType.js';
 import type { NumericWidth, PTBType } from '../ptbType.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
-  parseMoveIdentifier,
   parseMoveTypeTag,
   parseObjectId,
 } from '../raw/types.js';
@@ -202,12 +211,22 @@ interface GraphNodeIndex {
   path: string;
   command?: CommandKind;
   runtime?: Record<string, unknown>;
+  moveCallEvidence?: GraphMoveCallEvidenceState;
+}
+
+export interface ValidatePTBGraphOptions {
+  path?: string;
+  moveSignatures?: MovePackageSignatureEvidence;
 }
 
 export function validatePTBGraph(
   value: unknown,
-  path = '$',
+  options: ValidatePTBGraphOptions = {},
 ): readonly TransactionDiagnostic[] {
+  const path = options.path ?? '$';
+  const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
+    ? options.moveSignatures
+    : undefined;
   const diagnostics: TransactionDiagnostic[] = [];
 
   if (!isPlainObject(value)) {
@@ -260,7 +279,13 @@ export function validatePTBGraph(
   }
 
   if (nodesAreDense && edgesAreDense) {
-    validateGraphReferences(nodeValues, edgeValues, path, diagnostics);
+    validateGraphReferences(
+      nodeValues,
+      edgeValues,
+      path,
+      moveSignatures,
+      diagnostics,
+    );
   }
 
   return freezeDiagnostics(diagnostics);
@@ -973,6 +998,7 @@ function validateGraphReferences(
   nodes: unknown[],
   edges: unknown[],
   path: string,
+  moveSignatures: MovePackageSignatureEvidence | undefined,
   diagnostics: TransactionDiagnostic[],
 ): void {
   const nodesById = new Map<string, GraphNodeIndex>();
@@ -1060,17 +1086,34 @@ function validateGraphReferences(
       }
     });
 
+    const command =
+      node.kind === 'Command' && isOneOf(node.command, COMMAND_KINDS)
+        ? node.command
+        : undefined;
+    const runtime =
+      command === undefined ? undefined : graphCommandRuntimeParams(node);
+    const nodePath = `${path}.nodes[${index}]`;
     nodesById.set(node.id, {
       id: node.id,
       kind: node.kind,
       ports,
       ioInputPortIds,
       ioOutputPorts,
-      path: `${path}.nodes[${index}]`,
-      ...(node.kind === 'Command' && isOneOf(node.command, COMMAND_KINDS)
+      path: nodePath,
+      ...(command !== undefined
         ? {
-            command: node.command,
-            runtime: commandRuntimeParams(node),
+            command,
+            runtime,
+            ...(command === 'moveCall'
+              ? {
+                  moveCallEvidence: graphMoveCallEvidenceState(
+                    runtime,
+                    moveSignatures,
+                    nodePath,
+                    diagnostics,
+                  ),
+                }
+              : {}),
           }
         : {}),
     });
@@ -1420,7 +1463,8 @@ function isDeclaredCommandOutputAllowed(
         outgoingHandles,
       );
     case 'moveCall': {
-      const resultCount = node.runtime?.resultCount;
+      const resultCount =
+        node.moveCallEvidence?.effectiveResultCount ?? node.runtime?.resultCount;
       return isNonNegativeSafeInteger(resultCount) &&
         resultCount <= MAX_RESULT_COUNT
         ? isKnownResultOutputAllowed(portId, resultCount, outgoingHandles)
@@ -1463,13 +1507,6 @@ function countIndexedIncomingHandles(
     if (indexedInputHandleIndex(handle, name) !== undefined) count += 1;
   });
   return count;
-}
-
-function commandRuntimeParams(
-  node: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (!isPlainObject(node.params)) return undefined;
-  return isPlainObject(node.params.runtime) ? node.params.runtime : undefined;
 }
 
 function isGasSemantic(value: unknown): boolean {
@@ -2003,15 +2040,7 @@ function validateMoveCallTargetField(
     return;
   }
 
-  const parts = value.split('::');
-  if (
-    parts.length === 3 &&
-    parseObjectId(parts[0]) === parts[0] &&
-    parseMoveIdentifier(parts[1]) === parts[1] &&
-    parseMoveIdentifier(parts[2]) === parts[2]
-  ) {
-    return;
-  }
+  if (parseGraphMoveCallTarget(value).target !== undefined) return;
 
   diagnostics.push(
     errorDiagnostic(

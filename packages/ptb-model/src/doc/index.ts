@@ -80,7 +80,7 @@ export function validatePTBDocV4(
       );
     });
 
-  diagnostics.push(...validatePTBGraph(value.graph, '$.graph'));
+  diagnostics.push(...validatePTBGraph(value.graph, { path: '$.graph' }));
   validateOptionalString(value.chain, '$.chain', 'chain', diagnostics);
   validateOptionalSender(value.sender, '$.sender', diagnostics);
   validateOptionalRecord(value.modules, '$.modules', 'modules', diagnostics);

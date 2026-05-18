@@ -68,6 +68,7 @@ import {
 } from './index.js';
 import type {
   CommandNode,
+  GraphToTransactionIROptions,
   IRArgRef,
   IRCommand,
   IRInput,
@@ -79,6 +80,7 @@ import type {
   RawOpenSignature,
   RawProgrammableTransaction,
   TransactionIR,
+  ValidatePTBGraphOptions,
   VariableNode,
 } from './index.js';
 
@@ -7998,6 +8000,56 @@ function graphEdgesHaveDeclaredHandles(graph: PTBGraph): boolean {
 }
 
 describe('model graph command argument semantics', () => {
+  const graphEvidencePackageId = normalizedObjectId('2');
+  const graphEvidenceModuleName = 'm';
+  const graphEvidenceFunctionName = 'f';
+  const graphU64Return = rawSignature({ $kind: 'u64' });
+  const graphStringReturn = rawDatatypeSignature(
+    `${normalizedObjectId('1')}::string::String`,
+  );
+
+  function graphEvidenceFor(
+    returns: RawOpenSignature[],
+    options: { functionName?: string; typeParameterCount?: number } = {},
+  ): MovePackageSignatureEvidence {
+    return {
+      [graphEvidencePackageId]: {
+        [graphEvidenceModuleName]: {
+          [options.functionName ?? graphEvidenceFunctionName]: {
+            typeParameterCount: options.typeParameterCount ?? 0,
+            parameters: [],
+            returns,
+          },
+        },
+      },
+    };
+  }
+
+  function moveCallGraph(
+    options: {
+      runtime?: Record<string, unknown>;
+      ports?: Port[];
+    } = {},
+  ): PTBGraph {
+    return {
+      nodes: [
+        {
+          id: 'cmd-moveCall',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+              ...options.runtime,
+            },
+          },
+          ports: options.ports ?? [],
+        },
+      ],
+      edges: [],
+    };
+  }
+
   function splitCoinsAmountGraph(
     amountType: PTBType,
     cast?: { to: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256' },
@@ -8432,6 +8484,278 @@ describe('model graph command argument semantics', () => {
     );
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
       'ir.command.resultCount',
+    );
+  });
+
+  it('uses host MoveCall evidence for graph output arity', () => {
+    const graph = moveCallGraph({
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+        { id: 'out_2', direction: 'out', role: 'io' },
+      ],
+    });
+    const diagnostics = validatePTBGraph(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+    const invalidOutputPaths = diagnostics
+      .filter(
+        (diagnostic) => diagnostic.code === 'graph.command.outputPort.invalid',
+      )
+      .map((diagnostic) => diagnostic.path);
+
+    expect(invalidOutputPaths).toEqual(['$.nodes[0].ports[2].id']);
+  });
+
+  it('treats malformed graph Move signature evidence as absent', () => {
+    const graph = moveCallGraph({
+      ports: [{ id: 'out_2', direction: 'out', role: 'io' }],
+    });
+    const malformedEvidence = {
+      [graphEvidencePackageId]: {
+        [graphEvidenceModuleName]: {
+          [graphEvidenceFunctionName]: {
+            typeParameterCount: 0,
+            parameters: [],
+            returns: new Array(MAX_RESULT_COUNT + 1).fill(graphU64Return),
+          },
+        },
+      },
+    } as unknown as MovePackageSignatureEvidence;
+    const diagnostics = validatePTBGraph(graph, {
+      moveSignatures: malformedEvidence,
+    });
+    const codes = diagnostics.map((diagnostic) => diagnostic.code);
+
+    expect(codes).not.toContain('graph.command.outputPort.invalid');
+    expect(codes).not.toContain('graph.command.moveCall.resultCountMismatch');
+    expect(codes).not.toContain('graph.command.moveCall.typeArgumentsCount');
+  });
+
+  it('uses the graph options path for MoveCall evidence diagnostics', () => {
+    const options: ValidatePTBGraphOptions = {
+      path: '$.graph',
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    };
+    const diagnostics = validatePTBGraph(
+      moveCallGraph({ runtime: { resultCount: 1 } }),
+      options,
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.moveCall.resultCountMismatch',
+        path: '$.graph.nodes[0].params.runtime.resultCount',
+      }),
+    );
+  });
+
+  it('blocks graph conversion when evidence-derived output arity rejects a declared port', () => {
+    const graph = moveCallGraph({
+      ports: [{ id: 'out_2', direction: 'out', role: 'io' }],
+    });
+    const options: GraphToTransactionIROptions = {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    };
+    const ir = graphToTransactionIR(graph, options);
+
+    expect(ir.inputs).toEqual([]);
+    expect(ir.commands).toEqual([]);
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.outputPort.invalid',
+    );
+  });
+
+  it('reports graph MoveCall evidence mismatches without blocking graph conversion', () => {
+    const graph = moveCallGraph({ runtime: { resultCount: 1 } });
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+    const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
+
+    expect(codes).toContain('graph.command.moveCall.resultCountMismatch');
+    expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      resultCount: 1,
+    });
+    expect(isStructuralTransactionIR(ir)).toBe(false);
+    expect(isStructuralTransactionIR(parseStructuralTransactionIR(ir))).toBe(
+      true,
+    );
+  });
+
+  it('reports graph MoveCall type argument count mismatches and skips derived output arity', () => {
+    const graph = moveCallGraph({
+      ports: [{ id: 'out_2', direction: 'out', role: 'io' }],
+    });
+    const diagnostics = validatePTBGraph(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return], {
+        typeParameterCount: 1,
+      }),
+    });
+    const codes = diagnostics.map((diagnostic) => diagnostic.code);
+
+    expect(codes).toContain('graph.command.moveCall.typeArgumentsCount');
+    expect(codes).not.toContain('graph.command.outputPort.invalid');
+  });
+
+  it('does not add graph evidence diagnostics when runtime shape is invalid', () => {
+    const typeArgumentCodes = validatePTBGraph(
+      moveCallGraph({ runtime: { typeArguments: ['not-a-type'] } }),
+      {
+        moveSignatures: graphEvidenceFor([graphU64Return], {
+          typeParameterCount: 1,
+        }),
+      },
+    ).map((diagnostic) => diagnostic.code);
+    const resultCountCodes = validatePTBGraph(
+      moveCallGraph({ runtime: { resultCount: '2' } }),
+      {
+        moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+      },
+    ).map((diagnostic) => diagnostic.code);
+
+    expect(typeArgumentCodes).toContain(
+      'graph.command.params.runtime.typeArguments',
+    );
+    expect(typeArgumentCodes).not.toContain(
+      'graph.command.moveCall.typeArgumentsCount',
+    );
+    expect(resultCountCodes).toContain(
+      'graph.command.params.runtime.resultCount',
+    );
+    expect(resultCountCodes).not.toContain(
+      'graph.command.moveCall.resultCountMismatch',
+    );
+  });
+
+  it('fills graph to IR MoveCall resultCount from matching host evidence', () => {
+    const graph = moveCallGraph();
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      resultCount: 2,
+    });
+    expect(isStructuralTransactionIR(ir)).toBe(true);
+  });
+
+  it('accepts matching explicit graph MoveCall resultCount evidence', () => {
+    const graph = moveCallGraph({ runtime: { resultCount: 2 } });
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      resultCount: 2,
+    });
+    expect(isStructuralTransactionIR(ir)).toBe(true);
+  });
+
+  it('materializes evidence-derived MoveCall resultCount on graph round-trip', () => {
+    const graph = moveCallGraph();
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+    const roundTripped = transactionIRToGraph(ir);
+    const command = roundTripped.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+
+    expect(command?.params).toEqual({
+      runtime: {
+        target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+        typeArguments: [],
+        resultCount: 2,
+      },
+    });
+  });
+
+  it('preserves explicit MoveCall resultCount priority with host evidence', () => {
+    const graph = moveCallGraph({ runtime: { resultCount: 1 } });
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    });
+    const roundTripped = transactionIRToGraph(ir);
+    const command = roundTripped.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+
+    expect(ir.commands[0]).toMatchObject({ resultCount: 1 });
+    expect(command?.params).toEqual({
+      runtime: {
+        target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+        typeArguments: [],
+        resultCount: 1,
+      },
+    });
+  });
+
+  it('keeps existing invalid MoveCall targets as Unsupported commands with host evidence', () => {
+    const ir = graphToTransactionIR(
+      moveCallGraph({ runtime: { target: '0x2::m::f' } }),
+      { moveSignatures: graphEvidenceFor([graphU64Return]) },
+    );
+
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidMoveCallTarget',
+    });
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.params.runtime.target',
+    );
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.moveCall.package',
+    );
+  });
+
+  it('passes host evidence through graph to IR MakeMoveVec validation', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+            },
+          },
+          ports: [
+            { id: 'out_result', direction: 'out', role: 'io' },
+          ],
+        },
+        {
+          id: 'vec',
+          kind: 'Command',
+          command: 'makeMoveVec',
+          params: { runtime: { type: 'address' } },
+          ports: [{ id: 'in_elem_0', direction: 'in', role: 'io' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'result-edge',
+          kind: 'io',
+          source: 'call',
+          sourceHandle: 'out_result',
+          target: 'vec',
+          targetHandle: 'in_elem_0',
+        },
+      ],
+    };
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: graphEvidenceFor([graphU64Return]),
+    });
+
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
     );
   });
 
