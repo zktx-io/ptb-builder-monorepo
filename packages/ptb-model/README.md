@@ -276,6 +276,9 @@ unsupported-command runtime values before graph-to-IR conversion. Direct
 in-memory conversion helpers detach arrays and plain objects for graph variable
 values and `Unsupported.value`; payloads that contain functions, symbols, sparse
 arrays, or non-plain class instances are not accepted as model-owned graph data.
+Cyclic arrays and plain objects are allowed only for defensive in-memory
+inspection payloads, not for parsed PTB documents; Mermaid renders those cycles
+as `[Circular]` instead of treating them as serializable document data.
 
 ## Supported Raw PTB Surface
 
