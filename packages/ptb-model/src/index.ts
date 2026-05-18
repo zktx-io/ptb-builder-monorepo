@@ -22,19 +22,18 @@ export type {
   EdgeKind,
   EndNode,
   NodeBase,
-  NumericWidth,
   Port,
   PortDirection,
   PortRole,
   PTBEdge,
   PTBGraph,
   PTBNode,
-  PTBScalar,
-  PTBType,
   StartNode,
   VariableNode,
 } from './graph/types.js';
-export { isPTBType, validatePTBGraph, validatePTBType } from './graph/types.js';
+export { validatePTBGraph } from './graph/types.js';
+export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
+export { isPTBType, validatePTBType } from './ptbType.js';
 export type { IndexedHandleSuffix } from './graph/handles.js';
 export {
   indexedHandleSuffix,

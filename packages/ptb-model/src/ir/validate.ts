@@ -8,8 +8,8 @@ import {
 import { pureBytesTypeHintDiagnostic, pureValueDiagnostic } from './pure.js';
 import { isIRArgRef } from './types.js';
 import type { IRArgRef, IRCommand, IRInput, TransactionIR } from './types.js';
-import { validatePTBType } from '../graph/types.js';
-import type { PTBType } from '../graph/types.js';
+import { validatePTBType } from '../ptbType.js';
+import type { PTBType } from '../ptbType.js';
 import {
   isRawFundsWithdrawalArg,
   isRawInputArgumentType,

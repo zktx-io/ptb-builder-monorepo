@@ -895,7 +895,7 @@ describe('rawTransactionToIR', () => {
     }
 
     expect(validatePTBType(type)).toContainEqual(
-      expect.objectContaining({ code: 'graph.type.depth' }),
+      expect.objectContaining({ code: 'ptb.type.depth' }),
     );
     expect(
       validateTransactionIR({
@@ -904,7 +904,7 @@ describe('rawTransactionToIR', () => {
         inputs: [{ id: 'deep', kind: 'Pure', value: [], type }],
         commands: [],
       }),
-    ).toContainEqual(expect.objectContaining({ code: 'graph.type.depth' }));
+    ).toContainEqual(expect.objectContaining({ code: 'ptb.type.depth' }));
   });
 
   it('validates raw base64 byte fields with SDK base64-compatible behavior', () => {
@@ -2998,7 +2998,7 @@ describe('TransactionIR renderers', () => {
 
     expectModelErrorCodes(
       () => transactionIRToTsSdkCode(ir),
-      ['graph.type.scalar'],
+      ['ptb.type.scalar'],
     );
   });
 
@@ -6373,7 +6373,7 @@ describe('validateTransactionIR', () => {
       diagnostics: [],
     }).map((diagnostic) => diagnostic.code);
 
-    expect(codes).toContain('graph.type.cycle');
+    expect(codes).toContain('ptb.type.cycle');
   });
 
   it('ignores stored diagnostics by default when validating repeatedly', () => {
@@ -6636,7 +6636,7 @@ describe('validateTransactionIR', () => {
       validatePTBType({ kind: 'tuple', elems: sparse }).map(
         (diagnostic) => diagnostic.code,
       ),
-    ).toContain('graph.type.tuple');
+    ).toContain('ptb.type.tuple');
     expect(
       graphToTransactionIR({
         nodes: [
@@ -6765,6 +6765,30 @@ describe('validateTransactionIR', () => {
     expect(isStructuralTransactionIR(roundTrip)).toBe(false);
     expect(validateTsSdkRenderableIR(roundTrip)).toEqual([]);
     expect(() => transactionIRToTsSdkCode(roundTrip)).not.toThrow();
+  });
+
+  it('does not structurally brand IR with invalid PTB input types', () => {
+    const malformed = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'input_0',
+          kind: 'Pure',
+          bytes: 'AQI=',
+          type: { kind: 'BAD_KIND' },
+        },
+      ],
+      commands: [],
+      diagnostics: [],
+    } as unknown as TransactionIR;
+
+    expect(
+      validateTransactionIR(malformed).map((diagnostic) => diagnostic.code),
+    ).toContain('ptb.type.kind');
+    expect(isStructuralTransactionIR(malformed)).toBe(false);
+    expect(() => parseStructuralTransactionIR(malformed)).toThrow(
+      PTBModelError,
+    );
   });
 
   it('auto-brands structurally safe conversion results including source diagnostics', () => {
@@ -8004,7 +8028,7 @@ describe('structural ownership and defensive renderers', () => {
     } as unknown as PTBGraph;
 
     expect(validatePTBType(classType).map(({ code }) => code)).toContain(
-      'graph.type',
+      'ptb.type',
     );
     expect(validatePTBGraph(graph).map(({ code }) => code)).toContain(
       'graph.type',

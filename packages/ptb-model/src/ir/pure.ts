@@ -5,8 +5,8 @@ import {
 
 import { errorDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
-import { isPTBType } from '../graph/types.js';
-import type { NumericWidth, PTBType } from '../graph/types.js';
+import { isPTBType } from '../ptbType.js';
+import type { NumericWidth, PTBType } from '../ptbType.js';
 import { decodeBase64Bytes, parseObjectId } from '../raw/types.js';
 import {
   isCanonicalDecimalUnsignedIntegerString,

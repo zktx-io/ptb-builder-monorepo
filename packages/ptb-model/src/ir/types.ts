@@ -1,6 +1,6 @@
 import { freezeDiagnostics } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
-import type { PTBType } from '../graph/types.js';
+import type { PTBType } from '../ptbType.js';
 import type {
   RawCallArg,
   RawCommand,

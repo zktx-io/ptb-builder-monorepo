@@ -126,6 +126,12 @@ fields:
 | `transferObjects` | `objectsCount` |
 | `makeMoveVec` | `elemsCount` |
 
+Use `validatePTBType()` for standalone model type validation. It reports
+model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
+report `graph.type.*` diagnostics for graph-authored `varType` and port
+`dataType` fields so graph source diagnostics remain clearly attributable to
+the graph layer.
+
 Do not store transaction semantics in `params.ui`. MoveCall targets and type
 arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
 dependencies, and Upgrade package/modules/dependencies belong in

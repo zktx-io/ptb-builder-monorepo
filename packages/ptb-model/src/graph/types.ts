@@ -11,6 +11,8 @@ import { normalizeGraphRawInput } from './rawInput.js';
 import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
+import { NUMERIC_WIDTHS, validateGraphPTBTypeInto } from '../ptbType.js';
+import type { NumericWidth, PTBType } from '../ptbType.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -23,21 +25,10 @@ import {
   isDenseArray,
   isFiniteNumber,
   isPlainObject,
-  MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
 
-export type NumericWidth = 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256';
-export type PTBScalar = 'bool' | 'string' | 'address' | 'id' | 'number';
-
-export type PTBType =
-  | { kind: 'scalar'; name: PTBScalar }
-  | { kind: 'move_numeric'; width: NumericWidth }
-  | { kind: 'object'; typeTag?: string }
-  | { kind: 'vector'; elem: PTBType }
-  | { kind: 'option'; elem: PTBType }
-  | { kind: 'tuple'; elems: PTBType[] }
-  | { kind: 'unknown'; debugInfo?: string };
+export type { NumericWidth, PTBScalar, PTBType } from '../ptbType.js';
 
 export type PortDirection = 'in' | 'out';
 export type PortRole = 'flow' | 'io';
@@ -149,17 +140,6 @@ const COMMAND_KINDS = [
 const EDGE_KINDS = ['flow', 'io'] as const;
 const PORT_DIRECTIONS = ['in', 'out'] as const;
 const PORT_ROLES = ['flow', 'io'] as const;
-const TYPE_KINDS = [
-  'scalar',
-  'move_numeric',
-  'object',
-  'vector',
-  'option',
-  'tuple',
-  'unknown',
-] as const;
-const SCALARS = ['bool', 'string', 'address', 'id', 'number'] as const;
-const NUMERIC_WIDTHS = ['u8', 'u16', 'u32', 'u64', 'u128', 'u256'] as const;
 const GRAPH_KEYS = ['nodes', 'edges'] as const;
 const NODE_BASE_KEYS = ['id', 'kind', 'label', 'ports', 'position'] as const;
 const START_NODE_KEYS = NODE_BASE_KEYS;
@@ -195,15 +175,6 @@ const EDGE_CAST_KEYS = ['to'] as const;
 const POSITION_KEYS = ['x', 'y'] as const;
 const GAS_COIN_SEMANTIC_KEYS = ['kind'] as const;
 const UNSUPPORTED_INPUT_SEMANTIC_KEYS = ['kind', 'sourceKind'] as const;
-const TYPE_KEYS_BY_KIND = {
-  scalar: ['kind', 'name'],
-  move_numeric: ['kind', 'width'],
-  object: ['kind', 'typeTag'],
-  vector: ['kind', 'elem'],
-  option: ['kind', 'elem'],
-  tuple: ['kind', 'elems'],
-  unknown: ['kind', 'debugInfo'],
-} as const satisfies Record<(typeof TYPE_KINDS)[number], readonly string[]>;
 const COMMAND_PARAM_KEYS = ['runtime', 'ui'] as const;
 const COMMAND_RUNTIME_KEYS_BY_KIND = {
   splitCoins: [],
@@ -293,19 +264,6 @@ export function validatePTBGraph(
   }
 
   return freezeDiagnostics(diagnostics);
-}
-
-export function validatePTBType(
-  value: unknown,
-  path = '$',
-): readonly TransactionDiagnostic[] {
-  const diagnostics: TransactionDiagnostic[] = [];
-  validatePTBTypeShape(value, path, diagnostics, new WeakSet<object>());
-  return freezeDiagnostics(diagnostics);
-}
-
-export function isPTBType(value: unknown): value is PTBType {
-  return validatePTBType(value).length === 0;
 }
 
 function validateNode(
@@ -542,11 +500,10 @@ function validateVariableNode(
     );
   }
 
-  validatePTBTypeShape(
+  validateGraphPTBTypeInto(
     value.varType,
     `${path}.varType`,
     diagnostics,
-    new WeakSet<object>(),
   );
   if (isPlainObject(value.varType) && value.varType.kind === 'option') {
     const hasValue = Object.prototype.hasOwnProperty.call(value, 'value');
@@ -828,11 +785,10 @@ function validatePort(
   }
 
   if (value.dataType !== undefined) {
-    validatePTBTypeShape(
+    validateGraphPTBTypeInto(
       value.dataType,
       `${path}.dataType`,
       diagnostics,
-      new WeakSet<object>(),
     );
   }
   validateOptionalStringField(
@@ -2177,158 +2133,6 @@ function validateVariableSemantic(
   );
 }
 
-function validatePTBTypeShape(
-  value: unknown,
-  path: string,
-  diagnostics: TransactionDiagnostic[],
-  seen: WeakSet<object>,
-  depth = 0,
-): void {
-  if (depth > MAX_PTB_TYPE_DEPTH) {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.type.depth',
-        `PTB graph type nesting must not exceed ${MAX_PTB_TYPE_DEPTH}.`,
-        path,
-      ),
-    );
-    return;
-  }
-
-  if (!isPlainObject(value) || typeof value.kind !== 'string') {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.type',
-        'PTB graph type must be an object with a kind.',
-        path,
-      ),
-    );
-    return;
-  }
-
-  if (seen.has(value)) {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.type.cycle',
-        'PTB graph type must not contain cyclic references.',
-        path,
-      ),
-    );
-    return;
-  }
-  seen.add(value);
-
-  if (!isOneOf(value.kind, TYPE_KINDS)) {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.type.kind',
-        `Unsupported PTB graph type kind ${value.kind}.`,
-        `${path}.kind`,
-      ),
-    );
-    seen.delete(value);
-    return;
-  }
-
-  switch (value.kind) {
-    case 'scalar':
-      validateTypeUnknownFields(value, path, diagnostics);
-      if (!isOneOf(value.name, SCALARS)) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.type.scalar',
-            'Scalar PTB graph type requires a supported name.',
-            `${path}.name`,
-          ),
-        );
-      }
-      seen.delete(value);
-      return;
-    case 'move_numeric':
-      validateTypeUnknownFields(value, path, diagnostics);
-      if (!isOneOf(value.width, NUMERIC_WIDTHS)) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.type.numeric',
-            'Move numeric PTB graph type requires a supported width.',
-            `${path}.width`,
-          ),
-        );
-      }
-      seen.delete(value);
-      return;
-    case 'vector':
-    case 'option':
-      validateTypeUnknownFields(value, path, diagnostics);
-      validatePTBTypeShape(
-        value.elem,
-        `${path}.elem`,
-        diagnostics,
-        seen,
-        depth + 1,
-      );
-      seen.delete(value);
-      return;
-    case 'tuple':
-      validateTypeUnknownFields(value, path, diagnostics);
-      if (!isDenseArray(value.elems)) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.type.tuple',
-            'Tuple PTB graph type requires elems array.',
-            `${path}.elems`,
-          ),
-        );
-        seen.delete(value);
-        return;
-      }
-      value.elems.forEach((elem, index) => {
-        validatePTBTypeShape(
-          elem,
-          `${path}.elems[${index}]`,
-          diagnostics,
-          seen,
-          depth + 1,
-        );
-      });
-      seen.delete(value);
-      return;
-    case 'object':
-      validateTypeUnknownFields(value, path, diagnostics);
-      if (
-        value.typeTag !== undefined &&
-        (typeof value.typeTag !== 'string' ||
-          parseMoveTypeTag(value.typeTag) === undefined)
-      ) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.type.object',
-            'Object PTB graph type typeTag must be a valid Move type tag when present.',
-            `${path}.typeTag`,
-          ),
-        );
-      }
-      seen.delete(value);
-      return;
-    case 'unknown':
-      validateTypeUnknownFields(value, path, diagnostics);
-      if (
-        value.debugInfo !== undefined &&
-        typeof value.debugInfo !== 'string'
-      ) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.type.unknown',
-            'Unknown PTB graph type debugInfo must be a string when present.',
-            `${path}.debugInfo`,
-          ),
-        );
-      }
-      seen.delete(value);
-      return;
-  }
-}
-
 function nodeKeysForKind(kind: PTBNode['kind']): readonly string[] {
   switch (kind) {
     case 'Start':
@@ -2340,22 +2144,6 @@ function nodeKeysForKind(kind: PTBNode['kind']): readonly string[] {
     case 'Variable':
       return VARIABLE_NODE_KEYS;
   }
-}
-
-function validateTypeUnknownFields(
-  value: Record<string, unknown>,
-  path: string,
-  diagnostics: TransactionDiagnostic[],
-): void {
-  if (!isOneOf(value.kind, TYPE_KINDS)) return;
-  validateUnknownFields(
-    value,
-    TYPE_KEYS_BY_KIND[value.kind],
-    'graph.type.unknownField',
-    path,
-    'PTB graph type',
-    diagnostics,
-  );
 }
 
 function isOneOf<const T extends readonly string[]>(
