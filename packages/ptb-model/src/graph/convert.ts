@@ -15,13 +15,15 @@ import {
   GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
   GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
   graphCommandRuntimeParams,
-  graphMoveCallEvidenceState,
   parseGraphMoveCallTarget,
   parseGraphMoveCallTypeArguments,
   type GraphMoveCallEvidenceState,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
-import { validatePTBGraph, type ValidatePTBGraphOptions } from './types.js';
+import {
+  validatePTBGraphDetailed,
+  type ValidatePTBGraphOptions,
+} from './types.js';
 import type {
   CommandNode,
   NumericWidth,
@@ -58,7 +60,6 @@ import type {
 import { validateTransactionIR } from '../ir/validate.js';
 import {
   isMovePackageSignatureEvidence,
-  type MovePackageSignatureEvidence,
 } from '../move/evidence.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
@@ -143,7 +144,8 @@ export function graphToTransactionIR(
   const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
     ? options.moveSignatures
     : undefined;
-  const graphDiagnostics = validatePTBGraph(graph, { moveSignatures });
+  const graphValidation = validatePTBGraphDetailed(graph, { moveSignatures });
+  const graphDiagnostics = graphValidation.diagnostics;
   const blockingGraphDiagnostics = graphDiagnostics.filter(
     isBlockingGraphDiagnostic,
   );
@@ -232,7 +234,7 @@ export function graphToTransactionIR(
         EMPTY_INDEXED_GRAPH_EDGES,
       inputRefs,
       commandIndexes,
-      moveSignatures,
+      graphValidation.moveCallEvidenceByNodeId.get(node.id),
       diagnostics,
     );
     commands.push(command);
@@ -766,7 +768,7 @@ function commandNodeToIRCommand(
   incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
-  moveSignatures: MovePackageSignatureEvidence | undefined,
+  moveCallEvidence: GraphMoveCallEvidenceState | undefined,
   diagnostics: TransactionDiagnostic[],
 ): IRCommand {
   const arg = (handle: string) =>
@@ -933,13 +935,7 @@ function commandNodeToIRCommand(
         function: functionName,
         typeArguments,
         arguments: moveArgs.refs,
-        ...moveCallResultCountParam(
-          node,
-          graphMoveCallEvidenceState(
-            graphCommandRuntimeParams(node),
-            moveSignatures,
-          ),
-        ),
+        ...moveCallResultCountParam(node, moveCallEvidence),
       };
     }
     case 'publish': {

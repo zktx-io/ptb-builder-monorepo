@@ -31,7 +31,7 @@ export interface GraphMoveCallTargetParseResult {
 }
 
 export interface GraphMoveCallEvidenceState {
-  effectiveResultCount?: number;
+  effectiveResultCount: number;
 }
 
 export function graphCommandRuntimeParams(

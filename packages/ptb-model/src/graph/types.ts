@@ -219,21 +219,37 @@ export interface ValidatePTBGraphOptions {
   moveSignatures?: MovePackageSignatureEvidence;
 }
 
+export interface PTBGraphValidationDetails {
+  diagnostics: readonly TransactionDiagnostic[];
+  moveCallEvidenceByNodeId: ReadonlyMap<string, GraphMoveCallEvidenceState>;
+}
+
 export function validatePTBGraph(
   value: unknown,
   options: ValidatePTBGraphOptions = {},
 ): readonly TransactionDiagnostic[] {
+  return validatePTBGraphDetailed(value, options).diagnostics;
+}
+
+export function validatePTBGraphDetailed(
+  value: unknown,
+  options: ValidatePTBGraphOptions = {},
+): PTBGraphValidationDetails {
   const path = options.path ?? '$';
   const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
     ? options.moveSignatures
     : undefined;
   const diagnostics: TransactionDiagnostic[] = [];
+  let moveCallEvidenceByNodeId = new Map<string, GraphMoveCallEvidenceState>();
 
   if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic('graph.invalid', 'PTB graph must be an object.', path),
     );
-    return freezeDiagnostics(diagnostics);
+    return {
+      diagnostics: freezeDiagnostics(diagnostics),
+      moveCallEvidenceByNodeId,
+    };
   }
 
   validateUnknownFields(
@@ -279,7 +295,7 @@ export function validatePTBGraph(
   }
 
   if (nodesAreDense && edgesAreDense) {
-    validateGraphReferences(
+    moveCallEvidenceByNodeId = validateGraphReferences(
       nodeValues,
       edgeValues,
       path,
@@ -288,7 +304,10 @@ export function validatePTBGraph(
     );
   }
 
-  return freezeDiagnostics(diagnostics);
+  return {
+    diagnostics: freezeDiagnostics(diagnostics),
+    moveCallEvidenceByNodeId,
+  };
 }
 
 function validateNode(
@@ -1000,8 +1019,9 @@ function validateGraphReferences(
   path: string,
   moveSignatures: MovePackageSignatureEvidence | undefined,
   diagnostics: TransactionDiagnostic[],
-): void {
+): Map<string, GraphMoveCallEvidenceState> {
   const nodesById = new Map<string, GraphNodeIndex>();
+  const moveCallEvidenceByNodeId = new Map<string, GraphMoveCallEvidenceState>();
   const seenNodeIds = new Set<string>();
   const seenInputNames = new Set<string>();
 
@@ -1093,6 +1113,18 @@ function validateGraphReferences(
     const runtime =
       command === undefined ? undefined : graphCommandRuntimeParams(node);
     const nodePath = `${path}.nodes[${index}]`;
+    const moveCallEvidence =
+      command === 'moveCall'
+        ? graphMoveCallEvidenceState(
+            runtime,
+            moveSignatures,
+            nodePath,
+            diagnostics,
+          )
+        : undefined;
+    if (moveCallEvidence !== undefined) {
+      moveCallEvidenceByNodeId.set(node.id, moveCallEvidence);
+    }
     nodesById.set(node.id, {
       id: node.id,
       kind: node.kind,
@@ -1104,16 +1136,7 @@ function validateGraphReferences(
         ? {
             command,
             runtime,
-            ...(command === 'moveCall'
-              ? {
-                  moveCallEvidence: graphMoveCallEvidenceState(
-                    runtime,
-                    moveSignatures,
-                    nodePath,
-                    diagnostics,
-                  ),
-                }
-              : {}),
+            ...(command === 'moveCall' ? { moveCallEvidence } : {}),
           }
         : {}),
     });
@@ -1246,6 +1269,8 @@ function validateGraphReferences(
     diagnostics,
   );
   validateFlowTopology(nodes, edges, path, diagnostics);
+
+  return moveCallEvidenceByNodeId;
 }
 
 function addHandleToMap(
