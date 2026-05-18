@@ -194,13 +194,16 @@ export function isIRArgRef(value: unknown): value is IRArgRef {
       return true;
     case 'Input':
       return (
-        'index' in value &&
+        typeof value.index === 'number' &&
         (!('type' in value) || isRawInputArgumentType(value.type))
       );
     case 'Result':
-      return 'commandIndex' in value;
+      return typeof value.commandIndex === 'number';
     case 'NestedResult':
-      return 'commandIndex' in value && 'resultIndex' in value;
+      return (
+        typeof value.commandIndex === 'number' &&
+        typeof value.resultIndex === 'number'
+      );
     default:
       return false;
   }

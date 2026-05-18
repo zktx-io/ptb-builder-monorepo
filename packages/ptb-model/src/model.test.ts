@@ -6915,6 +6915,48 @@ describe('validateTransactionIR', () => {
     );
   });
 
+  it('rejects argument references with non-numeric index fields as invalid shapes', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'move',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [
+            { kind: 'Input', index: '0' },
+            { kind: 'Result', commandIndex: '0' },
+            { kind: 'NestedResult', commandIndex: 0, resultIndex: '0' },
+          ],
+        },
+      ],
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg',
+        path: '$.commands[0].arguments[0]',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg',
+        path: '$.commands[0].arguments[1]',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ir.arg',
+        path: '$.commands[0].arguments[2]',
+      }),
+    );
+  });
+
   it('rejects Result references to known multi-result commands', () => {
     const diagnostics = validateTransactionIR({
       version: 'transaction_ir_1',
