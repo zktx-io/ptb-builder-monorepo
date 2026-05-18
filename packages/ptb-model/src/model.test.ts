@@ -57,6 +57,8 @@ import {
   transactionIRToMermaid,
   transactionIRToRaw,
   transactionIRToTsSdkCode,
+  toPTBTypeFromConcreteTypeArgument,
+  toPTBTypeFromOpenSignature,
   validatePTBDocV4,
   validatePTBGraph,
   validatePTBType,
@@ -102,6 +104,24 @@ const TEST_COIN_SUI_TYPE = `${TEST_COIN_TYPE}<${TEST_SUI_TYPE}>`;
 
 function rawSignature(body: RawOpenSignature['body']): RawOpenSignature {
   return { reference: NULL_VALUE, body };
+}
+
+function rawDatatypeSignature(
+  typeName: string,
+  typeParameters: RawOpenSignature['body'][] = [],
+): RawOpenSignature {
+  return rawSignature({
+    $kind: 'datatype',
+    datatype: { typeName, typeParameters },
+  });
+}
+
+function nestedVectorBody(depth: number): RawOpenSignature['body'] {
+  let body: RawOpenSignature['body'] = { $kind: 'u8' };
+  for (let index = 0; index < depth; index += 1) {
+    body = { $kind: 'vector', vector: body };
+  }
+  return body;
 }
 
 const modelSourceRoot = fileURLToPath(new URL('.', import.meta.url));
@@ -184,12 +204,17 @@ describe('public package surface', () => {
 
 describe('Move signature evidence guards', () => {
   const u64Signature = rawSignature({ $kind: 'u64' });
-  const txContextSignature = rawSignature({
+  const txContextBody: RawOpenSignature['body'] = {
     $kind: 'datatype',
     datatype: {
       typeName: '0x2::tx_context::TxContext',
       typeParameters: [],
     },
+  };
+  const txContextSignature = rawSignature(txContextBody);
+  const vectorTxContextSignature = rawSignature({
+    $kind: 'vector',
+    vector: txContextBody,
   });
   const voidFunction = {
     typeParameterCount: 0,
@@ -292,20 +317,22 @@ describe('Move signature evidence guards', () => {
     expect(isTxContextOpenSignature(txContextSignature)).toBe(true);
     expect(
       isTxContextOpenSignature(
-        rawSignature({
-          $kind: 'datatype',
-          datatype: {
-            typeName: `${normalizedObjectId('2')}::tx_context::TxContext`,
-            typeParameters: [],
-          },
-        }),
+        rawDatatypeSignature(`${normalizedObjectId('2')}::tx_context::TxContext`),
       ),
     ).toBe(true);
+    expect(isTxContextOpenSignature(vectorTxContextSignature)).toBe(false);
     expect(isTxContextOpenSignature(undefined)).toBe(false);
     expect(
       isMoveFunctionSignatureEvidence({
         typeParameterCount: 0,
         parameters: [txContextSignature],
+        returns: [],
+      }),
+    ).toBe(false);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 0,
+        parameters: [vectorTxContextSignature],
         returns: [],
       }),
     ).toBe(false);
@@ -324,6 +351,184 @@ describe('Move signature evidence guards', () => {
         [normalizedObjectId('2')]: { sui: { 'bad-function': voidFunction } },
       }),
     ).toBe(false);
+  });
+});
+
+describe('Move signature PTB type helpers', () => {
+  it('maps concrete type arguments with SDK type-tag normalization', () => {
+    expect(toPTBTypeFromConcreteTypeArgument('bool')).toEqual({
+      kind: 'scalar',
+      name: 'bool',
+    });
+    expect(toPTBTypeFromConcreteTypeArgument('0x1::string::String')).toEqual({
+      kind: 'scalar',
+      name: 'string',
+    });
+    expect(toPTBTypeFromConcreteTypeArgument('0x2::object::ID')).toEqual({
+      kind: 'scalar',
+      name: 'id',
+    });
+    expect(
+      toPTBTypeFromConcreteTypeArgument(`vector<${TEST_SUI_TYPE}>`),
+    ).toEqual({
+      kind: 'vector',
+      elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
+    });
+    expect(
+      toPTBTypeFromConcreteTypeArgument(
+        `0x2::coin::Coin<${TEST_SUI_TYPE}>`,
+      ),
+    ).toEqual({
+      kind: 'object',
+      typeTag: TEST_COIN_SUI_TYPE,
+    });
+    expect(
+      toPTBTypeFromConcreteTypeArgument(
+        `0x1::option::Option<${TEST_SUI_TYPE}>`,
+      ),
+    ).toEqual({
+      kind: 'option',
+      elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
+    });
+    expect(toPTBTypeFromConcreteTypeArgument(TEST_SUI_TYPE)).toEqual({
+      kind: 'object',
+      typeTag: TEST_SUI_TYPE,
+    });
+    expect(toPTBTypeFromConcreteTypeArgument('0x2::sui::SUI')).toEqual({
+      kind: 'object',
+      typeTag: TEST_SUI_TYPE,
+    });
+    expect(toPTBTypeFromConcreteTypeArgument('T0')).toBeUndefined();
+    expect(toPTBTypeFromConcreteTypeArgument('')).toBeUndefined();
+    expect(toPTBTypeFromConcreteTypeArgument('not a type')).toBeUndefined();
+  });
+
+  it('maps OpenSignature bodies and substitutes concrete type arguments', () => {
+    expect(toPTBTypeFromOpenSignature(rawSignature({ $kind: 'u64' }))).toEqual({
+      kind: 'move_numeric',
+      width: 'u64',
+    });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawSignature({ $kind: 'typeParameter', index: 0 }),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({ kind: 'object', typeTag: TEST_SUI_TYPE });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawSignature({ $kind: 'typeParameter', index: 0 }),
+        [],
+      ),
+    ).toEqual({ kind: 'unknown', debugInfo: 'generic TypeParameter 0' });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawSignature({ $kind: 'typeParameter', index: 2 }),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({ kind: 'unknown', debugInfo: 'generic TypeParameter 2' });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawSignature({
+          $kind: 'vector',
+          vector: { $kind: 'typeParameter', index: 0 },
+        }),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({
+      kind: 'vector',
+      elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
+    });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawDatatypeSignature('0x1::option::Option', [
+          { $kind: 'typeParameter', index: 0 },
+        ]),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({
+      kind: 'option',
+      elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
+    });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawDatatypeSignature('0x1::option::Option', [
+          { $kind: 'typeParameter', index: 0 },
+        ]),
+        [],
+      ),
+    ).toEqual({
+      kind: 'option',
+      elem: { kind: 'unknown', debugInfo: 'generic TypeParameter 0' },
+    });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawDatatypeSignature('0x1::option::Option', [
+          {
+            $kind: 'vector',
+            vector: { $kind: 'typeParameter', index: 0 },
+          },
+        ]),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({
+      kind: 'option',
+      elem: {
+        kind: 'vector',
+        elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
+      },
+    });
+  });
+
+  it('keeps OpenSignature generic structs generic and concrete structs tagged', () => {
+    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature(TEST_SUI_TYPE)))
+      .toEqual({
+        kind: 'object',
+        typeTag: TEST_SUI_TYPE,
+      });
+    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature('0x2::sui::SUI')))
+      .toEqual({
+        kind: 'object',
+        typeTag: TEST_SUI_TYPE,
+      });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawDatatypeSignature(TEST_COIN_TYPE, [
+          { $kind: 'typeParameter', index: 0 },
+        ]),
+        [TEST_SUI_TYPE],
+      ),
+    ).toEqual({ kind: 'object' });
+    expect(
+      toPTBTypeFromOpenSignature(
+        rawDatatypeSignature(TEST_COIN_TYPE, [
+          { $kind: 'typeParameter', index: 0 },
+        ]),
+        [],
+      ),
+    ).toEqual({ kind: 'object' });
+    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature('not-a-type')))
+      .toEqual({
+        kind: 'unknown',
+        debugInfo: 'unrecognized datatype: not-a-type',
+      });
+    expect(
+      toPTBTypeFromOpenSignature(rawDatatypeSignature('0x2::bad-module::Name')),
+    ).toEqual({
+      kind: 'unknown',
+      debugInfo: 'unrecognized datatype: 0x2::bad-module::Name',
+    });
+  });
+
+  it('returns unknown for unknown or overly deep OpenSignature bodies', () => {
+    expect(toPTBTypeFromOpenSignature(rawSignature({ $kind: 'unknown' })))
+      .toEqual({
+        kind: 'unknown',
+      });
+    expect(toPTBTypeFromOpenSignature(rawSignature(nestedVectorBody(70))))
+      .toEqual({
+        kind: 'unknown',
+        debugInfo: 'exceeded type depth',
+      });
   });
 });
 

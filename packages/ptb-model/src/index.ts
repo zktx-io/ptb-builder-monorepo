@@ -43,8 +43,12 @@ export {
   isMoveFunctionSignatureEvidence,
   isMoveModuleSignatureEvidence,
   isMovePackageSignatureEvidence,
-  isTxContextOpenSignature,
 } from './move/evidence.js';
+export {
+  isTxContextOpenSignature,
+  toPTBTypeFromConcreteTypeArgument,
+  toPTBTypeFromOpenSignature,
+} from './move/signature.js';
 export type { IndexedHandleSuffix } from './graph/handles.js';
 export {
   indexedHandleSuffix,

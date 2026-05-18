@@ -1,6 +1,5 @@
 import { isNonNegativeSafeInteger } from '../ir/limits.js';
 import {
-  isRawOpenSignature,
   isRawOpenSignatureList,
   MAX_RAW_OPEN_SIGNATURE_DEPTH,
   parseMoveIdentifier,
@@ -10,16 +9,13 @@ import {
   type RawOpenSignatureBody,
 } from '../raw/types.js';
 import { isPlainObject } from '../utils.js';
+import { openSignatureContainsTxContext } from './signature.js';
 
 const MOVE_FUNCTION_SIGNATURE_KEYS = [
   'typeParameterCount',
   'parameters',
   'returns',
 ] as const;
-const SUI_FRAMEWORK_ADDRESS = parseObjectId('0x2') as ObjectId;
-const TX_CONTEXT_MODULE = 'tx_context';
-const TX_CONTEXT_NAME = 'TxContext';
-
 export interface MoveFunctionSignatureEvidence {
   typeParameterCount: number;
   parameters: RawOpenSignature[];
@@ -48,7 +44,7 @@ export function isMoveFunctionSignatureEvidence(
 
   return [...value.parameters, ...value.returns].every(
     (signature) =>
-      !isTxContextOpenSignature(signature) &&
+      !openSignatureContainsTxContext(signature) &&
       openSignatureTypeParametersWithinBound(signature, typeParameterCount),
   );
 }
@@ -84,16 +80,6 @@ export function isMovePackageSignatureEvidence(
   );
 }
 
-/**
- * Returns true when a raw OpenSignature contains Sui TxContext anywhere in the
- * signature body tree. Hosts should remove those signatures before constructing
- * model Move signature evidence.
- */
-export function isTxContextOpenSignature(signature: unknown): boolean {
-  if (!isRawOpenSignature(signature)) return false;
-  return containsTxContext(signature.body, 0);
-}
-
 function openSignatureTypeParametersWithinBound(
   signature: RawOpenSignature,
   bound: number,
@@ -120,37 +106,6 @@ function typeParameterIndicesWithinBound(
     default:
       return true;
   }
-}
-
-function containsTxContext(
-  body: RawOpenSignatureBody,
-  depth: number,
-): boolean {
-  if (depth > MAX_RAW_OPEN_SIGNATURE_DEPTH) return false;
-
-  switch (body.$kind) {
-    case 'vector':
-      return containsTxContext(body.vector, depth + 1);
-    case 'datatype':
-      return (
-        isTxContextTypeName(body.datatype.typeName) ||
-        body.datatype.typeParameters.some((typeParameter) =>
-          containsTxContext(typeParameter, depth + 1),
-        )
-      );
-    default:
-      return false;
-  }
-}
-
-function isTxContextTypeName(typeName: string): boolean {
-  const [address, moduleName, name, ...extra] = typeName.split('::');
-  if (extra.length > 0 || name === undefined) return false;
-  return (
-    parseObjectId(address) === SUI_FRAMEWORK_ADDRESS &&
-    moduleName === TX_CONTEXT_MODULE &&
-    name === TX_CONTEXT_NAME
-  );
 }
 
 function hasOnlyKeys(

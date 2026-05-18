@@ -138,20 +138,37 @@ Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The
 model does not fetch package data. Evidence must be keyed by canonical package
 id, module name, and function name, and each function signature must use
-SDK-shaped `RawOpenSignature` arrays with `TxContext` already removed:
+SDK-shaped `RawOpenSignature` arrays with top-level `TxContext` parameters
+already removed:
 
 ```ts
 import {
   isMovePackageSignatureEvidence,
   isTxContextOpenSignature,
+  toPTBTypeFromConcreteTypeArgument,
+  toPTBTypeFromOpenSignature,
 } from '@zktx.io/ptb-model';
 
 const filteredParameters = openSignatures.filter(
   (signature) => !isTxContextOpenSignature(signature),
 );
+const runtimeTypeArgument = '0x2::sui::SUI';
+const runtimeType = toPTBTypeFromConcreteTypeArgument(runtimeTypeArgument);
+const [firstParameter] = filteredParameters;
+const parameterType =
+  firstParameter === undefined
+    ? { kind: 'unknown' }
+    : toPTBTypeFromOpenSignature(firstParameter, [runtimeTypeArgument]);
 ```
 
-These helpers define the model evidence shape only. Evidence-aware `MoveCall`
+`isTxContextOpenSignature()` is a top-level parameter filter. The evidence
+guards still reject any remaining `TxContext` type nested anywhere in parameter
+or return signature trees. The signature-to-`PTBType` helpers normalize concrete
+runtime type arguments with the installed SDK type-tag parser and map
+OpenSignature generic structs to generic object types. Concrete runtime type
+argument strings preserve their full object `typeTag`; open generic signatures
+remain generic object types even when runtime type arguments are supplied. These
+helpers define the model evidence shape only. Evidence-aware `MoveCall`
 result/type validation is a separate validation step and should not be inferred
 from the existence of metadata fields alone.
 
@@ -268,8 +285,9 @@ Current partial or unsupported areas are:
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata by default, so result and nested-result
   references remain structural unless a command-specific rule can be verified
-  locally. The package exports host-provided Move signature evidence types and
-  guards, but it does not fetch package metadata itself;
+  locally. The package exports host-provided Move signature evidence types,
+  guards, and OpenSignature-to-`PTBType` helpers, but it does not fetch package
+  metadata itself;
 - raw PTB `MoveCall` data does not carry result-count metadata. The model does
   not infer that count from package metadata; graph or manual IR authors may
   provide `CommandNode.params.runtime.resultCount` / `IRCommand.resultCount`
