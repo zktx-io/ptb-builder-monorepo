@@ -176,12 +176,12 @@ runtime type arguments with the installed SDK type-tag parser and map
 OpenSignature generic structs to generic object types. Concrete runtime type
 argument strings preserve their full object `typeTag`; open generic signatures
 remain generic object types even when runtime type arguments are supplied. These
-helpers define the model evidence shape only. Evidence-aware `MoveCall`
-result arity validation is available only when the host explicitly passes
-`moveSignatures` to `validateTransactionIR()`. The model does not fetch package
-metadata, persist evidence in PTB documents, or infer result arity from metadata
-fields that happen to be present on raw PTB data. Evidence-aware result type
-validation is a separate validation step.
+helpers define the model evidence shape only. Evidence-aware `MoveCall` result
+arity and limited `MakeMoveVec` element type validation are available only when
+the host explicitly passes `moveSignatures` to `validateTransactionIR()`. The
+model does not fetch package metadata, persist evidence in PTB documents, or
+infer result arity from metadata fields that happen to be present on raw PTB
+data.
 
 Do not store transaction semantics in `params.ui`. MoveCall targets and type
 arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
@@ -296,10 +296,18 @@ Current partial or unsupported areas are:
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata by default. When a host passes verified
   `moveSignatures` to `validateTransactionIR()`, the validator can use the
-  matching function signature to check `MoveCall` result arity and
-  Result/NestedResult bounds. The package exports host-provided Move signature
-  evidence types, guards, and OpenSignature-to-`PTBType` helpers, but it does
-  not fetch package metadata itself;
+  matching function signature to check `MoveCall` result arity,
+  Result/NestedResult bounds, and comparable `MakeMoveVec` element types.
+  `MakeMoveVec` type checking only runs when the target MoveCall evidence has
+  matching type arguments and result count, or when an input already carries a
+  concrete PTB type. Generic, unknown, and object types without concrete
+  `typeTag` evidence are skipped. Primitive `MakeMoveVec` input checks stay on
+  existing argument diagnostics: Pure type mismatches use `ir.arg.pureType`, and
+  non-Pure inputs use `ir.arg.semanticType`. String, vector, option, object, and
+  MoveCall-result mismatches use `ir.command.makeMoveVec.elementTypeMismatch`.
+  The package exports host-provided Move signature evidence types, guards, and
+  OpenSignature-to-`PTBType` helpers, but it does not fetch package metadata
+  itself;
 - raw PTB `MoveCall` data does not carry result-count metadata. Raw conversion
   does not infer that count from package metadata; graph or manual IR authors
   may provide `CommandNode.params.runtime.resultCount` / `IRCommand.resultCount`

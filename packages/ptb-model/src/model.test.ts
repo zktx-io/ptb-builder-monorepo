@@ -545,6 +545,9 @@ describe('MoveCall signature evidence validation', () => {
   const moduleName = 'm';
   const functionName = 'f';
   const u64Return = rawSignature({ $kind: 'u64' });
+  const stringReturn = rawDatatypeSignature(
+    `${normalizedObjectId('1')}::string::String`,
+  );
   const typeParameterReturn = rawSignature({
     $kind: 'typeParameter',
     index: 0,
@@ -598,6 +601,38 @@ describe('MoveCall signature evidence validation', () => {
           arguments: [arg],
         }),
       ],
+    };
+  }
+
+  function makeMoveVec(
+    type: string | null,
+    elements: IRArgRef[],
+  ): Extract<IRCommand, { kind: 'MakeMoveVec' }> {
+    return {
+      id: 'vec',
+      kind: 'MakeMoveVec',
+      type,
+      elements,
+      resultCount: 1,
+    };
+  }
+
+  function irUsingMakeMoveVec(
+    type: string | null,
+    elements: IRArgRef[],
+    options: {
+      inputs?: IRInput[];
+      producer?: Extract<IRCommand, { kind: 'MoveCall' }>;
+    } = {},
+  ): TransactionIR {
+    return {
+      version: 'transaction_ir_1',
+      inputs: options.inputs ?? [],
+      diagnostics: [],
+      commands:
+        options.producer === undefined
+          ? [makeMoveVec(type, elements)]
+          : [options.producer, makeMoveVec(type, elements)],
     };
   }
 
@@ -768,6 +803,310 @@ describe('MoveCall signature evidence validation', () => {
     } as unknown as MovePackageSignatureEvidence;
 
     expect(diagnosticCodes(ir, malformedEvidence)).toEqual([]);
+  });
+
+  it('uses MoveCall result evidence to accept matching MakeMoveVec element types', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        'u64',
+        [{ kind: 'Result', commandIndex: 0 }],
+        { producer: moveCall() },
+      ),
+      evidenceFor([u64Return]),
+    );
+
+    expect(codes).toEqual([]);
+  });
+
+  it('reports MoveCall result type mismatches in MakeMoveVec elements', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        'address',
+        [{ kind: 'Result', commandIndex: 0 }],
+        { producer: moveCall() },
+      ),
+      evidenceFor([u64Return]),
+    );
+
+    expect(codes).toContain('ir.command.makeMoveVec.elementTypeMismatch');
+  });
+
+  it('reports nested MoveCall result type mismatches in MakeMoveVec elements', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        'u64',
+        [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 1 }],
+        { producer: moveCall() },
+      ),
+      evidenceFor([u64Return, stringReturn]),
+    );
+
+    expect(codes).toContain('ir.command.makeMoveVec.elementTypeMismatch');
+  });
+
+  it('skips MakeMoveVec result type checks when MoveCall type arguments are unresolved', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        TEST_SUI_TYPE,
+        [{ kind: 'Result', commandIndex: 0 }],
+        { producer: moveCall() },
+      ),
+      evidenceFor([typeParameterReturn], 1),
+    );
+
+    expect(codes).toContain('ir.command.moveCall.typeArgumentsCount');
+    expect(codes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('skips MakeMoveVec result type checks when explicit MoveCall resultCount conflicts with evidence', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        'address',
+        [{ kind: 'Result', commandIndex: 0 }],
+        { producer: moveCall({ resultCount: 1 }) },
+      ),
+      evidenceFor([u64Return, stringReturn]),
+    );
+
+    expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
+    expect(codes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('checks concrete object input typeTags in MakeMoveVec elements', () => {
+    const matchingCodes = diagnosticCodes(
+      irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'obj',
+            kind: 'Object',
+            type: { kind: 'object', typeTag: '0x2::sui::SUI' },
+          },
+        ],
+      }),
+    );
+    const mismatchCodes = diagnosticCodes(
+      irUsingMakeMoveVec(TEST_COIN_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'obj',
+            kind: 'Object',
+            type: { kind: 'object', typeTag: TEST_SUI_TYPE },
+          },
+        ],
+      }),
+    );
+
+    expect(matchingCodes).toEqual([]);
+    expect(mismatchCodes).toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('reports vector and option input type mismatches in MakeMoveVec elements', () => {
+    const vectorCodes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        `vector<${TEST_SUI_TYPE}>`,
+        [{ kind: 'Input', index: 0 }],
+        {
+          inputs: [
+            {
+              id: 'numbers',
+              kind: 'Pure',
+              value: [1],
+              type: {
+                kind: 'vector',
+                elem: { kind: 'move_numeric', width: 'u64' },
+              },
+            },
+          ],
+        },
+      ),
+    );
+    const optionCodes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        `${normalizedObjectId('1')}::option::Option<${TEST_SUI_TYPE}>`,
+        [{ kind: 'Input', index: 0 }],
+        {
+          inputs: [
+            {
+              id: 'text',
+              kind: 'Pure',
+              value: 'hello',
+              type: {
+                kind: 'option',
+                elem: { kind: 'scalar', name: 'string' },
+              },
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(vectorCodes).toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+    expect(optionCodes).toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('reports non-primitive Pure input mismatches through MakeMoveVec element type checks', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'text',
+            kind: 'Pure',
+            value: 'hello',
+            type: { kind: 'scalar', name: 'string' },
+          },
+        ],
+      }),
+    );
+
+    expect(codes).toContain('ir.command.makeMoveVec.elementTypeMismatch');
+  });
+
+  it('accepts non-primitive Pure input matches through MakeMoveVec element type checks', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        `${normalizedObjectId('1')}::string::String`,
+        [{ kind: 'Input', index: 0 }],
+        {
+          inputs: [
+            {
+              id: 'text',
+              kind: 'Pure',
+              value: 'hello',
+              type: { kind: 'scalar', name: 'string' },
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(codes).toEqual([]);
+  });
+
+  it('keeps primitive Pure input mismatches on the existing pureType diagnostic path', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec('address', [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'amount',
+            kind: 'Pure',
+            value: '1',
+            type: { kind: 'move_numeric', width: 'u64' },
+          },
+        ],
+      }),
+    );
+
+    expect(codes).toContain('ir.arg.pureType');
+    expect(codes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('keeps primitive MakeMoveVec input-kind mismatches on the existing semanticType path', () => {
+    const objectCodes = diagnosticCodes(
+      irUsingMakeMoveVec('u64', [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'obj',
+            kind: 'Object',
+            type: { kind: 'object', typeTag: TEST_SUI_TYPE },
+          },
+        ],
+      }),
+    );
+    const withdrawalCodes = diagnosticCodes(
+      irUsingMakeMoveVec('u64', [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'funds',
+            kind: 'FundsWithdrawal',
+            value: {
+              reservation: { kind: 'MaxAmountU64', amount: '1' },
+              typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
+              withdrawFrom: { kind: 'Sender' },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(objectCodes).toContain('ir.arg.semanticType');
+    expect(objectCodes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+    expect(withdrawalCodes).toContain('ir.arg.semanticType');
+    expect(withdrawalCodes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('skips MakeMoveVec element type checks when input metadata is unavailable', () => {
+    const pureCodes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        `${normalizedObjectId('1')}::string::String`,
+        [{ kind: 'Input', index: 0 }],
+        {
+          inputs: [{ id: 'pure', kind: 'Pure', value: 'hello' }],
+        },
+      ),
+    );
+    const objectCodes = diagnosticCodes(
+      irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
+        inputs: [{ id: 'obj', kind: 'Object' }],
+      }),
+    );
+    const withdrawalCodes = diagnosticCodes(
+      irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
+        inputs: [
+          {
+            id: 'funds',
+            kind: 'FundsWithdrawal',
+            value: {
+              reservation: { kind: 'MaxAmountU64', amount: '1' },
+              typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
+              withdrawFrom: { kind: 'Sender' },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(pureCodes).toContain('ir.input.pureType');
+    expect(pureCodes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+    expect(objectCodes).toEqual([]);
+    expect(withdrawalCodes).toEqual([]);
+  });
+
+  it('does not add MakeMoveVec type diagnostics for zero-return evidence', () => {
+    const codes = diagnosticCodes(
+      irUsingMakeMoveVec(
+        'u64',
+        [{ kind: 'Result', commandIndex: 0 }],
+        { producer: moveCall() },
+      ),
+      evidenceFor([]),
+    );
+
+    expect(codes).toContain('ir.arg.noResult');
+    expect(codes).not.toContain(
+      'ir.command.makeMoveVec.elementTypeMismatch',
+    );
+  });
+
+  it('does not add MakeMoveVec type diagnostics for empty typed vectors', () => {
+    expect(diagnosticCodes(irUsingMakeMoveVec('u64', []))).toEqual([]);
   });
 });
 

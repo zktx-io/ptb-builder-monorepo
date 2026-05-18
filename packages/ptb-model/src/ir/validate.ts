@@ -12,8 +12,15 @@ import {
   isMovePackageSignatureEvidence,
   lookupMoveSignatureEvidence,
 } from '../move/evidence.js';
-import type { MovePackageSignatureEvidence } from '../move/evidence.js';
-import { validatePTBType } from '../ptbType.js';
+import type {
+  MoveFunctionSignatureEvidence,
+  MovePackageSignatureEvidence,
+} from '../move/evidence.js';
+import {
+  toPTBTypeFromConcreteTypeArgument,
+  toPTBTypeFromOpenSignature,
+} from '../move/signature.js';
+import { isPTBType, validatePTBType } from '../ptbType.js';
 import type { PTBType } from '../ptbType.js';
 import {
   isRawFundsWithdrawalArg,
@@ -30,6 +37,7 @@ import {
   isDenseArray,
   isRecord,
   jsonLikeEqual,
+  MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
 import type { PlainDataIssue } from '../utils.js';
@@ -128,6 +136,7 @@ interface CommandArgValidationEntry {
 
 interface MoveCallEvidenceState {
   effectiveResultCount?: number;
+  signatureForType?: MoveFunctionSignatureEvidence;
 }
 
 type MoveCallEvidenceStateByCommandIndex = ReadonlyMap<
@@ -310,6 +319,13 @@ export function validateTransactionIR(
           expectedPureType,
         );
       },
+    );
+    validateMakeMoveVecElementTypes(
+      ir,
+      command,
+      commandIndex,
+      diagnostics,
+      moveCallEvidenceByCommandIndex,
     );
   });
 
@@ -1187,11 +1203,18 @@ function moveCallEvidenceState(
           `$.commands[${commandIndex}].resultCount`,
         ),
       );
+      return { effectiveResultCount: explicitResultCount };
     }
-    return { effectiveResultCount: explicitResultCount };
+    return {
+      effectiveResultCount: explicitResultCount,
+      signatureForType: signature,
+    };
   }
 
-  return { effectiveResultCount: evidenceResultCount };
+  return {
+    effectiveResultCount: evidenceResultCount,
+    signatureForType: signature,
+  };
 }
 
 function requireObjectIdArray(
@@ -1468,6 +1491,136 @@ function commandArgValidationEntries(
   }
 }
 
+function validateMakeMoveVecElementTypes(
+  ir: TransactionIR,
+  command: IRCommand,
+  commandIndex: number,
+  diagnostics: TransactionDiagnostic[],
+  moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
+): void {
+  if (command.kind !== 'MakeMoveVec' || typeof command.type !== 'string') return;
+
+  const expectedType = toPTBTypeFromConcreteTypeArgument(command.type);
+  if (expectedType === undefined) return;
+
+  command.elements.forEach((arg, index) => {
+    if (shouldSkipPrimitiveInputMakeMoveVecCheck(command, arg)) return;
+
+    const actualType = makeMoveVecElementType(
+      ir,
+      commandIndex,
+      arg,
+      moveCallEvidenceByCommandIndex,
+    );
+    if (actualType === undefined) return;
+    if (!ptbTypesAreComparable(actualType, expectedType)) return;
+    if (ptbTypesExactlyMatch(actualType, expectedType)) return;
+
+    diagnostics.push(
+      errorDiagnostic(
+        'ir.command.makeMoveVec.elementTypeMismatch',
+        `Command ${commandIndex} MakeMoveVec element ${index} type ${describePTBType(actualType)} must match explicit element type ${describePTBType(expectedType)}.`,
+        `$.commands[${commandIndex}].elements[${index}]`,
+      ),
+    );
+  });
+}
+
+function shouldSkipPrimitiveInputMakeMoveVecCheck(
+  command: Extract<IRCommand, { kind: 'MakeMoveVec' }>,
+  arg: IRArgRef,
+): boolean {
+  return (
+    arg.kind === 'Input' &&
+    typeof command.type === 'string' &&
+    pureTypeFromMoveTypeTag(command.type) !== undefined
+  );
+}
+
+function makeMoveVecElementType(
+  ir: TransactionIR,
+  currentCommandIndex: number,
+  arg: IRArgRef,
+  moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
+): PTBType | undefined {
+  switch (arg.kind) {
+    case 'GasCoin':
+      return undefined;
+    case 'Input': {
+      if (!isU16Index(arg.index) || arg.index >= ir.inputs.length) {
+        return undefined;
+      }
+      const input = ir.inputs[arg.index];
+      if (
+        (input?.kind === 'Pure' || input?.kind === 'Object') &&
+        input.type !== undefined &&
+        isPTBType(input.type)
+      ) {
+        return input.type;
+      }
+      return undefined;
+    }
+    case 'Result':
+      return moveCallResultType(
+        ir,
+        currentCommandIndex,
+        arg.commandIndex,
+        undefined,
+        moveCallEvidenceByCommandIndex,
+      );
+    case 'NestedResult':
+      return moveCallResultType(
+        ir,
+        currentCommandIndex,
+        arg.commandIndex,
+        arg.resultIndex,
+        moveCallEvidenceByCommandIndex,
+      );
+  }
+}
+
+function moveCallResultType(
+  ir: TransactionIR,
+  currentCommandIndex: number,
+  targetCommandIndex: number,
+  nestedResultIndex: number | undefined,
+  moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
+): PTBType | undefined {
+  if (
+    !isU16Index(targetCommandIndex) ||
+    targetCommandIndex >= ir.commands.length ||
+    targetCommandIndex >= currentCommandIndex
+  ) {
+    return undefined;
+  }
+
+  const command = ir.commands[targetCommandIndex];
+  if (command?.kind !== 'MoveCall') return undefined;
+
+  const signature =
+    moveCallEvidenceByCommandIndex.get(targetCommandIndex)?.signatureForType;
+  if (signature === undefined) return undefined;
+
+  if (nestedResultIndex === undefined) {
+    if (signature.returns.length !== 1) return undefined;
+    return toPTBTypeFromOpenSignature(
+      signature.returns[0]!,
+      command.typeArguments,
+    );
+  }
+
+  if (
+    !isU16Index(nestedResultIndex) ||
+    nestedResultIndex >= signature.returns.length
+  ) {
+    return undefined;
+  }
+  return toPTBTypeFromOpenSignature(
+    signature.returns[nestedResultIndex]!,
+    command.typeArguments,
+  );
+}
+
 function validateArgRefShape(
   value: unknown,
   path: string,
@@ -1703,6 +1856,125 @@ function ptbTypeSatisfiesExpectation(
     case 'unknown':
       return actual.kind === 'unknown';
   }
+}
+
+function ptbTypesAreComparable(
+  actual: PTBType,
+  expected: PTBType,
+  depth = 0,
+): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  if (actual.kind === 'unknown' || expected.kind === 'unknown') return false;
+
+  if (actual.kind !== expected.kind) {
+    return (
+      ptbTypeHasConcreteShape(actual, depth) &&
+      ptbTypeHasConcreteShape(expected, depth)
+    );
+  }
+
+  switch (expected.kind) {
+    case 'scalar':
+    case 'move_numeric':
+      return true;
+    case 'object':
+      return (
+        actual.kind === 'object' &&
+        hasConcreteObjectTypeTags(actual, expected)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypesAreComparable(elem, expected.elems[index]!, depth + 1),
+        )
+      );
+  }
+}
+
+function ptbTypesExactlyMatch(
+  actual: PTBType,
+  expected: PTBType,
+  depth = 0,
+): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  if (actual.kind !== expected.kind) return false;
+
+  switch (expected.kind) {
+    case 'scalar':
+      return actual.kind === 'scalar' && actual.name === expected.name;
+    case 'move_numeric':
+      return actual.kind === 'move_numeric' && actual.width === expected.width;
+    case 'object':
+      return (
+        actual.kind === 'object' &&
+        objectTypeTagsExactlyMatch(actual, expected)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypesExactlyMatch(elem, expected.elems[index]!, depth + 1),
+        )
+      );
+    case 'unknown':
+      return false;
+  }
+}
+
+function ptbTypeHasConcreteShape(type: PTBType, depth: number): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  switch (type.kind) {
+    case 'unknown':
+      return false;
+    case 'object':
+      return type.typeTag !== undefined;
+    case 'scalar':
+    case 'move_numeric':
+    case 'vector':
+    case 'option':
+    case 'tuple':
+      return true;
+  }
+}
+
+function hasConcreteObjectTypeTags(
+  actual: Extract<PTBType, { kind: 'object' }>,
+  expected: Extract<PTBType, { kind: 'object' }>,
+): boolean {
+  return actual.typeTag !== undefined && expected.typeTag !== undefined;
+}
+
+function objectTypeTagsExactlyMatch(
+  actual: Extract<PTBType, { kind: 'object' }>,
+  expected: Extract<PTBType, { kind: 'object' }>,
+): boolean {
+  if (!hasConcreteObjectTypeTags(actual, expected)) return false;
+  const actualTypeTag = parseMoveTypeTag(actual.typeTag);
+  const expectedTypeTag = parseMoveTypeTag(expected.typeTag);
+  return actualTypeTag !== undefined && actualTypeTag === expectedTypeTag;
 }
 
 function describePTBType(type: PTBType): string {
