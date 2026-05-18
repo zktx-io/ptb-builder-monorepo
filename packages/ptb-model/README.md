@@ -132,7 +132,9 @@ Use `validatePTBType()` for standalone model type validation. It reports
 model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
 report `graph.type.*` diagnostics for graph-authored `varType` and port
 `dataType` fields so graph source diagnostics remain clearly attributable to
-the graph layer.
+the graph layer. Object PTB type hints may omit `typeTag`; when present,
+`typeTag` must be an outer Move struct type tag, not a primitive or vector type
+tag.
 
 Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The
@@ -415,12 +417,18 @@ pre-screened for full-input syntax, validated with the installed SDK's type-tag
 parser, and stored in canonical form after raw or graph conversion. Address
 components inside type tags follow the same `0x`/`0X` input and lowercase
 canonical-output rule. `signer` type tags are not accepted in canonical PTB
-type-tag fields.
+type-tag fields. `parseMoveTypeTag()` accepts canonical PTB Move type tags,
+including primitives, vectors, and structs. `parseMoveStructTypeTag()` first
+applies the same canonical parser and then accepts only outer struct tags;
+use it for fields such as `PTBType.object.typeTag`. Struct module and type
+identifiers follow the model's Sui Move identifier rule, including
+multi-character leading-underscore identifiers such as `_module`; do not
+substitute SDK `isValidStructTag()` for this model helper.
 
 Address, object digest, and Move type-tag checks call the installed
 `@mysten/sui@2.16.2` public utility and BCS helpers directly. The helper-backed
-normalizers are `parseObjectId()`, `parseObjectDigest()`, and
-`parseMoveTypeTag()`.
+normalizers are `parseObjectId()`, `parseObjectDigest()`, `parseMoveTypeTag()`,
+and `parseMoveStructTypeTag()`.
 
 Sui source validity rules are enforced where they do not require live
 `ProtocolConfig`: `TransferObjects.objects`, `SplitCoins.amounts`,
@@ -492,8 +500,8 @@ The scalar normalizers, SDK metadata guard, and diagnostic freezer are exported
 for host-side validation before creating raw or graph values:
 `parseJsonU64()`, `parseBase64Bytes()`, `parseObjectId()`,
 `parseObjectDigest()`, `parseMoveIdentifier()`, `parseMoveTypeTag()`,
-`isRawInputArgumentType()`, `isRawMoveCallArgumentTypes()`, and
-`freezeDiagnostics()`.
+`parseMoveStructTypeTag()`, `isRawInputArgumentType()`,
+`isRawMoveCallArgumentTypes()`, and `freezeDiagnostics()`.
 
 ## Basic Usage
 

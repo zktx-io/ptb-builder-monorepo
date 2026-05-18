@@ -257,6 +257,18 @@ export function parseMoveTypeTag(value: unknown): string | undefined {
   );
 }
 
+export function parseMoveStructTypeTag(value: unknown): string | undefined {
+  const typeTag = parseMoveTypeTag(value);
+  if (typeTag === undefined) return undefined;
+  if (
+    (TYPE_TAG_PRIMITIVES as readonly string[]).includes(typeTag) ||
+    typeTag.startsWith('vector<')
+  ) {
+    return undefined;
+  }
+  return typeTag;
+}
+
 function parseMoveTypeTagUncached(text: string): string | undefined {
   if (maxAngleDepth(text) > MAX_MOVE_TYPE_TAG_DEPTH) return undefined;
   const scanned = scanMoveTypeTag(text, 0, 0);
@@ -311,9 +323,7 @@ export function isRawOpenSignatureList(
   );
 }
 
-export function isRawOpenSignature(
-  value: unknown,
-): value is RawOpenSignature {
+export function isRawOpenSignature(value: unknown): value is RawOpenSignature {
   return checkRawOpenSignature(value, new WeakSet<object>(), 0);
 }
 

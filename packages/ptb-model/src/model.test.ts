@@ -43,6 +43,7 @@ import {
   parseBase64Bytes,
   parseJsonU64,
   parseMoveIdentifier,
+  parseMoveStructTypeTag,
   parseMoveTypeTag,
   parseObjectDigest,
   parseObjectId,
@@ -177,6 +178,7 @@ describe('public package surface', () => {
     expect(isNonNegativeSafeInteger(65_536)).toBe(true);
     expect(isU16Index(65_535)).toBe(true);
     expect(isU16Index(65_536)).toBe(false);
+    expect(parseMoveStructTypeTag('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
   });
 
   it('keeps model source free of UI framework and runtime client imports', () => {
@@ -384,14 +386,14 @@ describe('Move signature PTB type helpers', () => {
       kind: 'vector',
       elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
     });
-    expect(
-      toPTBTypeFromConcreteTypeArgument(
-        `0x2::coin::Coin<${TEST_SUI_TYPE}>`,
-      ),
-    ).toEqual({
+    const coinType = toPTBTypeFromConcreteTypeArgument(
+      `0x2::coin::Coin<${TEST_SUI_TYPE}>`,
+    );
+    expect(coinType).toEqual({
       kind: 'object',
       typeTag: TEST_COIN_SUI_TYPE,
     });
+    expect(validatePTBType(coinType)).toEqual([]);
     expect(
       toPTBTypeFromConcreteTypeArgument(
         `0x1::option::Option<${TEST_SUI_TYPE}>`,
@@ -1529,6 +1531,118 @@ describe('PTBDocV4', () => {
   });
 });
 
+describe('PTB type validation', () => {
+  it('requires object PTB type tags to use an outer Move struct type tag', () => {
+    const nonStringObjectType = {
+      kind: 'object',
+      typeTag: 7,
+    } as unknown as PTBType;
+    const primitiveObjectType: PTBType = { kind: 'object', typeTag: 'u8' };
+    const vectorObjectType: PTBType = {
+      kind: 'object',
+      typeTag: `vector<${TEST_SUI_TYPE}>`,
+    };
+    const structObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_COIN_SUI_TYPE,
+    };
+    const nestedVectorObjectType: PTBType = {
+      kind: 'vector',
+      elem: primitiveObjectType,
+    };
+    const nestedOptionObjectType: PTBType = {
+      kind: 'option',
+      elem: primitiveObjectType,
+    };
+    const graphWithVarType = (varType: unknown): PTBGraph => ({
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          name: 'input_0',
+          varType: varType as PTBType,
+          ports: [],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(validatePTBType(structObjectType)).toEqual([]);
+    expect(validatePTBType(nonStringObjectType)).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.typeTag',
+      }),
+    );
+    expect(validatePTBType(primitiveObjectType)).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.typeTag',
+      }),
+    );
+    expect(validatePTBType(vectorObjectType)).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.typeTag',
+      }),
+    );
+    expect(validatePTBType(nestedVectorObjectType)).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.elem.typeTag',
+      }),
+    );
+    expect(validatePTBType(nestedOptionObjectType)).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.elem.typeTag',
+      }),
+    );
+
+    [nonStringObjectType, primitiveObjectType, vectorObjectType].forEach(
+      (varType) => {
+        expect(validatePTBGraph(graphWithVarType(varType))).toContainEqual(
+          expect.objectContaining({
+            code: 'graph.type.object',
+            path: '$.nodes[0].varType.typeTag',
+          }),
+        );
+      },
+    );
+
+    const graphBlockedIR = graphToTransactionIR(
+      graphWithVarType(primitiveObjectType),
+    );
+    const graphBlockedCodes = graphBlockedIR.diagnostics.map(
+      (diagnostic) => diagnostic.code,
+    );
+    expect(graphBlockedIR.inputs).toEqual([]);
+    expect(graphBlockedIR.commands).toEqual([]);
+    expect(isStructuralTransactionIR(graphBlockedIR)).toBe(false);
+    expect(graphBlockedCodes).toContain('graph.type.object');
+    expect(graphBlockedCodes).not.toContain('ptb.type.object');
+
+    let structuralError: unknown;
+    try {
+      parseStructuralTransactionIR({
+        version: 'transaction_ir_1',
+        inputs: [{ id: 'input_0', kind: 'Object', type: primitiveObjectType }],
+        commands: [],
+        diagnostics: [],
+      });
+    } catch (error) {
+      structuralError = error;
+    }
+    expect(structuralError).toBeInstanceOf(PTBModelError);
+    expect((structuralError as PTBModelError).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.inputs[0].type.typeTag',
+      }),
+    );
+  });
+});
+
 describe('rawTransactionToIR', () => {
   it('covers canonical command and input variants', () => {
     const raw = sampleRawTransaction();
@@ -1883,6 +1997,13 @@ describe('rawTransactionToIR', () => {
     expect(parseMoveTypeTag('0x2::coin::Coin<u8, u64>')).toBe(
       `${TEST_COIN_TYPE}<u8, u64>`,
     );
+    expect(parseMoveStructTypeTag('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
+    expect(parseMoveStructTypeTag('0x2::coin::Coin<0x2::sui::SUI>')).toBe(
+      TEST_COIN_SUI_TYPE,
+    );
+    expect(parseMoveStructTypeTag('0x2::_module::__Struct')).toBe(
+      `${normalizedObjectId('2')}::_module::__Struct`,
+    );
     [
       '',
       ' ',
@@ -1893,9 +2014,16 @@ describe('rawTransactionToIR', () => {
       'u64extra',
       'signer',
       'vector<signer>',
+      'Coin<SUI>',
     ].forEach((typeTag) => {
       expect(parseMoveTypeTag(typeTag)).toBeUndefined();
     });
+    ['address', 'bool', 'u8', 'u16', 'u32', 'u64', 'u128', 'u256'].forEach(
+      (typeTag) => {
+        expect(parseMoveStructTypeTag(typeTag)).toBeUndefined();
+      },
+    );
+    expect(parseMoveStructTypeTag('vector<0x2::sui::SUI>')).toBeUndefined();
   });
 
   it('returns diagnostics for excessively nested PTB types instead of throwing', () => {
@@ -4260,7 +4388,7 @@ describe('graph conversion', () => {
             y: 0,
             extraPositionField: true,
           },
-          varType: { kind: 'object', typeTag: 7, extraTypeField: true },
+          varType: { kind: 'object', typeTag: 'u8', extraTypeField: true },
           name: 'input',
           semantic: { kind: 'GasCoin', extraSemanticField: true },
           ports: [

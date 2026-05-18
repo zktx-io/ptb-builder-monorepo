@@ -17,12 +17,12 @@
 //       (edge.cast carries width).
 //     * vector<X> ↔ vector<Y> uses exact inner types.
 //     * move_numeric ↔ move_numeric compatible only if width matches.
-//     * object ↔ object: lenient if either side lacks typeTag; canonical Move type-tag
-//       equality if both present.
+//     * object ↔ object: lenient if either side lacks typeTag; canonical Move struct
+//       type-tag equality if both present.
 // - Serialized-type helpers unwrap vector/option/tuple syntax conservatively.
 // ---------------------------------------------------------------------
 
-import { parseMoveTypeTag } from '@zktx.io/ptb-model';
+import { parseMoveStructTypeTag } from '@zktx.io/ptb-model';
 
 import type { NumericWidth, Port, PTBType } from './types';
 
@@ -129,7 +129,7 @@ function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
 
 function canonicalObjectTypeTag(type: PTBType): string | undefined {
   if (!isObject(type) || !type.typeTag) return undefined;
-  return parseMoveTypeTag(type.typeTag);
+  return parseMoveStructTypeTag(type.typeTag);
 }
 
 function isSameObjectType(a: PTBType, b: PTBType): boolean {
@@ -146,8 +146,13 @@ function isObjectTypeCompatible(src: PTBType, dst: PTBType): boolean {
   if (!isObject(src) || !isObject(dst)) return false;
   const sourceTag = (src.typeTag ?? '').trim();
   const targetTag = (dst.typeTag ?? '').trim();
+  const canonicalSource = sourceTag ? canonicalObjectTypeTag(src) : undefined;
+  const canonicalTarget = targetTag ? canonicalObjectTypeTag(dst) : undefined;
+  if ((sourceTag && !canonicalSource) || (targetTag && !canonicalTarget)) {
+    return false;
+  }
   if (!sourceTag || !targetTag) return true;
-  return isSameObjectType(src, dst);
+  return canonicalSource === canonicalTarget;
 }
 
 /* Compatibility policy (UI wiring) */

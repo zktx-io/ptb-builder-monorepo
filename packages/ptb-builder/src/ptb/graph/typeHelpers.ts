@@ -23,7 +23,10 @@ export const M = (width: NumericWidth): PTBType => ({
   width,
 });
 
-/** Object type factory (with optional type tag) */
+/**
+ * Object type factory. When present, typeTag must already be a model-valid
+ * outer Move struct type tag.
+ */
 export const O = (typeTag?: string): PTBType =>
   typeTag ? { kind: 'object', typeTag } : { kind: 'object' };
 

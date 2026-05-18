@@ -112,6 +112,7 @@ export {
   parseBase64Bytes,
   parseJsonU64,
   parseMoveIdentifier,
+  parseMoveStructTypeTag,
   parseMoveTypeTag,
   parseObjectDigest,
   parseObjectId,

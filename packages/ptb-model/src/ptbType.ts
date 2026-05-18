@@ -1,6 +1,6 @@
 import { errorDiagnostic, freezeDiagnostics } from './ir/diagnostics.js';
 import type { TransactionDiagnostic } from './ir/diagnostics.js';
-import { parseMoveTypeTag } from './raw/types.js';
+import { parseMoveStructTypeTag } from './raw/types.js';
 import { isDenseArray, isPlainObject, MAX_PTB_TYPE_DEPTH } from './utils.js';
 
 export const PTB_TYPE_KINDS = [
@@ -92,7 +92,13 @@ function validatePTBTypeInto(
   diagnostics: TransactionDiagnostic[],
   context: PTBTypeDiagnosticContext,
 ): void {
-  validatePTBTypeShape(value, path, diagnostics, context, new WeakSet<object>());
+  validatePTBTypeShape(
+    value,
+    path,
+    diagnostics,
+    context,
+    new WeakSet<object>(),
+  );
 }
 
 function validatePTBTypeShape(
@@ -219,12 +225,12 @@ function validatePTBTypeShape(
       if (
         value.typeTag !== undefined &&
         (typeof value.typeTag !== 'string' ||
-          parseMoveTypeTag(value.typeTag) === undefined)
+          parseMoveStructTypeTag(value.typeTag) === undefined)
       ) {
         diagnostics.push(
           errorDiagnostic(
             `${context.codePrefix}.object`,
-            `Object ${context.label} typeTag must be a valid Move type tag when present.`,
+            `Object ${context.label} typeTag must be an outer Move struct type tag, not a primitive or vector type tag, when present.`,
             `${path}.typeTag`,
           ),
         );
