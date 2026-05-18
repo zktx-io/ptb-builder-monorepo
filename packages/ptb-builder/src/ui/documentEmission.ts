@@ -4,7 +4,6 @@ export type DocumentEmissionScheduler = {
   schedule: (reason: DocumentEmissionReason) => void;
   flush: () => void;
   cancel: () => void;
-  hasPending: () => boolean;
 };
 
 export function createDocumentEmissionScheduler(options: {
@@ -80,9 +79,6 @@ export function createDocumentEmissionScheduler(options: {
       debounceReason = undefined;
       clearMaxWait();
       pending = false;
-    },
-    hasPending() {
-      return pending;
     },
   };
 }

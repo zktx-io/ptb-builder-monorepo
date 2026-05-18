@@ -8,6 +8,7 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import type { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
+import { isFlowEdge } from './flowPath';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import { firstInPorts, outPortsWithPrefix } from '../../ptb/portQueries';
 import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
@@ -50,13 +51,6 @@ function isWellKnownObjectVar(n: RFNode<RFNodeData>): boolean {
   return (
     WELL_KNOWN_OBJECT_LABELS.has(label) || WELL_KNOWN_OBJECT_LABELS.has(name)
   );
-}
-
-// Edge-kind detection must honor RFEdge.type primarily
-function isFlowEdge(e: RFEdge<RFEdgeData>) {
-  if (e.type === 'ptb-flow') return true;
-  const k = (e.data as any)?.ptbEdge?.kind;
-  return k === 'flow' || String(e.id).startsWith('flow:');
 }
 
 // ---- constants --------------------------------------------------------------

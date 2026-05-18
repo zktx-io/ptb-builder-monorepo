@@ -134,6 +134,15 @@ function parseBoolEditorValue(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function objectIdFromEditorValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const objectId = (value as { objectId?: unknown }).objectId;
+    return typeof objectId === 'string' ? objectId : undefined;
+  }
+  return undefined;
+}
+
 export const VarNode = memo(function VarNode({
   id: rfNodeId,
   data,
@@ -237,10 +246,20 @@ export const VarNode = memo(function VarNode({
     [isVector, varType],
   );
   const vecElemIsBool = vecElem?.kind === 'scalar' && vecElem.name === 'bool';
+  const rawObject =
+    (v as any)?.rawInput?.kind === 'Object'
+      ? (v as any).rawInput.object
+      : undefined;
 
   // Sync buffers from graph → keep previous buffer when option is None
   useEffect(() => {
     const val = variableValue;
+
+    if (varType?.kind === 'object') {
+      const s = rawObject?.objectId ?? objectIdFromEditorValue(val) ?? '';
+      setScalarBuf((prev) => (prev === s ? prev : s));
+      return;
+    }
 
     if (isOption) {
       const isNone = val === OPTION_NONE_VALUE;
@@ -272,6 +291,8 @@ export const VarNode = memo(function VarNode({
   }, [
     nodeId,
     variableValue,
+    varType?.kind,
+    rawObject?.objectId,
     isOption,
     isVector,
     vecElemIsBool,
@@ -300,10 +321,6 @@ export const VarNode = memo(function VarNode({
     debouncedPatchVector.cancel();
   }, [debouncedPatchScalar, debouncedPatchVector]);
 
-  const rawObject =
-    (v as any)?.rawInput?.kind === 'Object'
-      ? (v as any).rawInput.object
-      : undefined;
   const currentObjectUsage: ObjectRawUsage | '' =
     rawObject?.kind === 'ImmOrOwnedObject'
       ? 'object-ref'
@@ -368,10 +385,14 @@ export const VarNode = memo(function VarNode({
       if (rawInput && !rawInput.ok) {
         toast?.({ message: rawInput.error, variant: 'warning' });
       }
+      const nextRawInput = rawInput?.ok ? rawInput.rawInput : undefined;
       patchVar({
-        value: resp.object.objectId,
+        value:
+          nextRawInput?.kind === 'Object'
+            ? nextRawInput.object
+            : resp.object.objectId,
         varType: { kind: 'object', typeTag: resp.object.typeTag },
-        rawInput: rawInput?.ok ? rawInput.rawInput : undefined,
+        rawInput: nextRawInput,
       });
     } catch (e: any) {
       if (seq !== reqSeqRef.current) return;
@@ -407,7 +428,7 @@ export const VarNode = memo(function VarNode({
         return;
       }
       if (!usage) {
-        patchVar({ rawInput: undefined });
+        patchVar({ value: resolved.objectId, rawInput: undefined });
         return;
       }
       const rawInput = buildObjectRawInputForUsage(resolved, usage);
@@ -416,10 +437,15 @@ export const VarNode = memo(function VarNode({
         toast?.({ message: rawInput.error, variant: 'warning' });
         return;
       }
+      const nextRawInput = rawInput.rawInput;
+      if (!nextRawInput || nextRawInput.kind !== 'Object') {
+        patchVar({ value: resolved.objectId, rawInput: undefined });
+        return;
+      }
       patchVar({
-        value: resolved.objectId,
+        value: nextRawInput.object,
         varType: { kind: 'object', typeTag: resolved.typeTag },
-        rawInput: rawInput.rawInput,
+        rawInput: nextRawInput,
       });
     },
     [canEdit, cancelPendingPureValueDrafts, objectDraft, patchVar, toast],
@@ -515,6 +541,7 @@ export const VarNode = memo(function VarNode({
               key={`vec-${i}`}
               value={typeof val === 'string' ? val : String(val ?? '')}
               placeholder={`${placeholderFor(elemT)} [${i}]`}
+              aria-label={`Vector item ${i}`}
               onChange={(e) => {
                 const vv = e.target.value;
                 const next = vecItemsRef.current.slice();
@@ -614,6 +641,7 @@ export const VarNode = memo(function VarNode({
                 <TextInput
                   value={scalarBuf}
                   placeholder={optionInputPlaceholder}
+                  aria-label="Option value"
                   onChange={(e) => {
                     const s = e.target.value;
                     setScalarBuf(s);
@@ -643,6 +671,7 @@ export const VarNode = memo(function VarNode({
                 <TextInput
                   value={scalarBuf}
                   placeholder={placeholderFor(varType)}
+                  aria-label="Variable value"
                   onChange={(e) => {
                     const s = e.target.value;
                     setScalarBuf(s);
@@ -672,6 +701,7 @@ export const VarNode = memo(function VarNode({
                         placeholder={
                           objTypeLoading ? 'Loading type…' : 'type (read-only)'
                         }
+                        aria-label="Object type"
                         readOnly
                         aria-readonly="true"
                         onChange={() => {}}

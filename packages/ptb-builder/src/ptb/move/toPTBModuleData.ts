@@ -14,23 +14,41 @@ import {
 } from './toPTBType';
 import type { PTBFunctionData } from '../ptbDoc';
 
+export type PTBFunctionOpenSignatures = {
+  parameters: RawOpenSignature[];
+  returns: RawOpenSignature[];
+};
+
+export function toPTBFunctionOpenSignatures(data: {
+  parameters?: RawOpenSignature[];
+  returns?: RawOpenSignature[];
+}): PTBFunctionOpenSignatures {
+  return {
+    parameters: (data.parameters ?? []).filter(
+      (signature) => !isTxContextOpenSignature(signature),
+    ),
+    returns: (data.returns ?? []).filter(
+      (signature) => !isTxContextOpenSignature(signature),
+    ),
+  };
+}
+
 export function toPTBFunctionDataEntry(data: {
   typeParameters?: unknown[];
   parameters?: RawOpenSignature[];
   returns?: RawOpenSignature[];
 }): PTBFunctionData[string] {
-  const parameters = (data.parameters ?? []).filter(
-    (signature) => !isTxContextOpenSignature(signature),
-  );
-  const returns = (data.returns ?? []).filter(
-    (signature) => !isTxContextOpenSignature(signature),
-  );
+  const open = toPTBFunctionOpenSignatures(data);
 
   return {
     tparamCount: Array.isArray(data.typeParameters)
       ? data.typeParameters.length
       : 0,
-    ins: parameters.map(toPTBTypeFromOpenSignature),
-    outs: returns.map(toPTBTypeFromOpenSignature),
+    ins: open.parameters.map((signature) =>
+      toPTBTypeFromOpenSignature(signature),
+    ),
+    outs: open.returns.map((signature) =>
+      toPTBTypeFromOpenSignature(signature),
+    ),
   };
 }

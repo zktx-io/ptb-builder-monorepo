@@ -1,5 +1,9 @@
 import type { RawCallArg } from '@zktx.io/ptb-model';
-import { parseJsonU64, parseObjectId } from '@zktx.io/ptb-model';
+import {
+  parseJsonU64,
+  parseObjectDigest,
+  parseObjectId,
+} from '@zktx.io/ptb-model';
 
 export type ObjectOwnerKind =
   | 'AddressOwner'
@@ -40,7 +44,7 @@ export function objectAuthoringInfoFromCoreObject(
 
   const objectId = canonicalObjectId(value.objectId);
   const version = canonicalU64(value.version);
-  const digest = typeof value.digest === 'string' ? value.digest : undefined;
+  const digest = canonicalObjectDigest(value.digest);
   const typeTag = typeof value.type === 'string' ? value.type : '';
   if (!objectId || !version || !digest) {
     return {
@@ -238,6 +242,10 @@ function canonicalObjectId(value: unknown): string | undefined {
 
 function canonicalU64(value: unknown): string | undefined {
   return parseJsonU64(value);
+}
+
+function canonicalObjectDigest(value: unknown): string | undefined {
+  return parseObjectDigest(value);
 }
 
 function isRecord(value: unknown): value is RecordLike {

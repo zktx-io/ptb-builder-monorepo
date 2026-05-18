@@ -1,4 +1,5 @@
 import type { Chain } from '../types';
+import type { PTBFunctionOpenSignatures } from './move/toPTBModuleData';
 import type {
   PTBFunctionData,
   PTBModulesEmbed,
@@ -9,19 +10,25 @@ import type {
 export type PTBMetadataCache = {
   objectsByChain: Partial<Record<Chain, PTBObjectsEmbed>>;
   modulesByChain: Partial<Record<Chain, PTBModulesEmbed>>;
+  moveFunctionsByChain: Partial<
+    Record<Chain, Record<string, CachedMoveFunction>>
+  >;
 };
 
 export type CachedMoveFunction = {
+  completeness: 'partial' | 'complete';
   packageId: string;
   moduleName: string;
   functionName: string;
   signature: PTBFunctionData[string];
+  openSignatures?: PTBFunctionOpenSignatures;
 };
 
 export function createPTBMetadataCache(): PTBMetadataCache {
   return {
     objectsByChain: {},
     modulesByChain: {},
+    moveFunctionsByChain: {},
   };
 }
 
@@ -64,7 +71,19 @@ function replaceCachedModules(
       ...cache.modulesByChain,
       [chain]: modules,
     },
+    moveFunctionsByChain: {
+      ...cache.moveFunctionsByChain,
+      [chain]: {},
+    },
   };
+}
+
+function moveFunctionKey(
+  packageId: string,
+  moduleName: string,
+  functionName: string,
+): string {
+  return `${packageId}::${moduleName}::${functionName}`;
 }
 
 export function replaceCachedChainData(
@@ -84,6 +103,10 @@ export function replaceCachedChainData(
     modulesByChain: {
       ...cache.modulesByChain,
       [chain]: data.modules,
+    },
+    moveFunctionsByChain: {
+      ...cache.moveFunctionsByChain,
+      [chain]: {},
     },
   };
 }
@@ -109,12 +132,26 @@ export function getCachedMoveFunction(
   packageId: string,
   moduleName: string,
   functionName: string,
+  opts?: { requireComplete?: boolean },
 ): CachedMoveFunction | undefined {
+  const cached =
+    cache.moveFunctionsByChain[chain]?.[
+      moveFunctionKey(packageId, moduleName, functionName)
+    ];
+  if (
+    cached &&
+    (!opts?.requireComplete || cached.completeness === 'complete')
+  ) {
+    return cached;
+  }
+
   const signature = getCachedModules(cache, chain)[packageId]?.[moduleName]?.[
     functionName
   ];
   if (!signature) return undefined;
+  if (opts?.requireComplete) return undefined;
   return {
+    completeness: 'partial',
     packageId,
     moduleName,
     functionName,
@@ -125,22 +162,44 @@ export function getCachedMoveFunction(
 export function upsertCachedMoveFunction(
   cache: PTBMetadataCache,
   chain: Chain,
-  entry: CachedMoveFunction,
+  entry: Omit<CachedMoveFunction, 'completeness'> &
+    Partial<Pick<CachedMoveFunction, 'completeness'>>,
 ): { cache: PTBMetadataCache; modules: PTBModulesEmbed } {
   const modules = getCachedModules(cache, chain);
+  const moveFunctions = cache.moveFunctionsByChain[chain] ?? {};
+  const nextEntry: CachedMoveFunction = {
+    ...entry,
+    completeness:
+      entry.completeness ??
+      (entry.openSignatures !== undefined ? 'complete' : 'partial'),
+  };
   const nextModules = {
     ...modules,
-    [entry.packageId]: {
-      ...(modules[entry.packageId] ?? {}),
-      [entry.moduleName]: {
-        ...(modules[entry.packageId]?.[entry.moduleName] ?? {}),
-        [entry.functionName]: entry.signature,
+    [nextEntry.packageId]: {
+      ...(modules[nextEntry.packageId] ?? {}),
+      [nextEntry.moduleName]: {
+        ...(modules[nextEntry.packageId]?.[nextEntry.moduleName] ?? {}),
+        [nextEntry.functionName]: nextEntry.signature,
       },
     },
   };
 
+  const nextCache = replaceCachedModules(cache, chain, nextModules);
   return {
-    cache: replaceCachedModules(cache, chain, nextModules),
+    cache: {
+      ...nextCache,
+      moveFunctionsByChain: {
+        ...cache.moveFunctionsByChain,
+        [chain]: {
+          ...moveFunctions,
+          [moveFunctionKey(
+            entry.packageId,
+            entry.moduleName,
+            entry.functionName,
+          )]: nextEntry,
+        },
+      },
+    },
     modules: nextModules,
   };
 }

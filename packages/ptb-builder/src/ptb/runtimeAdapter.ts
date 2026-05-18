@@ -1,11 +1,11 @@
 import type { PureTypeName } from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
 import {
+  assertTsSdkRenderableIR,
   hasErrors,
   NULL_VALUE,
   parseObjectId,
   PTBModelError,
-  transactionIRToTsSdkCode,
 } from '@zktx.io/ptb-model';
 import type {
   IRArgRef,
@@ -54,24 +54,7 @@ function assertRuntimeRenderableIR(ir: TransactionIR): void {
     );
   }
 
-  for (const [index, input] of ir.inputs.entries()) {
-    if (input.kind !== 'Pure') continue;
-    if (input.bytes !== undefined) continue;
-    const abstractNumberPath = findAbstractNumberTypePath(input.type);
-    if (!abstractNumberPath) continue;
-    const location =
-      abstractNumberPath === 'type'
-        ? ''
-        : ` at ${abstractNumberPath.replace(/^type\./, '')}`;
-    throwRuntimeError(
-      'runtime.input.pure',
-      `Pure input ${input.id} uses the abstract number placeholder${location}; choose a concrete Move integer width before building a runtime Transaction.`,
-      `$.inputs[${index}].${abstractNumberPath}`,
-    );
-  }
-
-  // Keep runtime support exactly aligned with the model TS SDK renderer.
-  transactionIRToTsSdkCode(ir);
+  assertTsSdkRenderableIR(ir);
 }
 
 function buildInput(tx: Transaction, input: IRInput, index: number): TxArg {
@@ -218,10 +201,41 @@ function resolveArg(
     case 'GasCoin':
       return tx.gas as TxArg;
     case 'Input':
+      if (inputs[ref.index] === undefined) {
+        throwRuntimeError(
+          'runtime.arg.input',
+          `Runtime argument references missing input ${ref.index}.`,
+          '$.inputs',
+        );
+      }
       return inputs[ref.index]!;
     case 'Result':
+      if (results[ref.commandIndex] === undefined) {
+        throwRuntimeError(
+          'runtime.arg.result',
+          `Runtime argument references missing command result ${ref.commandIndex}.`,
+          '$.commands',
+        );
+      }
       return results[ref.commandIndex] as unknown as TxArg;
     case 'NestedResult':
+      if (!Array.isArray(results[ref.commandIndex])) {
+        throwRuntimeError(
+          'runtime.arg.nestedResult',
+          `Runtime argument references non-nested command result ${ref.commandIndex}.`,
+          '$.commands',
+        );
+      }
+      if (
+        (results[ref.commandIndex] as unknown as TxArg[])[ref.resultIndex] ===
+        undefined
+      ) {
+        throwRuntimeError(
+          'runtime.arg.nestedResult',
+          `Runtime argument references missing nested result ${ref.commandIndex}.${ref.resultIndex}.`,
+          '$.commands',
+        );
+      }
       return (results[ref.commandIndex] as unknown as TxArg[])[
         ref.resultIndex
       ]!;
@@ -243,25 +257,6 @@ function pureTypeName(type: PTBType | undefined): string | undefined {
       const elem = pureTypeName(type.elem);
       return elem ? `option<${elem}>` : undefined;
     }
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return undefined;
-  }
-}
-
-function findAbstractNumberTypePath(
-  type: PTBType | undefined,
-  path = 'type',
-): string | undefined {
-  if (!type) return undefined;
-  switch (type.kind) {
-    case 'scalar':
-      return type.name === 'number' ? path : undefined;
-    case 'vector':
-    case 'option':
-      return findAbstractNumberTypePath(type.elem, `${path}.elem`);
-    case 'move_numeric':
     case 'object':
     case 'tuple':
     case 'unknown':

@@ -9,16 +9,24 @@ import {
 } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
-import { makeGasObject } from '../src/ptb/factories';
+import {
+  makeAddress,
+  makeCommandNode,
+  makeGasObject,
+  makeObject,
+  makeString,
+} from '../src/ptb/factories';
 import type { PTBGraph } from '../src/ptb/graph/types';
 import { ptbToRF, rfToPTB } from '../src/ptb/ptbAdapter';
 import { buildCommandPorts, buildMoveCallPorts } from '../src/ptb/registry';
 import { buildTransactionFromIR } from '../src/ptb/runtimeAdapter';
 import { renderCodePreview } from '../src/ui/codePreview';
 import { EMPTY_CODE } from '../src/ui/emptyCode';
+import { stableGraphSig } from '../src/ui/graphSignature';
 
 const ADDRESS =
   '0x0000000000000000000000000000000000000000000000000000000000000001';
+const TEST_DIGEST = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
 
 function splitGasGraph(): PTBGraph {
   return {
@@ -295,7 +303,7 @@ describe('model-root PTB boundary', () => {
 
     expect(preview.ok).toBe(false);
     expect(preview.code).toContain('Code preview is stale');
-    expect(preview.code).toContain('codegen.input.pure');
+    expect(preview.code).toContain('ir.input.pureValue');
     expect(preview.code).toContain('tx.splitCoins');
   });
 
@@ -452,6 +460,373 @@ describe('model-root PTB boundary', () => {
 
       expect(() => buildTransactionFromIR(ir)).toThrow(PTBModelError);
     }
+  });
+
+  it('creates new variables with generated model input ids instead of duplicate names', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        makeAddress({ id: 'recipient', value: ADDRESS }),
+        makeString({ id: 'memo', value: 'hello' }),
+      ],
+      edges: [],
+    };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'graph.variable.duplicateName',
+    );
+    expect(ir.inputs.map((input) => input.id)).toEqual(['input_0', 'input_1']);
+  });
+
+  it('uses the model MergeCoins destination handle when creating registry ports', () => {
+    const destinationRef = {
+      kind: 'ImmOrOwnedObject' as const,
+      objectId: ADDRESS,
+      version: '1',
+      digest: TEST_DIGEST,
+    };
+    const sourceRef = {
+      kind: 'ImmOrOwnedObject' as const,
+      objectId:
+        '0x0000000000000000000000000000000000000000000000000000000000000002',
+      version: '2',
+      digest: TEST_DIGEST,
+    };
+    const destination = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
+      id: 'destination',
+      value: destinationRef,
+    });
+    const source = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
+      id: 'source',
+      value: sourceRef,
+    });
+    const merge = makeCommandNode('mergeCoins', {
+      id: 'merge',
+      ui: { sourcesCount: 1 },
+    });
+    const graph: PTBGraph = {
+      nodes: [destination, source, merge],
+      edges: [
+        {
+          id: 'destination-edge',
+          kind: 'io',
+          source: 'destination',
+          sourceHandle: 'out',
+          target: 'merge',
+          targetHandle: 'in_destination',
+        },
+        {
+          id: 'source-edge',
+          kind: 'io',
+          source: 'source',
+          sourceHandle: 'out',
+          target: 'merge',
+          targetHandle: 'in_source_0',
+        },
+      ],
+    };
+
+    expect(merge.ports.map((port) => port.id)).toContain('in_destination');
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MergeCoins',
+      destination: { kind: 'Input', index: 0 },
+      sources: [{ kind: 'Input', index: 1 }],
+    });
+  });
+
+  it('materializes MakeMoveVec runtime type tags into concrete port types', () => {
+    const numericPorts = buildCommandPorts(
+      'makeMoveVec',
+      { elemsCount: 1 },
+      { type: 'u64' },
+    );
+
+    expect(numericPorts.find((port) => port.id === 'in_elem_0')).toMatchObject({
+      dataType: { kind: 'move_numeric', width: 'u64' },
+      typeStr: 'u64',
+    });
+    expect(numericPorts.find((port) => port.id === 'out_vec')).toMatchObject({
+      dataType: {
+        kind: 'vector',
+        elem: { kind: 'move_numeric', width: 'u64' },
+      },
+      typeStr: 'vector<u64>',
+    });
+
+    const objectPorts = buildCommandPorts(
+      'makeMoveVec',
+      { elemsCount: 1 },
+      { type: '0x2::sui::SUI' },
+    );
+    const canonicalSuiType =
+      '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
+
+    expect(objectPorts.find((port) => port.id === 'in_elem_0')).toMatchObject({
+      dataType: { kind: 'object', typeTag: canonicalSuiType },
+    });
+    expect(objectPorts.find((port) => port.id === 'out_vec')).toMatchObject({
+      dataType: {
+        kind: 'vector',
+        elem: { kind: 'object', typeTag: canonicalSuiType },
+      },
+    });
+  });
+
+  it('projects model-authored command ports and handles for React Flow editing', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          label: 'amount',
+          name: 'amount',
+          varType: { kind: 'move_numeric', width: 'u64' },
+          value: '10',
+          ports: [{ id: 'out', role: 'io', direction: 'out' }],
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          label: 'SplitCoins',
+          command: 'splitCoins',
+          params: { ui: { amountsCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_coin', role: 'io', direction: 'in' },
+            { id: 'in_amount_0', role: 'io', direction: 'in' },
+            { id: 'out_coin_0', role: 'io', direction: 'out' },
+          ],
+        },
+        {
+          id: 'transfer',
+          kind: 'Command',
+          label: 'TransferObjects',
+          command: 'transferObjects',
+          params: { ui: { objectsCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_recipient', role: 'io', direction: 'in' },
+            { id: 'in_object_0', role: 'io', direction: 'in' },
+          ],
+        },
+        {
+          id: 'merge',
+          kind: 'Command',
+          label: 'MergeCoins',
+          command: 'mergeCoins',
+          params: { ui: { sourcesCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_destination', role: 'io', direction: 'in' },
+            { id: 'in_source_0', role: 'io', direction: 'in' },
+          ],
+        },
+        {
+          id: 'vec',
+          kind: 'Command',
+          label: 'MakeMoveVec',
+          command: 'makeMoveVec',
+          params: { ui: { elemsCount: 1 }, runtime: { type: 'u64' } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_elem_0', role: 'io', direction: 'in' },
+            { id: 'out_vec', role: 'io', direction: 'out' },
+          ],
+        },
+        {
+          id: 'unresolved-move',
+          kind: 'Command',
+          label: 'MoveCall',
+          command: 'moveCall',
+          params: { runtime: { target: '0x2::coin::value' } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_arg_0', role: 'io', direction: 'in' },
+            { id: 'out_ret_0', role: 'io', direction: 'out' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+        },
+      ],
+    };
+
+    const rf = ptbToRF(graph);
+    const split = rf.nodes.find((node) => node.id === 'split')!.data.ptbNode!;
+    const transfer = rf.nodes.find((node) => node.id === 'transfer')!.data
+      .ptbNode!;
+    const merge = rf.nodes.find((node) => node.id === 'merge')!.data.ptbNode!;
+    const vec = rf.nodes.find((node) => node.id === 'vec')!.data.ptbNode!;
+    const unresolvedMove = rf.nodes.find(
+      (node) => node.id === 'unresolved-move',
+    )!.data.ptbNode!;
+
+    expect(split.ports.find((port) => port.id === 'prev')).toMatchObject({
+      role: 'flow',
+    });
+    expect(split.ports.find((port) => port.id === 'in_amount_0')).toMatchObject(
+      { dataType: { kind: 'move_numeric', width: 'u64' } },
+    );
+    expect(
+      transfer.ports.find((port) => port.id === 'in_recipient'),
+    ).toMatchObject({ dataType: { kind: 'scalar', name: 'address' } });
+    expect(
+      merge.ports.find((port) => port.id === 'in_destination'),
+    ).toMatchObject({ dataType: { kind: 'object' } });
+    expect(vec.ports.find((port) => port.id === 'in_elem_0')).toMatchObject({
+      dataType: { kind: 'move_numeric', width: 'u64' },
+    });
+    expect(
+      unresolvedMove.ports.find((port) => port.id === 'in_arg_0')?.dataType,
+    ).toBeUndefined();
+    expect(rf.edges.find((edge) => edge.id === 'amount-edge')).toMatchObject({
+      sourceHandle: 'out:number',
+      targetHandle: 'in_amount_0:number',
+    });
+
+    const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
+    const rfAgain = ptbToRF(roundTrip);
+    const roundTripAgain = rfToPTB(rfAgain.nodes, rfAgain.edges, roundTrip);
+
+    expect(stableGraphSig(roundTripAgain)).toBe(stableGraphSig(roundTrip));
+  });
+
+  it('projects model flow handles to RF handles and persists them back to graph handles', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: '@start',
+          kind: 'Start',
+          label: 'Start',
+          ports: [{ id: 'out', role: 'flow', direction: 'out' }],
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          label: 'SplitCoins',
+          command: 'splitCoins',
+          params: { ui: { amountsCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_coin', role: 'io', direction: 'in' },
+            { id: 'in_amount_0', role: 'io', direction: 'in' },
+            { id: 'out_0', role: 'io', direction: 'out' },
+          ],
+        },
+        {
+          id: '@end',
+          kind: 'End',
+          label: 'End',
+          ports: [{ id: 'in', role: 'flow', direction: 'in' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-split',
+          kind: 'flow',
+          source: '@start',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-split-end',
+          kind: 'flow',
+          source: 'split',
+          sourceHandle: 'out',
+          target: '@end',
+          targetHandle: 'in',
+        },
+      ],
+    };
+
+    const rf = ptbToRF(graph);
+
+    expect(
+      rf.nodes.find((node) => node.id === 'split')?.data.ptbNode?.ports,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'prev', role: 'flow', direction: 'in' }),
+        expect.objectContaining({ id: 'next', role: 'flow', direction: 'out' }),
+        expect.objectContaining({ id: 'out_0', role: 'io', direction: 'out' }),
+      ]),
+    );
+    expect(rf.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'flow-start-split',
+          sourceHandle: 'next',
+          targetHandle: 'prev',
+        }),
+        expect.objectContaining({
+          id: 'flow-split-end',
+          sourceHandle: 'next',
+          targetHandle: 'prev',
+        }),
+      ]),
+    );
+
+    const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
+
+    expect(roundTrip.nodes.find((node) => node.id === 'split')?.ports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'in', role: 'flow', direction: 'in' }),
+        expect.objectContaining({ id: 'out', role: 'flow', direction: 'out' }),
+        expect.objectContaining({ id: 'out_0', role: 'io', direction: 'out' }),
+      ]),
+    );
+    expect(roundTrip.edges).toEqual(graph.edges);
+  });
+
+  it('keeps builder-authored object rawInput value aligned with the model graph boundary', () => {
+    const objectRef = {
+      kind: 'ImmOrOwnedObject' as const,
+      objectId: ADDRESS,
+      version: '7',
+      digest: TEST_DIGEST,
+    };
+    const objectNode = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
+      id: 'coin-node',
+      value: objectRef,
+      rawInput: {
+        kind: 'Object',
+        object: objectRef,
+      },
+    });
+    objectNode.name = 'coin';
+    const graph: PTBGraph = {
+      nodes: [objectNode],
+      edges: [],
+    };
+
+    const roundTrippedGraph = JSON.parse(JSON.stringify(graph)) as PTBGraph;
+    const ir = graphToTransactionIR(roundTrippedGraph);
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.inputs[0]).toMatchObject({
+      id: 'coin',
+      kind: 'Object',
+      object: objectRef,
+    });
+    expect(() => buildTransactionFromIR(ir)).not.toThrow();
   });
 
   it('builds runtime pure inputs for option<bool> values authored as booleans', () => {

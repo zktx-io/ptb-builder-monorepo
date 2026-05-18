@@ -1,7 +1,6 @@
 import type { ClientWithCoreApi, SuiClientTypes } from '@mysten/sui/client';
 import { SuiGraphQLClient } from '@mysten/sui/graphql';
 import { SuiGrpcClient } from '@mysten/sui/grpc';
-import { parseObjectId } from '@zktx.io/ptb-model';
 
 import type { Chain } from '../types';
 
@@ -50,12 +49,6 @@ export type PtbRawProgrammableTransactionInput = {
   inputs: unknown[];
   commands: unknown[];
 };
-
-const RAW_OBJECT_ARG_KINDS = new Set([
-  'ImmOrOwnedObject',
-  'SharedObject',
-  'Receiving',
-]);
 
 function chainToSupportedNetwork(chain: Chain): PtbSuiNetwork {
   const network = chain.slice('sui:'.length) as PtbSuiNetwork;
@@ -143,65 +136,4 @@ export function coreTransactionResultToRawProgrammableTransactionInput(
     inputs: transaction.inputs,
     commands: transaction.commands,
   };
-}
-
-export function objectIdsFromRawProgrammableTransactionInput(
-  programmable: PtbRawProgrammableTransactionInput,
-): string[] {
-  const ids = new Set<string>();
-  for (const input of programmable.inputs) {
-    const objectId = objectIdFromRawCallArg(input);
-    if (objectId) ids.add(objectId);
-  }
-  return [...ids];
-}
-
-function objectIdFromRawCallArg(value: unknown): string | undefined {
-  const input = asRecord(value);
-  if (!input) return undefined;
-  const object =
-    'object' in input
-      ? input.object
-      : 'Object' in input
-        ? input.Object
-        : undefined;
-  return objectIdFromRawObjectArg(object);
-}
-
-function objectIdFromRawObjectArg(value: unknown): string | undefined {
-  const payload = rawObjectArgPayload(value);
-  if (!payload) return undefined;
-  return parseObjectId(payload?.objectId);
-}
-
-function rawObjectArgPayload(
-  value: unknown,
-): Record<string, unknown> | undefined {
-  const object = asRecord(value);
-  if (!object) return undefined;
-
-  const sdkKind = typeof object.$kind === 'string' ? object.$kind : undefined;
-  const modelKind = typeof object.kind === 'string' ? object.kind : undefined;
-  if (sdkKind && modelKind && sdkKind !== modelKind) return undefined;
-
-  const explicitKind = sdkKind ?? modelKind;
-  if (explicitKind) {
-    if (!RAW_OBJECT_ARG_KINDS.has(explicitKind)) return undefined;
-    return asRecord(object[explicitKind]) ?? object;
-  }
-
-  const variantKeys = Object.keys(object).filter(
-    (key) => key !== 'type' && RAW_OBJECT_ARG_KINDS.has(key),
-  );
-  if (variantKeys.length === 1) {
-    return asRecord(object[variantKeys[0]]);
-  }
-
-  return object;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : undefined;
 }

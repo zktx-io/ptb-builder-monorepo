@@ -1,5 +1,11 @@
 // src/ui/CodePip.tsx
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { parseObjectId } from '@zktx.io/ptb-model';
 import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
@@ -114,7 +120,10 @@ export function CodePip({
     showThemeSelector,
   } = usePtb();
   const [prismReady, setPrismReady] = useState(false);
-  const assetOwner = parseObjectId(execOpts.sender);
+  const assetOwner = useMemo(
+    () => parseObjectId(execOpts.sender),
+    [execOpts.sender],
+  );
 
   // Normalize code for Prism; fallback to empty placeholder
   const normalized = code ?? '';
@@ -195,7 +204,10 @@ export function CodePip({
   const handleSave = async () => {
     try {
       const result = exportDocResult?.();
-      if (!result?.ok) return;
+      if (!result?.ok) {
+        show('Save failed');
+        return;
+      }
       const doc = result.doc;
       const chainSlug = (chain ?? 'ptb').replace(/[^a-z0-9]+/gi, '-');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

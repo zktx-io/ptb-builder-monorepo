@@ -230,6 +230,20 @@ describe('builder source guardrails', () => {
     expect(text).not.toContain('}, [initialChain, loadFromDoc]);');
   });
 
+  it('keeps SDK Core object and package lookups on model-canonical ids', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('parseObjectId');
+    expect(text).toContain('const id = parseObjectId(rawId);');
+    expect(text).toContain(
+      'const id = rawPackageId ? parseObjectId(rawPackageId) : undefined;',
+    );
+    expect(text).not.toContain("id.startsWith('0x')");
+  });
+
   it('keeps option None authoring JSON-stable', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
@@ -372,7 +386,9 @@ describe('builder source guardrails', () => {
   it('keeps asset browsing behind a valid sender address', () => {
     const text = readFileSync(join(sourceRoot, 'ui', 'CodePip.tsx'), 'utf8');
 
-    expect(text).toContain('const assetOwner = parseObjectId(execOpts.sender)');
+    expect(text).toContain('const assetOwner = useMemo(');
+    expect(text).toContain('() => parseObjectId(execOpts.sender)');
+    expect(text).toContain('[execOpts.sender]');
     expect(text).toContain('disabled={!assetOwner}');
     expect(text).toContain('open={assetsOpen && !!assetOwner}');
     expect(text).toContain("owner={assetOwner ?? ''}");
@@ -402,6 +418,81 @@ describe('builder source guardrails', () => {
     expect(text).toContain('parseHandleTypeSuffix');
     expect(text).not.toContain("split('|', 1)");
     expect(text).not.toContain('nodeById');
+  });
+
+  it('keeps flow topology checks on the shared flow-edge helper', () => {
+    const flow = readFileSync(
+      join(sourceRoot, 'ui', 'utils', 'flowPath.ts'),
+      'utf8',
+    );
+    const ptbFlow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const autoLayout = readFileSync(
+      join(sourceRoot, 'ui', 'utils', 'autoLayout.ts'),
+      'utf8',
+    );
+
+    expect(flow).toContain('export function isFlowEdge');
+    expect(flow).toContain('export function createsFlowLoop');
+    expect(flow).not.toContain("startsWith('flow:')");
+    expect(ptbFlow).not.toContain('function createsLoop');
+    expect(ptbFlow).toContain('createsFlowLoop(filtered');
+    expect(autoLayout).toContain("import { isFlowEdge } from './flowPath';");
+    expect(autoLayout).not.toContain('function isFlowEdge');
+  });
+
+  it('keeps read-only React Flow interactions from mutating PTBGraph state', () => {
+    const ptbFlow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+
+    expect(ptbFlow).toContain('nodesDraggable={!readOnly}');
+    expect(ptbFlow).toContain('edgesReconnectable={false}');
+    expect(ptbFlow).toContain("changes.filter((ch) => ch.type === 'select')");
+    expect(ptbFlow).toContain('if (readOnly) return;');
+    expect(provider).toContain(
+      'if (!hadOnDocChange && hasOnDocChange && !readOnly)',
+    );
+  });
+
+  it('keeps MakeMoveVec authoring exposed with a runtime type editor', () => {
+    const menuData = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'menu.data.tsx'),
+      'utf8',
+    );
+    const baseCommand = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'cmds', 'BaseCommand', 'BaseCommand.tsx'),
+      'utf8',
+    );
+
+    expect(menuData).toContain("action: 'cmd/makeMoveVec'");
+    expect(baseCommand).toContain('aria-label="MakeMoveVec type"');
+    expect(baseCommand).toContain('toPTBTypeFromConcreteTypeArgument');
+  });
+
+  it('keeps asset picker items keyboard reachable', () => {
+    const assetsModal = readFileSync(
+      join(sourceRoot, 'ui', 'AssetsModal.tsx'),
+      'utf8',
+    );
+
+    expect(assetsModal).toContain('className="ptb-modal__grid-item"');
+    expect(assetsModal).toContain('className="ptb-modal__item"');
+    expect(assetsModal).toContain('type="button"');
+  });
+
+  it('keeps context menu submenus keyboard-addressable', () => {
+    const contextMenu = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'ContextMenu.tsx'),
+      'utf8',
+    );
+
+    expect(contextMenu).toContain('data-submenu-trigger="vector"');
+    expect(contextMenu).toContain('data-submenu="vector"');
+    expect(contextMenu).toContain("case 'ArrowRight'");
+    expect(contextMenu).toContain("case 'ArrowLeft'");
+    expect(contextMenu).toContain('aria-expanded={openSubmenu ===');
   });
 
   it('does not let PTBFlow own the module-global factory id generator', () => {

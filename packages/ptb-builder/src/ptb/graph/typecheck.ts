@@ -12,15 +12,19 @@
 // - The type model permits vector<object> / option<object>, but UI-level
 //   creation disallows them.
 // - Compatibility:
-//     * option<X> vs non-option are incompatible; option<X> ↔ option<Y> compares inner.
-//     * scalar(number) ↔ move_numeric(uXX) is compatible (edge.cast carries width).
-//     * For vector/option, compatibility is recursive on the element type.
+//     * option<X> vs non-option are incompatible; option<X> ↔ option<Y> uses exact inner types.
+//     * scalar(number) → move_numeric(uXX) is compatible only at top level
+//       (edge.cast carries width).
+//     * vector<X> ↔ vector<Y> uses exact inner types.
 //     * move_numeric ↔ move_numeric compatible only if width matches.
-//     * object ↔ object: lenient if either side lacks typeTag; strict equality if both present.
+//     * object ↔ object: lenient if either side lacks typeTag; canonical Move type-tag
+//       equality if both present.
 // - Serialized-type helpers unwrap vector/option/tuple syntax conservatively.
 // ---------------------------------------------------------------------
 
-import type { NumericWidth, PTBType } from './types';
+import { parseMoveTypeTag } from '@zktx.io/ptb-model';
+
+import type { NumericWidth, Port, PTBType } from './types';
 
 /* ---------------------------------------------------------------------
  * Type guards & small helpers
@@ -46,10 +50,6 @@ export const isOption = (
   t?: PTBType,
 ): t is Extract<PTBType, { kind: 'option' }> => !!t && t.kind === 'option';
 
-export const isTuple = (
-  t?: PTBType,
-): t is Extract<PTBType, { kind: 'tuple' }> => !!t && t.kind === 'tuple';
-
 export const isUnknownType = (t?: PTBType) => !t || t.kind === 'unknown';
 
 export const vectorElem = (t?: PTBType): PTBType | undefined =>
@@ -58,40 +58,8 @@ export const vectorElem = (t?: PTBType): PTBType | undefined =>
 export const optionElem = (t?: PTBType): PTBType | undefined =>
   isOption(t) ? t.elem : undefined;
 
-export const isNestedVector = (t?: PTBType): boolean =>
-  isVector(t) && isVector(t.elem);
-
-/** Pure scalar names that map to tx.pure.* helpers */
-export function isPureScalarName(name: string | undefined): boolean {
-  return (
-    name === 'bool' ||
-    name === 'string' ||
-    name === 'address' ||
-    name === 'id' ||
-    name === 'number'
-  );
-}
-
 /** Maximum recursion depth for type checking to prevent stack overflow */
 const MAX_TYPE_DEPTH = 32;
-
-/** True if t is encodable by tx.pure (scalar/move_numeric/vector/option of pure) */
-export function isPureType(t?: PTBType, depth = 0): boolean {
-  if (!t) return false;
-  if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
-  if (isUnknownType(t) || isTuple(t) || isObject(t)) return false;
-
-  if (isScalar(t)) return isPureScalarName(t.name);
-  if (isMoveNumeric(t)) return true;
-
-  // vector<T>: allow any depth as long as inner is pure
-  if (isVector(t)) return isPureType(t.elem, depth + 1);
-
-  // option<T>: allow if inner is pure
-  if (isOption(t)) return isPureType(t.elem, depth + 1);
-
-  return false;
-}
 
 /* ---------------------------------------------------------------------
  * IO category (for color/UI grouping)
@@ -142,7 +110,7 @@ function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
     case 'move_numeric':
       return (b as any).width === a.width;
     case 'object':
-      return (a.typeTag ?? '') === ((b as any).typeTag ?? '');
+      return isSameObjectType(a, b as PTBType);
     case 'vector':
       return isSameType(a.elem, (b as any).elem, depth + 1);
     case 'option':
@@ -159,6 +127,29 @@ function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
   }
 }
 
+function canonicalObjectTypeTag(type: PTBType): string | undefined {
+  if (!isObject(type) || !type.typeTag) return undefined;
+  return parseMoveTypeTag(type.typeTag);
+}
+
+function isSameObjectType(a: PTBType, b: PTBType): boolean {
+  if (!isObject(a) || !isObject(b)) return false;
+  const aTag = (a.typeTag ?? '').trim();
+  const bTag = (b.typeTag ?? '').trim();
+  if (!aTag || !bTag) return !aTag && !bTag;
+  const canonicalA = canonicalObjectTypeTag(a);
+  const canonicalB = canonicalObjectTypeTag(b);
+  return !!canonicalA && !!canonicalB && canonicalA === canonicalB;
+}
+
+function isObjectTypeCompatible(src: PTBType, dst: PTBType): boolean {
+  if (!isObject(src) || !isObject(dst)) return false;
+  const sourceTag = (src.typeTag ?? '').trim();
+  const targetTag = (dst.typeTag ?? '').trim();
+  if (!sourceTag || !targetTag) return true;
+  return isSameObjectType(src, dst);
+}
+
 /* Compatibility policy (UI wiring) */
 export function isTypeCompatible(
   src?: PTBType,
@@ -169,22 +160,24 @@ export function isTypeCompatible(
   if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
   if (isUnknownType(src) || isUnknownType(dst)) return false;
 
-  // option vs non-option are incompatible; option<X> ↔ option<Y> compares inner types
+  // option vs non-option are incompatible; option<X> ↔ option<Y> requires exact inner types
   if (isOption(src) || isOption(dst)) {
-    return (
-      isOption(src) &&
-      isOption(dst) &&
-      isTypeCompatible(src.elem, (dst as any).elem, depth + 1)
-    );
+    return isOption(src) && isOption(dst) && isSameType(src.elem, dst.elem);
   }
 
-  // scalar(number) ↔ move_numeric(width)
-  if (isScalar(src) && src.name === 'number' && isMoveNumeric(dst)) return true;
-  if (isMoveNumeric(src) && isScalar(dst) && dst.name === 'number') return true;
+  // scalar(number) → move_numeric(width), only at the top-level edge.
+  if (
+    depth === 0 &&
+    isScalar(src) &&
+    src.name === 'number' &&
+    isMoveNumeric(dst)
+  ) {
+    return true;
+  }
 
-  // vector<X> ↔ vector<Y> (one-level; inner rule applies)
+  // vector<X> ↔ vector<Y> requires exact inner types.
   if (isVector(src) && isVector(dst)) {
-    return isTypeCompatible(src.elem, dst.elem, depth + 1);
+    return isSameType(src.elem, dst.elem);
   }
 
   // move_numeric ↔ move_numeric (same width)
@@ -194,41 +187,42 @@ export function isTypeCompatible(
 
   // object ↔ object (lenient when a tag is missing; strict when both present)
   if (isObject(src) && isObject(dst)) {
-    const a = (src.typeTag ?? '').trim();
-    const b = (dst.typeTag ?? '').trim();
-    if (!a || !b) return true; // lenient: one side unspecified
-    return a === b; // strict: both specified must match
+    return isObjectTypeCompatible(src, dst);
   }
 
   // exact match for remaining cases (scalars/tuples)
   return isSameType(src, dst, depth);
 }
 
-/* Cast inference (number → move_numeric); bubbles through vectors */
+/** Authoring-time IO connection policy for new edges. */
+export function canConnectIO(
+  source: Port | undefined,
+  target: Port | undefined,
+): boolean {
+  if (!source || !target) return false;
+  if (
+    source.role !== 'io' ||
+    target.role !== 'io' ||
+    source.direction !== 'out' ||
+    target.direction !== 'in'
+  ) {
+    return false;
+  }
+  if (isUnknownType(source.dataType) || isUnknownType(target.dataType)) {
+    return false;
+  }
+  return isTypeCompatible(source.dataType, target.dataType);
+}
+
+/* Cast inference: bind an abstract number source to a concrete top-level Move integer input. */
 export function inferCastTarget(
   src?: PTBType,
   dst?: PTBType,
-  depth = 0,
 ): { to: NumericWidth } | undefined {
   if (!src || !dst) return undefined;
-  if (depth > MAX_TYPE_DEPTH) return undefined; // Prevent infinite recursion
 
-  // number ↔ uXX
   if (isScalar(src) && src.name === 'number' && isMoveNumeric(dst)) {
     return { to: dst.width };
-  }
-  if (isMoveNumeric(src) && isScalar(dst) && dst.name === 'number') {
-    return { to: src.width };
-  }
-
-  // vector<T> ↔ vector<U> : bubble up inner cast
-  if (isVector(src) && isVector(dst)) {
-    return inferCastTarget(src.elem, dst.elem, depth + 1);
-  }
-
-  // option<T> ↔ option<U> : bubble up inner cast
-  if (isOption(src) && isOption(dst)) {
-    return inferCastTarget(src.elem, dst.elem, depth + 1);
   }
 
   return undefined;

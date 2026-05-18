@@ -1,6 +1,11 @@
 import React from 'react';
 
 import {
+  parseMoveTypeTag,
+  type PTBType,
+  type VariableNode,
+} from '@zktx.io/ptb-model';
+import {
   AtSign,
   BookA,
   Box,
@@ -20,7 +25,9 @@ import {
 } from 'lucide-react';
 
 import { IconSui } from './IconSui';
-import { PTBType, VariableNode } from '../../../ptb/graph/types';
+
+const SUI_TYPE_TAG =
+  '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
 
 /** Resolve an icon for a PTBType (vector unwraps to its element type) */
 function iconOfType(t?: PTBType): React.ReactNode {
@@ -59,13 +66,15 @@ export function iconOfVar(
 ): React.ReactNode {
   const name = (v?.name ?? '').toLowerCase().trim();
   const lbl = (displayLabel ?? v?.label ?? '').trim();
+  const canonicalLabel = lbl ? parseMoveTypeTag(lbl) : undefined;
 
   // helpers / constants
   if (name === 'gas') return <Fuel size={14} />;
   if (name === 'clock') return <Clock size={14} />;
   if (name === 'system') return <Cog size={14} />;
   if (name === 'random') return <Dices size={14} />;
-  if (name === 'sui' || lbl === '0x2::sui::SUI') return <IconSui size={14} />;
+  if (name === 'sui' || canonicalLabel === SUI_TYPE_TAG)
+    return <IconSui size={14} />;
 
   // fallback to type
   return iconOfType(v?.varType);

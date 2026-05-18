@@ -44,6 +44,8 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
     <div className="flex flex-col gap-1">
       {transaction && (
         <div
+          role="status"
+          aria-live="polite"
           className={[
             'ptb-statusbar',
             'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
@@ -62,6 +64,8 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
       )}
       {notice && (
         <div
+          role="status"
+          aria-live="polite"
           className={[
             'ptb-statusbar',
             'inline-flex items-start gap-2 text-xxs px-3 py-1.5',

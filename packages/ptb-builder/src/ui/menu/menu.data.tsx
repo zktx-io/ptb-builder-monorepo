@@ -11,19 +11,11 @@
 // Scalars/vectors/options/resources use type markers (colored handles).
 // -----------------------------------------------------------------------------
 
-import {
-  /* Brackets ,*/ Download,
-  FunctionSquare,
-  Merge,
-  Split,
-} from 'lucide-react';
+import { Brackets, Download, FunctionSquare, Merge, Split } from 'lucide-react';
 
 /** ------------------------------------------------------------------
  * Command section (flat, with lucide-react icons)
  * Canonical action keys: "cmd/<CommandKind>"
- * NOTE:
- * - MakeMoveVec is defined in the registry but intentionally hidden in the menu for now.
- *   Uncomment the line below when you want to expose it in the UI.
  * ----------------------------------------------------------------- */
 export const CanvasCmd = [
   { name: 'SplitCoins', action: 'cmd/splitCoins', icon: <Split /> },
@@ -33,7 +25,7 @@ export const CanvasCmd = [
     action: 'cmd/transferObjects',
     icon: <Download />,
   },
-  // { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <Brackets /> },
+  { name: 'MakeMoveVec', action: 'cmd/makeMoveVec', icon: <Brackets /> },
   { name: 'MoveCall', action: 'cmd/moveCall', icon: <FunctionSquare /> },
 ];
 

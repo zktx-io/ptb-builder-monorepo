@@ -850,12 +850,23 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 6px 12px;
   cursor: pointer;
   transition: background 120ms ease;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 .ptb-modal__item:hover {
   background: var(--ptb-assets-row-hover);
+}
+.ptb-modal__item:focus-visible,
+.ptb-modal__grid-item:focus-visible {
+  outline: 2px solid var(--ptb-focus-ring, #60a5fa);
+  outline-offset: 2px;
 }
 .ptb-modal__item-id {
   font-size: 12px;
@@ -920,6 +931,9 @@
     transform 100ms ease;
   background: var(--ptb-modal-panel-bg);
   border: 1px solid var(--ptb-modal-panel-border);
+  color: inherit;
+  font: inherit;
+  text-align: center;
 }
 .ptb-modal__grid-item:hover {
   background: var(--ptb-assets-row-hover);

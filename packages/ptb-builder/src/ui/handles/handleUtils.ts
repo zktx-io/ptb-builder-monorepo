@@ -2,9 +2,16 @@
 
 import type { Connection } from '@xyflow/react';
 
-import type { Port, PTBType } from '../../ptb/graph/types';
+import type { Port, PTBNode } from '../../ptb/graph/types';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import { buildOutPort } from '../nodes/vars/varUtils';
+
+export type PortStoreNode = {
+  id: string;
+  data?: {
+    ptbNode?: PTBNode;
+  };
+};
 
 /** Read handle id from either local edge handle field spelling; null-safe. */
 export function extractHandles(x: {
@@ -28,18 +35,9 @@ function getTargetHandle(c: Connection) {
 export const hasConcreteEnds = (c: Connection) =>
   Boolean(c.source && c.target && getSourceHandle(c) && getTargetHandle(c));
 
-/** Resolve a PTB port's type from RF store nodes. */
-export function findPortTypeFromStore(
-  nodes: any[],
-  nodeId: string | undefined,
-  handleIdStr: string | undefined,
-): PTBType | undefined {
-  return findPortFromStore(nodes, nodeId, handleIdStr)?.dataType;
-}
-
 /** Resolve a PTB Port object from RF store nodes. */
 export function findPortFromStore(
-  nodes: any[],
+  nodes: readonly PortStoreNode[],
   nodeId: string | undefined,
   handleIdStr: string | undefined,
 ): Port | undefined {

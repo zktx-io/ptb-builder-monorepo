@@ -22,6 +22,7 @@ import {
   type PTBType,
   serializePTBType,
 } from './graph/types';
+import { toPTBTypeFromConcreteTypeArgument } from './move/toPTBType';
 import { ioIn, ioOut, PORTS } from './portTemplates';
 
 // Helpers for graph-only commands
@@ -76,7 +77,7 @@ const splitCoinsSpec: CommandSpec = {
 
 /** MergeCoins:
  *  inputs :
- *    - in_dest: object (single)
+ *    - in_destination: object (single)
  *    - in_source_0..N-1: object (expanded, count = sourcesCount, default 2)
  *  outputs: none
  */
@@ -86,7 +87,12 @@ const mergeCoinsSpec: CommandSpec = {
     const count = Math.max(1, Math.floor(ui?.sourcesCount ?? 2));
     const ports: Port[] = [];
 
-    ports.push(ioIn('in_dest', { dataType: O(), label: 'in_dest' }));
+    ports.push(
+      ioIn('in_destination', {
+        dataType: O(),
+        label: 'in_destination',
+      }),
+    );
     for (let i = 0; i < count; i++) {
       ports.push(
         ioIn(`in_source_${i}`, { dataType: O(), label: `in_source_${i}` }),
@@ -132,7 +138,10 @@ const makeMoveVecSpec: CommandSpec = {
     const runtimeType =
       typeof runtime?.type === 'string' ? runtime.type : undefined;
     const elemT: PTBType = runtimeType
-      ? { kind: 'unknown', debugInfo: runtimeType }
+      ? (toPTBTypeFromConcreteTypeArgument(runtimeType) ?? {
+          kind: 'unknown',
+          debugInfo: runtimeType,
+        })
       : O();
     const ports: Port[] = [];
     for (let i = 0; i < count; i++) {

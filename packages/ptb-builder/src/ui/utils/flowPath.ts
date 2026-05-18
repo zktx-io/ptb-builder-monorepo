@@ -1,7 +1,57 @@
 // src/ui/utils/flowPath.ts
-// Pure RF-graph reachability (Start -> End) checker.
+// Pure RF flow-topology helpers. IO edges are intentionally ignored.
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
+
+type FlowEdgeLike = {
+  id?: string;
+  type?: string | null;
+  source: string;
+  target: string;
+  data?: unknown;
+};
+
+export function isFlowEdge(edge: {
+  id?: string;
+  type?: string | null;
+  data?: unknown;
+}): boolean {
+  if (edge.type === 'ptb-flow') return true;
+  if (edge.type === 'ptb-io') return false;
+  const data = edge.data as { ptbEdge?: { kind?: unknown } } | undefined;
+  return data?.ptbEdge?.kind === 'flow';
+}
+
+function buildFlowAdjacency(
+  edges: readonly FlowEdgeLike[],
+): Map<string, string[]> {
+  const adj = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!isFlowEdge(e)) continue;
+    if (!adj.has(e.source)) adj.set(e.source, []);
+    adj.get(e.source)!.push(e.target);
+  }
+  return adj;
+}
+
+export function createsFlowLoop(
+  edges: readonly FlowEdgeLike[],
+  source: string,
+  target: string,
+): boolean {
+  const adj = buildFlowAdjacency(edges);
+  const seen = new Set<string>();
+  const stack = [target];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n === source) return true;
+    if (seen.has(n)) continue;
+    seen.add(n);
+    const next = adj.get(n) ?? [];
+    for (const id of next) stack.push(id);
+  }
+  return false;
+}
 
 export function hasStartToEnd(nodes: RFNode[], edges: RFEdge[]): boolean {
   const startIds = nodes.filter((n) => n.type === 'ptb-start').map((n) => n.id);
@@ -9,12 +59,7 @@ export function hasStartToEnd(nodes: RFNode[], edges: RFEdge[]): boolean {
     nodes.filter((n) => n.type === 'ptb-end').map((n) => n.id),
   );
 
-  const adj = new Map<string, string[]>();
-  for (const e of edges) {
-    if (e.type !== 'ptb-flow') continue;
-    if (!adj.has(e.source)) adj.set(e.source, []);
-    adj.get(e.source)!.push(e.target);
-  }
+  const adj = buildFlowAdjacency(edges);
 
   const visited = new Set<string>();
   const queue: string[] = [...startIds];

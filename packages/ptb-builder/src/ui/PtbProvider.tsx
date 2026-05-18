@@ -28,8 +28,12 @@ import React, {
 } from 'react';
 
 import type { Transaction } from '@mysten/sui/transactions';
-import { rawTransactionToIR, transactionIRToGraph } from '@zktx.io/ptb-model';
-import type { PTBModelError } from '@zktx.io/ptb-model';
+import {
+  type IRInput,
+  parseObjectId,
+  rawTransactionToIR,
+  transactionIRToGraph,
+} from '@zktx.io/ptb-model';
 
 import {
   PTB_ACTION_OK,
@@ -48,6 +52,10 @@ import type {
   HostSimulationResult,
 } from './executionResult';
 import { stableGraphSig } from './graphSignature';
+import {
+  formatModelDiagnostic,
+  formatModelErrorMessage,
+} from './modelDiagnostics';
 import { createProviderLifecycleController } from './providerLifecycle';
 import {
   clearProviderClientUnavailableNoticeState,
@@ -65,13 +73,18 @@ import {
 } from './providerUiState';
 import type { PTBGraph } from '../ptb/graph/types';
 import {
+  type CachedMoveFunction,
   createPTBMetadataCache,
   getCachedMoveFunction,
   replaceCachedChainData,
   upsertCachedMoveFunction,
   upsertCachedObjectData,
 } from '../ptb/metadataCache';
-import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
+import {
+  toPTBFunctionDataEntry,
+  toPTBFunctionOpenSignatures,
+} from '../ptb/move/toPTBModuleData';
+import { normalizeGraph } from '../ptb/normalizeGraph';
 import {
   type ObjectAuthoringInfo,
   objectAuthoringInfoFromCoreObject,
@@ -84,7 +97,6 @@ import {
   hasSameCanonicalPTBView,
   prepareLoadedDoc,
   type PTBDoc,
-  PTBFunctionData,
   PTBModulesEmbed,
   PTBObjectData,
   PTBObjectsEmbed,
@@ -95,7 +107,6 @@ import { KNOWN_IDS, type WellKnownId } from '../ptb/seedGraph';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClient,
-  objectIdsFromRawProgrammableTransactionInput,
   PTB_TRANSACTION_LOAD_INCLUDE,
   type PtbCoreClient,
   selectCoreTransactionResult,
@@ -140,12 +151,17 @@ type OwnedObjectsResponse = {
 
 type HostTxResult = HostExecutionResult;
 
-type MoveFunctionSignature = {
-  packageId: string;
-  moduleName: string;
-  functionName: string;
-  signature: PTBFunctionData[string];
-};
+type MoveFunctionSignature = CachedMoveFunction;
+
+function objectIdsFromIRInputs(inputs: readonly IRInput[]): string[] {
+  const ids = new Set<string>();
+  for (const input of inputs) {
+    if (input.kind === 'Object' && input.object) {
+      ids.add(input.object.objectId);
+    }
+  }
+  return [...ids];
+}
 
 export type PtbContextValue = {
   graph: PTBGraph;
@@ -173,7 +189,7 @@ export type PtbContextValue = {
     packageId: string,
     moduleName: string,
     functionName: string,
-    opts?: { forceRefresh?: boolean },
+    opts?: { forceRefresh?: boolean; requireComplete?: boolean },
   ) => Promise<MoveFunctionSignature | undefined>;
 
   getOwnedObjects: (
@@ -269,15 +285,6 @@ function seedNonceFromGraph(g: PTBGraph | undefined): number {
   return maxNumericSuffix(idBag);
 }
 
-function modelErrorMessage(error: unknown, fallback: string): string {
-  const diagnostics = (error as Partial<PTBModelError> | undefined)
-    ?.diagnostics;
-  if (Array.isArray(diagnostics) && diagnostics.length > 0) {
-    return diagnostics.map((diagnostic) => diagnostic.message).join(' ');
-  }
-  return (error as { message?: string } | undefined)?.message || fallback;
-}
-
 // ===== Provider ===============================================================
 
 export function PtbProvider({
@@ -346,6 +353,8 @@ export function PtbProvider({
 
   // Editor mode
   const [readOnly, setReadOnly] = useState<boolean>(false);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   // Chain & client
   const [activeChain, setActiveChain] = useState<Chain | undefined>(undefined);
@@ -367,7 +376,10 @@ export function PtbProvider({
       setProviderUiState(clearProviderClientUnavailableNoticeState);
     } catch (error) {
       clientRef.current = undefined;
-      const message = modelErrorMessage(error, 'Failed to create Sui client.');
+      const message = formatModelErrorMessage(
+        error,
+        'Failed to create Sui client.',
+      );
       setProviderUiState((prev) => providerClientUnavailable(prev, message));
       toastImpl({ message, variant: 'error' });
     }
@@ -389,11 +401,10 @@ export function PtbProvider({
   );
 
   // Monotonic ID nonce (doc-scoped)
-  const [, setIdNonce] = useState<number>(() => seedNonceFromGraph(graph));
+  const idNonceRef = useRef(seedNonceFromGraph(graph));
   const genId = useCallback((prefix = 'id') => {
-    let nextVal!: number;
-    setIdNonce((prev) => (nextVal = prev + 1));
-    return `${prefix}-${nextVal}`;
+    idNonceRef.current += 1;
+    return `${prefix}-${idNonceRef.current}`;
   }, []);
 
   // Epoch to separate "inject → RF" from "edit → save"
@@ -403,6 +414,9 @@ export function PtbProvider({
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
   const [modules, setModules] = useState<PTBModulesEmbed>(() => EMPTY_MODULES);
   const metadataCacheRef = useRef(createPTBMetadataCache());
+  const moveFunctionInflightRef = useRef<
+    Map<string, Promise<MoveFunctionSignature | undefined>>
+  >(new Map());
   const docSlicesRef = useRef({ graph, modules, objects });
   docSlicesRef.current = { graph, modules, objects };
   const lastDocSigRef = useRef<string | undefined>(undefined);
@@ -522,7 +536,7 @@ export function PtbProvider({
     lastGraphSigRef.current = nextSig;
     setGraphState(norm);
     setWellKnown(computeWellKnownPresence(norm));
-    setIdNonce((prev) => Math.max(prev, seedNonceFromGraph(norm)));
+    idNonceRef.current = Math.max(idNonceRef.current, seedNonceFromGraph(norm));
   }, []);
 
   const replaceGraphImmediate = useCallback((g: PTBGraph) => {
@@ -530,7 +544,7 @@ export function PtbProvider({
     lastGraphSigRef.current = stableGraphSig(norm);
     setGraphState(norm);
     setWellKnown(computeWellKnownPresence(norm));
-    setIdNonce(seedNonceFromGraph(norm));
+    idNonceRef.current = seedNonceFromGraph(norm);
     setGraphEpoch((e) => e + 1); // rehydrate RF once per load
   }, []);
 
@@ -572,7 +586,7 @@ export function PtbProvider({
 
   const reportDocEmitError = useCallback(
     (error: unknown, fallback: string) => {
-      const message = modelErrorMessage(error, fallback);
+      const message = formatModelErrorMessage(error, fallback);
       const previous = lastDocEmitErrorRef.current;
       const now = Date.now();
       const count = previous?.message === message ? previous.count + 1 : 1;
@@ -651,33 +665,40 @@ export function PtbProvider({
     docEmissionSchedulerRef.current?.flush();
   }, []);
 
+  const cancelPendingDocChange = useCallback(() => {
+    docEmissionSchedulerRef.current?.cancel();
+  }, []);
+
   const scheduleDocChange = useCallback((reason: 'content' | 'view') => {
     docEmissionSchedulerRef.current?.schedule(reason);
   }, []);
 
   useEffect(() => {
     if (!activeChainRef.current) return;
+    if (readOnly) return;
     scheduleDocChange('content');
-  }, [graph, modules, objects, activeChain, scheduleDocChange]);
+  }, [graph, modules, objects, activeChain, readOnly, scheduleDocChange]);
 
   useEffect(() => {
     if (!activeChainRef.current || !view) return;
+    if (readOnly) return;
     scheduleDocChange('view');
-  }, [view, scheduleDocChange]);
+  }, [view, readOnly, scheduleDocChange]);
 
   useEffect(() => {
     const hadOnDocChange = hadOnDocChangeRef.current;
     const hasOnDocChange = Boolean(onDocChange);
     hadOnDocChangeRef.current = hasOnDocChange;
-    if (!hadOnDocChange && hasOnDocChange) {
+    if (!hadOnDocChange && hasOnDocChange && !readOnly) {
       emitDocChange();
     }
-  }, [onDocChange, emitDocChange]);
+  }, [onDocChange, emitDocChange, readOnly]);
 
   useEffect(
     () => () => {
       lifecycleRef.current.cancel();
-      flushPendingDocChange();
+      if (readOnlyRef.current) docEmissionSchedulerRef.current?.cancel();
+      else flushPendingDocChange();
     },
     [flushPendingDocChange],
   );
@@ -711,8 +732,10 @@ export function PtbProvider({
     PtbContextValue['lookupObjectForAuthoring']
   >(
     async (objectId, opts) => {
-      const id = objectId?.trim();
-      if (!id) return { ok: false, error: 'Object id is required.' };
+      const rawId = objectId?.trim();
+      if (!rawId) return { ok: false, error: 'Object id is required.' };
+      const id = parseObjectId(rawId);
+      if (!id) return { ok: false, error: 'Invalid object id.' };
 
       const chain = activeChainRef.current;
       if (!chain) return { ok: false, error: 'No active chain selected.' };
@@ -750,7 +773,10 @@ export function PtbProvider({
       } catch (error) {
         return {
           ok: false,
-          error: modelErrorMessage(error, `Failed to fetch object ${id}.`),
+          error: formatModelErrorMessage(
+            error,
+            `Failed to fetch object ${id}.`,
+          ),
         };
       }
     },
@@ -759,10 +785,11 @@ export function PtbProvider({
 
   const getMoveFunction = useCallback<PtbContextValue['getMoveFunction']>(
     async (packageId, moduleName, functionName, opts) => {
-      const id = packageId?.trim();
+      const rawPackageId = packageId?.trim();
+      const id = rawPackageId ? parseObjectId(rawPackageId) : undefined;
       const module = moduleName?.trim();
       const name = functionName?.trim();
-      if (!id || !id.startsWith('0x')) {
+      if (!id) {
         toastImpl({ message: 'Invalid package id', variant: 'warning' });
         return undefined;
       }
@@ -776,6 +803,7 @@ export function PtbProvider({
 
       const chain = activeChainRef.current;
       if (!chain) return undefined;
+      const requireComplete = opts?.requireComplete ?? true;
 
       if (!opts?.forceRefresh) {
         const cached = getCachedMoveFunction(
@@ -784,6 +812,7 @@ export function PtbProvider({
           id,
           module,
           name,
+          { requireComplete },
         );
         if (cached) return cached;
       }
@@ -794,34 +823,56 @@ export function PtbProvider({
         return undefined;
       }
 
-      try {
+      const inflightKey = `${chain}:${id}::${module}::${name}`;
+      if (requireComplete && !opts?.forceRefresh) {
+        const inflight = moveFunctionInflightRef.current.get(inflightKey);
+        if (inflight) return inflight;
+      }
+
+      const fetchMoveFunction = async (): Promise<
+        MoveFunctionSignature | undefined
+      > => {
         const response = await client.core.getMoveFunction({
           packageId: id,
           moduleName: module,
           name,
         });
         const signature = toPTBFunctionDataEntry(response.function);
+        const openSignatures = toPTBFunctionOpenSignatures(response.function);
         const resolvedPackageId = response.function.packageId || id;
         const resolvedModuleName = response.function.moduleName || module;
         const resolvedFunctionName = response.function.name || name;
 
-        const next = upsertCachedMoveFunction(metadataCacheRef.current, chain, {
+        const moveFunction: MoveFunctionSignature = {
+          completeness: 'complete',
           packageId: resolvedPackageId,
           moduleName: resolvedModuleName,
           functionName: resolvedFunctionName,
           signature,
-        });
+          openSignatures,
+        };
+        const next = upsertCachedMoveFunction(
+          metadataCacheRef.current,
+          chain,
+          moveFunction,
+        );
         metadataCacheRef.current = next.cache;
         if (activeChainRef.current === chain) {
           setModules(next.modules);
         }
 
-        return {
-          packageId: resolvedPackageId,
-          moduleName: resolvedModuleName,
-          functionName: resolvedFunctionName,
-          signature,
-        };
+        return moveFunction;
+      };
+
+      try {
+        if (!requireComplete || opts?.forceRefresh) {
+          return await fetchMoveFunction();
+        }
+        const promise = fetchMoveFunction().finally(() => {
+          moveFunctionInflightRef.current.delete(inflightKey);
+        });
+        moveFunctionInflightRef.current.set(inflightKey, promise);
+        return await promise;
       } catch (error: any) {
         toastImpl({
           message: error?.message || 'Move function lookup failed',
@@ -876,7 +927,10 @@ export function PtbProvider({
         };
       } catch (error) {
         toastImpl({
-          message: modelErrorMessage(error, 'Failed to fetch owned objects.'),
+          message: formatModelErrorMessage(
+            error,
+            'Failed to fetch owned objects.',
+          ),
           variant: 'warning',
         });
         return undefined;
@@ -941,9 +995,9 @@ export function PtbProvider({
           return ptbActionError(error);
         }
 
-        // 1) Collect candidate object ids (from SDK/model raw CallArg inputs).
-        const candidateIds =
-          objectIdsFromRawProgrammableTransactionInput(programmable);
+        // 1) Convert through the model boundary once, then collect object ids.
+        const ir = rawTransactionToIR(programmable);
+        const candidateIds = objectIdsFromIRInputs(ir.inputs);
 
         // 2) Fetch object metadata (best effort).
         const fetched = await Promise.all(
@@ -953,7 +1007,7 @@ export function PtbProvider({
             } catch (error) {
               if (lifecycleRef.current.isCurrent(load)) {
                 toastImpl({
-                  message: modelErrorMessage(
+                  message: formatModelErrorMessage(
                     error,
                     `Failed to fetch object ${oid}.`,
                   ),
@@ -972,14 +1026,17 @@ export function PtbProvider({
           if (o) objectsEmbed[o.objectId] = o;
         }
 
-        // 3) Convert through the model boundary.
-        const ir = rawTransactionToIR(programmable);
-        ir.diagnostics.forEach(({ message }) => {
-          toastImpl({ message, variant: 'warning' });
+        // 3) Surface model diagnostics and build an editable graph.
+        ir.diagnostics.forEach((diagnostic) => {
+          toastImpl({
+            message: formatModelDiagnostic(diagnostic),
+            variant: 'warning',
+          });
         });
         const decoded = transactionIRToGraph(ir);
 
         // 4) Fix chain and prime caches (overwrite, no carry-over).
+        cancelPendingDocChange();
         resetBeforeLoad();
         metadataCacheRef.current = replaceCachedChainData(
           metadataCacheRef.current,
@@ -1018,7 +1075,13 @@ export function PtbProvider({
         return ptbActionError(error);
       }
     },
-    [toastImpl, replaceGraphImmediate, fetchObjectData, createCoreClient],
+    [
+      toastImpl,
+      replaceGraphImmediate,
+      fetchObjectData,
+      createCoreClient,
+      cancelPendingDocChange,
+    ],
   );
 
   // ---- document loader (editor) ---------------------------------------------
@@ -1035,7 +1098,7 @@ export function PtbProvider({
         try {
           doc = prepareLoadedDoc(value);
         } catch (e: any) {
-          const error = modelErrorMessage(e, 'Invalid PTB document.');
+          const error = formatModelErrorMessage(e, 'Invalid PTB document.');
           lifecycleRef.current.fail(load, error);
           setProviderUiState((prev) => providerDocumentLoadError(prev, error));
           toastImpl({
@@ -1073,7 +1136,7 @@ export function PtbProvider({
         try {
           doc = createEmptyPTBDoc(chain);
         } catch (error) {
-          const message = modelErrorMessage(
+          const message = formatModelErrorMessage(
             error,
             'Failed to create an empty PTB document.',
           );
@@ -1105,7 +1168,7 @@ export function PtbProvider({
           lifecycleRef.current.fail(load, 'PTB document update failed.');
           reportDocEmitError(error, 'PTB document update failed.');
           return ptbActionError(
-            modelErrorMessage(error, 'PTB document update failed.'),
+            formatModelErrorMessage(error, 'PTB document update failed.'),
           );
         }
         lifecycleRef.current.afterAnimationFrames(load, () => {
@@ -1177,7 +1240,7 @@ export function PtbProvider({
           }),
         };
       } catch (error) {
-        const message = modelErrorMessage(
+        const message = formatModelErrorMessage(
           error,
           'Failed to export PTB document.',
         );
@@ -1212,62 +1275,6 @@ export function PtbProvider({
       [KNOWN_IDS.CLOCK]: set.has(KNOWN_IDS.CLOCK),
       [KNOWN_IDS.RANDOM]: set.has(KNOWN_IDS.RANDOM),
     };
-  }
-
-  /** Idempotent graph normalization (coalesce Start/End ids & rewrite edges). */
-  function normalizeGraph(g: PTBGraph): PTBGraph {
-    const nodes = [...(g.nodes || [])];
-    const edges = [...(g.edges || [])];
-
-    const coalesce = (
-      matchKind: PTBGraph['nodes'][number]['kind'],
-      canonicalId: WellKnownId,
-      canonicalPrevHandle: string,
-      canonicalNextHandle: string,
-    ) => {
-      const idxs = nodes
-        .map((n, i) => ({ n, i }))
-        .filter(({ n }) => n.kind === matchKind);
-      if (idxs.length === 0) return;
-
-      const { n: keeperNode } = idxs[0];
-
-      if (keeperNode.id !== canonicalId) {
-        const oldId = keeperNode.id;
-        keeperNode.id = canonicalId;
-        edges.forEach((e) => {
-          if (e.source === oldId) e.source = canonicalId;
-          if (e.target === oldId) e.target = canonicalId;
-          if (e.kind === 'flow') {
-            if (e.source === canonicalId) e.sourceHandle = canonicalNextHandle;
-            if (e.target === canonicalId) e.targetHandle = canonicalPrevHandle;
-          }
-        });
-      }
-
-      for (let k = 1; k < idxs.length; k++) {
-        const { n: dup } = idxs[k];
-        const oldId = dup.id;
-        edges.forEach((e) => {
-          if (e.source === oldId) {
-            e.source = canonicalId;
-            if (e.kind === 'flow') e.sourceHandle = canonicalNextHandle;
-          }
-          if (e.target === oldId) {
-            e.target = canonicalId;
-            if (e.kind === 'flow') e.targetHandle = canonicalPrevHandle;
-          }
-        });
-      }
-      for (let k = idxs.length - 1; k >= 1; k--) {
-        nodes.splice(idxs[k].i, 1);
-      }
-    };
-
-    coalesce('Start', KNOWN_IDS.START, 'prev', 'next');
-    coalesce('End', KNOWN_IDS.END, 'prev', 'next');
-
-    return { nodes, edges };
   }
 
   const isWellKnownAvailable = useCallback(

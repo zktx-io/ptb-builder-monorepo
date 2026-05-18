@@ -10,12 +10,13 @@ const OBJECT_ID =
   '0x0000000000000000000000000000000000000000000000000000000000000001';
 const PARENT_ID =
   '0x0000000000000000000000000000000000000000000000000000000000000002';
+const TEST_DIGEST = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
 
 function coreObject(owner: unknown) {
   return {
     objectId: OBJECT_ID,
     version: '7',
-    digest: '5J7c3KXyQ9nEw2z4V5m8b1aC6dF7gH8iJ9kL0mN1oP2q',
+    digest: TEST_DIGEST,
     type: '0x2::coin::Coin<0x2::sui::SUI>',
     owner,
   };
@@ -53,7 +54,7 @@ describe('object authoring boundary', () => {
         kind: 'ImmOrOwnedObject',
         objectId: OBJECT_ID,
         version: '7',
-        digest: '5J7c3KXyQ9nEw2z4V5m8b1aC6dF7gH8iJ9kL0mN1oP2q',
+        digest: TEST_DIGEST,
       },
     });
   });
@@ -76,7 +77,7 @@ describe('object authoring boundary', () => {
         kind: 'Receiving',
         objectId: OBJECT_ID,
         version: '7',
-        digest: '5J7c3KXyQ9nEw2z4V5m8b1aC6dF7gH8iJ9kL0mN1oP2q',
+        digest: TEST_DIGEST,
       },
     });
   });

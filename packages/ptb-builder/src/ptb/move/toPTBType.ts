@@ -9,14 +9,17 @@
 //     0x1::string::String     → scalar('string')
 //     0x2::object::ID         → scalar('id')
 //     0x1::option::Option<T>  → option<...>
-// - Structs with type arguments → generic objects (no concrete typeTag).
+// - Open-signature structs with type arguments → generic objects. Concrete
+//   type arguments parsed from runtime typeArguments may carry typeTag.
 // - The model allows option<vector<...>> and vector<object>; UI-level creation
 //   of object inside vector/option is disallowed.
 // -----------------------------------------------------------------------------
 
-import type {
-  RawOpenSignature,
-  RawOpenSignatureBody,
+import { type TypeTag, TypeTagSerializer } from '@mysten/sui/bcs';
+import {
+  parseMoveTypeTag,
+  type RawOpenSignature,
+  type RawOpenSignatureBody,
 } from '@zktx.io/ptb-model';
 
 import type { PTBType } from '../graph/types';
@@ -74,7 +77,70 @@ export function isTxContextOpenSignature(sig: RawOpenSignature): boolean {
   return isOpenSignatureBodyStruct(sig.body, '0x2', 'tx_context', 'TxContext');
 }
 
-function toPTBTypeFromOpenSignatureBody(body: RawOpenSignatureBody): PTBType {
+function toPTBTypeFromTypeTag(tag: TypeTag): PTBType {
+  if ('bool' in tag) return { kind: 'scalar', name: 'bool' };
+  if ('address' in tag) return { kind: 'scalar', name: 'address' };
+  if ('u8' in tag) return { kind: 'move_numeric', width: 'u8' };
+  if ('u16' in tag) return { kind: 'move_numeric', width: 'u16' };
+  if ('u32' in tag) return { kind: 'move_numeric', width: 'u32' };
+  if ('u64' in tag) return { kind: 'move_numeric', width: 'u64' };
+  if ('u128' in tag) return { kind: 'move_numeric', width: 'u128' };
+  if ('u256' in tag) return { kind: 'move_numeric', width: 'u256' };
+  if ('vector' in tag) {
+    return {
+      kind: 'vector',
+      elem: toPTBTypeFromTypeTag(tag.vector),
+    };
+  }
+  if ('struct' in tag) {
+    const struct = tag.struct;
+    if (
+      isStructTag(struct, '0x1', 'string', 'String') &&
+      struct.typeParams.length === 0
+    ) {
+      return { kind: 'scalar', name: 'string' };
+    }
+    if (
+      isStructTag(struct, '0x2', 'object', 'ID') &&
+      struct.typeParams.length === 0
+    ) {
+      return { kind: 'scalar', name: 'id' };
+    }
+    if (
+      isStructTag(struct, '0x1', 'option', 'Option') &&
+      struct.typeParams.length === 1
+    ) {
+      return {
+        kind: 'option',
+        elem: toPTBTypeFromTypeTag(struct.typeParams[0]!),
+      };
+    }
+    return {
+      kind: 'object',
+      typeTag: TypeTagSerializer.tagToString(tag),
+    };
+  }
+  return { kind: 'unknown', debugInfo: 'unsupported Move type tag' };
+}
+
+export function toPTBTypeFromConcreteTypeArgument(
+  value: string,
+): PTBType | undefined {
+  const canonical = parseMoveTypeTag(value);
+  if (!canonical) return undefined;
+  try {
+    return toPTBTypeFromTypeTag(
+      TypeTagSerializer.parseFromStr(canonical, true),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function toPTBTypeFromOpenSignatureBody(
+  body: RawOpenSignatureBody,
+  typeArguments: readonly string[] = [],
+): PTBType {
   switch (body.$kind) {
     case 'bool':
       return { kind: 'scalar', name: 'bool' };
@@ -92,13 +158,15 @@ function toPTBTypeFromOpenSignatureBody(body: RawOpenSignatureBody): PTBType {
     case 'vector':
       return {
         kind: 'vector',
-        elem: toPTBTypeFromOpenSignatureBody(body.vector),
+        elem: toPTBTypeFromOpenSignatureBody(body.vector, typeArguments),
       };
     case 'typeParameter':
-      return {
-        kind: 'unknown',
-        debugInfo: `generic TypeParameter ${body.index}`,
-      };
+      return (
+        toPTBTypeFromConcreteTypeArgument(typeArguments[body.index] ?? '') ?? {
+          kind: 'unknown',
+          debugInfo: `generic TypeParameter ${body.index}`,
+        }
+      );
     case 'datatype': {
       const parsed = parseDatatypeName(body.datatype.typeName);
       const args = body.datatype.typeParameters ?? [];
@@ -120,7 +188,7 @@ function toPTBTypeFromOpenSignatureBody(body: RawOpenSignatureBody): PTBType {
       if (isStructTag(parsed, '0x1', 'option', 'Option') && args.length === 1) {
         return {
           kind: 'option',
-          elem: toPTBTypeFromOpenSignatureBody(args[0]!),
+          elem: toPTBTypeFromOpenSignatureBody(args[0]!, typeArguments),
         };
       }
 
@@ -135,6 +203,9 @@ function toPTBTypeFromOpenSignatureBody(body: RawOpenSignatureBody): PTBType {
   }
 }
 
-export function toPTBTypeFromOpenSignature(sig: RawOpenSignature): PTBType {
-  return toPTBTypeFromOpenSignatureBody(sig.body);
+export function toPTBTypeFromOpenSignature(
+  sig: RawOpenSignature,
+  typeArguments: readonly string[] = [],
+): PTBType {
+  return toPTBTypeFromOpenSignatureBody(sig.body, typeArguments);
 }

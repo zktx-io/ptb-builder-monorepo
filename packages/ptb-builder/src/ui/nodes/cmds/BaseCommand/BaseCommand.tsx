@@ -13,7 +13,12 @@ import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
 
 import { CommandCountStepper } from './CommandCountStepper';
-import type { CommandNode, PTBNode } from '../../../../ptb/graph/types';
+import type {
+  CommandNode,
+  CommandRuntimeParams,
+  PTBNode,
+} from '../../../../ptb/graph/types';
+import { toPTBTypeFromConcreteTypeArgument } from '../../../../ptb/move/toPTBType';
 import { countKeyOf } from '../../../../ptb/registry';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
@@ -27,12 +32,17 @@ import {
   ROW_SPACING,
   TITLE_TO_IO_GAP,
 } from '../../nodeLayout';
+import { TextInput } from '../../vars/inputs/TextInput';
 import { labelOf, useCommandPorts } from '../commandLayout';
 
 type BaseCmdData = {
   label?: string;
   ptbNode?: PTBNode;
   onPatchUI?: (nodeId: string, patch: Record<string, unknown>) => void;
+  onPatchCommand?: (
+    nodeId: string,
+    patch: { runtime?: CommandRuntimeParams },
+  ) => void;
 };
 export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
 
@@ -49,6 +59,14 @@ export const BaseCommand = memo(function BaseCommand({
   const cmdNode = node?.kind === 'Command' ? (node as CommandNode) : undefined;
   const cmdKind: string | undefined = cmdNode?.command;
   const ui = (cmdNode?.params?.ui ?? {}) as Record<string, unknown>;
+  const runtime = (cmdNode?.params?.runtime ?? {}) as CommandRuntimeParams;
+  const runtimeType =
+    typeof runtime.type === 'string' ? runtime.type : undefined;
+  const showMakeMoveVecType = cmdKind === 'makeMoveVec';
+  const makeMoveVecTypeValue = showMakeMoveVecType ? (runtimeType ?? '') : '';
+  const makeMoveVecTypeValid =
+    !makeMoveVecTypeValue.trim() ||
+    !!toPTBTypeFromConcreteTypeArgument(makeMoveVecTypeValue.trim());
 
   // Which counter does this command support (if any)?
   const countKey = cmdKind ? countKeyOf(cmdKind) : undefined;
@@ -57,9 +75,11 @@ export const BaseCommand = memo(function BaseCommand({
   const rightOffsetRows = cmdKind === 'splitCoins' ? 1 : 0;
 
   // Compute height from IO rows + right offset.
+  const ioOffset = showMakeMoveVecType ? 28 : 0;
   const rowCount = Math.max(inIO.length, outIO.length + rightOffsetRows);
   const gaps = Math.max(0, rowCount - 1);
-  const minHeight = TITLE_TO_IO_GAP + gaps * ROW_SPACING + BOTTOM_PADDING;
+  const minHeight =
+    TITLE_TO_IO_GAP + ioOffset + gaps * ROW_SPACING + BOTTOM_PADDING;
 
   const title = data?.label ?? node?.label ?? 'Command';
 
@@ -91,6 +111,33 @@ export const BaseCommand = memo(function BaseCommand({
           )}
         </div>
 
+        {showMakeMoveVecType ? (
+          <div className="px-2 mb-1">
+            <TextInput
+              aria-label="MakeMoveVec type"
+              placeholder="type (u64, 0x...::T)"
+              value={makeMoveVecTypeValue}
+              readOnly={readOnly}
+              className={
+                makeMoveVecTypeValid
+                  ? 'h-5 py-0 text-[10px]'
+                  : 'h-5 py-0 text-[10px] border-red-500'
+              }
+              onMouseDown={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                if (!node?.id || !data?.onPatchCommand) return;
+                const value = event.target.value;
+                data.onPatchCommand(node.id, {
+                  runtime: {
+                    ...runtime,
+                    type: value.trim() ? value : undefined,
+                  },
+                });
+              }}
+            />
+          </div>
+        ) : undefined}
+
         {/* Flow handles */}
         <PTBHandleFlow type="target" style={{ top: FLOW_TOP }} />
         <PTBHandleFlow type="source" style={{ top: FLOW_TOP }} />
@@ -101,7 +148,7 @@ export const BaseCommand = memo(function BaseCommand({
             key={port.id}
             port={port}
             position={Position.Left}
-            style={{ top: ioTopForIndex(idx) }}
+            style={{ top: ioTopForIndex(idx, ioOffset) }}
             label={labelOf(port)}
           />
         ))}
@@ -112,7 +159,7 @@ export const BaseCommand = memo(function BaseCommand({
             key={port.id}
             port={port}
             position={Position.Right}
-            style={{ top: ioTopForIndex(idx + rightOffsetRows) }}
+            style={{ top: ioTopForIndex(idx + rightOffsetRows, ioOffset) }}
             label={labelOf(port)}
           />
         ))}

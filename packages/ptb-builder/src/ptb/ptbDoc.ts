@@ -171,11 +171,11 @@ export function buildDoc(opts: {
   const doc = {
     version: PTB_VERSION,
     chain,
-    sender,
     view,
     graph,
     modules,
     objects,
+    ...(sender !== undefined ? { sender } : {}),
   };
 
   return parseDoc(doc);
@@ -264,8 +264,7 @@ function requirePTBObjectsEmbed(value: unknown): PTBObjectsEmbed {
 
 function parseDocChain(value: unknown): Chain | undefined {
   if (typeof value !== 'string') return undefined;
-  const chain = value.trim();
-  return isSuiChain(chain) ? chain : undefined;
+  return isSuiChain(value) ? value : undefined;
 }
 
 function hasOnlyKeys(
@@ -296,6 +295,7 @@ function isPTBTypeArray(value: unknown): value is PTBType[] {
 
 export function stableStringify(value: unknown): string {
   return JSON.stringify(value, (_, item) => {
+    if (typeof item === 'bigint') return item.toString();
     if (item && typeof item === 'object' && !Array.isArray(item)) {
       return Object.keys(item)
         .sort()

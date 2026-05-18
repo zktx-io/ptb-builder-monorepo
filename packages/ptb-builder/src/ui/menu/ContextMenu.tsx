@@ -41,8 +41,9 @@ type ContextType = 'canvas' | 'node' | 'edge';
 // Base item/submenu styles. Visual tokens come from CSS variables via .ptb-menu*
 const MenuStyle = 'cursor-pointer px-2 w-full relative ptb-menu__item';
 const MenuSubStyle =
-  'absolute left-full top-0 mt-0 ml-0 hidden group-hover:block rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words ptb-menu__submenu';
+  'absolute left-full top-0 mt-0 ml-0 rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words ptb-menu__submenu';
 const DisabledStyle = 'ptb-menu__item--disabled';
+type SubmenuKey = 'vector' | 'option' | 'resources';
 
 export interface ContextMenuProps {
   type: ContextType;
@@ -67,6 +68,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const { x, y, zoom } = useViewport();
   const { createUniqueId, isWellKnownAvailable } = usePtb();
+  const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey | undefined>();
   const rootRef = useRef<HTMLDivElement | undefined>(undefined);
   const setRootEl = useCallback((el: HTMLDivElement | null) => {
     rootRef.current = el ?? undefined;
@@ -138,6 +140,118 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const focusMenuItem = (direction: 'first' | 'last' | 'next' | 'prev') => {
+    const root = rootRef.current;
+    if (!root) return;
+    const items = Array.from(
+      root.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).filter((item) => {
+      if (item.getAttribute('aria-disabled') === 'true') return false;
+      const submenu = item.closest<HTMLElement>('[data-submenu]');
+      return !submenu || submenu.dataset.submenu === openSubmenu;
+    });
+    if (items.length === 0) return;
+    const currentIndex = items.findIndex(
+      (item) => item === document.activeElement,
+    );
+    if (direction === 'first') {
+      items[0]!.focus();
+      return;
+    }
+    if (direction === 'last') {
+      items[items.length - 1]!.focus();
+      return;
+    }
+    const offset = direction === 'next' ? 1 : -1;
+    const nextIndex =
+      currentIndex < 0
+        ? 0
+        : (currentIndex + offset + items.length) % items.length;
+    items[nextIndex]!.focus();
+  };
+
+  const focusSubmenuItem = (submenu: SubmenuKey) => {
+    setOpenSubmenu(submenu);
+    requestAnimationFrame(() => {
+      const root = rootRef.current;
+      root
+        ?.querySelector<HTMLElement>(
+          `[data-submenu="${submenu}"] [role="menuitem"]:not([aria-disabled="true"])`,
+        )
+        ?.focus();
+    });
+  };
+
+  const focusSubmenuTrigger = (submenu: SubmenuKey) => {
+    setOpenSubmenu(undefined);
+    requestAnimationFrame(() => {
+      rootRef.current
+        ?.querySelector<HTMLElement>(`[data-submenu-trigger="${submenu}"]`)
+        ?.focus();
+    });
+  };
+
+  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    switch (event.key) {
+      case 'ArrowRight': {
+        const submenu = (event.target as HTMLElement).dataset.submenuTrigger as
+          | SubmenuKey
+          | undefined;
+        if (!submenu) break;
+        event.preventDefault();
+        focusSubmenuItem(submenu);
+        break;
+      }
+      case 'ArrowLeft': {
+        const submenu = (event.target as HTMLElement).closest<HTMLElement>(
+          '[data-submenu]',
+        )?.dataset.submenu as SubmenuKey | undefined;
+        if (!submenu) break;
+        event.preventDefault();
+        focusSubmenuTrigger(submenu);
+        break;
+      }
+      case 'ArrowDown':
+        event.preventDefault();
+        focusMenuItem('next');
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        focusMenuItem('prev');
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusMenuItem('first');
+        break;
+      case 'End':
+        event.preventDefault();
+        focusMenuItem('last');
+        break;
+      case 'Enter':
+      case ' ': {
+        const action = (event.target as HTMLElement).dataset.action;
+        if (action) {
+          event.preventDefault();
+          runAction(action);
+          break;
+        }
+        if ((event.target as HTMLElement).dataset.autoLayout === 'true') {
+          event.preventDefault();
+          onAutoLayout?.();
+          onClose();
+          break;
+        }
+        const submenu = (event.target as HTMLElement).dataset.submenuTrigger as
+          | SubmenuKey
+          | undefined;
+        if (!submenu) break;
+        event.preventDefault();
+        focusSubmenuItem(submenu);
+        break;
+      }
+    }
+  };
+
   /** Close on outside click (capture). */
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -182,6 +296,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // ---- Render helpers ----
 
+  const submenuClass = (key: SubmenuKey) =>
+    `${MenuSubStyle} ${openSubmenu === key ? 'block' : 'hidden group-hover:block'}`;
+
   const renderCmds = () => (
     <>
       {CanvasCmd.map((item) => (
@@ -190,8 +307,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           className={MenuStyle}
           onClick={() => runAction(item.action)}
           role="menuitem"
+          data-action={item.action}
           tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopPropagation();
+            runAction(item.action);
+          }}
         >
           <div className="flex items-center gap-1">
             {item.icon && <span className="inline-block">{item.icon}</span>}
@@ -210,8 +333,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           className={MenuStyle}
           onClick={() => runAction(item.action)}
           role="menuitem"
+          data-action={item.action}
           tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopPropagation();
+            runAction(item.action);
+          }}
         >
           <div className="flex items-center gap-1">
             {item.icon && <span className="inline-block">{item.icon}</span>}
@@ -223,12 +352,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   );
 
   const renderVector = () => (
-    <li className="relative group" role="none">
+    <li
+      className="relative group"
+      role="none"
+      onMouseEnter={() => setOpenSubmenu('vector')}
+      onMouseLeave={() => setOpenSubmenu(undefined)}
+    >
       <div
         className={`${MenuStyle} flex justify-between items-center`}
         role="menuitem"
         aria-haspopup="true"
-        aria-expanded="false"
+        aria-expanded={openSubmenu === 'vector'}
+        data-submenu-trigger="vector"
         tabIndex={0}
       >
         {CanvasVector.label}
@@ -247,15 +382,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           />
         </svg>
       </div>
-      <ul className={MenuSubStyle} role="menu">
+      <ul className={submenuClass('vector')} role="menu" data-submenu="vector">
         {CanvasVector.items.map((item) => (
           <li
             key={item.action}
             className={MenuStyle}
             onClick={() => runAction(item.action)}
             role="menuitem"
+            data-action={item.action}
+            data-submenu-item="vector"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              e.stopPropagation();
+              runAction(item.action);
+            }}
           >
             <div className="flex items-center gap-1">
               {item.icon && <span className="inline-block">{item.icon}</span>}
@@ -268,12 +410,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   );
 
   const renderOption = () => (
-    <li className="relative group" role="none">
+    <li
+      className="relative group"
+      role="none"
+      onMouseEnter={() => setOpenSubmenu('option')}
+      onMouseLeave={() => setOpenSubmenu(undefined)}
+    >
       <div
         className={`${MenuStyle} flex justify-between items-center`}
         role="menuitem"
         aria-haspopup="true"
-        aria-expanded="false"
+        aria-expanded={openSubmenu === 'option'}
+        data-submenu-trigger="option"
         tabIndex={0}
       >
         {CanvasOption.label}
@@ -292,15 +440,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           />
         </svg>
       </div>
-      <ul className={MenuSubStyle} role="menu">
+      <ul className={submenuClass('option')} role="menu" data-submenu="option">
         {CanvasOption.items.map((item) => (
           <li
             key={item.action}
             className={MenuStyle}
             onClick={() => runAction(item.action)}
             role="menuitem"
+            data-action={item.action}
+            data-submenu-item="option"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && runAction(item.action)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              e.stopPropagation();
+              runAction(item.action);
+            }}
           >
             <div className="flex items-center gap-1">
               {item.icon && <span className="inline-block">{item.icon}</span>}
@@ -313,12 +468,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   );
 
   const renderResources = () => (
-    <li className="relative group" role="none">
+    <li
+      className="relative group"
+      role="none"
+      onMouseEnter={() => setOpenSubmenu('resources')}
+      onMouseLeave={() => setOpenSubmenu(undefined)}
+    >
       <div
         className={`${MenuStyle} flex justify-between items-center`}
         role="menuitem"
         aria-haspopup="true"
-        aria-expanded="false"
+        aria-expanded={openSubmenu === 'resources'}
+        data-submenu-trigger="resources"
         tabIndex={0}
       >
         {CanvasResources.label}
@@ -337,7 +498,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           />
         </svg>
       </div>
-      <ul className={MenuSubStyle} role="menu">
+      <ul
+        className={submenuClass('resources')}
+        role="menu"
+        data-submenu="resources"
+      >
         {CanvasResources.items.map((item) => {
           const isDisabled = disabledActions.has(item.action);
           return (
@@ -346,11 +511,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               className={`${MenuStyle} ${isDisabled ? DisabledStyle : ''}`}
               onClick={() => !isDisabled && runAction(item.action)}
               role="menuitem"
+              data-action={isDisabled ? undefined : item.action}
+              data-submenu-item="resources"
               tabIndex={0}
               aria-disabled={isDisabled}
-              onKeyDown={(e) =>
-                !isDisabled && e.key === 'Enter' && runAction(item.action)
-              }
+              onKeyDown={(e) => {
+                if (isDisabled || e.key !== 'Enter') return;
+                e.preventDefault();
+                e.stopPropagation();
+                runAction(item.action);
+              }}
               title={
                 isDisabled
                   ? 'This singleton already exists in the graph.'
@@ -385,6 +555,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={onMenuKeyDown}
       role="menu"
       aria-label="Context menu"
     >
@@ -399,9 +570,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 onClose();
               }}
               role="menuitem"
+              data-auto-layout="true"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
                   onAutoLayout?.();
                   onClose();
                 }
@@ -435,8 +609,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               className={MenuStyle}
               onClick={() => runAction(it.action)}
               role="menuitem"
+              data-action={it.action}
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && runAction(it.action)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                e.stopPropagation();
+                runAction(it.action);
+              }}
             >
               {it.name}
             </li>
@@ -449,8 +629,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               className={MenuStyle}
               onClick={() => runAction(it.action)}
               role="menuitem"
+              data-action={it.action}
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && runAction(it.action)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                e.stopPropagation();
+                runAction(it.action);
+              }}
             >
               {it.name}
             </li>

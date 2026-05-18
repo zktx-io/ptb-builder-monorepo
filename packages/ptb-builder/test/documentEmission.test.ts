@@ -25,7 +25,8 @@ describe('document emission scheduler', () => {
     expect(emit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(scheduler.hasPending()).toBe(false);
+    scheduler.flush();
+    expect(emit).toHaveBeenCalledTimes(1);
   });
 
   it('uses max-wait so continuous viewport changes eventually emit', () => {
@@ -47,7 +48,8 @@ describe('document emission scheduler', () => {
     expect(emit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(100);
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(scheduler.hasPending()).toBe(false);
+    scheduler.flush();
+    expect(emit).toHaveBeenCalledTimes(1);
   });
 
   it('does not let a later viewport schedule extend an earlier content deadline', () => {
@@ -108,6 +110,7 @@ describe('document emission scheduler', () => {
     scheduler.cancel();
     vi.advanceTimersByTime(1000);
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(scheduler.hasPending()).toBe(false);
+    scheduler.flush();
+    expect(emit).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,8 +7,6 @@
 // -----------------------------------------------------------------------------
 
 import { PTBGraph } from './graph/types';
-import { PORTS } from './portTemplates';
-
 export const KNOWN_IDS = {
   START: '@start',
   END: '@end',
@@ -28,14 +26,14 @@ export function seedDefaultGraph(): PTBGraph {
         kind: 'Start',
         label: 'Start',
         position: { x: 160, y: 325 },
-        ports: PORTS.start(),
+        ports: [{ id: 'out', direction: 'out', role: 'flow' }],
       },
       {
         id: KNOWN_IDS.END,
         kind: 'End',
         label: 'End',
         position: { x: 640, y: 325 },
-        ports: PORTS.end(),
+        ports: [{ id: 'in', direction: 'in', role: 'flow' }],
       },
     ],
     edges: [
@@ -43,9 +41,9 @@ export function seedDefaultGraph(): PTBGraph {
         id: 'flow-start-end',
         kind: 'flow',
         source: KNOWN_IDS.START,
-        sourceHandle: 'next',
+        sourceHandle: 'out',
         target: KNOWN_IDS.END,
-        targetHandle: 'prev',
+        targetHandle: 'in',
       },
     ],
   };

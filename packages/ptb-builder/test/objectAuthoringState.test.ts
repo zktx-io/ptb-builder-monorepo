@@ -11,10 +11,13 @@ import {
   objectAuthoringLookupSucceeded,
 } from '../src/ui/objectAuthoringState';
 
+const TEST_DIGEST_A = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
+const TEST_DIGEST_B = '7msXn7aieHy73WkRxh3Xdqh9PEoPYBmJW59iE4TVvz62';
+
 const OBJECT_A: ObjectAuthoringInfo = {
   objectId: '0x1',
   version: '7',
-  digest: 'digest-a',
+  digest: TEST_DIGEST_A,
   typeTag: '0x2::coin::Coin<0x2::sui::SUI>',
   ownerKind: 'AddressOwner',
 };
@@ -22,7 +25,7 @@ const OBJECT_A: ObjectAuthoringInfo = {
 const OBJECT_B: ObjectAuthoringInfo = {
   ...OBJECT_A,
   objectId: '0x2',
-  digest: 'digest-b',
+  digest: TEST_DIGEST_B,
 };
 
 describe('object authoring UI state', () => {

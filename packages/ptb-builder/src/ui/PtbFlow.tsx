@@ -34,29 +34,26 @@ import type {
   Viewport,
 } from '@xyflow/react';
 import { graphToTransactionIR } from '@zktx.io/ptb-model';
-import type { PTBModelError } from '@zktx.io/ptb-model';
 
 import { CodePip } from './CodePip';
 import { renderCodePreview } from './codePreview';
+import { filterConflictingIOEdges, pruneExistingIOEdges } from './edgePruning';
 import { EdgeTypes } from './edges';
 import { EMPTY_CODE } from './emptyCode';
+import { findPortFromStore } from './handles/handleUtils';
 import { ContextMenu } from './menu/ContextMenu';
+import { formatModelErrorMessage } from './modelDiagnostics';
 import { NodeTypes } from './nodes';
 import { usePtb } from './PtbProvider';
 import { createReactFlowCommitController } from './reactFlowCommitController';
 import { StatusBar } from './StatusBar';
-import {
-  inferCastTarget,
-  isTypeCompatible,
-  isUnknownType,
-} from '../ptb/graph/typecheck';
+import { canConnectIO, inferCastTarget } from '../ptb/graph/typecheck';
 import {
   type CommandRuntimeParams,
   parseHandleTypeSuffix,
   type Port,
   type PTBGraph,
   type PTBNode,
-  type PTBType,
   type VariableNode,
 } from '../ptb/graph/types';
 import {
@@ -68,7 +65,7 @@ import {
 } from '../ptb/ptbAdapter';
 import { toColorMode } from '../types';
 import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
-import { hasStartToEnd } from './utils/flowPath';
+import { createsFlowLoop, hasStartToEnd } from './utils/flowPath';
 import { makeObject } from '../ptb/factories';
 import {
   buildObjectRawInputForUsage,
@@ -79,31 +76,6 @@ import { buildCommandPorts } from '../ptb/registry';
 import { buildTransactionFromIR } from '../ptb/runtimeAdapter';
 
 // ===== pure helpers (file-scope) =============================================
-
-/** DFS loop check for flow edges (prevents cycles). */
-function createsLoop(edges: RFEdge[], source: string, target: string): boolean {
-  const seen = new Set<string>();
-  const stack = [target];
-  while (stack.length) {
-    const n = stack.pop()!;
-    if (n === source) return true;
-    if (seen.has(n)) continue;
-    seen.add(n);
-    for (const e of edges) if (e.source === n) stack.push(e.target);
-  }
-  return false;
-}
-
-function modelBoundaryErrorMessage(error: unknown): string {
-  const diagnostics = (error as Partial<PTBModelError> | undefined)
-    ?.diagnostics;
-  if (Array.isArray(diagnostics) && diagnostics.length > 0) {
-    return diagnostics.map((diagnostic) => diagnostic.message).join(' ');
-  }
-  return (
-    (error as { message?: string } | undefined)?.message || 'Unexpected error'
-  );
-}
 
 function adapterPreviewCode(
   chain: string,
@@ -137,17 +109,6 @@ function filterHandleConflictsForFlow(edges: RFEdge[], conn: Connection) {
   );
 }
 
-/** IO targets are single; allow fan-out from sources. */
-function filterHandleConflictsForIO(edges: RFEdge[], conn: Connection) {
-  const tgt = conn.target!;
-  const tHandle = conn.targetHandle ?? undefined;
-  if (!tHandle) return undefined;
-  return edges.filter(
-    (e) =>
-      !(e.type === 'ptb-io' && e.target === tgt && e.targetHandle === tHandle),
-  );
-}
-
 /** nodeId -> set(basePortId) index (used to validate handle existence). */
 function buildHandleIndex(
   nodes: RFNode<RFNodeData>[],
@@ -178,35 +139,6 @@ function pruneDanglingEdges(
     const sId = parseHandleTypeSuffix(e.sourceHandle ?? undefined).baseId;
     const tId = parseHandleTypeSuffix(e.targetHandle ?? undefined).baseId;
     return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
-  });
-}
-
-/** Resolve PTB type for an RF endpoint (needed to validate IO edges). */
-function resolvePortType(
-  ptbNodes: PTBNode[],
-  nodeId: string,
-  handle?: string,
-): PTBType | undefined {
-  const pid = parseHandleTypeSuffix(handle).baseId;
-  if (!pid) return undefined;
-  const n = ptbNodes.find((x) => x.id === nodeId);
-  if (!n) return undefined;
-  const p = (n.ports || []).find((pp) => pp.id === pid);
-  return p?.dataType;
-}
-
-/** Drop IO edges that became type-incompatible after UI/port changes. */
-function pruneIncompatibleIOEdges(
-  ptbNodes: PTBNode[],
-  edges: RFEdge<RFEdgeData>[],
-): RFEdge<RFEdgeData>[] {
-  return edges.filter((e) => {
-    if (e.type !== 'ptb-io') return true;
-    const sT = resolvePortType(ptbNodes, e.source, e.sourceHandle ?? undefined);
-    const tT = resolvePortType(ptbNodes, e.target, e.targetHandle ?? undefined);
-    if (!sT || !tT) return false;
-    if (isUnknownType(sT) || isUnknownType(tT)) return false;
-    return isTypeCompatible(sT, tT);
   });
 }
 
@@ -346,7 +278,7 @@ export function PTBFlow() {
           ),
         };
       } catch (error) {
-        const message = modelBoundaryErrorMessage(error);
+        const message = formatModelErrorMessage(error, 'Unexpected error');
         if (opts?.notify !== false) reportGraphAdapterError(error);
         else
           globalThis.console?.warn?.(
@@ -446,7 +378,7 @@ export function PTBFlow() {
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
           let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+          pruned = pruneExistingIOEdges(injected, pruned);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
@@ -484,12 +416,18 @@ export function PTBFlow() {
           const nextRuntime =
             patch.runtime === undefined
               ? node.params?.runtime
-              : { ...patch.runtime };
+              : (Object.fromEntries(
+                  Object.entries(patch.runtime).filter(
+                    ([, value]) => value !== undefined,
+                  ),
+                ) as CommandRuntimeParams);
+          const hasRuntime =
+            nextRuntime !== undefined && Object.keys(nextRuntime).length > 0;
           node.params =
-            nextUI || nextRuntime
+            nextUI || hasRuntime
               ? {
                   ...(nextUI ? { ui: nextUI } : {}),
-                  ...(nextRuntime ? { runtime: nextRuntime } : {}),
+                  ...(hasRuntime ? { runtime: nextRuntime } : {}),
                 }
               : undefined;
           node.ports = patch.ports
@@ -500,7 +438,7 @@ export function PTBFlow() {
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
           let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+          pruned = pruneExistingIOEdges(injected, pruned);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
@@ -572,7 +510,7 @@ export function PTBFlow() {
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
           let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneIncompatibleIOEdges(currentPTB.nodes, pruned);
+          pruned = pruneExistingIOEdges(injected, pruned);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
@@ -598,7 +536,8 @@ export function PTBFlow() {
   }>(() => {
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
-    const pruned = pruneDanglingEdges(injected, edges);
+    let pruned = pruneDanglingEdges(injected, edges);
+    pruned = pruneExistingIOEdges(injected, pruned);
     return { rfNodes: injected, rfEdges: pruned };
   });
   const flowActive = useMemo(
@@ -630,7 +569,7 @@ export function PTBFlow() {
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
     let pruned = pruneDanglingEdges(injected, edges);
-    pruned = pruneIncompatibleIOEdges(graph.nodes, pruned);
+    pruned = pruneExistingIOEdges(injected, pruned);
 
     setRF({ rfNodes: injected, rfEdges: pruned });
     baseGraphRef.current = graph;
@@ -648,26 +587,28 @@ export function PTBFlow() {
   // ----- Safety net: re-prune edges whenever nodes change --------------------
 
   useEffect(() => {
+    if (readOnly) return;
     setRF((prev) => {
-      let pruned = pruneDanglingEdges(rfNodes, prev.rfEdges);
-      pruned = pruneIncompatibleIOEdges(baseGraphRef.current.nodes, pruned);
+      let pruned = pruneDanglingEdges(prev.rfNodes, prev.rfEdges);
+      pruned = pruneExistingIOEdges(prev.rfNodes, pruned);
       if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
       return { ...prev, rfEdges: pruned };
     });
-  }, [rfNodes]);
+  }, [readOnly, rfNodes]);
 
   // ----- Persist RF → PTB after commit (single place) ------------------------
 
   const persistRFSnapshotToPTB = useCallback(
     (snapshot: RFSnapshot) => {
       if (rehydratingRef.current) return;
+      if (readOnly) return;
       const converted = safeRfToPTB(snapshot);
       if (!converted.ok) return;
       const nextPTB = converted.graph;
       setGraph(nextPTB);
       baseGraphRef.current = nextPTB;
     },
-    [safeRfToPTB, setGraph],
+    [readOnly, safeRfToPTB, setGraph],
   );
   persistSnapshotRef.current = persistRFSnapshotToPTB;
 
@@ -680,19 +621,30 @@ export function PTBFlow() {
 
   const finishNodeDrag = useCallback(
     (_: unknown, node?: RFNode<RFNodeData>) => {
+      if (readOnly) return;
       commitControllerRef.current?.endDrag(node?.id, rfSnapshotRef.current);
     },
-    [],
+    [readOnly],
   );
 
-  const startNodeDrag = useCallback((_: unknown, node: RFNode<RFNodeData>) => {
-    commitControllerRef.current?.startDrag(node.id);
-  }, []);
+  const startNodeDrag = useCallback(
+    (_: unknown, node: RFNode<RFNodeData>) => {
+      if (readOnly) return;
+      commitControllerRef.current?.startDrag(node.id);
+    },
+    [readOnly],
+  );
 
   useEffect(() => {
+    if (readOnly) return;
     if (rehydratingRef.current) return;
     commitControllerRef.current?.recordChange({ rfNodes, rfEdges });
-  }, [rfNodes, rfEdges]);
+  }, [readOnly, rfNodes, rfEdges]);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    commitControllerRef.current?.cancel();
+  }, [readOnly]);
 
   useEffect(
     () => () => {
@@ -729,10 +681,8 @@ export function PTBFlow() {
     // Disallow menu for Start/End nodes.
     if (type === 'node' && id) {
       const rfNode = rfNodes.find((n) => n.id === id);
-      const kind =
-        getRFKind(rfNode) ??
-        baseGraphRef.current.nodes.find((n) => n.id === id)?.kind;
-      if (kind === 'Start' || kind === 'End') return;
+      const kind = getRFKind(rfNode);
+      if (!kind || kind === 'Start' || kind === 'End') return;
     }
 
     const rect = containerRef.current?.getBoundingClientRect();
@@ -764,9 +714,9 @@ export function PTBFlow() {
   );
 
   const deleteNode = useCallback((id: string) => {
-    const n = baseGraphRef.current.nodes.find((nn) => nn.id === id);
-    if (n?.kind === 'Start' || n?.kind === 'End') return;
     setRF((prev) => {
+      const kind = getRFKind(prev.rfNodes.find((node) => node.id === id));
+      if (!kind || kind === 'Start' || kind === 'End') return prev;
       const nextNodes = prev.rfNodes.filter((n) => n.id !== id);
       const nextEdges = prev.rfEdges.filter(
         (e) => e.source !== id && e.target !== id,
@@ -789,22 +739,20 @@ export function PTBFlow() {
       // During programmatic rehydrate, ignore RF's callbacks to avoid loop.
       if (rehydratingRef.current) return;
 
-      // During dragging, defer updates until drag ends.
-      for (const change of changes) {
-        if (change.type !== 'position') continue;
-        const nodeId = (change as { id?: string }).id;
-        if (!nodeId) continue;
-        const dragging = (change as { dragging?: boolean }).dragging;
-        if (dragging === true) commitControllerRef.current?.startDrag(nodeId);
-        if (dragging === false) commitControllerRef.current?.endDrag(nodeId);
+      // During dragging, defer updates until drag ends. Read-only mode keeps
+      // the PTBGraph immutable, so only selection changes are allowed through.
+      if (!readOnly) {
+        for (const change of changes) {
+          if (change.type !== 'position') continue;
+          const nodeId = (change as { id?: string }).id;
+          if (!nodeId) continue;
+          const dragging = (change as { dragging?: boolean }).dragging;
+          if (dragging === true) commitControllerRef.current?.startDrag(nodeId);
+          if (dragging === false) commitControllerRef.current?.endDrag(nodeId);
+        }
       }
       const effective = readOnly
-        ? changes.filter(
-            (ch) =>
-              ch.type === 'position' ||
-              ch.type === 'select' ||
-              ch.type === 'dimensions',
-          )
+        ? changes.filter((ch) => ch.type === 'select')
         : changes;
 
       setRF((prev) => {
@@ -813,10 +761,8 @@ export function PTBFlow() {
           if (ch.type !== 'remove') return true;
           const id = (ch as any).id as string | undefined;
           if (!id) return true;
-          return (
-            getRFKind(prev.rfNodes.find((n) => n.id === id)) !== 'Start' &&
-            getRFKind(prev.rfNodes.find((n) => n.id === id)) !== 'End'
-          );
+          const kind = getRFKind(prev.rfNodes.find((n) => n.id === id));
+          return !!kind && kind !== 'Start' && kind !== 'End';
         });
         const removedNodeIds = filtered.flatMap((change) => {
           if (change.type !== 'remove') return [];
@@ -826,11 +772,13 @@ export function PTBFlow() {
 
         // Do NOT re-inject callbacks here; prev.rfNodes already have them.
         const nextNodes = applyNodeChanges(filtered, prev.rfNodes);
+        if (readOnly) {
+          return nextNodes === prev.rfNodes
+            ? prev
+            : { ...prev, rfNodes: nextNodes };
+        }
         let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-        nextEdges = pruneIncompatibleIOEdges(
-          baseGraphRef.current.nodes,
-          nextEdges,
-        );
+        nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
 
         // Avoid redundant updates
         if (
@@ -864,6 +812,11 @@ export function PTBFlow() {
 
       setRF((prev) => {
         const nextEdges = applyEdgeChanges(effective, prev.rfEdges);
+        if (readOnly) {
+          return nextEdges === prev.rfEdges
+            ? prev
+            : { ...prev, rfEdges: nextEdges };
+        }
         const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
         if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
         return { ...prev, rfEdges: pruned };
@@ -878,17 +831,19 @@ export function PTBFlow() {
       if (readOnly) return; // block new connections in read-only
       if (!conn.source || !conn.target) return;
 
-      const findPort = (nodeId: string, handle?: string) => {
-        const pid = parseHandleTypeSuffix(handle).baseId;
-        const node = baseGraphRef.current.nodes.find((n) => n.id === nodeId);
-        return node?.ports.find((p) => p.id === pid);
-      };
-
-      const sp = findPort(conn.source, conn.sourceHandle ?? undefined);
-      const tp = findPort(conn.target, conn.targetHandle ?? undefined);
-      if (!sp || !tp) return;
-
       setRF((prev) => {
+        const sp = findPortFromStore(
+          prev.rfNodes,
+          conn.source!,
+          conn.sourceHandle ?? undefined,
+        );
+        const tp = findPortFromStore(
+          prev.rfNodes,
+          conn.target!,
+          conn.targetHandle ?? undefined,
+        );
+        if (!sp || !tp) return prev;
+
         // FLOW EDGE
         if (sp.role === 'flow' || tp.role === 'flow') {
           if (!(sp.direction === 'out' && tp.direction === 'in')) return prev;
@@ -896,7 +851,8 @@ export function PTBFlow() {
           const filtered = filterHandleConflictsForFlow(prev.rfEdges, conn);
           if (!filtered) return prev;
           if (conn.source === conn.target) return prev;
-          if (createsLoop(filtered, conn.source!, conn.target!)) return prev;
+          if (createsFlowLoop(filtered, conn.source!, conn.target!))
+            return prev;
 
           const newEdge: RFEdge<RFEdgeData> = {
             id: createUniqueId('edge'),
@@ -916,13 +872,9 @@ export function PTBFlow() {
         }
 
         // IO EDGE
-        if (sp.role !== 'io' || tp.role !== 'io') return prev;
-        if (!(sp.direction === 'out' && tp.direction === 'in')) return prev;
-        if (isUnknownType(sp.dataType) || isUnknownType(tp.dataType))
-          return prev;
-        if (!isTypeCompatible(sp.dataType, tp.dataType)) return prev;
+        if (!canConnectIO(sp, tp)) return prev;
 
-        const filtered = filterHandleConflictsForIO(prev.rfEdges, conn);
+        const filtered = filterConflictingIOEdges(prev.rfEdges, conn);
         if (!filtered) return prev;
 
         const cast = inferCastTarget(sp.dataType, tp.dataType) || undefined;
@@ -1030,7 +982,10 @@ export function PTBFlow() {
       const tx = buildTransactionFromIR(ir, execOpts);
       await dryRunTx?.(tx); // toast behavior is controlled in provider
     } catch (e: any) {
-      toast?.({ message: modelBoundaryErrorMessage(e), variant: 'error' });
+      toast?.({
+        message: formatModelErrorMessage(e, e?.message || 'Unexpected error'),
+        variant: 'error',
+      });
     } finally {
       setIsRunning(false);
     }
@@ -1047,7 +1002,10 @@ export function PTBFlow() {
       const tx = buildTransactionFromIR(ir, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } catch (e: any) {
-      toast?.({ message: modelBoundaryErrorMessage(e), variant: 'error' });
+      toast?.({
+        message: formatModelErrorMessage(e, e?.message || 'Unexpected error'),
+        variant: 'error',
+      });
     } finally {
       setIsRunning(false);
     }
@@ -1130,10 +1088,7 @@ export function PTBFlow() {
               : n,
           );
           let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-          nextEdges = pruneIncompatibleIOEdges(
-            baseGraphRef.current.nodes,
-            nextEdges,
-          );
+          nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
           return { rfNodes: nextNodes, rfEdges: nextEdges };
         });
         requestAnimationFrame(() => {
@@ -1163,10 +1118,7 @@ export function PTBFlow() {
           : n,
       );
       let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-      nextEdges = pruneIncompatibleIOEdges(
-        baseGraphRef.current.nodes,
-        nextEdges,
-      );
+      nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
       return { rfNodes: nextNodes, rfEdges: nextEdges };
     });
 
@@ -1240,11 +1192,15 @@ export function PTBFlow() {
         node.position = { x: center.x, y: center.y };
         addNode(node);
       };
+      const nextRawInput = rawInput?.ok ? rawInput.rawInput : undefined;
       placeAndAdd(
         makeObject(obj.typeTag, {
           id: createUniqueId('var'),
-          value: obj.objectId,
-          rawInput: rawInput?.ok ? rawInput.rawInput : undefined,
+          value:
+            nextRawInput?.kind === 'Object'
+              ? nextRawInput.object
+              : obj.objectId,
+          rawInput: nextRawInput,
         }),
       );
     },
@@ -1274,11 +1230,11 @@ export function PTBFlow() {
         edges={rfEdges}
         /** Enable auto fit only after positions are laid out */
         fitView={layoutReady}
-        /** allow dragging even in read-only */
-        nodesDraggable={true}
+        /** block graph-position edits when read-only */
+        nodesDraggable={!readOnly}
         /** block creating/updating edges when read-only */
         nodesConnectable={!readOnly}
-        edgesReconnectable={!readOnly}
+        edgesReconnectable={false}
         deleteKeyCode={[]}
         onPaneContextMenu={(e) => openMenu(e, 'canvas')}
         onNodeContextMenu={(e, node) => openMenu(e, 'node', node.id)}

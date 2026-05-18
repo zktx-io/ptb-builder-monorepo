@@ -4,8 +4,9 @@
 // PTBGraph ↔ React Flow adapter.
 // - Nodes: SSOT lives in node.data.ptbNode. Variable nodes always materialize
 //   a single IO out port that mirrors varType.
-// - Edges: sourceHandle/targetHandle are passed through 1:1. Handle aliases are
-//   also set because local edge helpers read both field spellings.
+// - Edges: sourceHandle/targetHandle are projected into the React Flow handle
+//   namespace used by rendered nodes. Handle aliases are also set because local
+//   edge helpers read both field spellings.
 // - Edge badges: serialized types are derived from the port dataType, not from
 //   handle suffixes (suffixes are conservative).
 // -----------------------------------------------------------------------------
@@ -13,6 +14,7 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 import type {
+  CommandNode,
   NumericWidth,
   Port,
   PTBEdge,
@@ -26,6 +28,7 @@ import {
   serializePTBType,
 } from './graph/types';
 import { PORTS } from './portTemplates';
+import { buildCommandPorts } from './registry';
 import { extractHandles } from '../ui/handles/handleUtils';
 
 type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
@@ -69,16 +72,173 @@ function materializeVarOutPort(n: PTBNode): PTBNode {
   };
 }
 
+function materializeStructuralPorts(n: PTBNode): PTBNode {
+  if (n.kind === 'Start') return { ...n, ports: PORTS.start() };
+  if (n.kind === 'End') return { ...n, ports: PORTS.end() };
+  return n;
+}
+
+function keyedPort(port: Port): string {
+  return `${port.role}:${port.direction}:${port.id}`;
+}
+
+function mergeOutputPorts(
+  existing: readonly Port[],
+  materialized: readonly Port[],
+): Port[] {
+  const existingOutputs = existing.filter(
+    (port) => port.role === 'io' && port.direction === 'out',
+  );
+  const materializedOutputs = materialized.filter(
+    (port) => port.role === 'io' && port.direction === 'out',
+  );
+  if (existingOutputs.length === 0)
+    return materializedOutputs.map((port) => ({ ...port }));
+
+  return existingOutputs.map((port, index) => {
+    const typed = materializedOutputs[index] ?? materializedOutputs[0];
+    return {
+      ...port,
+      ...(typed?.dataType ? { dataType: typed.dataType } : {}),
+      ...(typed?.typeStr ? { typeStr: typed.typeStr } : {}),
+    };
+  });
+}
+
+/** Ensure a Command node carries RF-projected typed ports for React Flow editing. */
+function materializeCommandPorts(n: PTBNode): PTBNode {
+  if (n.kind !== 'Command') return n;
+  const command = n as CommandNode;
+  const materialized = buildCommandPorts(
+    command.command,
+    command.params?.ui,
+    command.params?.runtime,
+    command.ports,
+  );
+  const flowPorts = materialized
+    .filter((port) => port.role === 'flow')
+    .map((port) => ({ ...port }));
+  const inputPorts = materialized
+    .filter((port) => port.role === 'io' && port.direction === 'in')
+    .map((port) => ({ ...port }));
+  const outputPorts = mergeOutputPorts(command.ports ?? [], materialized);
+  const seen = new Set<string>();
+  const ports = [...flowPorts, ...inputPorts, ...outputPorts].filter((port) => {
+    const key = keyedPort(port);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return {
+    ...command,
+    ports,
+  };
+}
+
+function materializeNodeForRF(n: PTBNode): PTBNode {
+  return materializeCommandPorts(
+    materializeVarOutPort(materializeStructuralPorts(n)),
+  );
+}
+
+function projectFlowHandleForRF(
+  handle: string,
+  endpoint: 'source' | 'target',
+): string {
+  const { baseId, typeStr } = parseHandleTypeSuffix(handle);
+  if (!baseId) return handle;
+  const projected =
+    endpoint === 'source'
+      ? baseId === 'out'
+        ? 'next'
+        : baseId
+      : baseId === 'in'
+        ? 'prev'
+        : baseId;
+  return typeStr ? `${projected}:${typeStr}` : projected;
+}
+
+function projectEdgeHandleForRF(
+  edge: PTBEdge,
+  endpoint: 'source' | 'target',
+): string {
+  const handle = endpoint === 'source' ? edge.sourceHandle : edge.targetHandle;
+  return edge.kind === 'flow'
+    ? projectFlowHandleForRF(handle, endpoint)
+    : handle;
+}
+
+function projectFlowHandleForPTB(
+  handle: string,
+  endpoint: 'source' | 'target',
+): string {
+  const { baseId, typeStr } = parseHandleTypeSuffix(handle);
+  if (!baseId) return handle;
+  const projected =
+    endpoint === 'source'
+      ? baseId === 'next'
+        ? 'out'
+        : baseId
+      : baseId === 'prev'
+        ? 'in'
+        : baseId;
+  return typeStr ? `${projected}:${typeStr}` : projected;
+}
+
+function projectPortForPTB(nodeKind: PTBNode['kind'], port: Port): Port {
+  if (port.role !== 'flow') return { ...port };
+  if (nodeKind === 'Start' && port.direction === 'out') {
+    return { ...port, id: 'out' };
+  }
+  if (nodeKind === 'End' && port.direction === 'in') {
+    return { ...port, id: 'in' };
+  }
+  if (nodeKind === 'Command') {
+    if (port.direction === 'in' && port.id === 'prev')
+      return { ...port, id: 'in' };
+    if (port.direction === 'out' && port.id === 'next')
+      return { ...port, id: 'out' };
+  }
+  return { ...port };
+}
+
+function projectNodeForPTB(node: PTBNode): PTBNode {
+  if (node.kind === 'Variable') return node;
+  const ports = (node.ports ?? []).map((port) =>
+    projectPortForPTB(node.kind, port),
+  );
+  return { ...node, ports };
+}
+
+function projectEdgeHandleForPTB(
+  edgeKind: PTBEdge['kind'],
+  handle: string,
+  endpoint: 'source' | 'target',
+): string {
+  const base = parseHandleTypeSuffix(handle).baseId;
+  if (!base) return handle;
+  const projected =
+    edgeKind === 'flow' ? projectFlowHandleForPTB(base, endpoint) : base;
+  return projected;
+}
+
 /**
  * PTBGraph → React Flow
- * - Pass sourceHandle/targetHandle through 1:1 (no rebuild, no parsing).
+ * - Project sourceHandle/targetHandle into the RF handle namespace.
  * - dataType for badges comes from the materialized port types (more reliable than suffix).
  */
 export function ptbToRF(graph: PTBGraph): {
   nodes: RFNode<RFNodeData>[];
   edges: RFEdge<RFEdgeData>[];
 } {
-  const matNodes = graph.nodes.map((n) => materializeVarOutPort(n));
+  const matNodes = graph.nodes.map((n) => materializeNodeForRF(n));
+  const portByNodeAndId = new Map<string, Port>();
+  for (const node of matNodes) {
+    for (const port of node.ports ?? []) {
+      portByNodeAndId.set(`${node.id}:${port.id}`, port);
+    }
+  }
 
   const nodes: RFNode<RFNodeData>[] = matNodes.map((n) => ({
     id: n.id,
@@ -88,16 +248,19 @@ export function ptbToRF(graph: PTBGraph): {
   }));
 
   const edges: RFEdge<RFEdgeData>[] = graph.edges.map((e) => {
-    const srcNode = matNodes.find((n) => n.id === e.source);
-    const dstNode = matNodes.find((n) => n.id === e.target);
+    const projectedSourceHandle = projectEdgeHandleForRF(e, 'source');
+    const projectedTargetHandle = projectEdgeHandleForRF(e, 'target');
+    const sBase = parseHandleTypeSuffix(projectedSourceHandle).baseId;
+    const tBase = parseHandleTypeSuffix(projectedTargetHandle).baseId;
 
-    const sBase = parseHandleTypeSuffix(e.sourceHandle).baseId;
-    const tBase = parseHandleTypeSuffix(e.targetHandle).baseId;
-
-    const sPort = srcNode?.ports?.find((p) => p.id === sBase);
-    const tPort = dstNode?.ports?.find((p) => p.id === tBase);
-    const sh = sPort ? buildHandleId(sPort) : e.sourceHandle;
-    const th = tPort ? buildHandleId(tPort) : e.targetHandle;
+    const sPort = sBase
+      ? portByNodeAndId.get(`${e.source}:${sBase}`)
+      : undefined;
+    const tPort = tBase
+      ? portByNodeAndId.get(`${e.target}:${tBase}`)
+      : undefined;
+    const sh = sPort ? buildHandleId(sPort) : projectedSourceHandle;
+    const th = tPort ? buildHandleId(tPort) : projectedTargetHandle;
 
     const srcTypeStr = sPort?.dataType
       ? serializePTBType(sPort.dataType)
@@ -132,7 +295,7 @@ export function ptbNodeToRF(node: PTBNode): RFNode<RFNodeData> {
 /**
  * React Flow → PTBGraph
  * - Node SSOT prefers node.data.ptbNode; falls back to prev graph; last resorts to template ports.
- * - Edges pass sourceHandle/targetHandle through unchanged.
+ * - Edges are projected back into the PTBGraph handle namespace.
  * - Variable nodes must never receive fallback flow ports.
  */
 export function rfToPTB(
@@ -140,8 +303,10 @@ export function rfToPTB(
   rfEdges: RFEdge<RFEdgeData>[],
   prev?: PTBGraph,
 ): PTBGraph {
+  const prevNodeById = new Map((prev?.nodes ?? []).map((n) => [n.id, n]));
+
   const nodes: PTBNode[] = rfNodes.map((rn) => {
-    const base = prev?.nodes.find((n) => n.id === rn.id);
+    const base = prevNodeById.get(rn.id);
     const dataNode = rn.data?.ptbNode as PTBNode | undefined;
 
     const kind = mapRFTypeToPTBKind(rn.type as string);
@@ -156,7 +321,7 @@ export function rfToPTB(
             ? [] // Variable: no flow ports
             : PORTS.commandBase();
 
-    return {
+    return projectNodeForPTB({
       ...(chosen ?? ({} as PTBNode)),
       id: rn.id,
       kind,
@@ -164,23 +329,34 @@ export function rfToPTB(
         (rn.data?.label as string | undefined) ?? chosen?.label ?? base?.label,
       ports: chosen?.ports ?? base?.ports ?? basePortsByKind,
       position: rn.position ?? chosen?.position ?? base?.position,
-    } as PTBNode;
+    } as PTBNode);
   });
 
   const edges: PTBEdge[] = rfEdges.map((re) => {
     const { source, target } = extractHandles(re);
     const cast = (re.data as RFEdgeData | undefined)?.cast;
-    const sourceHandle = parseHandleTypeSuffix(source).baseId;
-    const targetHandle = parseHandleTypeSuffix(target).baseId;
-    if (!sourceHandle || !targetHandle) {
+    const edgeKind = mapRFTypeToPTBEdgeKind(re.type as string);
+    const sourceBase = parseHandleTypeSuffix(source).baseId;
+    const targetBase = parseHandleTypeSuffix(target).baseId;
+    if (!sourceBase || !targetBase) {
       throw new Error(
         `Cannot persist React Flow edge ${re.id}: source and target handles are required.`,
       );
     }
+    const sourceHandle = projectEdgeHandleForPTB(
+      edgeKind,
+      sourceBase,
+      'source',
+    );
+    const targetHandle = projectEdgeHandleForPTB(
+      edgeKind,
+      targetBase,
+      'target',
+    );
 
     return {
       id: re.id,
-      kind: mapRFTypeToPTBEdgeKind(re.type as string),
+      kind: edgeKind,
       source: re.source,
       target: re.target,
       sourceHandle,

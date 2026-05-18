@@ -14,6 +14,35 @@ export type OwnedItem = {
   authoring?: ObjectAuthoringInfo;
 };
 
+const SAFE_DATA_IMAGE_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/svg+xml',
+]);
+
+function safeAssetImageUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('data:')) {
+    const separatorIndex = trimmed.indexOf(';');
+    if (separatorIndex < 0) return undefined;
+    const mime = trimmed.slice(5, separatorIndex).toLowerCase();
+    return SAFE_DATA_IMAGE_MIME.has(mime) ? trimmed : undefined;
+  }
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' || url.protocol === 'http:'
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type AssetsModalProps = {
   open: boolean;
   onClose: () => void;
@@ -59,6 +88,7 @@ export function AssetsModal({
   });
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
+  const panelRef = useRef<HTMLDivElement | undefined>(undefined);
 
   const canPrev = prevStack.length > 0;
 
@@ -124,7 +154,7 @@ export function AssetsModal({
                   objectId: id,
                   typeTag: type || '',
                   authoring: r?.data?.authoring,
-                  imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
+                  imageUrl: safeAssetImageUrl(imageUrl),
                 }
               : undefined;
           })
@@ -177,9 +207,46 @@ export function AssetsModal({
     }
   }, [loadPage, open]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     onClose();
-  };
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    const focusable = Array.from(
+      panel.querySelectorAll<HTMLElement>(focusableSelector),
+    ).filter((element) => !element.hasAttribute('disabled'));
+    focusable[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = Array.from(
+        panel.querySelectorAll<HTMLElement>(focusableSelector),
+      ).filter((element) => !element.hasAttribute('disabled'));
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    panel.addEventListener('keydown', onKeyDown);
+    return () => panel.removeEventListener('keydown', onKeyDown);
+  }, [handleClose, open]);
 
   const handlePick = (item: OwnedItem) => {
     onPick(item);
@@ -196,7 +263,13 @@ export function AssetsModal({
       aria-modal="true"
       onClick={handleClose}
     >
-      <div className="ptb-modal__panel" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={(element) => {
+          panelRef.current = element ?? undefined;
+        }}
+        className="ptb-modal__panel"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="ptb-modal__header">
           <div className="flex items-center gap-3">
@@ -239,7 +312,8 @@ export function AssetsModal({
             ) : nftOnly ? (
               <div className="ptb-modal__grid-container">
                 {filteredItems.map((it) => (
-                  <div
+                  <button
+                    type="button"
                     key={it.objectId}
                     className="ptb-modal__grid-item"
                     onClick={() => handlePick(it)}
@@ -249,6 +323,7 @@ export function AssetsModal({
                       <img
                         src={it.imageUrl}
                         alt={it.objectId}
+                        referrerPolicy="no-referrer"
                         className="ptb-modal__grid-img"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
@@ -270,54 +345,57 @@ export function AssetsModal({
                     <div className="ptb-modal__grid-label">
                       {short(it.objectId, 6, 4)}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
               <ul>
                 {filteredItems.map((it) => (
-                  <li
-                    key={it.objectId}
-                    className="ptb-modal__item"
-                    onClick={() => handlePick(it)}
-                    title={it.typeTag}
-                  >
-                    {it.imageUrl ? (
-                      <div className="ptb-modal__item-img-wrapper">
-                        <img
-                          src={it.imageUrl}
-                          alt={it.objectId}
-                          className="ptb-modal__item-img"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const placeholder = target.nextElementSibling;
-                            if (placeholder) {
-                              (placeholder as HTMLElement).style.display =
-                                'flex';
-                            }
-                          }}
-                        />
-                        <div
-                          className="ptb-modal__item-img-placeholder"
-                          style={{ display: 'none' }}
-                        >
-                          <ImageOff size={16} />
+                  <li key={it.objectId}>
+                    <button
+                      type="button"
+                      className="ptb-modal__item"
+                      onClick={() => handlePick(it)}
+                      title={it.typeTag}
+                    >
+                      {it.imageUrl ? (
+                        <div className="ptb-modal__item-img-wrapper">
+                          <img
+                            src={it.imageUrl}
+                            alt={it.objectId}
+                            referrerPolicy="no-referrer"
+                            className="ptb-modal__item-img"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const placeholder = target.nextElementSibling;
+                              if (placeholder) {
+                                (placeholder as HTMLElement).style.display =
+                                  'flex';
+                              }
+                            }}
+                          />
+                          <div
+                            className="ptb-modal__item-img-placeholder"
+                            style={{ display: 'none' }}
+                          >
+                            <ImageOff size={16} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="ptb-modal__item-img-wrapper">
+                          <div className="ptb-modal__item-img-placeholder">
+                            <ImageOff size={16} />
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex-1 ptb-modal__minw-0">
+                        <div className="ptb-modal__item-id">{it.objectId}</div>
+                        <div className="ptb-modal__item-type">
+                          {it.typeTag || '(unknown type)'}
                         </div>
                       </div>
-                    ) : (
-                      <div className="ptb-modal__item-img-wrapper">
-                        <div className="ptb-modal__item-img-placeholder">
-                          <ImageOff size={16} />
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex-1 ptb-modal__minw-0">
-                      <div className="ptb-modal__item-id">{it.objectId}</div>
-                      <div className="ptb-modal__item-type">
-                        {it.typeTag || '(unknown type)'}
-                      </div>
-                    </div>
+                    </button>
                   </li>
                 ))}
               </ul>

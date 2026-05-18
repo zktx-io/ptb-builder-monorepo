@@ -9,6 +9,7 @@ import {
   prepareLoadedDoc,
   PTB_VERSION,
   stablePTBDocSignature,
+  stableStringify,
 } from '../src/ptb/ptbDoc';
 
 const graph: PTBGraph = {
@@ -28,7 +29,8 @@ describe('PTB document boundary', () => {
 
     expect(PTB_VERSION).toBe(PTB_DOC_VERSION_V4);
     expect(doc.version).toBe('ptb_4');
-    expect(parseDoc(doc)).toBe(doc);
+    expect(parseDoc(doc)).toEqual(doc);
+    expect(parseDoc(doc)).not.toBe(doc);
     expect(prepareLoadedDoc(doc)).toMatchObject({
       chain: 'sui:testnet',
       view: { x: 0, y: 0, zoom: 1 },
@@ -56,9 +58,9 @@ describe('PTB document boundary', () => {
         id: 'flow-start-end',
         kind: 'flow',
         source: '@start',
-        sourceHandle: 'next',
+        sourceHandle: 'out',
         target: '@end',
-        targetHandle: 'prev',
+        targetHandle: 'in',
       },
     ]);
     expect(stablePTBDocSignature(parseDoc(doc))).toBe(
@@ -127,6 +129,16 @@ describe('PTB document boundary', () => {
     expect(() =>
       prepareLoadedDoc({
         version: 'ptb_4',
+        chain: ' sui:mainnet ',
+        view: { x: 0, y: 0, zoom: 1 },
+        graph,
+        modules: {},
+        objects: {},
+      }),
+    ).toThrow('Invalid or missing chain in PTB document');
+    expect(() =>
+      prepareLoadedDoc({
+        version: 'ptb_4',
         chain: 'sui:mainnet',
         graph,
         modules: {},
@@ -162,7 +174,8 @@ describe('PTB document boundary', () => {
       objects,
     });
 
-    expect(parseDoc(doc)).toBe(doc);
+    expect(parseDoc(doc)).toEqual(doc);
+    expect(parseDoc(doc)).not.toBe(doc);
     expect(
       buildDoc({
         chain: doc.chain as 'sui:mainnet',
@@ -256,6 +269,12 @@ describe('PTB document boundary', () => {
     });
 
     expect(stablePTBDocSignature(first)).toBe(stablePTBDocSignature(second));
+  });
+
+  it('serializes BigInt values consistently for stable signatures', () => {
+    expect(stableStringify({ z: 9n, a: { n: 1n } })).toBe(
+      '{"a":{"n":"1"},"z":"9"}',
+    );
   });
 
   it('uses canonical view keys only for document signatures', () => {

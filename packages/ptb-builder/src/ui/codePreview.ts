@@ -8,6 +8,7 @@ import type { PTBGraph, TransactionDiagnostic } from '@zktx.io/ptb-model';
 
 import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
 import type { Chain } from '../types';
+import { formatModelDiagnosticLine } from './modelDiagnostics';
 
 export type CodePreviewResult = {
   code: string;
@@ -74,8 +75,7 @@ function diagnosticPreview(
     metadata,
     '// Code preview is stale because the current graph cannot be rendered.',
     ...diagnostics.map(
-      (diagnostic) =>
-        `// [${diagnostic.code}] ${diagnostic.path ? `${diagnostic.path}: ` : ''}${diagnostic.message}`,
+      (diagnostic) => `// ${formatModelDiagnosticLine(diagnostic)}`,
     ),
     previousModelCode ? `\n${previousModelCode}` : '',
   ].filter(Boolean);

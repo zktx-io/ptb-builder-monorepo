@@ -72,14 +72,13 @@ The following command nodes are available from the builder context menu:
 - **SplitCoins** — split a coin object into multiple parts.
 - **MergeCoins** — merge multiple coins into one.
 - **TransferObjects** — transfer owned objects to a recipient.
+- **MakeMoveVec** — build a Move vector from typed elements. Set the Move type
+  on the node before connecting element inputs.
 - **MoveCall** — call a Move function by entering its package, module, and
   function names explicitly; the builder verifies the selected function
   signature through the SDK Core API.
 
-The model/runtime path also supports `MakeMoveVec` for loaded or decoded PTB
-data, but the UI does not expose a context-menu action for creating
-`MakeMoveVec` nodes. The package does not expose a public command registry
-extension API.
+The package does not expose a public command registry extension API.
 
 ## Supported Inputs
 
@@ -100,6 +99,10 @@ Install the builder package plus its peer dependencies in your React app:
 ```sh
 npm install @zktx.io/ptb-builder @mysten/sui @xyflow/react elkjs lucide-react re-resizable react react-dom
 ```
+
+This package is developed and tested against the exact pinned
+`@mysten/sui@2.16.2` SDK version used by the repository. Use that SDK version
+unless a later PTB Builder release states a different compatibility range.
 
 For authoring, inspection, and TypeScript SDK code preview, the smallest useful
 setup is the component, CSS, a starting chain, and a sized container. Passing

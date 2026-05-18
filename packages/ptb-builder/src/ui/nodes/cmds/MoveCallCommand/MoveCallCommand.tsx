@@ -160,11 +160,20 @@ export const MoveCallCommand = memo(function MoveCallCommand({
         moduleName: result.moduleName,
         functionName: result.functionName,
         signature: sig,
+        openSignatures: result.openSignatures,
         typeArgumentBuffers: typeArgBufs,
       });
 
       setPendingTypeArgumentCount(resolved.typeArgumentCount);
       setTypeArgBufs(resolved.typeArgumentBuffers);
+
+      if (resolved.typeArgumentError) {
+        toast?.({
+          message: resolved.typeArgumentError,
+          variant: 'warning',
+        });
+        return;
+      }
 
       patchCommand(resolved.patch);
 
@@ -225,6 +234,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <div className="flex items-center gap-1">
             <TextInput
               placeholder="package id (0x...)"
+              aria-label="Move package id"
               value={pkgIdBuf}
               onChange={(e) => {
                 markDraftChanged();
@@ -237,6 +247,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           {/* Module input */}
           <TextInput
             placeholder="module"
+            aria-label="Move module"
             value={moduleBuf}
             onChange={(e) => {
               markDraftChanged();
@@ -249,6 +260,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <div className="flex items-center gap-1">
             <TextInput
               placeholder="function"
+              aria-label="Move function"
               value={funcBuf}
               onChange={(e) => {
                 markDraftChanged();
@@ -278,6 +290,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
                 <TextInput
                   key={`type-arg-${index}`}
                   placeholder={`type argument T${index}`}
+                  aria-label={`Move type argument T${index}`}
                   value={typeArgBufs[index] ?? ''}
                   onChange={(e) => {
                     const next = padTypeArguments(

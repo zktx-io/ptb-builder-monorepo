@@ -1,3 +1,4 @@
+import { NULL_VALUE } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -18,6 +19,10 @@ const signature = {
   tparamCount: 0,
   ins: [],
   outs: [],
+};
+const openSignatures = {
+  parameters: [{ reference: NULL_VALUE, body: { $kind: 'u64' as const } }],
+  returns: [],
 };
 
 describe('PTB metadata cache', () => {
@@ -85,11 +90,16 @@ describe('PTB metadata cache', () => {
       moduleName: 'm',
       functionName: 'f',
       signature,
+      openSignatures,
     }).cache;
 
     expect(
       getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'm', 'f')?.signature,
     ).toEqual(signature);
+    expect(
+      getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'm', 'f')
+        ?.openSignatures,
+    ).toEqual(openSignatures);
     expect(
       getCachedMoveFunction(cache, 'sui:mainnet', '0xpkg', 'm', 'f'),
     ).toBeUndefined();
@@ -113,5 +123,42 @@ describe('PTB metadata cache', () => {
       'f',
     );
     expect(cached?.signature.tparamCount).toBe(1);
+  });
+
+  it('clears live Move signature details when replacing chain metadata', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: '0xpkg',
+      moduleName: 'm',
+      functionName: 'f',
+      signature,
+      openSignatures,
+    }).cache;
+
+    cache = replaceCachedChainData(cache, 'sui:testnet', {
+      objects: {},
+      modules: {
+        '0xpkg': {
+          m: {
+            f: signature,
+          },
+        },
+      },
+    });
+
+    const cached = getCachedMoveFunction(
+      cache,
+      'sui:testnet',
+      '0xpkg',
+      'm',
+      'f',
+    );
+    expect(cached?.signature).toEqual(signature);
+    expect(cached?.openSignatures).toBeUndefined();
+    expect(
+      getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'm', 'f', {
+        requireComplete: true,
+      }),
+    ).toBeUndefined();
   });
 });

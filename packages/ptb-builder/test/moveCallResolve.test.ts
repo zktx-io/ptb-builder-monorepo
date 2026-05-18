@@ -1,11 +1,34 @@
+import { NULL_VALUE, type RawOpenSignature } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
+
+const PACKAGE_ID =
+  '0x0000000000000000000000000000000000000000000000000000000000000002';
+const SUI_TYPE = `${PACKAGE_ID}::sui::SUI`;
 
 const signature = {
   tparamCount: 1,
   ins: [{ kind: 'object' as const }],
   outs: [{ kind: 'move_numeric' as const, width: 'u64' as const }],
+};
+
+const genericOpenSignatures: {
+  parameters: RawOpenSignature[];
+  returns: RawOpenSignature[];
+} = {
+  parameters: [
+    {
+      reference: NULL_VALUE,
+      body: { $kind: 'typeParameter', index: 0 },
+    },
+  ],
+  returns: [
+    {
+      reference: NULL_VALUE,
+      body: { $kind: 'vector', vector: { $kind: 'typeParameter', index: 0 } },
+    },
+  ],
 };
 
 describe('MoveCall resolve state', () => {
@@ -20,7 +43,7 @@ describe('MoveCall resolve state', () => {
 
     expect(resolved.needsConcreteTypeArguments).toBe(true);
     expect(resolved.patch.runtime).toEqual({
-      target: '0x2::coin::value',
+      target: `${PACKAGE_ID}::coin::value`,
     });
     expect(resolved.patch.ports.length).toBeGreaterThan(0);
   });
@@ -36,8 +59,8 @@ describe('MoveCall resolve state', () => {
 
     expect(resolved.needsConcreteTypeArguments).toBe(false);
     expect(resolved.patch.runtime).toEqual({
-      target: '0x2::coin::value',
-      typeArguments: ['0x2::sui::SUI'],
+      target: `${PACKAGE_ID}::coin::value`,
+      typeArguments: [SUI_TYPE],
     });
   });
 
@@ -51,10 +74,67 @@ describe('MoveCall resolve state', () => {
     });
 
     expect(resolved.typeArgumentCount).toBe(1);
-    expect(resolved.typeArgumentBuffers).toEqual(['0x2::sui::SUI']);
+    expect(resolved.typeArgumentBuffers).toEqual([SUI_TYPE]);
     expect(resolved.patch.runtime).toEqual({
-      target: '0x2::balance::value',
-      typeArguments: ['0x2::sui::SUI'],
+      target: `${PACKAGE_ID}::balance::value`,
+      typeArguments: [SUI_TYPE],
+    });
+  });
+
+  it('rejects invalid type arguments instead of writing them into runtime params', () => {
+    const resolved = buildResolvedMoveCallState({
+      packageId: '0x2',
+      moduleName: 'coin',
+      functionName: 'value',
+      signature,
+      typeArgumentBuffers: ['signer'],
+    });
+
+    expect(resolved.needsConcreteTypeArguments).toBe(true);
+    expect(resolved.typeArgumentError).toContain(
+      'not a supported Move type tag',
+    );
+    expect(resolved.patch.runtime).toEqual({
+      target: `${PACKAGE_ID}::coin::value`,
+    });
+  });
+
+  it('substitutes concrete generic type arguments into resolved value ports', () => {
+    const resolved = buildResolvedMoveCallState({
+      packageId: '0x2',
+      moduleName: 'generic',
+      functionName: 'echo',
+      signature: {
+        tparamCount: 1,
+        ins: [
+          { kind: 'unknown' as const, debugInfo: 'generic TypeParameter 0' },
+        ],
+        outs: [
+          {
+            kind: 'vector' as const,
+            elem: {
+              kind: 'unknown' as const,
+              debugInfo: 'generic TypeParameter 0',
+            },
+          },
+        ],
+      },
+      openSignatures: genericOpenSignatures,
+      typeArgumentBuffers: ['u64'],
+    });
+
+    expect(resolved.needsConcreteTypeArguments).toBe(false);
+    expect(resolved.patch.runtime).toEqual({
+      target: `${PACKAGE_ID}::generic::echo`,
+      typeArguments: ['u64'],
+    });
+    expect(resolved.patch.ports[0]?.dataType).toEqual({
+      kind: 'move_numeric',
+      width: 'u64',
+    });
+    expect(resolved.patch.ports[1]?.dataType).toEqual({
+      kind: 'vector',
+      elem: { kind: 'move_numeric', width: 'u64' },
     });
   });
 });

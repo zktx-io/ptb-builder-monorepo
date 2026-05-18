@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClientForNetwork,
-  objectIdsFromRawProgrammableTransactionInput,
   selectCoreTransactionResult,
   supportedNetworksForTransport,
   supportsNetworkForTransport,
@@ -24,6 +23,8 @@ const programmableTransaction = {
   inputs: [{ Pure: { bytes: 'AQID' } }],
   commands: [{ MakeMoveVec: { type: '0x2::sui::SUI', elements: [] } }],
 };
+const SUI_TYPE_TAG =
+  '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
 // eslint-disable-next-line no-restricted-syntax -- SDK Core status fixtures use null in the pinned 2.16.2 shape.
 const SDK_NULL = null;
 
@@ -92,7 +93,7 @@ describe('SDK Core transaction bridge', () => {
     );
     expect(code).toContain('tx.pure(fromBase64("AQID"))');
     expect(code).toContain(
-      'tx.makeMoveVec({ type: "0x2::sui::SUI", elements: [] })',
+      `tx.makeMoveVec({ type: "${SUI_TYPE_TAG}", elements: [] })`,
     );
   });
 
@@ -107,108 +108,6 @@ describe('SDK Core transaction bridge', () => {
         },
       }),
     ).toBeUndefined();
-  });
-
-  it('collects object ids from SDK Core and model raw CallArg shapes', () => {
-    const ownedId =
-      '0x0000000000000000000000000000000000000000000000000000000000000001';
-    const sharedId =
-      '0x0000000000000000000000000000000000000000000000000000000000000002';
-    const receivingId =
-      '0x0000000000000000000000000000000000000000000000000000000000000003';
-    const modelId =
-      '0x0000000000000000000000000000000000000000000000000000000000000004';
-    const singleKeyId =
-      '0x0000000000000000000000000000000000000000000000000000000000000005';
-
-    expect(
-      objectIdsFromRawProgrammableTransactionInput({
-        inputs: [
-          { Pure: { bytes: 'AQID' } },
-          {
-            $kind: 'Object',
-            Object: {
-              $kind: 'ImmOrOwnedObject',
-              ImmOrOwnedObject: {
-                objectId: ownedId,
-                version: '1',
-                digest: 'digest',
-              },
-            },
-          },
-          {
-            $kind: 'Object',
-            Object: {
-              $kind: 'SharedObject',
-              SharedObject: {
-                objectId: sharedId,
-                initialSharedVersion: '2',
-                mutable: false,
-              },
-            },
-          },
-          {
-            $kind: 'Object',
-            Object: {
-              $kind: 'Receiving',
-              Receiving: {
-                objectId: receivingId,
-                version: '3',
-                digest: 'digest',
-              },
-            },
-          },
-          {
-            kind: 'Object',
-            object: {
-              kind: 'ImmOrOwnedObject',
-              objectId: modelId,
-              version: '4',
-              digest: 'digest',
-            },
-          },
-          {
-            kind: 'Object',
-            object: {
-              kind: 'ImmOrOwnedObject',
-              objectId: ownedId,
-              version: '1',
-              digest: 'digest',
-            },
-          },
-          {
-            kind: 'Object',
-            object: {
-              ImmOrOwnedObject: {
-                objectId: singleKeyId,
-                version: '5',
-                digest: 'digest',
-              },
-            },
-          },
-          {
-            kind: 'Object',
-            object: {
-              $kind: 'SharedObject',
-              kind: 'ImmOrOwnedObject',
-              SharedObject: {
-                objectId:
-                  '0x0000000000000000000000000000000000000000000000000000000000000006',
-                initialSharedVersion: '6',
-                mutable: false,
-              },
-              ImmOrOwnedObject: {
-                objectId:
-                  '0x0000000000000000000000000000000000000000000000000000000000000007',
-                version: '7',
-                digest: 'digest',
-              },
-            },
-          },
-        ],
-        commands: [],
-      }),
-    ).toEqual([ownedId, sharedId, receivingId, modelId, singleKeyId]);
   });
 
   it('rejects unverified GraphQL networks instead of falling back to JSON-RPC', () => {

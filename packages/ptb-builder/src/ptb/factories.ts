@@ -117,7 +117,7 @@ export function makeVariableNode(
     id,
     kind: 'Variable',
     label: opts?.label ?? 'var',
-    name: 'var',
+    name: '',
     varType,
     value: opts?.value,
     rawInput: opts?.rawInput,

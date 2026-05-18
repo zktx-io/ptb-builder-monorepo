@@ -3,8 +3,8 @@
 /** IO handle component.
  *  - Stable handle id is derived via buildHandleId(port) and may include a
  *    coarse type suffix (e.g., ":number", ":object", "vector<number>").
- *  - Connection validation uses structured PTB types resolved from the store
- *    (findPortTypeFromStore) and applies isTypeCompatible() semantics.
+ *  - Connection validation resolves structured PTB ports from the store and
+ *    applies the same authoring policy as the canvas connection handler.
  *  - Visual category/glyphs are purely cosmetic; they do not affect validation.
  *  - The PTB model can represent vector<object>/option<object> from decoded data.
  *    UI-level creation of such shapes may be disabled.
@@ -22,16 +22,16 @@ import {
 } from '@xyflow/react';
 
 import {
-  findPortTypeFromStore,
+  findPortFromStore,
   hasConcreteEnds,
   isIOTargetBusy,
   isSelfEdge,
 } from './handleUtils';
 import {
+  canConnectIO,
   ioCategoryOf,
   ioCategoryOfSerialized,
   isOptionSerialized,
-  isTypeCompatible,
   isVectorSerialized,
 } from '../../ptb/graph/typecheck';
 import { buildHandleId, serializePTBType } from '../../ptb/graph/types';
@@ -126,19 +126,18 @@ function PTBHandleIOComponent({
       const edges = Array.isArray(state.edges) ? state.edges : [];
       if (isIOTargetBusy(edges, c)) return false;
 
-      const srcT = findPortTypeFromStore(
+      const sourcePort = findPortFromStore(
         nodes,
         c.source!,
         c.sourceHandle as any,
       );
-      const dstT = findPortTypeFromStore(
+      const targetPort = findPortFromStore(
         nodes,
         c.target!,
         c.targetHandle as any,
       );
-      if (!srcT || !dstT) return false;
 
-      return isTypeCompatible(srcT, dstT);
+      return canConnectIO(sourcePort, targetPort);
     },
     [store],
   );
