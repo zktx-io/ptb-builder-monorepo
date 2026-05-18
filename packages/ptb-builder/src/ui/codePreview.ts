@@ -4,7 +4,11 @@ import {
   PTBModelError,
   transactionIRToTsSdkCode,
 } from '@zktx.io/ptb-model';
-import type { PTBGraph, TransactionDiagnostic } from '@zktx.io/ptb-model';
+import type {
+  GraphToTransactionIROptions,
+  PTBGraph,
+  TransactionDiagnostic,
+} from '@zktx.io/ptb-model';
 
 import { normalizeRuntimeEnvelope } from '../ptb/runtimeEnvelope';
 import type {
@@ -12,7 +16,10 @@ import type {
   RuntimeEnvelope,
 } from '../ptb/runtimeEnvelope';
 import type { Chain } from '../types';
-import { formatModelDiagnosticLine } from './modelDiagnostics';
+import {
+  displayModelDiagnostics,
+  formatModelDiagnosticLine,
+} from './modelDiagnostics';
 
 export type CodePreviewResult = {
   code: string;
@@ -25,6 +32,7 @@ export function renderCodePreview(
   opts: {
     chain?: Chain;
     envelope?: RuntimeEnvelope;
+    moveSignatures?: GraphToTransactionIROptions['moveSignatures'];
     previousModelCode?: string;
   },
 ): CodePreviewResult {
@@ -42,7 +50,9 @@ export function renderCodePreview(
   const metadata = previewMetadata(opts.chain, envelope, envelopeError);
 
   try {
-    const ir = graphToTransactionIR(graph);
+    const ir = graphToTransactionIR(graph, {
+      moveSignatures: opts.moveSignatures,
+    });
     if (hasErrors(ir.diagnostics)) {
       return diagnosticPreview(
         metadata,
@@ -89,7 +99,7 @@ function diagnosticPreview(
   const lines = [
     metadata,
     '// Code preview is stale because the current graph cannot be rendered.',
-    ...diagnostics.map(
+    ...displayModelDiagnostics(diagnostics).map(
       (diagnostic) => `// ${formatModelDiagnosticLine(diagnostic)}`,
     ),
     previousModelCode ? `\n${previousModelCode}` : '',

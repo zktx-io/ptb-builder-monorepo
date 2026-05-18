@@ -30,6 +30,7 @@ import React, {
 import type { Transaction } from '@mysten/sui/transactions';
 import {
   type IRInput,
+  type MovePackageSignatureEvidence,
   parseObjectId,
   rawTransactionToIR,
   transactionIRToGraph,
@@ -76,6 +77,7 @@ import {
   type CachedMoveFunction,
   createPTBMetadataCache,
   getCachedMoveFunction,
+  moveSignatureEvidenceFromCache,
   replaceCachedChainData,
   upsertCachedMoveFunction,
   upsertCachedObjectData,
@@ -186,6 +188,7 @@ export type PtbContextValue = {
   ) => Promise<ObjectAuthoringLookupResult>;
 
   modules: PTBModulesEmbed;
+  moveSignatures?: MovePackageSignatureEvidence;
   getMoveFunction: (
     packageId: string,
     moduleName: string,
@@ -414,7 +417,15 @@ export function PtbProvider({
   // Chain caches
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
   const [modules, setModules] = useState<PTBModulesEmbed>(() => EMPTY_MODULES);
+  const [metadataRevision, setMetadataRevision] = useState(0);
   const metadataCacheRef = useRef(createPTBMetadataCache());
+  const moveSignatures = useMemo(() => {
+    // metadataRevision invalidates this ref-derived projection when the cache mutates.
+    void metadataRevision;
+    return activeChain === undefined
+      ? undefined
+      : moveSignatureEvidenceFromCache(metadataCacheRef.current, activeChain);
+  }, [activeChain, metadataRevision]);
   const moveFunctionInflightRef = useRef<
     Map<string, Promise<MoveFunctionSignature | undefined>>
   >(new Map());
@@ -858,6 +869,7 @@ export function PtbProvider({
           moveFunction,
         );
         metadataCacheRef.current = next.cache;
+        setMetadataRevision((revision) => revision + 1);
         if (activeChainRef.current === chain) {
           setModules(next.modules);
         }
@@ -1062,6 +1074,7 @@ export function PtbProvider({
           chain,
           { modules: EMPTY_MODULES, objects: objectsEmbed },
         );
+        setMetadataRevision((revision) => revision + 1);
         setActiveChain(chain);
         setModules(EMPTY_MODULES);
         setObjects(objectsEmbed);
@@ -1134,6 +1147,7 @@ export function PtbProvider({
           doc.chain,
           { modules: doc.modules, objects: doc.objects },
         );
+        setMetadataRevision((revision) => revision + 1);
 
         setView(nextView);
         setActiveChain(doc.chain);
@@ -1174,6 +1188,7 @@ export function PtbProvider({
           chain,
           { modules: EMPTY_MODULES, objects: EMPTY_OBJECTS },
         );
+        setMetadataRevision((revision) => revision + 1);
         setView(nextView);
         setActiveChain(chain);
         replaceGraphImmediate(nextGraph);
@@ -1323,6 +1338,7 @@ export function PtbProvider({
       lookupObjectForAuthoring,
 
       modules,
+      moveSignatures,
       getMoveFunction,
 
       getOwnedObjects,
@@ -1362,6 +1378,7 @@ export function PtbProvider({
       objects,
       lookupObjectForAuthoring,
       modules,
+      moveSignatures,
       getMoveFunction,
       getOwnedObjects,
       providerUiState,

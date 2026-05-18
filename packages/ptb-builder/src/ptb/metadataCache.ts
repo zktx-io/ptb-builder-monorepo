@@ -1,3 +1,13 @@
+import {
+  isMoveFunctionSignatureEvidence,
+  parseMoveIdentifier,
+  parseObjectId,
+} from '@zktx.io/ptb-model';
+import type {
+  MoveFunctionSignatureEvidence,
+  MovePackageSignatureEvidence,
+} from '@zktx.io/ptb-model';
+
 import type { Chain } from '../types';
 import type { PTBFunctionOpenSignatures } from './move/toPTBModuleData';
 import type {
@@ -157,6 +167,49 @@ export function getCachedMoveFunction(
     functionName,
     signature,
   };
+}
+
+export function moveSignatureEvidenceFromCache(
+  cache: PTBMetadataCache,
+  chain: Chain,
+): MovePackageSignatureEvidence | undefined {
+  const moveFunctions = cache.moveFunctionsByChain[chain];
+  if (moveFunctions === undefined) return undefined;
+
+  const evidence: MovePackageSignatureEvidence = {};
+  let hasEvidence = false;
+
+  for (const entry of Object.values(moveFunctions)) {
+    if (entry.completeness !== 'complete') continue;
+    if (entry.openSignatures === undefined) continue;
+
+    const packageId = parseObjectId(entry.packageId);
+    const moduleName = parseMoveIdentifier(entry.moduleName);
+    const functionName = parseMoveIdentifier(entry.functionName);
+    if (
+      packageId === undefined ||
+      moduleName === undefined ||
+      moduleName !== entry.moduleName ||
+      functionName === undefined ||
+      functionName !== entry.functionName
+    ) {
+      continue;
+    }
+
+    const signatureEvidence: MoveFunctionSignatureEvidence = {
+      typeParameterCount: entry.signature.tparamCount,
+      parameters: entry.openSignatures.parameters,
+      returns: entry.openSignatures.returns,
+    };
+    if (!isMoveFunctionSignatureEvidence(signatureEvidence)) continue;
+
+    evidence[packageId] = evidence[packageId] ?? {};
+    evidence[packageId][moduleName] = evidence[packageId][moduleName] ?? {};
+    evidence[packageId][moduleName][functionName] = signatureEvidence;
+    hasEvidence = true;
+  }
+
+  return hasEvidence ? evidence : undefined;
 }
 
 export function upsertCachedMoveFunction(

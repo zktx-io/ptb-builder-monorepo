@@ -5,6 +5,49 @@ type DiagnosticLike = Pick<TransactionDiagnostic, 'code' | 'message'> & {
 };
 
 const MOVE_INTEGER_WIDTHS = 'u8, u16, u32, u64, u128, or u256';
+const GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT =
+  'graph.command.moveCall.typeArgumentsCount';
+const GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH =
+  'graph.command.moveCall.resultCountMismatch';
+const IR_MOVE_CALL_TYPE_ARGUMENTS_COUNT =
+  'ir.command.moveCall.typeArgumentsCount';
+const IR_MOVE_CALL_RESULT_COUNT_MISMATCH =
+  'ir.command.moveCall.resultCountMismatch';
+
+export function displayModelDiagnostics<T extends DiagnosticLike>(
+  diagnostics: readonly T[],
+): T[] {
+  const hiddenIrQuotas = new Map<string, number>([
+    [
+      IR_MOVE_CALL_TYPE_ARGUMENTS_COUNT,
+      diagnostics.filter(
+        (diagnostic) =>
+          diagnostic.code === GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT,
+      ).length,
+    ],
+    [
+      IR_MOVE_CALL_RESULT_COUNT_MISMATCH,
+      diagnostics.filter(
+        (diagnostic) =>
+          diagnostic.code === GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH,
+      ).length,
+    ],
+  ]);
+
+  const display: T[] = [];
+  for (const diagnostic of diagnostics) {
+    // Graph diagnostics do not expose an IR command mapping, so duplicate IR
+    // evidence diagnostics are suppressed by category in input order.
+    const quota = hiddenIrQuotas.get(diagnostic.code) ?? 0;
+    if (quota > 0) {
+      hiddenIrQuotas.set(diagnostic.code, quota - 1);
+      continue;
+    }
+    display.push(diagnostic);
+  }
+
+  return display;
+}
 
 export function formatModelDiagnostic(diagnostic: DiagnosticLike): string {
   if (diagnostic.message.includes('abstract number placeholder')) {
@@ -16,8 +59,16 @@ export function formatModelDiagnostic(diagnostic: DiagnosticLike): string {
       return 'This edge cast is invalid. Use casts only to bind an abstract number variable to a concrete Move integer input, or update the variable type.';
     case 'graph.edge.cast.unknownField':
       return 'This edge cast has unsupported fields. Remove the extra cast fields and reconnect the edge.';
+    case GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT:
+    case IR_MOVE_CALL_TYPE_ARGUMENTS_COUNT:
+      return 'This MoveCall type argument count does not match verified Move signature metadata. Update the type arguments or refresh the function metadata.';
+    case GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH:
+    case IR_MOVE_CALL_RESULT_COUNT_MISMATCH:
+      return 'This MoveCall result count does not match verified Move signature metadata. Update the result count or refresh the function metadata.';
     case 'ir.arg.pureType':
       return 'This command argument has the wrong pure type for the command. Match the value type to the command input port.';
+    case 'ir.command.makeMoveVec.elementTypeMismatch':
+      return 'This MakeMoveVec element type does not match verified Move signature metadata. Update the vector type or the connected values.';
     case 'ir.input.unsupportedValue':
       return 'This unsupported input contains a value that is not JSON-compatible. Replace it with a plain JSON value before using generated code.';
     case 'ir.command.unsupportedValue':
@@ -43,7 +94,9 @@ export function formatModelDiagnosticLine(diagnostic: DiagnosticLike): string {
 export function formatModelDiagnostics(
   diagnostics: readonly DiagnosticLike[],
 ): string {
-  return diagnostics.map(formatModelDiagnostic).join(' ');
+  return displayModelDiagnostics(diagnostics)
+    .map(formatModelDiagnostic)
+    .join(' ');
 }
 
 export function formatModelErrorMessage(

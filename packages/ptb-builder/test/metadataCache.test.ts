@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPTBMetadataCache,
   getCachedMoveFunction,
+  moveSignatureEvidenceFromCache,
   replaceCachedChainData,
   upsertCachedMoveFunction,
   upsertCachedObjectData,
@@ -24,6 +25,10 @@ const openSignatures = {
   parameters: [{ reference: NULL_VALUE, body: { $kind: 'u64' as const } }],
   returns: [],
 };
+const evidencePackageId =
+  '0x0000000000000000000000000000000000000000000000000000000000000002';
+const evidenceModuleName = 'coin';
+const evidenceFunctionName = 'value';
 
 describe('PTB metadata cache', () => {
   it('keys object metadata by chain', () => {
@@ -159,6 +164,145 @@ describe('PTB metadata cache', () => {
       getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'm', 'f', {
         requireComplete: true,
       }),
+    ).toBeUndefined();
+  });
+
+  it('projects complete cached Move functions into model signature evidence', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: evidenceModuleName,
+      functionName: evidenceFunctionName,
+      signature: {
+        ...signature,
+        tparamCount: 1,
+      },
+      openSignatures,
+    }).cache;
+
+    const evidence = moveSignatureEvidenceFromCache(cache, 'sui:testnet');
+
+    expect(evidence).toEqual({
+      [evidencePackageId]: {
+        [evidenceModuleName]: {
+          [evidenceFunctionName]: {
+            typeParameterCount: 1,
+            parameters: openSignatures.parameters,
+            returns: openSignatures.returns,
+          },
+        },
+      },
+    });
+    expect(
+      moveSignatureEvidenceFromCache(cache, 'sui:mainnet'),
+    ).toBeUndefined();
+  });
+
+  it('canonicalizes package ids when projecting Move signature evidence', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: '0x2',
+      moduleName: evidenceModuleName,
+      functionName: evidenceFunctionName,
+      signature,
+      openSignatures,
+    }).cache;
+
+    expect(moveSignatureEvidenceFromCache(cache, 'sui:testnet')).toEqual({
+      [evidencePackageId]: {
+        [evidenceModuleName]: {
+          [evidenceFunctionName]: {
+            typeParameterCount: 0,
+            parameters: openSignatures.parameters,
+            returns: openSignatures.returns,
+          },
+        },
+      },
+    });
+  });
+
+  it('keeps valid Move signature evidence while omitting invalid entries', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: evidenceModuleName,
+      functionName: evidenceFunctionName,
+      signature,
+      openSignatures,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: 'not-an-id',
+      moduleName: 'coin',
+      functionName: 'value',
+      signature,
+      openSignatures,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: 'bad-module',
+      functionName: 'value',
+      signature,
+      openSignatures,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: evidenceModuleName,
+      functionName: 'bad_signature',
+      signature: {
+        ...signature,
+        tparamCount: -1,
+      },
+      openSignatures,
+    }).cache;
+
+    expect(moveSignatureEvidenceFromCache(cache, 'sui:testnet')).toEqual({
+      [evidencePackageId]: {
+        [evidenceModuleName]: {
+          [evidenceFunctionName]: {
+            typeParameterCount: 0,
+            parameters: openSignatures.parameters,
+            returns: openSignatures.returns,
+          },
+        },
+      },
+    });
+  });
+
+  it('omits incomplete or noncanonical Move function evidence entries', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: evidenceModuleName,
+      functionName: evidenceFunctionName,
+      signature,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: 'not-an-id',
+      moduleName: 'coin',
+      functionName: 'value',
+      signature,
+      openSignatures,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: 'bad-module',
+      functionName: 'value',
+      signature,
+      openSignatures,
+    }).cache;
+    cache = upsertCachedMoveFunction(cache, 'sui:testnet', {
+      packageId: evidencePackageId,
+      moduleName: evidenceModuleName,
+      functionName: 'bad_signature',
+      signature: {
+        ...signature,
+        tparamCount: -1,
+      },
+      openSignatures,
+    }).cache;
+
+    expect(
+      moveSignatureEvidenceFromCache(cache, 'sui:testnet'),
     ).toBeUndefined();
   });
 });

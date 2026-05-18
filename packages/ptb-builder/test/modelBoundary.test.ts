@@ -1,10 +1,12 @@
 import {
   graphToTransactionIR,
   hasErrors,
+  type MovePackageSignatureEvidence,
   nestedResultHandle,
   NULL_VALUE,
   PTBModelError,
   type PTBType,
+  type RawOpenSignature,
   RESULT_HANDLE_ID,
   type TransactionIR,
   transactionIRToGraph,
@@ -137,6 +139,48 @@ function splitGasGraph(): PTBGraph {
     ],
   };
 }
+
+const u64OpenSignature: RawOpenSignature = {
+  reference: NULL_VALUE,
+  body: { $kind: 'u64' },
+};
+
+function moveCallResultCountGraph(): PTBGraph {
+  return {
+    nodes: [
+      {
+        id: 'call',
+        kind: 'Command',
+        label: 'MoveCall',
+        command: 'moveCall',
+        params: {
+          runtime: {
+            target: `${ADDRESS}::m::f`,
+            resultCount: 1,
+          },
+        },
+        ports: [
+          { id: 'in', role: 'flow', direction: 'in' },
+          { id: 'out', role: 'flow', direction: 'out' },
+          { id: 'out_result', role: 'io', direction: 'out' },
+        ],
+      },
+    ],
+    edges: [],
+  };
+}
+
+const moveCallTwoReturnEvidence: MovePackageSignatureEvidence = {
+  [ADDRESS]: {
+    m: {
+      f: {
+        typeParameterCount: 0,
+        parameters: [],
+        returns: [u64OpenSignature, u64OpenSignature],
+      },
+    },
+  },
+};
 
 function transferToAddressGraph(value: string): PTBGraph {
   return {
@@ -324,6 +368,32 @@ describe('model-root PTB boundary', () => {
     expect(preview.code).toContain('Code preview is stale');
     expect(preview.code).toContain('ir.input.pureValue');
     expect(preview.code).toContain('tx.splitCoins');
+  });
+
+  it('uses Move signature evidence for code preview diagnostics when provided', () => {
+    const graph = moveCallResultCountGraph();
+    const previous = renderCodePreview(graph, {
+      chain: 'sui:testnet',
+    });
+
+    expect(previous.ok).toBe(true);
+
+    const preview = renderCodePreview(graph, {
+      chain: 'sui:testnet',
+      moveSignatures: moveCallTwoReturnEvidence,
+      previousModelCode: previous.modelCode,
+    });
+
+    expect(preview.ok).toBe(false);
+    expect(preview.code).toContain('verified Move signature metadata');
+    expect(preview.code).toContain(
+      'graph.command.moveCall.resultCountMismatch',
+    );
+    expect(preview.code).toContain('$.nodes[0].params.runtime.resultCount');
+    expect(preview.code).not.toContain(
+      'ir.command.moveCall.resultCountMismatch',
+    );
+    expect(preview.code).toContain('tx.moveCall');
   });
 
   it('does not substitute wallet sentinels into IR arguments', () => {

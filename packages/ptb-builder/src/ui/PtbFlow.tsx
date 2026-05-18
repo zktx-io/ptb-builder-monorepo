@@ -193,6 +193,7 @@ export function PTBFlow() {
     readOnly,
     theme,
     chain,
+    moveSignatures,
     execOpts,
     dryRunTx,
     runTx,
@@ -948,6 +949,7 @@ export function PTBFlow() {
       const result = renderCodePreview(graph, {
         chain,
         envelope: execOpts,
+        moveSignatures,
         previousModelCode: lastSuccessfulCodeRef.current,
       });
       if (result.ok) lastSuccessfulCodeRef.current = result.modelCode;
@@ -977,7 +979,7 @@ export function PTBFlow() {
     return () => {
       cancelScheduled();
     };
-  }, [rfNodes, rfEdges, chain, execOpts, safeRfToPTB]);
+  }, [rfNodes, rfEdges, chain, execOpts, moveSignatures, safeRfToPTB]);
 
   // ----- Execute --------------------------------------------------------------
 
@@ -990,7 +992,7 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const ir = graphToTransactionIR(graph);
+      const ir = graphToTransactionIR(graph, { moveSignatures });
       const tx = buildTransactionFromIR(ir, execOpts);
       await dryRunTx?.(tx); // toast behavior is controlled in provider
     } catch (e: any) {
@@ -1001,7 +1003,16 @@ export function PTBFlow() {
     } finally {
       setIsRunning(false);
     }
-  }, [rfNodes, rfEdges, chain, execOpts, dryRunTx, safeRfToPTB, toast]);
+  }, [
+    rfNodes,
+    rfEdges,
+    chain,
+    execOpts,
+    moveSignatures,
+    dryRunTx,
+    safeRfToPTB,
+    toast,
+  ]);
 
   const onExecute = useCallback(async () => {
     try {
@@ -1010,7 +1021,7 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const ir = graphToTransactionIR(graph);
+      const ir = graphToTransactionIR(graph, { moveSignatures });
       const tx = buildTransactionFromIR(ir, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } catch (e: any) {
@@ -1021,7 +1032,16 @@ export function PTBFlow() {
     } finally {
       setIsRunning(false);
     }
-  }, [rfNodes, rfEdges, chain, execOpts, runTx, safeRfToPTB, toast]);
+  }, [
+    rfNodes,
+    rfEdges,
+    chain,
+    execOpts,
+    moveSignatures,
+    runTx,
+    safeRfToPTB,
+    toast,
+  ]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
   const { fitView, screenToFlowPosition, setViewport, getViewport } =
