@@ -1,7 +1,4 @@
-import {
-  pureBcsSchemaFromTypeName,
-  type PureTypeName,
-} from '@mysten/sui/bcs';
+import { pureBcsSchemaFromTypeName, type PureTypeName } from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
 import { fromBase64, toBase64 } from '@mysten/sui/utils';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -48,18 +45,19 @@ import {
   parseObjectDigest,
   parseObjectId,
   parsePTBDocV4,
+  parsePTBObjectTypeTagCandidate,
   parseStructuralTransactionIR,
   PTBModelError,
   pureTypeName,
   RAW_ARGUMENT_INDEX_MAX,
   rawTransactionToIR,
   RESULT_HANDLE_ID,
+  toPTBTypeFromConcreteTypeArgument,
+  toPTBTypeFromOpenSignature,
   transactionIRToGraph,
   transactionIRToMermaid,
   transactionIRToRaw,
   transactionIRToTsSdkCode,
-  toPTBTypeFromConcreteTypeArgument,
-  toPTBTypeFromOpenSignature,
   validatePTBDocV4,
   validatePTBGraph,
   validatePTBType,
@@ -73,10 +71,10 @@ import type {
   IRArgRef,
   IRCommand,
   IRInput,
+  MovePackageSignatureEvidence,
   Port,
   PTBGraph,
   PTBType,
-  MovePackageSignatureEvidence,
   RawCommand,
   RawOpenSignature,
   RawProgrammableTransaction,
@@ -105,6 +103,12 @@ const TEST_DIGEST_3 = 'C6G8PsqwNpMqrK7ApwuQUvDgzkFcUaUy6Y5ycrAN2q3F';
 const TEST_SUI_TYPE = `${normalizedObjectId('2')}::sui::SUI`;
 const TEST_COIN_TYPE = `${normalizedObjectId('2')}::coin::Coin`;
 const TEST_COIN_SUI_TYPE = `${TEST_COIN_TYPE}<${TEST_SUI_TYPE}>`;
+const TEST_STRING_TYPE = `${normalizedObjectId('1')}::string::String`;
+const TEST_OBJECT_ID_TYPE = `${normalizedObjectId('2')}::object::ID`;
+const TEST_OBJECT_UID_TYPE = `${normalizedObjectId('2')}::object::UID`;
+const TEST_OPTION_TYPE = `${normalizedObjectId('1')}::option::Option`;
+const TEST_OPTION_SUI_TYPE = `${normalizedObjectId('1')}::option::Option<${TEST_SUI_TYPE}>`;
+const TEST_TX_CONTEXT_TYPE = `${normalizedObjectId('2')}::tx_context::TxContext`;
 
 function rawSignature(body: RawOpenSignature['body']): RawOpenSignature {
   return { reference: NULL_VALUE, body };
@@ -118,6 +122,13 @@ function rawDatatypeSignature(
     $kind: 'datatype',
     datatype: { typeName, typeParameters },
   });
+}
+
+function unsupportedKnownNonObjectStructType(typeTag: string): PTBType {
+  return {
+    kind: 'unknown',
+    debugInfo: `unsupported known non-object Move struct type: ${typeTag}`,
+  };
 }
 
 function nestedVectorBody(depth: number): RawOpenSignature['body'] {
@@ -179,6 +190,8 @@ describe('public package surface', () => {
     expect(isU16Index(65_535)).toBe(true);
     expect(isU16Index(65_536)).toBe(false);
     expect(parseMoveStructTypeTag('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
+    expect(parsePTBObjectTypeTagCandidate('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
+    expect(parsePTBObjectTypeTagCandidate('0x2::object::UID')).toBeUndefined();
   });
 
   it('keeps model source free of UI framework and runtime client imports', () => {
@@ -217,6 +230,9 @@ describe('Move signature evidence guards', () => {
     },
   };
   const txContextSignature = rawSignature(txContextBody);
+  const embeddedGenericTxContextSignature = rawDatatypeSignature(
+    '0x2::tx_context::TxContext<u8>',
+  );
   const vectorTxContextSignature = rawSignature({
     $kind: 'vector',
     vector: txContextBody,
@@ -232,8 +248,9 @@ describe('Move signature evidence guards', () => {
     sparse[1] = u64Signature;
 
     expect(isRawOpenSignature(u64Signature)).toBe(true);
-    expect(isRawOpenSignature({ ...u64Signature, reference: 'readonly' }))
-      .toBe(false);
+    expect(isRawOpenSignature({ ...u64Signature, reference: 'readonly' })).toBe(
+      false,
+    );
     expect(isRawOpenSignatureList([])).toBe(true);
     expect(isRawOpenSignatureList([u64Signature])).toBe(true);
     expect(isRawOpenSignatureList(sparse)).toBe(false);
@@ -329,9 +346,14 @@ describe('Move signature evidence guards', () => {
     expect(isTxContextOpenSignature(txContextSignature)).toBe(true);
     expect(
       isTxContextOpenSignature(
-        rawDatatypeSignature(`${normalizedObjectId('2')}::tx_context::TxContext`),
+        rawDatatypeSignature(
+          `${normalizedObjectId('2')}::tx_context::TxContext`,
+        ),
       ),
     ).toBe(true);
+    expect(isTxContextOpenSignature(embeddedGenericTxContextSignature)).toBe(
+      true,
+    );
     expect(isTxContextOpenSignature(vectorTxContextSignature)).toBe(false);
     expect(isTxContextOpenSignature(undefined)).toBe(false);
     expect(
@@ -345,6 +367,13 @@ describe('Move signature evidence guards', () => {
       isMoveFunctionSignatureEvidence({
         typeParameterCount: 0,
         parameters: [vectorTxContextSignature],
+        returns: [],
+      }),
+    ).toBe(false);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 0,
+        parameters: [embeddedGenericTxContextSignature],
         returns: [],
       }),
     ).toBe(false);
@@ -409,6 +438,20 @@ describe('Move signature PTB type helpers', () => {
     expect(toPTBTypeFromConcreteTypeArgument('0x2::sui::SUI')).toEqual({
       kind: 'object',
       typeTag: TEST_SUI_TYPE,
+    });
+    const unsupportedConcreteTypes: Array<readonly [string, string]> = [
+      ['0x1::string::String<u8>', TEST_STRING_TYPE],
+      ['0x2::object::ID<u8>', TEST_OBJECT_ID_TYPE],
+      ['0x2::object::UID', TEST_OBJECT_UID_TYPE],
+      ['0x2::object::UID<u8>', TEST_OBJECT_UID_TYPE],
+      ['0x1::option::Option', TEST_OPTION_TYPE],
+      ['0x2::tx_context::TxContext', TEST_TX_CONTEXT_TYPE],
+      ['0x2::tx_context::TxContext<u8>', TEST_TX_CONTEXT_TYPE],
+    ];
+    unsupportedConcreteTypes.forEach(([typeTag, canonicalBaseTypeTag]) => {
+      expect(toPTBTypeFromConcreteTypeArgument(typeTag)).toEqual(
+        unsupportedKnownNonObjectStructType(canonicalBaseTypeTag),
+      );
     });
     expect(toPTBTypeFromConcreteTypeArgument('T0')).toBeUndefined();
     expect(toPTBTypeFromConcreteTypeArgument('')).toBeUndefined();
@@ -489,19 +532,52 @@ describe('Move signature PTB type helpers', () => {
         elem: { kind: 'object', typeTag: TEST_SUI_TYPE },
       },
     });
+    const unsupportedOpenSignatures: Array<
+      readonly [RawOpenSignature, string]
+    > = [
+      [rawDatatypeSignature('0x1::option::Option'), TEST_OPTION_TYPE],
+      [rawDatatypeSignature('0x1::option::Option<u8>'), TEST_OPTION_TYPE],
+      [
+        rawDatatypeSignature('0x1::string::String', [{ $kind: 'u8' }]),
+        TEST_STRING_TYPE,
+      ],
+      [rawDatatypeSignature('0x1::string::String<u8>'), TEST_STRING_TYPE],
+      [
+        rawDatatypeSignature('0x2::object::ID', [{ $kind: 'u8' }]),
+        TEST_OBJECT_ID_TYPE,
+      ],
+      [rawDatatypeSignature('0x2::object::ID<u8>'), TEST_OBJECT_ID_TYPE],
+      [rawDatatypeSignature('0x2::object::UID'), TEST_OBJECT_UID_TYPE],
+      [rawDatatypeSignature('0x2::object::UID<u8>'), TEST_OBJECT_UID_TYPE],
+      [
+        rawDatatypeSignature('0x2::tx_context::TxContext'),
+        TEST_TX_CONTEXT_TYPE,
+      ],
+      [
+        rawDatatypeSignature('0x2::tx_context::TxContext<u8>'),
+        TEST_TX_CONTEXT_TYPE,
+      ],
+    ];
+    unsupportedOpenSignatures.forEach(([signature, canonicalBaseTypeTag]) => {
+      expect(toPTBTypeFromOpenSignature(signature)).toEqual(
+        unsupportedKnownNonObjectStructType(canonicalBaseTypeTag),
+      );
+    });
   });
 
   it('keeps OpenSignature generic structs generic and concrete structs tagged', () => {
-    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature(TEST_SUI_TYPE)))
-      .toEqual({
-        kind: 'object',
-        typeTag: TEST_SUI_TYPE,
-      });
-    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature('0x2::sui::SUI')))
-      .toEqual({
-        kind: 'object',
-        typeTag: TEST_SUI_TYPE,
-      });
+    expect(
+      toPTBTypeFromOpenSignature(rawDatatypeSignature(TEST_SUI_TYPE)),
+    ).toEqual({
+      kind: 'object',
+      typeTag: TEST_SUI_TYPE,
+    });
+    expect(
+      toPTBTypeFromOpenSignature(rawDatatypeSignature('0x2::sui::SUI')),
+    ).toEqual({
+      kind: 'object',
+      typeTag: TEST_SUI_TYPE,
+    });
     expect(
       toPTBTypeFromOpenSignature(
         rawDatatypeSignature(TEST_COIN_TYPE, [
@@ -518,11 +594,12 @@ describe('Move signature PTB type helpers', () => {
         [],
       ),
     ).toEqual({ kind: 'object' });
-    expect(toPTBTypeFromOpenSignature(rawDatatypeSignature('not-a-type')))
-      .toEqual({
-        kind: 'unknown',
-        debugInfo: 'unrecognized datatype: not-a-type',
-      });
+    expect(
+      toPTBTypeFromOpenSignature(rawDatatypeSignature('not-a-type')),
+    ).toEqual({
+      kind: 'unknown',
+      debugInfo: 'unrecognized datatype: not-a-type',
+    });
     expect(
       toPTBTypeFromOpenSignature(rawDatatypeSignature('0x2::bad-module::Name')),
     ).toEqual({
@@ -532,15 +609,17 @@ describe('Move signature PTB type helpers', () => {
   });
 
   it('returns unknown for unknown or overly deep OpenSignature bodies', () => {
-    expect(toPTBTypeFromOpenSignature(rawSignature({ $kind: 'unknown' })))
-      .toEqual({
-        kind: 'unknown',
-      });
-    expect(toPTBTypeFromOpenSignature(rawSignature(nestedVectorBody(70))))
-      .toEqual({
-        kind: 'unknown',
-        debugInfo: 'exceeded type depth',
-      });
+    expect(
+      toPTBTypeFromOpenSignature(rawSignature({ $kind: 'unknown' })),
+    ).toEqual({
+      kind: 'unknown',
+    });
+    expect(
+      toPTBTypeFromOpenSignature(rawSignature(nestedVectorBody(70))),
+    ).toEqual({
+      kind: 'unknown',
+      debugInfo: 'exceeded type depth',
+    });
   });
 });
 
@@ -1532,7 +1611,7 @@ describe('PTBDocV4', () => {
 });
 
 describe('PTB type validation', () => {
-  it('requires object PTB type tags to use a top-level Move struct type tag', () => {
+  it('requires object PTB type tags to use PTB object type-tag candidates', () => {
     const nonStringObjectType = {
       kind: 'object',
       typeTag: 7,
@@ -1541,6 +1620,26 @@ describe('PTB type validation', () => {
     const vectorObjectType: PTBType = {
       kind: 'object',
       typeTag: `vector<${TEST_SUI_TYPE}>`,
+    };
+    const stringObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_STRING_TYPE,
+    };
+    const idObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_OBJECT_ID_TYPE,
+    };
+    const uidObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_OBJECT_UID_TYPE,
+    };
+    const optionObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_OPTION_SUI_TYPE,
+    };
+    const txContextObjectType: PTBType = {
+      kind: 'object',
+      typeTag: TEST_TX_CONTEXT_TYPE,
     };
     const structObjectType: PTBType = {
       kind: 'object',
@@ -1566,26 +1665,44 @@ describe('PTB type validation', () => {
       ],
       edges: [],
     });
+    const graphWithPortDataType = (dataType: unknown): PTBGraph => ({
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          name: 'input_0',
+          varType: { kind: 'object' },
+          ports: [
+            {
+              id: 'out',
+              direction: 'out',
+              role: 'io',
+              dataType: dataType as PTBType,
+            },
+          ],
+        },
+      ],
+      edges: [],
+    });
 
     expect(validatePTBType(structObjectType)).toEqual([]);
-    expect(validatePTBType(nonStringObjectType)).toContainEqual(
-      expect.objectContaining({
-        code: 'ptb.type.object',
-        path: '$.typeTag',
-      }),
-    );
-    expect(validatePTBType(primitiveObjectType)).toContainEqual(
-      expect.objectContaining({
-        code: 'ptb.type.object',
-        path: '$.typeTag',
-      }),
-    );
-    expect(validatePTBType(vectorObjectType)).toContainEqual(
-      expect.objectContaining({
-        code: 'ptb.type.object',
-        path: '$.typeTag',
-      }),
-    );
+    [
+      nonStringObjectType,
+      primitiveObjectType,
+      vectorObjectType,
+      stringObjectType,
+      idObjectType,
+      uidObjectType,
+      optionObjectType,
+      txContextObjectType,
+    ].forEach((type) => {
+      expect(validatePTBType(type)).toContainEqual(
+        expect.objectContaining({
+          code: 'ptb.type.object',
+          path: '$.typeTag',
+        }),
+      );
+    });
     expect(validatePTBType(nestedVectorObjectType)).toContainEqual(
       expect.objectContaining({
         code: 'ptb.type.object',
@@ -1598,20 +1715,62 @@ describe('PTB type validation', () => {
         path: '$.elem.typeTag',
       }),
     );
+    expect(
+      validatePTBType({ kind: 'vector', elem: stringObjectType }),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.elem.typeTag',
+      }),
+    );
+    expect(
+      validatePTBType({ kind: 'option', elem: txContextObjectType }),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: 'ptb.type.object',
+        path: '$.elem.typeTag',
+      }),
+    );
 
-    [nonStringObjectType, primitiveObjectType, vectorObjectType].forEach(
-      (varType) => {
-        expect(validatePTBGraph(graphWithVarType(varType))).toContainEqual(
-          expect.objectContaining({
-            code: 'graph.type.object',
-            path: '$.nodes[0].varType.typeTag',
-          }),
-        );
-      },
+    [
+      nonStringObjectType,
+      primitiveObjectType,
+      vectorObjectType,
+      stringObjectType,
+      idObjectType,
+      uidObjectType,
+      optionObjectType,
+      txContextObjectType,
+    ].forEach((varType) => {
+      expect(validatePTBGraph(graphWithVarType(varType))).toContainEqual(
+        expect.objectContaining({
+          code: 'graph.type.object',
+          path: '$.nodes[0].varType.typeTag',
+        }),
+      );
+    });
+    expect(
+      validatePTBGraph(graphWithPortDataType(uidObjectType)),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.type.object',
+        path: '$.nodes[0].ports[0].dataType.typeTag',
+      }),
+    );
+    expect(
+      validatePTBDocV4({
+        version: 'ptb_4',
+        graph: graphWithVarType(uidObjectType),
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.type.object',
+        path: '$.graph.nodes[0].varType.typeTag',
+      }),
     );
 
     const graphBlockedIR = graphToTransactionIR(
-      graphWithVarType(primitiveObjectType),
+      graphWithVarType(uidObjectType),
     );
     const graphBlockedCodes = graphBlockedIR.diagnostics.map(
       (diagnostic) => diagnostic.code,
@@ -1626,7 +1785,7 @@ describe('PTB type validation', () => {
     try {
       parseStructuralTransactionIR({
         version: 'transaction_ir_1',
-        inputs: [{ id: 'input_0', kind: 'Object', type: primitiveObjectType }],
+        inputs: [{ id: 'input_0', kind: 'Object', type: stringObjectType }],
         commands: [],
         diagnostics: [],
       });
@@ -2004,6 +2163,16 @@ describe('rawTransactionToIR', () => {
     expect(parseMoveStructTypeTag('0x2::_module::__Struct')).toBe(
       `${normalizedObjectId('2')}::_module::__Struct`,
     );
+    expect(parseMoveStructTypeTag('0x1::string::String')).toBe(
+      TEST_STRING_TYPE,
+    );
+    expect(parsePTBObjectTypeTagCandidate('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
+    expect(
+      parsePTBObjectTypeTagCandidate('0x2::coin::Coin<0x2::sui::SUI>'),
+    ).toBe(TEST_COIN_SUI_TYPE);
+    expect(parsePTBObjectTypeTagCandidate('0xa::custom::Custom')).toBe(
+      `${normalizedObjectId('a')}::custom::Custom`,
+    );
     [
       '',
       ' ',
@@ -2021,9 +2190,35 @@ describe('rawTransactionToIR', () => {
     ['address', 'bool', 'u8', 'u16', 'u32', 'u64', 'u128', 'u256'].forEach(
       (typeTag) => {
         expect(parseMoveStructTypeTag(typeTag)).toBeUndefined();
+        expect(parsePTBObjectTypeTagCandidate(typeTag)).toBeUndefined();
       },
     );
     expect(parseMoveStructTypeTag('vector<0x2::sui::SUI>')).toBeUndefined();
+    [
+      'vector<0x2::sui::SUI>',
+      '0x1::string::String',
+      '0x1::string::String<u8>',
+      '0x2::object::ID',
+      '0x2::object::ID<u8>',
+      '0x2::object::UID',
+      '0x2::object::UID<u8>',
+      '0x1::option::Option',
+      '0x1::option::Option<0x2::sui::SUI>',
+      '0x2::tx_context::TxContext',
+      '0x2::tx_context::TxContext<u8>',
+    ].forEach((typeTag) => {
+      expect(parsePTBObjectTypeTagCandidate(typeTag)).toBeUndefined();
+    });
+    [
+      TEST_STRING_TYPE,
+      TEST_OBJECT_ID_TYPE,
+      TEST_OBJECT_UID_TYPE,
+      TEST_OPTION_TYPE,
+      TEST_OPTION_SUI_TYPE,
+      TEST_TX_CONTEXT_TYPE,
+    ].forEach((typeTag) => {
+      expect(parsePTBObjectTypeTagCandidate(typeTag)).toBeUndefined();
+    });
   });
 
   it('returns diagnostics for excessively nested PTB types instead of throwing', () => {

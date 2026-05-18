@@ -1,33 +1,30 @@
-import { TypeTagSerializer, type TypeTag } from '@mysten/sui/bcs';
+import { type TypeTag, TypeTagSerializer } from '@mysten/sui/bcs';
 
 import type { PTBType } from '../ptbType.js';
 import {
   isRawOpenSignature,
   MAX_RAW_OPEN_SIGNATURE_DEPTH,
   parseMoveTypeTag,
-  parseObjectId,
-  type ObjectId,
   type RawOpenSignature,
   type RawOpenSignatureBody,
 } from '../raw/types.js';
 import { MAX_PTB_TYPE_DEPTH } from '../utils.js';
-
-const MOVE_STDLIB_ADDRESS = parseObjectId('0x1') as ObjectId;
-const SUI_FRAMEWORK_ADDRESS = parseObjectId('0x2') as ObjectId;
-const STRING_MODULE = 'string';
-const STRING_NAME = 'String';
-const OBJECT_MODULE = 'object';
-const OBJECT_ID_NAME = 'ID';
-const OPTION_MODULE = 'option';
-const OPTION_NAME = 'Option';
-const TX_CONTEXT_MODULE = 'tx_context';
-const TX_CONTEXT_NAME = 'TxContext';
-
-interface MoveStructName {
-  address: string;
-  module: string;
-  name: string;
-}
+import {
+  canonicalStructTypeTagBase,
+  isKnownNonObjectStructTag,
+  isKnownNonObjectStructTypeTag,
+  isStructTag,
+  isTxContextStructTypeTag,
+  MOVE_STDLIB_ADDRESS,
+  OBJECT_ID_NAME,
+  OBJECT_MODULE,
+  OPTION_MODULE,
+  OPTION_NAME,
+  parseDatatypeName,
+  STRING_MODULE,
+  STRING_NAME,
+  SUI_FRAMEWORK_ADDRESS,
+} from './structTypeTags.js';
 
 /**
  * Returns true when the signature's top-level body is the Sui TxContext
@@ -109,7 +106,12 @@ function toPTBTypeFromTypeTag(tag: TypeTag, depth: number): PTBType {
       return { kind: 'scalar', name: 'string' };
     }
     if (
-      isStructTag(struct, SUI_FRAMEWORK_ADDRESS, OBJECT_MODULE, OBJECT_ID_NAME) &&
+      isStructTag(
+        struct,
+        SUI_FRAMEWORK_ADDRESS,
+        OBJECT_MODULE,
+        OBJECT_ID_NAME,
+      ) &&
       struct.typeParams.length === 0
     ) {
       return { kind: 'scalar', name: 'id' };
@@ -122,6 +124,11 @@ function toPTBTypeFromTypeTag(tag: TypeTag, depth: number): PTBType {
         kind: 'option',
         elem: toPTBTypeFromTypeTag(struct.typeParams[0]!, depth + 1),
       };
+    }
+    if (isKnownNonObjectStructTag(struct)) {
+      return unsupportedKnownNonObjectStructType(
+        TypeTagSerializer.tagToString(tag),
+      );
     }
     if (
       !struct.typeParams.every((typeParameter) =>
@@ -215,6 +222,17 @@ function toPTBTypeFromOpenSignatureBody(
           ),
         };
       }
+      // SDK-shaped OpenSignature datatype names keep type arguments in
+      // typeParameters, so the parsed base name catches the normal path.
+      if (isKnownNonObjectStructTag(parsed)) {
+        return unsupportedKnownNonObjectStructType(canonicalTypeTag);
+      }
+      if (isKnownNonObjectStructTypeTag(canonicalTypeTag)) {
+        // This branch rejects non-standard embedded generic typeName values
+        // such as "0x1::string::String<u8>", where the parsed name is
+        // "String<u8>" but the canonical type-tag base is still String.
+        return unsupportedKnownNonObjectStructType(canonicalTypeTag);
+      }
       if (typeParameters.length > 0) return { kind: 'object' };
 
       return { kind: 'object', typeTag: canonicalTypeTag };
@@ -229,7 +247,7 @@ function toPTBTypeFromOpenSignatureBody(
 function isTxContextOpenSignatureBody(body: RawOpenSignatureBody): boolean {
   return (
     body.$kind === 'datatype' &&
-    isTxContextTypeName(body.datatype.typeName)
+    isTxContextStructTypeTag(body.datatype.typeName)
   );
 }
 
@@ -244,7 +262,7 @@ function openSignatureBodyContainsTxContext(
       return openSignatureBodyContainsTxContext(body.vector, depth + 1);
     case 'datatype':
       return (
-        isTxContextTypeName(body.datatype.typeName) ||
+        isTxContextStructTypeTag(body.datatype.typeName) ||
         body.datatype.typeParameters.some((typeParameter) =>
           openSignatureBodyContainsTxContext(typeParameter, depth + 1),
         )
@@ -283,33 +301,14 @@ function typeTagWithinDepth(tag: TypeTag, depth: number): boolean {
   return true;
 }
 
-function isTxContextTypeName(typeName: string): boolean {
-  const parsed = parseDatatypeName(typeName);
-  return (
-    parsed !== undefined &&
-    isStructTag(parsed, SUI_FRAMEWORK_ADDRESS, TX_CONTEXT_MODULE, TX_CONTEXT_NAME)
-  );
-}
-
-function parseDatatypeName(typeName: string): MoveStructName | undefined {
-  const parts = typeName.split('::');
-  if (parts.length !== 3) return undefined;
-  return { address: parts[0]!, module: parts[1]!, name: parts[2]! };
-}
-
-function isStructTag(
-  value: MoveStructName,
-  address: ObjectId,
-  moduleName: string,
-  name: string,
-): boolean {
-  return (
-    parseObjectId(value.address) === address &&
-    value.module === moduleName &&
-    value.name === name
-  );
-}
-
 function exceededTypeDepth(): PTBType {
   return { kind: 'unknown', debugInfo: 'exceeded type depth' };
+}
+
+function unsupportedKnownNonObjectStructType(typeTag: string): PTBType {
+  const canonicalBaseTypeTag = canonicalStructTypeTagBase(typeTag)!;
+  return {
+    kind: 'unknown',
+    debugInfo: `unsupported known non-object Move struct type: ${canonicalBaseTypeTag}`,
+  };
 }

@@ -91,7 +91,7 @@ export function formatModelDiagnosticLine(diagnostic: DiagnosticLike): string {
   return `[${diagnostic.code}] ${path}${formatModelDiagnostic(diagnostic)}`;
 }
 
-export function formatModelDiagnostics(
+function formatModelDiagnostics(
   diagnostics: readonly DiagnosticLike[],
 ): string {
   return displayModelDiagnostics(diagnostics)

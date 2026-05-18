@@ -29,14 +29,6 @@ export function padTypeArguments(
   return Array.from({ length: count }, (_value, index) => values[index] ?? '');
 }
 
-export function concreteTypeArguments(
-  values: readonly string[],
-  count: number,
-): string[] | undefined {
-  const result = resolveConcreteTypeArguments(values, count);
-  return result.kind === 'ready' ? result.values : undefined;
-}
-
 type ConcreteTypeArgumentsResult =
   | { kind: 'ready'; values: string[] }
   | { kind: 'incomplete' }

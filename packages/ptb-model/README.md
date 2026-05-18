@@ -133,8 +133,15 @@ model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
 report `graph.type.*` diagnostics for graph-authored `varType` and port
 `dataType` fields so graph source diagnostics remain clearly attributable to
 the graph layer. Object PTB type hints may omit `typeTag`; when present,
-`typeTag` must be a top-level Move struct type tag, not a primitive or vector
-type tag.
+`typeTag` must be accepted by `parsePTBObjectTypeTagCandidate()`. This parser
+accepts canonical struct tags that can be object-type hints and rejects
+primitives, vectors, and model-known non-object structs such as
+`0x1::string::String`, `0x2::object::ID`, `0x2::object::UID`,
+`0x1::option::Option`, `0x1::option::Option<T>`, and
+`0x2::tx_context::TxContext`.
+Validators report these as object type-tag diagnostics when they are supplied
+as `PTBType.object.typeTag`; signature helpers represent unsupported known
+non-object structs as `unknown` PTB types.
 
 Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The
@@ -419,16 +426,26 @@ components inside type tags follow the same `0x`/`0X` input and lowercase
 canonical-output rule. `signer` type tags are not accepted in canonical PTB
 type-tag fields. `parseMoveTypeTag()` accepts canonical PTB Move type tags,
 including primitives, vectors, and structs. `parseMoveStructTypeTag()` first
-applies the same canonical parser and then accepts only top-level struct tags;
-use it for fields such as `PTBType.object.typeTag`. Struct module and type
-identifiers follow the model's Sui Move identifier rule, including
-multi-character leading-underscore identifiers such as `_module`; do not
-substitute SDK `isValidStructTag()` for this model helper.
+applies the same canonical parser and then accepts only top-level struct tags.
+`parsePTBObjectTypeTagCandidate()` is narrower: use it for
+`PTBType.object.typeTag` and graph object type hints, where primitives, vectors,
+and model-known non-object structs (`0x1::string::String`,
+`0x2::object::ID`, `0x2::object::UID`, `0x1::option::Option`,
+`0x1::option::Option<T>`, and `0x2::tx_context::TxContext`) are not object
+candidates.
+This candidate check is shape-only; without package evidence it does not prove
+that an arbitrary struct has the Sui `key` ability or represents a live object
+type. Validators reject non-object candidates supplied as `PTBType.object`
+`typeTag` values; signature helpers return `unknown` PTB types for unsupported
+known non-object signature datatypes.
+Struct module and type identifiers follow the model's Sui Move identifier rule,
+including multi-character leading-underscore identifiers such as `_module`; do
+not substitute SDK `isValidStructTag()` for these model helpers.
 
 Address, object digest, and Move type-tag checks call the installed
 `@mysten/sui@2.16.2` public utility and BCS helpers directly. The helper-backed
 normalizers are `parseObjectId()`, `parseObjectDigest()`, `parseMoveTypeTag()`,
-and `parseMoveStructTypeTag()`.
+`parseMoveStructTypeTag()`, and `parsePTBObjectTypeTagCandidate()`.
 
 Sui source validity rules are enforced where they do not require live
 `ProtocolConfig`: `TransferObjects.objects`, `SplitCoins.amounts`,
@@ -500,8 +517,9 @@ The scalar normalizers, SDK metadata guard, and diagnostic freezer are exported
 for host-side validation before creating raw or graph values:
 `parseJsonU64()`, `parseBase64Bytes()`, `parseObjectId()`,
 `parseObjectDigest()`, `parseMoveIdentifier()`, `parseMoveTypeTag()`,
-`parseMoveStructTypeTag()`, `isRawInputArgumentType()`,
-`isRawMoveCallArgumentTypes()`, and `freezeDiagnostics()`.
+`parseMoveStructTypeTag()`, `parsePTBObjectTypeTagCandidate()`,
+`isRawInputArgumentType()`, `isRawMoveCallArgumentTypes()`, and
+`freezeDiagnostics()`.
 
 ## Basic Usage
 

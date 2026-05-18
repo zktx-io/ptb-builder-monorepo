@@ -20,6 +20,11 @@ const vector = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
 const canonicalSui =
   '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
 const vectorSuiTypeTag = 'vector<0x2::sui::SUI>';
+const stringTypeTag = '0x1::string::String';
+const objectIdTypeTag = '0x2::object::ID';
+const objectUidTypeTag = '0x2::object::UID';
+const optionSuiTypeTag = '0x1::option::Option<0x2::sui::SUI>';
+const txContextTypeTag = '0x2::tx_context::TxContext';
 
 function out(dataType: PTBType): Port {
   return { id: 'out', role: 'io', direction: 'out', dataType };
@@ -85,6 +90,34 @@ describe('canConnectIO', () => {
         input(option(object(canonicalSui))),
       ),
     ).toBe(true);
+  });
+
+  it('rejects model-known non-object structs as object type tags', () => {
+    [
+      stringTypeTag,
+      objectIdTypeTag,
+      objectUidTypeTag,
+      optionSuiTypeTag,
+      txContextTypeTag,
+    ].forEach((typeTag) => {
+      expect(canConnectIO(out(object(typeTag)), input(object(typeTag)))).toBe(
+        false,
+      );
+      expect(canConnectIO(out(object()), input(object(typeTag)))).toBe(false);
+      expect(canConnectIO(out(object(typeTag)), input(object()))).toBe(false);
+      expect(
+        canConnectIO(
+          out(vector(object(typeTag))),
+          input(vector(object(typeTag))),
+        ),
+      ).toBe(false);
+      expect(
+        canConnectIO(
+          out(option(object(typeTag))),
+          input(option(object(typeTag))),
+        ),
+      ).toBe(false);
+    });
   });
 
   it('infers casts only for top-level abstract number sources', () => {

@@ -1,5 +1,6 @@
 import { errorDiagnostic, freezeDiagnostics } from './ir/diagnostics.js';
 import type { TransactionDiagnostic } from './ir/diagnostics.js';
+import { isKnownNonObjectStructTypeTag } from './move/structTypeTags.js';
 import { parseMoveStructTypeTag } from './raw/types.js';
 import { isDenseArray, isPlainObject, MAX_PTB_TYPE_DEPTH } from './utils.js';
 
@@ -84,6 +85,20 @@ export function validateGraphPTBTypeInto(
 
 export function isPTBType(value: unknown): value is PTBType {
   return validatePTBType(value).length === 0;
+}
+
+/**
+ * Canonicalizes a Move struct tag that can be used as a PTB object type hint.
+ * This is a shape-only candidate check: it rejects primitives, vectors, and
+ * model-known non-object families, but it does not prove Sui `key` ability,
+ * package existence, or live object availability.
+ */
+export function parsePTBObjectTypeTagCandidate(
+  value: unknown,
+): string | undefined {
+  const typeTag = parseMoveStructTypeTag(value);
+  if (typeTag === undefined) return undefined;
+  return isKnownNonObjectStructTypeTag(typeTag) ? undefined : typeTag;
 }
 
 function validatePTBTypeInto(
@@ -225,12 +240,12 @@ function validatePTBTypeShape(
       if (
         value.typeTag !== undefined &&
         (typeof value.typeTag !== 'string' ||
-          parseMoveStructTypeTag(value.typeTag) === undefined)
+          parsePTBObjectTypeTagCandidate(value.typeTag) === undefined)
       ) {
         diagnostics.push(
           errorDiagnostic(
             `${context.codePrefix}.object`,
-            `Object ${context.label} typeTag must be a top-level Move struct type tag, not a primitive or vector type tag, when present.`,
+            `Object ${context.label} typeTag must be a PTB object type-tag candidate when present; primitives, vectors, and known non-object structs are not object candidates.`,
             `${path}.typeTag`,
           ),
         );

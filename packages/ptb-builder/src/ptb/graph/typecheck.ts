@@ -18,11 +18,11 @@
 //     * vector<X> ↔ vector<Y> uses exact inner types, including object tags.
 //     * move_numeric ↔ move_numeric compatible only if width matches.
 //     * top-level object ↔ object: lenient if either side lacks typeTag; canonical
-//       Move struct type-tag equality if both present.
+//       PTB object type-tag candidate equality if both present.
 // - Serialized-type helpers unwrap vector/option/tuple syntax conservatively.
 // ---------------------------------------------------------------------
 
-import { parseMoveStructTypeTag } from '@zktx.io/ptb-model';
+import { parsePTBObjectTypeTagCandidate } from '@zktx.io/ptb-model';
 
 import type { NumericWidth, Port, PTBType } from './types';
 
@@ -129,7 +129,7 @@ function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
 
 function canonicalObjectTypeTag(type: PTBType): string | undefined {
   if (!isObject(type) || !type.typeTag) return undefined;
-  return parseMoveStructTypeTag(type.typeTag);
+  return parsePTBObjectTypeTagCandidate(type.typeTag);
 }
 
 function isSameObjectType(a: PTBType, b: PTBType): boolean {

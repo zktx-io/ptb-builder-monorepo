@@ -34,7 +34,11 @@ export type {
 export { validatePTBGraph } from './graph/types.js';
 export type { ValidatePTBGraphOptions } from './graph/types.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
-export { isPTBType, validatePTBType } from './ptbType.js';
+export {
+  isPTBType,
+  parsePTBObjectTypeTagCandidate,
+  validatePTBType,
+} from './ptbType.js';
 export type {
   MoveFunctionSignatureEvidence,
   MoveModuleSignatureEvidence,

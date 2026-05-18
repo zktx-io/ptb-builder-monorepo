@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const sourceRoot = fileURLToPath(new URL('../src', import.meta.url));
+const testRoot = fileURLToPath(new URL('.', import.meta.url));
 const sourceFiles = collectSourceFiles(sourceRoot);
+const testFiles = collectSourceFiles(testRoot).filter(
+  (file) => !file.endsWith('guardrails.test.ts'),
+);
+const modelBoundaryImportFiles = [...sourceFiles, ...testFiles];
 
 const forbiddenImports = [
   {
@@ -64,8 +69,8 @@ const forbiddenText = [
 ];
 
 describe('builder source guardrails', () => {
-  it('keeps source imports on the model root and SDK Core boundary', () => {
-    const violations = sourceFiles.flatMap((file) => {
+  it('keeps builder imports on the model root and SDK Core boundary', () => {
+    const violations = modelBoundaryImportFiles.flatMap((file) => {
       const text = readFileSync(file, 'utf8');
       return importViolations(text).map((label) => `${file}: ${label}`);
     });
