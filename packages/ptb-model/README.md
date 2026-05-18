@@ -233,9 +233,9 @@ inputs and commands as model data. It does not mean every projection can author,
 decode, render, or execute every Sui behavior around those PTB structures.
 Current partial or unsupported areas are:
 
-- raw Pure bytes are validated as base64 and fixed-width scalar hints are checked
-  for byte length, but arbitrary BCS payloads are not decoded and the consuming
-  Move type is not inferred;
+- raw Pure bytes are validated as base64. When a concrete pure type hint is
+  present, the bytes must round-trip through the installed SDK BCS schema for
+  that type. The consuming Move type is not inferred;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata, so result and nested-result references remain
   structural unless a command-specific rule can be verified locally;
@@ -280,8 +280,14 @@ Current partial or unsupported areas are:
   closed-shape; both sections use exported closed TypeScript shapes and
   command-specific runtime key validation. Builder-shaped sections such as
   `params.moveCall` are rejected as unknown fields.
-- Sponsor `FundsWithdrawal` is preserved in raw, IR, graph, and Mermaid inspection paths, but TS SDK code string rendering rejects it because the public `@mysten/sui` transaction helper surface cannot represent it honestly.
-- Empty raw Pure byte strings are accepted at the raw byte layer because the installed SDK byte schema and decoder accept them. This package does not infer the consuming Move type for raw Pure bytes.
+- Sponsor `FundsWithdrawal` is preserved in raw, IR, graph, and Mermaid
+  inspection paths, but TS SDK code string rendering rejects it because the
+  public `@mysten/sui` transaction helper surface cannot represent it honestly.
+- Empty raw Pure byte strings without a type hint are accepted at the raw byte
+  layer because the installed SDK byte schema and decoder accept them. Empty
+  bytes are not canonical BCS for any concrete pure type hint, so typed empty raw
+  Pure bytes are rejected. This package does not infer the consuming Move type
+  for raw Pure bytes.
 - `IRPureValue` may contain `bigint` for typed pure code generation; use `jsonStringifyWithBigInt()` when serializing such IR values to JSON text.
 - New support should be added only when it improves faithful Sui PTB
   representation, validation, conversion, graph editing, inspection rendering,
@@ -461,17 +467,19 @@ rendering step.
 Pure inputs may use raw `bytes` or a typed (`value`, `type`) pair. Typed pure
 inputs must include both fields; `option<T>` `None` must be stored as explicit
 `null`. Raw `bytes` may also carry a `type` hint from graph editing, but they
-must not carry a typed `value`. When raw `bytes` carry a fixed-width scalar or
-Move numeric type hint, validation checks the decoded byte length and bool byte
-content. String, vector, and option byte payloads are not BCS-decoded by this
-package.
+must not carry a typed `value`. When raw `bytes` carry a concrete pure type hint,
+validation checks that the payload round-trips through the installed SDK BCS
+schema for that type. For example, `vector<u8>` bytes must include BCS vector
+framing; a raw byte blob is not a canonical `vector<u8>` payload.
 `validateTransactionIR()` rejects ambiguous Pure inputs instead of letting raw,
 graph, or code rendering paths silently choose one representation.
 
 Empty base64 strings are accepted at the raw byte layer because the SDK
 `BCSBytes` schema is a string and the SDK base64 decoder accepts empty strings.
-`ptb-model` does not infer the expected Move type for raw Pure bytes; Move
-argument decoding may reject the bytes when a command consumes them.
+`ptb-model` does not infer the expected Move type for raw Pure bytes. If a
+concrete type hint is present, empty bytes must pass that type's BCS round-trip
+check; otherwise Move argument decoding may still reject untyped bytes when a
+command consumes them.
 
 Generated code that includes raw Pure bytes uses `globalThis.atob` to decode
 base64. Generated code is intended for runtimes that expose `atob`; the model
@@ -557,7 +565,17 @@ count. Separate `outputs` arrays are not transaction semantics.
 Builder-style aliases such as bare `amount_0`, `MakeMoveVec` `in_arg_0`,
 `out_coin_0`, and `out_ret_0` are not canonical model graph handles.
 
-Graph edge casts bind the abstract graph scalar type `number` to a concrete Move integer width such as `u64`. They are not general numeric conversions: concrete `move_numeric` values are not widened or narrowed by an edge cast. Known command arguments also enforce the SDK/Sui input class or pure type when the model can verify it from typed inputs. For example, `SplitCoins.amounts` must be typed Pure `u64`, `TransferObjects.address` must be typed Pure `address`, and `MakeMoveVec` without an explicit type requires object inputs. Raw Pure byte inputs can omit a type hint because this package does not BCS-decode arbitrary byte payloads. A manual IR `Pure` input with raw bytes and `type: { kind: 'unknown' }` is treated as an untyped raw byte input for command pure-type checks.
+Graph edge casts bind the abstract graph scalar type `number` to a concrete Move
+integer width such as `u64`. They are not general numeric conversions: concrete
+`move_numeric` values are not widened or narrowed by an edge cast. Known command
+arguments also enforce the SDK/Sui input class or pure type when the model can
+verify it from typed inputs. For example, `SplitCoins.amounts` must be typed Pure
+`u64`, `TransferObjects.address` must be typed Pure `address`, and
+`MakeMoveVec` without an explicit type requires object inputs. Raw Pure byte
+inputs can omit a type hint because this package does not infer the consuming
+Move type. A manual IR `Pure` input with raw bytes and
+`type: { kind: 'unknown' }` is treated as an untyped raw byte input for command
+pure-type checks.
 
 ## Mermaid Rendering
 
@@ -642,12 +660,12 @@ use `freezeDiagnostics()` when runtime immutability matters.
 
 Stored diagnostics are not authoritative state across package upgrades. Re-run
 validation after loading stored IR instead of relying on serialized diagnostic
-objects. `validateTransactionIR()` includes well-formed existing diagnostics by
-default so inspection flows such as Mermaid rendering keep source diagnostics
-alongside freshly computed validation diagnostics. Projection-specific validators
-and converters that need a fresh current-shape decision pass
-`includeExistingDiagnostics: false`; use that option when stored diagnostics
-must not affect a validation result.
+objects. `validateTransactionIR()` returns freshly computed diagnostics by
+default. Inspection flows that intentionally surface source diagnostics
+alongside fresh diagnostics, such as raw-to-IR conversion, graph-to-IR
+conversion, and Mermaid rendering, pass `includeExistingDiagnostics: true`
+internally. Use that option only when stored source diagnostics should be shown
+as inspection context instead of treated as authoritative validation state.
 
 Base64 byte validation uses base64-specific diagnostic codes so callers can
 distinguish malformed byte strings from ordinary missing string-array fields.

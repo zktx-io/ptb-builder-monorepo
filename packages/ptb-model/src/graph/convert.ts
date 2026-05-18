@@ -210,7 +210,10 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
   });
 
   const ir = createTransactionIR(inputs, commands, diagnostics);
-  return finalizeStructuralTransactionIR(ir, validateTransactionIR(ir));
+  return finalizeStructuralTransactionIR(
+    ir,
+    validateTransactionIR(ir, { includeExistingDiagnostics: true }),
+  );
 }
 
 function collectGraphInputPlans(

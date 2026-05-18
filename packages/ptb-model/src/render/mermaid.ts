@@ -50,7 +50,9 @@ export function transactionIRToMermaid(
     commands: isDenseArray(source.commands)
       ? (source.commands as IRCommand[])
       : [],
-    diagnostics: validateTransactionIR(ir),
+    diagnostics: validateTransactionIR(ir, {
+      includeExistingDiagnostics: true,
+    }),
   };
   const direction = renderOptions.direction ?? 'TD';
   const theme = renderOptions.theme ?? 'none';

@@ -1,3 +1,8 @@
+import {
+  pureBcsSchemaFromTypeName,
+  type PureTypeName,
+} from '@mysten/sui/bcs';
+
 import { errorDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import { isPTBType } from '../graph/types.js';
@@ -17,14 +22,6 @@ const U8_MAX = 2n ** 8n - 1n;
 const U16_MAX = 2n ** 16n - 1n;
 const U32_MAX = 2n ** 32n - 1n;
 
-const FIXED_NUMERIC_BYTE_LENGTHS: Record<NumericWidth, number> = {
-  u8: 1,
-  u16: 2,
-  u32: 4,
-  u64: 8,
-  u128: 16,
-  u256: 32,
-};
 const NUMERIC_MAX: Record<NumericWidth, bigint> = {
   u8: U8_MAX,
   u16: U16_MAX,
@@ -121,40 +118,46 @@ export function isPureValueCompatible(type: PTBType, value: unknown): boolean {
   );
 }
 
+/**
+ * Validate canonical raw Pure bytes against an explicit pure type hint.
+ * The caller must already have accepted the string as canonical base64.
+ */
 export function pureBytesTypeHintDiagnostic(
   inputId: string,
   type: PTBType,
   bytes: string,
   path: string,
 ): TransactionDiagnostic | undefined {
+  const typeName = pureTypeName(type);
+  if (typeName === undefined) return undefined;
+
   const decoded = decodeBase64Bytes(bytes);
   if (!decoded) return undefined;
 
-  const fixed = fixedPureByteLength(type);
-  if (!fixed) return undefined;
+  try {
+    const schema = pureBcsSchemaFromTypeName(typeName as PureTypeName);
+    const sourceBytes = Uint8Array.from(decoded);
+    const parsed = schema.parse(sourceBytes);
+    const canonicalBytes = schema.serialize(parsed as never).toBytes();
 
-  if (decoded.length !== fixed.length) {
-    return errorDiagnostic(
-      'ir.input.pureBytesType',
-      `Pure input ${inputId} raw bytes length ${decoded.length} does not match ${fixed.label} BCS byte length ${fixed.length}.`,
-      path,
-    );
+    if (bytesEqual(sourceBytes, canonicalBytes)) return undefined;
+  } catch {
+    // Fall through to the canonical BCS diagnostic below.
   }
 
-  if (
-    type.kind === 'scalar' &&
-    type.name === 'bool' &&
-    decoded[0] !== 0 &&
-    decoded[0] !== 1
-  ) {
-    return errorDiagnostic(
-      'ir.input.pureBytesType',
-      `Pure input ${inputId} raw bool bytes must encode 0 or 1.`,
-      path,
-    );
-  }
+  return errorDiagnostic(
+    'ir.input.pureBytesType',
+    `Pure input ${inputId} raw bytes must be canonical BCS for ${typeName}.`,
+    path,
+  );
+}
 
-  return undefined;
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function unsupportedPureTypeIssue(
@@ -333,35 +336,4 @@ function bigUnsignedInteger(value: unknown): bigint | undefined {
     return undefined;
   }
   return BigInt(value);
-}
-
-function fixedPureByteLength(
-  type: PTBType,
-): { label: string; length: number } | undefined {
-  switch (type.kind) {
-    case 'move_numeric':
-      return {
-        label: type.width,
-        length: FIXED_NUMERIC_BYTE_LENGTHS[type.width],
-      };
-    case 'scalar':
-      switch (type.name) {
-        case 'bool':
-          return { label: 'bool', length: 1 };
-        case 'address':
-          return { label: 'address', length: 32 };
-        case 'id':
-          return { label: 'id', length: 32 };
-        case 'string':
-        case 'number':
-          return undefined;
-      }
-      return undefined;
-    case 'vector':
-    case 'option':
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return undefined;
-  }
 }

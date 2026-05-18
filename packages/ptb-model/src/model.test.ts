@@ -1,4 +1,9 @@
+import {
+  pureBcsSchemaFromTypeName,
+  type PureTypeName,
+} from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
+import { fromBase64, toBase64 } from '@mysten/sui/utils';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +72,16 @@ import type {
 
 function normalizedObjectId(value: string): string {
   return `0x${value.replace(/^0x/i, '').padStart(64, '0').toLowerCase()}`;
+}
+
+function pureBytes(typeName: PureTypeName, value: unknown): string {
+  return pureBcsSchemaFromTypeName(typeName)
+    .serialize(value as never)
+    .toBase64();
+}
+
+function appendByte(base64: string, byte: number): string {
+  return toBase64(Uint8Array.from([...fromBase64(base64), byte]));
 }
 
 const TEST_DIGEST_1 = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
@@ -1898,6 +1913,23 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).not.toContain('inputNaN');
   });
 
+  it('renders stored source diagnostics in Mermaid inspection output', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [
+        {
+          code: 'source.diagnostic',
+          message: 'Stored source diagnostic.',
+        },
+      ],
+      inputs: [],
+      commands: [],
+    };
+
+    expect(validateTransactionIR(ir)).toEqual([]);
+    expect(transactionIRToMermaid(ir)).toContain('source.diagnostic');
+  });
+
   it('renders malformed manual IR diagnostics in Mermaid without TypeError', () => {
     const mermaid = transactionIRToMermaid(
       {
@@ -2857,6 +2889,95 @@ describe('TransactionIR renderers', () => {
     expectModelErrorCodes(
       () => transactionIRToTsSdkCode(ir),
       ['ir.input.pureBytesType'],
+    );
+  });
+
+  it('accepts BCS-encoded string, vector, and option raw pure bytes with type hints', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'rawString',
+          kind: 'Pure',
+          bytes: pureBytes('string', 'hello'),
+          type: { kind: 'scalar', name: 'string' },
+        },
+        {
+          id: 'rawVector',
+          kind: 'Pure',
+          bytes: pureBytes('vector<u8>', [1, 2, 3]),
+          type: { kind: 'vector', elem: { kind: 'move_numeric', width: 'u8' } },
+        },
+        {
+          id: 'rawOptionSome',
+          kind: 'Pure',
+          bytes: pureBytes('option<u8>', 7),
+          type: { kind: 'option', elem: { kind: 'move_numeric', width: 'u8' } },
+        },
+        {
+          id: 'rawOptionNone',
+          kind: 'Pure',
+          bytes: pureBytes('option<u8>', NULL_VALUE),
+          type: { kind: 'option', elem: { kind: 'move_numeric', width: 'u8' } },
+        },
+      ],
+      commands: [],
+    };
+
+    expect(validateTransactionIR(ir).map(({ code }) => code)).not.toContain(
+      'ir.input.pureBytesType',
+    );
+    expect(() => transactionIRToTsSdkCode(ir)).not.toThrow();
+  });
+
+  it('rejects non-canonical BCS raw pure bytes with concrete type hints', () => {
+    const rawPayloadVector = toBase64(Uint8Array.from([1, 2, 3]));
+    const trailingString = appendByte(pureBytes('string', 'a'), 0);
+
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'rawPayloadVector',
+          kind: 'Pure',
+          bytes: rawPayloadVector,
+          type: { kind: 'vector', elem: { kind: 'move_numeric', width: 'u8' } },
+        },
+        {
+          id: 'trailingString',
+          kind: 'Pure',
+          bytes: trailingString,
+          type: { kind: 'scalar', name: 'string' },
+        },
+        {
+          id: 'emptyString',
+          kind: 'Pure',
+          bytes: '',
+          type: { kind: 'scalar', name: 'string' },
+        },
+      ],
+      commands: [],
+    };
+
+    expect(
+      validateTransactionIR(ir).filter(
+        ({ code }) => code === 'ir.input.pureBytesType',
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('continues to accept untyped empty raw pure bytes without inferring a Move type', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [{ id: 'emptyRaw', kind: 'Pure', bytes: '' }],
+      commands: [],
+    });
+
+    expect(diagnostics.map(({ code }) => code)).not.toContain(
+      'ir.input.pureBytesType',
     );
   });
 
@@ -6255,7 +6376,7 @@ describe('validateTransactionIR', () => {
     expect(codes).toContain('graph.type.cycle');
   });
 
-  it('does not duplicate existing diagnostics when validating repeatedly', () => {
+  it('ignores stored diagnostics by default when validating repeatedly', () => {
     const ir = rawTransactionToIR({
       inputs: [{ $kind: 'UnresolvedPure', UnresolvedPure: { value: 1 } }],
       commands: [],
@@ -6264,7 +6385,32 @@ describe('validateTransactionIR', () => {
     const once = validateTransactionIR(ir);
     const twice = validateTransactionIR({ ...ir, diagnostics: once });
 
+    expect(ir.diagnostics.map(({ code }) => code)).toContain(
+      'raw.input.unresolved',
+    );
+    expect(once.map(({ code }) => code)).toEqual(['ir.input.unsupported']);
     expect(twice).toEqual(once);
+  });
+
+  it('preserves and deduplicates stored diagnostics with explicit opt-in', () => {
+    const ir = rawTransactionToIR({
+      inputs: [{ $kind: 'UnresolvedPure', UnresolvedPure: { value: 1 } }],
+      commands: [],
+    });
+
+    const once = validateTransactionIR(ir, {
+      includeExistingDiagnostics: true,
+    });
+    const twice = validateTransactionIR(
+      { ...ir, diagnostics: once },
+      { includeExistingDiagnostics: true },
+    );
+
+    expect(twice).toEqual(once);
+    expect(twice.map(({ code }) => code)).toEqual([
+      'raw.input.unresolved',
+      'ir.input.unsupported',
+    ]);
   });
 
   it('freezes PTBModelError diagnostics arrays after throwing', () => {

@@ -124,7 +124,7 @@ export function validateTransactionIR(
   value: unknown,
   options: ValidateTransactionIROptions = {},
 ): readonly TransactionDiagnostic[] {
-  const includeExistingDiagnostics = options.includeExistingDiagnostics ?? true;
+  const includeExistingDiagnostics = options.includeExistingDiagnostics ?? false;
   const includeUnsupportedDiagnostics =
     options.includeUnsupportedDiagnostics ?? true;
   const diagnostics: TransactionDiagnostic[] = [];

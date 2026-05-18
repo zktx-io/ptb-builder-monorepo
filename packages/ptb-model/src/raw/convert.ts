@@ -128,7 +128,10 @@ export function rawTransactionToIR(value: unknown): TransactionIR {
   });
 
   const ir = createTransactionIR(inputs, commands, diagnostics);
-  return finalizeStructuralTransactionIR(ir, validateTransactionIR(ir));
+  return finalizeStructuralTransactionIR(
+    ir,
+    validateTransactionIR(ir, { includeExistingDiagnostics: true }),
+  );
 }
 
 export function transactionIRToRaw(
