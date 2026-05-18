@@ -210,8 +210,10 @@ export function jsonLikeEqual(left: unknown, right: unknown): boolean {
       continue;
     }
 
-    if (isRecord(currentLeft) || isRecord(currentRight)) {
-      if (!isRecord(currentLeft) || !isRecord(currentRight)) return false;
+    if (isPlainObject(currentLeft) || isPlainObject(currentRight)) {
+      if (!isPlainObject(currentLeft) || !isPlainObject(currentRight)) {
+        return false;
+      }
       const leftKeys = Object.keys(currentLeft);
       const rightKeys = Object.keys(currentRight);
       if (leftKeys.length !== rightKeys.length) return false;

@@ -22,6 +22,7 @@ import {
   jsonLikeEqual,
   NULL_VALUE,
 } from '../utils.js';
+import type { PlainDataIssue } from '../utils.js';
 
 const RAW_ARGUMENT_INDEX_MAX = 65_535;
 // This is the raw argument index address space, not a Sui protocol execution limit.
@@ -131,6 +132,11 @@ export function validateTransactionIR(
       errorDiagnostic('ir.invalid', 'TransactionIR must be an object.', '$'),
     );
     return freezeDiagnostics(diagnostics);
+  }
+
+  const plainDataIssue = findNonPlainData(value);
+  if (plainDataIssue) {
+    diagnostics.push(transactionIRPlainDataDiagnostic(plainDataIssue));
   }
 
   validateUnknownFields(
@@ -343,6 +349,21 @@ function validateCanonicalRawField(
   if (!Object.prototype.hasOwnProperty.call(value, 'canonicalRaw')) return true;
   if (value.canonicalRaw === undefined) return true;
 
+  const plainDataIssue = findNonPlainData(
+    value.canonicalRaw,
+    `$${label === 'input' ? '.inputs' : '.commands'}[${index}].canonicalRaw`,
+  );
+  if (plainDataIssue) {
+    diagnostics.push(
+      errorDiagnostic(
+        `ir.${label}.canonicalRaw`,
+        `TransactionIR ${label} ${index} canonicalRaw must be plain data owned by TransactionIR. ${plainDataIssue.message}`,
+        plainDataIssue.path,
+      ),
+    );
+    return false;
+  }
+
   if (expected !== undefined && jsonLikeEqual(value.canonicalRaw, expected)) {
     return true;
   }
@@ -357,6 +378,16 @@ function validateCanonicalRawField(
     ),
   );
   return false;
+}
+
+function transactionIRPlainDataDiagnostic(
+  issue: PlainDataIssue,
+): TransactionDiagnostic {
+  return errorDiagnostic(
+    'ir.plainData',
+    `TransactionIR must contain only plain model-owned data. ${issue.message}`,
+    issue.path,
+  );
 }
 
 function isIRInputShape(

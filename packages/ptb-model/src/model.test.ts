@@ -6713,6 +6713,184 @@ describe('model graph command argument semantics', () => {
 });
 
 describe('structural ownership and defensive renderers', () => {
+  it('rejects class-shaped graph types before graph-to-IR conversion can brand them', () => {
+    class ScalarType {
+      kind = 'scalar';
+      name = 'string';
+    }
+
+    const classType = new ScalarType();
+    const graph = {
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          name: 'input_0',
+          varType: classType,
+          value: 'hello',
+          ports: [],
+        },
+      ],
+      edges: [],
+    } as unknown as PTBGraph;
+
+    expect(validatePTBType(classType).map(({ code }) => code)).toContain(
+      'graph.type',
+    );
+    expect(validatePTBGraph(graph).map(({ code }) => code)).toContain(
+      'graph.type',
+    );
+
+    const ir = graphToTransactionIR(graph);
+    expect(isStructuralTransactionIR(ir)).toBe(false);
+    expect(ir.inputs).toEqual([]);
+    expect(ir.diagnostics.map(({ code }) => code)).toContain('graph.type');
+  });
+
+  it('rejects class-shaped TransactionIR argument references and canonicalRaw snapshots', () => {
+    class InputArgument {
+      kind = 'Input';
+      index = 0;
+      type = 'pure';
+    }
+    class PureRawInput {
+      kind = 'Pure';
+      bytes = 'AQID';
+    }
+
+    const argumentRefIR = {
+      version: 'transaction_ir_1',
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AQID' }],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [new InputArgument()],
+        },
+      ],
+      diagnostics: [],
+    } as unknown as TransactionIR;
+    const canonicalRawIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'input_0',
+          kind: 'Pure',
+          bytes: 'AQID',
+          canonicalRaw: new PureRawInput(),
+        },
+      ],
+      commands: [],
+      diagnostics: [],
+    } as unknown as TransactionIR;
+
+    expect(
+      validateTransactionIR(argumentRefIR).map(({ code }) => code),
+    ).toEqual(expect.arrayContaining(['ir.plainData', 'ir.arg']));
+    expect(
+      validateTransactionIR(canonicalRawIR).map(({ code }) => code),
+    ).toEqual(
+      expect.arrayContaining(['ir.plainData', 'ir.input.canonicalRaw']),
+    );
+    expectModelErrorCodes(
+      () => parseStructuralTransactionIR(argumentRefIR),
+      ['ir.plainData', 'ir.arg'],
+    );
+    expectModelErrorCodes(
+      () => parseStructuralTransactionIR(canonicalRawIR),
+      ['ir.plainData', 'ir.input.canonicalRaw'],
+    );
+  });
+
+  it('rejects class-shaped SDK OpenSignature metadata in raw and manual IR paths', () => {
+    class OpenSignature {
+      reference = NULL_VALUE;
+      body = { $kind: 'u64' };
+    }
+
+    const raw = rawTransactionToIR({
+      inputs: [{ kind: 'Pure', bytes: 'AQID' }],
+      commands: [
+        {
+          kind: 'MoveCall',
+          call: {
+            package: normalizedObjectId('2'),
+            module: 'm',
+            function: 'f',
+            typeArguments: [],
+            arguments: [{ kind: 'Input', index: 0, type: 'pure' }],
+            _argumentTypes: [new OpenSignature()],
+          },
+        },
+      ],
+    });
+    const manual = {
+      version: 'transaction_ir_1',
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AQID' }],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0, type: 'pure' }],
+          _argumentTypes: [new OpenSignature()],
+        },
+      ],
+      diagnostics: [],
+    } as unknown as TransactionIR;
+
+    expect(raw.commands[0]).toMatchObject({ kind: 'Unsupported' });
+    expect(isStructuralTransactionIR(raw)).toBe(false);
+    expect(raw.diagnostics.map(({ code }) => code)).toEqual(
+      expect.arrayContaining([
+        'raw.command.moveCall.argumentTypes',
+        'ir.plainData',
+      ]),
+    );
+    expect(validateTransactionIR(manual).map(({ code }) => code)).toEqual(
+      expect.arrayContaining(['ir.plainData', 'ir.command.argumentTypes']),
+    );
+    expectModelErrorCodes(
+      () => parseStructuralTransactionIR(manual),
+      ['ir.plainData', 'ir.command.argumentTypes'],
+    );
+  });
+
+  it('blocks projection fast paths for host IR that still carries class-owned data', () => {
+    class InputArgument {
+      kind = 'Input';
+      index = 0;
+      type = 'pure';
+    }
+
+    const ir = {
+      version: 'transaction_ir_1',
+      inputs: [{ id: 'input_0', kind: 'Pure', bytes: 'AQID' }],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'TransferObjects',
+          objects: [new InputArgument()],
+          address: { kind: 'Input', index: 0, type: 'pure' },
+          resultCount: 0,
+        },
+      ],
+      diagnostics: [],
+    } as unknown as TransactionIR;
+
+    expect(isStructuralTransactionIR(ir)).toBe(false);
+    expect(() => transactionIRToGraph(ir)).toThrow(PTBModelError);
+    expect(() => transactionIRToRaw(ir)).toThrow(PTBModelError);
+    expect(() => transactionIRToTsSdkCode(ir)).toThrow(PTBModelError);
+  });
+
   it('does not brand unsupported payloads that contain non-plain objects', () => {
     const date = new Date('2024-01-01T00:00:00Z');
 

@@ -11,6 +11,7 @@ import {
 import {
   isDenseArray,
   isFiniteNumber,
+  isPlainObject,
   isRecord,
   MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
@@ -1633,7 +1634,7 @@ function validateVariableSemantic(
 ): void {
   if (value === undefined) return;
 
-  if (!isRecord(value) || typeof value.kind !== 'string') {
+  if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
       errorDiagnostic(
         'graph.variable.semantic',
@@ -1704,7 +1705,7 @@ function validatePTBTypeShape(
     return;
   }
 
-  if (!isRecord(value) || typeof value.kind !== 'string') {
+  if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
       errorDiagnostic(
         'graph.type',

@@ -96,7 +96,10 @@ command.
 
 `StructuralTransactionIR` means the IR has passed shape, reference, semantic
 argument, Pure-value, and `canonicalRaw` consistency checks and has been
-deep-frozen by this package. It does not mean the IR can be rendered to every
+deep-frozen by this package. Structural checks also require model-owned fields
+such as PTB types, argument references, `canonicalRaw`, and SDK metadata to be
+dense arrays, plain objects, or primitives; class instances are rejected instead
+of being frozen by reference. It does not mean the IR can be rendered to every
 projection. Unsupported inputs or commands may still be present for inspection
 and graph round-trips. Use `validateTsSdkRenderableIR()` /
 `assertTsSdkRenderableIR()` before TS SDK code generation or runtime adapter

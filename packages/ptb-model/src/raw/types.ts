@@ -10,6 +10,7 @@ import {
   asString,
   isCanonicalDecimalUnsignedIntegerString,
   isDenseArray,
+  isPlainObject,
   isRecord,
   NULL_VALUE,
 } from '../utils.js';
@@ -432,7 +433,7 @@ function skipTypeTagWhitespace(value: string, index: number): number {
 }
 
 export function isRawObjectArg(value: unknown): value is RawObjectArg {
-  if (!isRecord(value) || typeof value.kind !== 'string') return false;
+  if (!isPlainObject(value) || typeof value.kind !== 'string') return false;
 
   switch (value.kind) {
     case 'ImmOrOwnedObject':
@@ -462,13 +463,13 @@ export function isRawObjectArg(value: unknown): value is RawObjectArg {
 export function isRawFundsWithdrawalArg(
   value: unknown,
 ): value is RawFundsWithdrawalArg {
-  if (!isRecord(value)) return false;
+  if (!isPlainObject(value)) return false;
   if (!hasOnlyKeys(value, RAW_FUNDS_WITHDRAWAL_KEYS)) return false;
-  const reservation = isRecord(value.reservation)
+  const reservation = isPlainObject(value.reservation)
     ? value.reservation
     : undefined;
-  const typeArg = isRecord(value.typeArg) ? value.typeArg : undefined;
-  const withdrawFrom = isRecord(value.withdrawFrom)
+  const typeArg = isPlainObject(value.typeArg) ? value.typeArg : undefined;
+  const withdrawFrom = isPlainObject(value.withdrawFrom)
     ? value.withdrawFrom
     : undefined;
 
@@ -494,7 +495,7 @@ function isRawOpenSignature(
   seen: WeakSet<object>,
   depth: number,
 ): value is RawOpenSignature {
-  if (!isRecord(value)) return false;
+  if (!isPlainObject(value)) return false;
   if (!hasOnlyKeys(value, OPEN_SIGNATURE_KEYS)) return false;
   const reference = value.reference;
   return (
@@ -513,7 +514,7 @@ function isRawOpenSignatureBody(
   depth: number,
 ): value is RawOpenSignatureBody {
   if (depth > MAX_RAW_OPEN_SIGNATURE_DEPTH) return false;
-  if (!isRecord(value) || typeof value.$kind !== 'string') return false;
+  if (!isPlainObject(value) || typeof value.$kind !== 'string') return false;
   if (seen.has(value)) return false;
   seen.add(value);
 
@@ -530,7 +531,9 @@ function isRawOpenSignatureBody(
           isRawOpenSignatureBody(value.vector, seen, depth + 1);
         break;
       case 'datatype': {
-        const datatype = isRecord(value.datatype) ? value.datatype : undefined;
+        const datatype = isPlainObject(value.datatype)
+          ? value.datatype
+          : undefined;
         valid =
           hasOnlyKeys(value, OPEN_SIGNATURE_DATATYPE_BODY_KEYS) &&
           datatype !== undefined &&

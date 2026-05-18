@@ -10,7 +10,7 @@ import type {
   RawObjectArg,
 } from '../raw/types.js';
 import { isRawInputArgumentType } from '../raw/types.js';
-import { isDenseArray, isRecord } from '../utils.js';
+import { isDenseArray, isPlainObject, isRecord } from '../utils.js';
 
 export type IRPureValue =
   | string
@@ -187,7 +187,7 @@ function optionalArgRef(value: unknown): IRArgRef[] {
 }
 
 export function isIRArgRef(value: unknown): value is IRArgRef {
-  if (!isRecord(value) || typeof value.kind !== 'string') return false;
+  if (!isPlainObject(value) || typeof value.kind !== 'string') return false;
 
   switch (value.kind) {
     case 'GasCoin':

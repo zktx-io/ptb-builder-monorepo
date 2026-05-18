@@ -1,8 +1,17 @@
-import { assertNoErrors } from './diagnostics.js';
+import {
+  assertNoErrors,
+  errorDiagnostic,
+  freezeDiagnostics,
+} from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import type { TransactionIR } from './types.js';
 import { validateTransactionIR } from './validate.js';
-import { cloneJsonLike, isPlainObject, NULL_VALUE } from '../utils.js';
+import {
+  cloneJsonLike,
+  findNonPlainData,
+  isPlainObject,
+  NULL_VALUE,
+} from '../utils.js';
 
 declare const STRUCTURAL_TRANSACTION_IR_BRAND: unique symbol;
 
@@ -30,16 +39,21 @@ export function isStructuralTransactionIR(
 export function parseStructuralTransactionIR(
   value: unknown,
 ): StructuralTransactionIR {
-  const diagnostics = validateTransactionIR(value, {
+  const validationDiagnostics = validateTransactionIR(value, {
     includeExistingDiagnostics: false,
   });
+  const cloned = cloneJsonLike(value) as TransactionIR;
+  const candidate = { ...cloned, diagnostics: validationDiagnostics };
+  const diagnostics = withPlainDataDiagnostics(
+    candidate,
+    validationDiagnostics,
+  );
   const structuralDiagnostics = structuralTransactionIRDiagnostics(diagnostics);
   assertNoErrors(
     'TransactionIR is not structurally valid.',
     structuralDiagnostics,
   );
 
-  const cloned = cloneJsonLike(value) as TransactionIR;
   return markStructuralTransactionIR({ ...cloned, diagnostics });
 }
 
@@ -47,8 +61,15 @@ export function finalizeStructuralTransactionIR(
   ir: TransactionIR,
   diagnostics: readonly TransactionDiagnostic[],
 ): TransactionIR {
-  const result = { ...ir, diagnostics };
-  return structuralTransactionIRDiagnostics(diagnostics).length === 0
+  const result = { ...ir, diagnostics: freezeDiagnostics(diagnostics) };
+  const checkedDiagnostics = withPlainDataDiagnostics(
+    result,
+    result.diagnostics,
+  );
+  if (checkedDiagnostics !== result.diagnostics) {
+    result.diagnostics = checkedDiagnostics;
+  }
+  return structuralTransactionIRDiagnostics(result.diagnostics).length === 0
     ? markStructuralTransactionIR(result)
     : result;
 }
@@ -72,9 +93,40 @@ function isStructurallyIgnoredDiagnostic(code: string): boolean {
 function markStructuralTransactionIR<T extends TransactionIR>(
   ir: T,
 ): T & StructuralTransactionIR {
+  const plainDataIssue = findNonPlainData(ir);
+  if (plainDataIssue) {
+    throw new TypeError(
+      `StructuralTransactionIR cannot contain non-plain data at ${plainDataIssue.path}.`,
+    );
+  }
   deepFreezeJsonLike(ir);
   structuralTransactionIRs.add(ir);
   return ir as T & StructuralTransactionIR;
+}
+
+function withPlainDataDiagnostics(
+  value: unknown,
+  diagnostics: readonly TransactionDiagnostic[],
+): readonly TransactionDiagnostic[] {
+  const issue = findNonPlainData(value);
+  if (!issue) return freezeDiagnostics(diagnostics);
+  if (
+    diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === 'ir.plainData' && diagnostic.path === issue.path,
+    )
+  ) {
+    return freezeDiagnostics(diagnostics);
+  }
+
+  return freezeDiagnostics([
+    ...diagnostics,
+    errorDiagnostic(
+      'ir.plainData',
+      `TransactionIR must contain only plain model-owned data. ${issue.message}`,
+      issue.path,
+    ),
+  ]);
 }
 
 function deepFreezeJsonLike(value: unknown): void {
