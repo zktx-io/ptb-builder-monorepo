@@ -147,6 +147,8 @@ import {
   isTxContextOpenSignature,
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
+  validateTransactionIR,
+  type MovePackageSignatureEvidence,
 } from '@zktx.io/ptb-model';
 
 const filteredParameters = openSignatures.filter(
@@ -159,6 +161,12 @@ const parameterType =
   firstParameter === undefined
     ? { kind: 'unknown' }
     : toPTBTypeFromOpenSignature(firstParameter, [runtimeTypeArgument]);
+
+const moveSignatures: MovePackageSignatureEvidence = buildHostEvidence();
+if (!isMovePackageSignatureEvidence(moveSignatures)) {
+  throw new Error('Host evidence must match the model evidence shape.');
+}
+const diagnostics = validateTransactionIR(ir, { moveSignatures });
 ```
 
 `isTxContextOpenSignature()` is a top-level parameter filter. The evidence
@@ -169,8 +177,11 @@ OpenSignature generic structs to generic object types. Concrete runtime type
 argument strings preserve their full object `typeTag`; open generic signatures
 remain generic object types even when runtime type arguments are supplied. These
 helpers define the model evidence shape only. Evidence-aware `MoveCall`
-result/type validation is a separate validation step and should not be inferred
-from the existence of metadata fields alone.
+result arity validation is available only when the host explicitly passes
+`moveSignatures` to `validateTransactionIR()`. The model does not fetch package
+metadata, persist evidence in PTB documents, or infer result arity from metadata
+fields that happen to be present on raw PTB data. Evidence-aware result type
+validation is a separate validation step.
 
 Do not store transaction semantics in `params.ui`. MoveCall targets and type
 arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
@@ -283,15 +294,17 @@ Current partial or unsupported areas are:
   present, the bytes must round-trip through the installed SDK BCS schema for
   that type. The consuming Move type is not inferred;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
-  inferred from package metadata by default, so result and nested-result
-  references remain structural unless a command-specific rule can be verified
-  locally. The package exports host-provided Move signature evidence types,
-  guards, and OpenSignature-to-`PTBType` helpers, but it does not fetch package
-  metadata itself;
-- raw PTB `MoveCall` data does not carry result-count metadata. The model does
-  not infer that count from package metadata; graph or manual IR authors may
-  provide `CommandNode.params.runtime.resultCount` / `IRCommand.resultCount`
-  when they have verified arity evidence;
+  inferred from package metadata by default. When a host passes verified
+  `moveSignatures` to `validateTransactionIR()`, the validator can use the
+  matching function signature to check `MoveCall` result arity and
+  Result/NestedResult bounds. The package exports host-provided Move signature
+  evidence types, guards, and OpenSignature-to-`PTBType` helpers, but it does
+  not fetch package metadata itself;
+- raw PTB `MoveCall` data does not carry result-count metadata. Raw conversion
+  does not infer that count from package metadata; graph or manual IR authors
+  may provide `CommandNode.params.runtime.resultCount` / `IRCommand.resultCount`
+  when they have verified arity evidence, and host validation may pass
+  `moveSignatures` separately;
 - Publish and Upgrade represent compiled module bytes, dependencies, package
   ids, and tickets as PTB data; this package does not compile Move source,
   resolve package dependencies, or provide a Move toolchain authoring workflow;

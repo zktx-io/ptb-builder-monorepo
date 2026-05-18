@@ -68,12 +68,13 @@ import {
 } from './index.js';
 import type {
   CommandNode,
+  IRArgRef,
+  IRCommand,
   IRInput,
   Port,
   PTBGraph,
   PTBType,
   MovePackageSignatureEvidence,
-  RawCallArg,
   RawCommand,
   RawOpenSignature,
   RawProgrammableTransaction,
@@ -277,6 +278,13 @@ describe('Move signature evidence guards', () => {
     expect(isMoveFunctionSignatureEvidence(voidFunction)).toBe(true);
     expect(isMoveFunctionSignatureEvidence(parameterOnlyFunction)).toBe(true);
     expect(isMoveFunctionSignatureEvidence(genericFunction)).toBe(true);
+    expect(
+      isMoveFunctionSignatureEvidence({
+        typeParameterCount: 0,
+        parameters: [],
+        returns: new Array(MAX_RESULT_COUNT + 1).fill(u64Signature),
+      }),
+    ).toBe(false);
     expect(isMoveModuleSignatureEvidence(moduleEvidence)).toBe(true);
     expect(isMoveModuleSignatureEvidence({})).toBe(true);
     expect(isMovePackageSignatureEvidence(packageEvidence)).toBe(true);
@@ -529,6 +537,237 @@ describe('Move signature PTB type helpers', () => {
         kind: 'unknown',
         debugInfo: 'exceeded type depth',
       });
+  });
+});
+
+describe('MoveCall signature evidence validation', () => {
+  const packageId = normalizedObjectId('2');
+  const moduleName = 'm';
+  const functionName = 'f';
+  const u64Return = rawSignature({ $kind: 'u64' });
+  const typeParameterReturn = rawSignature({
+    $kind: 'typeParameter',
+    index: 0,
+  });
+
+  function evidenceFor(
+    returns: RawOpenSignature[],
+    typeParameterCount = 0,
+  ): MovePackageSignatureEvidence {
+    return {
+      [packageId]: {
+        [moduleName]: {
+          [functionName]: {
+            typeParameterCount,
+            parameters: [],
+            returns,
+          },
+        },
+      },
+    };
+  }
+
+  function moveCall(
+    overrides: Partial<Extract<IRCommand, { kind: 'MoveCall' }>> = {},
+  ): Extract<IRCommand, { kind: 'MoveCall' }> {
+    return {
+      id: 'call',
+      kind: 'MoveCall',
+      package: packageId,
+      module: moduleName,
+      function: functionName,
+      typeArguments: [],
+      arguments: [],
+      ...overrides,
+    };
+  }
+
+  function irUsingProducerResult(
+    arg: IRArgRef,
+    producer: Extract<IRCommand, { kind: 'MoveCall' }> = moveCall(),
+  ): TransactionIR {
+    return {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        producer,
+        moveCall({
+          id: 'consumer',
+          function: 'use',
+          arguments: [arg],
+        }),
+      ],
+    };
+  }
+
+  function diagnosticCodes(
+    ir: unknown,
+    moveSignatures?: MovePackageSignatureEvidence,
+  ): string[] {
+    return validateTransactionIR(ir, { moveSignatures }).map(
+      (diagnostic) => diagnostic.code,
+    );
+  }
+
+  it('skips MoveCall arity checks when host evidence is absent or missing', () => {
+    const ir = irUsingProducerResult({ kind: 'Result', commandIndex: 0 });
+    const unrelatedEvidence: MovePackageSignatureEvidence = {
+      [packageId]: {
+        other: {
+          f: {
+            typeParameterCount: 0,
+            parameters: [],
+            returns: [u64Return, u64Return],
+          },
+        },
+      },
+    };
+
+    expect(diagnosticCodes(ir)).toEqual([]);
+    expect(diagnosticCodes(ir, unrelatedEvidence)).toEqual([]);
+  });
+
+  it('reports MoveCall type argument count mismatches and skips derived arity', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult({ kind: 'Result', commandIndex: 0 }),
+      evidenceFor([u64Return, u64Return], 1),
+    );
+
+    expect(codes).toContain('ir.command.moveCall.typeArgumentsCount');
+    expect(codes).not.toContain('ir.arg.resultArity');
+  });
+
+  it('reports explicit MoveCall resultCount mismatches but keeps explicit arity', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult(
+        { kind: 'Result', commandIndex: 0 },
+        moveCall({ resultCount: 1 }),
+      ),
+      evidenceFor([u64Return, u64Return]),
+    );
+
+    expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
+    expect(codes).not.toContain('ir.arg.resultArity');
+  });
+
+  it('accepts matching explicit MoveCall resultCount evidence', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult(
+        {
+          kind: 'NestedResult',
+          commandIndex: 0,
+          resultIndex: 1,
+        },
+        moveCall({ resultCount: 2 }),
+      ),
+      evidenceFor([u64Return, u64Return]),
+    );
+
+    expect(codes).toEqual([]);
+  });
+
+  it('uses host evidence to validate single result references', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult({ kind: 'Result', commandIndex: 0 }),
+      evidenceFor([u64Return, u64Return]),
+    );
+
+    expect(codes).toContain('ir.arg.resultArity');
+  });
+
+  it('uses host evidence to validate nested result references', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult({
+        kind: 'NestedResult',
+        commandIndex: 0,
+        resultIndex: 1,
+      }),
+      evidenceFor([u64Return]),
+    );
+
+    expect(codes).toContain('ir.arg.nestedResult');
+  });
+
+  it('uses zero-return evidence as no usable result', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult({ kind: 'Result', commandIndex: 0 }),
+      evidenceFor([]),
+    );
+
+    expect(codes).toContain('ir.arg.noResult');
+  });
+
+  it('leaves non-MoveCall result producers on their own resultCount rules', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'amount',
+          kind: 'Pure',
+          value: '1',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+      ],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'GasCoin' },
+          amounts: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
+        },
+        moveCall({
+          id: 'consumer',
+          function: 'use',
+          arguments: [{ kind: 'Result', commandIndex: 0 }],
+        }),
+      ],
+    };
+
+    expect(diagnosticCodes(ir, evidenceFor([u64Return]))).toEqual([]);
+  });
+
+  it('accepts matching generic type argument evidence', () => {
+    const codes = diagnosticCodes(
+      irUsingProducerResult(
+        { kind: 'Result', commandIndex: 0 },
+        moveCall({ typeArguments: [TEST_SUI_TYPE] }),
+      ),
+      evidenceFor([typeParameterReturn], 1),
+    );
+
+    expect(codes).toEqual([]);
+  });
+
+  it('does not add evidence mismatch diagnostics when resultCount shape is invalid', () => {
+    const ir = irUsingProducerResult(
+      { kind: 'Result', commandIndex: 0 },
+      {
+        ...moveCall(),
+        resultCount: '2',
+      } as unknown as Extract<IRCommand, { kind: 'MoveCall' }>,
+    );
+    const codes = diagnosticCodes(ir, evidenceFor([u64Return, u64Return]));
+
+    expect(codes).toContain('ir.command.resultCount');
+    expect(codes).not.toContain('ir.command.moveCall.resultCountMismatch');
+  });
+
+  it('treats malformed moveSignatures options as absent evidence', () => {
+    const ir = irUsingProducerResult({ kind: 'Result', commandIndex: 0 });
+    const malformedEvidence = {
+      [packageId]: {
+        [moduleName]: {
+          [functionName]: {
+            typeParameterCount: 0,
+          },
+        },
+      },
+    } as unknown as MovePackageSignatureEvidence;
+
+    expect(diagnosticCodes(ir, malformedEvidence)).toEqual([]);
   });
 });
 

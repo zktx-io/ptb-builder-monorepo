@@ -1,4 +1,4 @@
-import { isNonNegativeSafeInteger } from '../ir/limits.js';
+import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
   isRawOpenSignatureList,
   MAX_RAW_OPEN_SIGNATURE_DEPTH,
@@ -41,6 +41,7 @@ export function isMoveFunctionSignatureEvidence(
   if (!isNonNegativeSafeInteger(typeParameterCount)) return false;
   if (!isRawOpenSignatureList(value.parameters)) return false;
   if (!isRawOpenSignatureList(value.returns)) return false;
+  if (value.returns.length > MAX_RESULT_COUNT) return false;
 
   return [...value.parameters, ...value.returns].every(
     (signature) =>
@@ -78,6 +79,19 @@ export function isMovePackageSignatureEvidence(
         ),
     )
   );
+}
+
+/**
+ * Looks up a function signature by already-normalized MoveCall coordinates.
+ * This helper does not normalize package, module, or function keys.
+ */
+export function lookupMoveSignatureEvidence(
+  packageId: string,
+  moduleName: string,
+  functionName: string,
+  evidence: MovePackageSignatureEvidence | undefined,
+): MoveFunctionSignatureEvidence | undefined {
+  return evidence?.[packageId]?.[moduleName]?.[functionName];
 }
 
 function openSignatureTypeParametersWithinBound(
