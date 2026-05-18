@@ -551,6 +551,16 @@ describe('builder source guardrails', () => {
     expect(baseCommand).toContain('toPTBTypeFromConcreteTypeArgument');
   });
 
+  it('keeps Move signature PTB type mapping on the model boundary', () => {
+    const localMoveTypePath = join(sourceRoot, 'ptb', 'move', 'toPTBType.ts');
+    const localImports = sourceFiles.filter((file) =>
+      readFileSync(file, 'utf8').includes('move/toPTBType'),
+    );
+
+    expect(existsSync(localMoveTypePath)).toBe(false);
+    expect(localImports).toEqual([]);
+  });
+
   it('keeps asset picker items keyboard reachable', () => {
     const assetsModal = readFileSync(
       join(sourceRoot, 'ui', 'AssetsModal.tsx'),

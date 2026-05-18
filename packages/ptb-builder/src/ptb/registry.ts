@@ -20,6 +20,7 @@ import {
   isNestedResultHandle,
   nestedResultHandle,
   RESULT_HANDLE_ID,
+  toPTBTypeFromConcreteTypeArgument,
 } from '@zktx.io/ptb-model';
 
 import { M, O, S, V } from './graph/typeHelpers';
@@ -31,7 +32,6 @@ import {
   type PTBType,
   serializePTBType,
 } from './graph/types';
-import { toPTBTypeFromConcreteTypeArgument } from './move/toPTBType';
 import { ioIn, ioOut, PORTS } from './portTemplates';
 
 // -----------------------------------------------------------------------------

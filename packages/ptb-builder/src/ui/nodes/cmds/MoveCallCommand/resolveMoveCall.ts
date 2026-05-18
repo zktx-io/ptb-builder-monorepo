@@ -1,8 +1,11 @@
-import { parseMoveTypeTag, parseObjectId } from '@zktx.io/ptb-model';
+import {
+  parseMoveTypeTag,
+  parseObjectId,
+  toPTBTypeFromOpenSignature,
+} from '@zktx.io/ptb-model';
 
 import type { CommandRuntimeParams, Port } from '../../../../ptb/graph/types';
 import type { PTBFunctionOpenSignatures } from '../../../../ptb/move/toPTBModuleData';
-import { toPTBTypeFromOpenSignature } from '../../../../ptb/move/toPTBType';
 import type { PTBFunctionData } from '../../../../ptb/ptbDoc';
 import { buildMoveCallPorts } from '../../../../ptb/registry';
 

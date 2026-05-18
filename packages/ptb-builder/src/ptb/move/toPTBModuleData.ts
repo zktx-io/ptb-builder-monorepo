@@ -6,12 +6,12 @@
 // TxContext is not modeled by PTB and is dropped from both parameters/returns.
 // -----------------------------------------------------------------------------
 
-import type { RawOpenSignature } from '@zktx.io/ptb-model';
-
 import {
   isTxContextOpenSignature,
+  type RawOpenSignature,
   toPTBTypeFromOpenSignature,
-} from './toPTBType';
+} from '@zktx.io/ptb-model';
+
 import type { PTBFunctionData } from '../ptbDoc';
 
 export type PTBFunctionOpenSignatures = {

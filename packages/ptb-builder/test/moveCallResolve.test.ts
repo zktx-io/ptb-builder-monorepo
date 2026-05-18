@@ -2,9 +2,9 @@ import { NULL_VALUE, type RawOpenSignature } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import {
-  isTxContextOpenSignature,
-  toPTBTypeFromOpenSignature,
-} from '../src/ptb/move/toPTBType';
+  toPTBFunctionDataEntry,
+  toPTBFunctionOpenSignatures,
+} from '../src/ptb/move/toPTBModuleData';
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
 
 const PACKAGE_ID =
@@ -36,7 +36,7 @@ const genericOpenSignatures: {
 };
 
 describe('MoveCall resolve state', () => {
-  it('normalizes open-signature struct addresses through the model parser', () => {
+  it('filters TxContext and maps open signatures through the model parser', () => {
     const txContext: RawOpenSignature = {
       reference: NULL_VALUE,
       body: {
@@ -58,10 +58,25 @@ describe('MoveCall resolve state', () => {
       },
     };
 
-    expect(isTxContextOpenSignature(txContext)).toBe(true);
-    expect(toPTBTypeFromOpenSignature(objectId)).toEqual({
-      kind: 'scalar',
-      name: 'id',
+    expect(
+      toPTBFunctionOpenSignatures({
+        parameters: [txContext, objectId],
+        returns: [],
+      }),
+    ).toEqual({
+      parameters: [objectId],
+      returns: [],
+    });
+    expect(
+      toPTBFunctionDataEntry({
+        typeParameters: [],
+        parameters: [txContext, objectId],
+        returns: [],
+      }),
+    ).toEqual({
+      tparamCount: 0,
+      ins: [{ kind: 'scalar', name: 'id' }],
+      outs: [],
     });
   });
 

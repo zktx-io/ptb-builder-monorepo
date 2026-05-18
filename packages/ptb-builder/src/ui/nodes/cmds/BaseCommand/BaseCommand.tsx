@@ -11,6 +11,7 @@ import { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
+import { toPTBTypeFromConcreteTypeArgument } from '@zktx.io/ptb-model';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import type {
@@ -18,7 +19,6 @@ import type {
   CommandRuntimeParams,
   PTBNode,
 } from '../../../../ptb/graph/types';
-import { toPTBTypeFromConcreteTypeArgument } from '../../../../ptb/move/toPTBType';
 import { countKeyOf, countMinOf } from '../../../../ptb/registry';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
