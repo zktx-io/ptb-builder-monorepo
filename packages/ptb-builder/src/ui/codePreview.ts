@@ -6,7 +6,11 @@ import {
 } from '@zktx.io/ptb-model';
 import type { PTBGraph, TransactionDiagnostic } from '@zktx.io/ptb-model';
 
-import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
+import { normalizeRuntimeEnvelope } from '../ptb/runtimeEnvelope';
+import type {
+  NormalizedRuntimeEnvelope,
+  RuntimeEnvelope,
+} from '../ptb/runtimeEnvelope';
 import type { Chain } from '../types';
 import { formatModelDiagnosticLine } from './modelDiagnostics';
 
@@ -24,7 +28,18 @@ export function renderCodePreview(
     previousModelCode?: string;
   },
 ): CodePreviewResult {
-  const metadata = previewMetadata(opts.chain, opts.envelope);
+  let envelope: NormalizedRuntimeEnvelope | undefined;
+  let envelopeError: string | undefined;
+  try {
+    envelope = normalizeRuntimeEnvelope(opts.envelope);
+  } catch (error) {
+    envelopeError =
+      error instanceof Error
+        ? error.message
+        : 'Runtime envelope metadata is invalid.';
+  }
+
+  const metadata = previewMetadata(opts.chain, envelope, envelopeError);
 
   try {
     const ir = graphToTransactionIR(graph);
@@ -86,12 +101,17 @@ function diagnosticPreview(
   };
 }
 
-function previewMetadata(chain?: Chain, envelope?: RuntimeEnvelope): string {
+function previewMetadata(
+  chain?: Chain,
+  envelope?: NormalizedRuntimeEnvelope,
+  envelopeError?: string,
+): string {
   const lines = [
     '// Preview metadata only. Wallet, signing, simulation, and execution stay with the host app.',
     chain ? `// chain: ${chain}` : undefined,
+    envelopeError ? `// envelope: invalid (${envelopeError})` : undefined,
     envelope?.sender ? `// sender: ${envelope.sender}` : undefined,
-    typeof envelope?.gasBudget === 'number'
+    envelope?.gasBudget !== undefined
       ? `// gasBudget: ${envelope.gasBudget}`
       : undefined,
   ].filter(Boolean);

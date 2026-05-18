@@ -102,7 +102,7 @@ import {
   PTBObjectsEmbed,
   stablePTBDocSignature,
 } from '../ptb/ptbDoc';
-import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
+import type { RuntimeEnvelope } from '../ptb/runtimeEnvelope';
 import { KNOWN_IDS, type WellKnownId } from '../ptb/seedGraph';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
@@ -119,6 +119,7 @@ const DOC_CHANGE_DEBOUNCE_MS = 150;
 const DOC_CHANGE_MAX_WAIT_MS = 1000;
 const DOC_EMIT_ERROR_REPEAT_MS = 30_000;
 const DOC_EMIT_ERROR_REPEAT_COUNT = 5;
+const OBJECT_METADATA_FETCH_CONCURRENCY = 8;
 const EMPTY_OBJECTS = Object.freeze({}) as PTBObjectsEmbed;
 const EMPTY_MODULES = Object.freeze({}) as PTBModulesEmbed;
 
@@ -975,6 +976,9 @@ export function PtbProvider({
           ? {
               status: status.success ? 'success' : 'failure',
               error: status.error?.message || status.error?.$kind,
+              ...(status.error?.$kind !== undefined
+                ? { errorKind: status.error.$kind }
+                : {}),
             }
           : undefined;
 
@@ -1000,24 +1004,39 @@ export function PtbProvider({
         const candidateIds = objectIdsFromIRInputs(ir.inputs);
 
         // 2) Fetch object metadata (best effort).
-        const fetched = await Promise.all(
-          candidateIds.map(async (oid) => {
-            try {
-              return await fetchObjectData(localClient, oid);
-            } catch (error) {
-              if (lifecycleRef.current.isCurrent(load)) {
-                toastImpl({
-                  message: formatModelErrorMessage(
-                    error,
-                    `Failed to fetch object ${oid}.`,
-                  ),
-                  variant: 'warning',
-                });
+        const fetched: Array<PTBObjectData | undefined> = [];
+        for (
+          let start = 0;
+          start < candidateIds.length;
+          start += OBJECT_METADATA_FETCH_CONCURRENCY
+        ) {
+          if (!lifecycleRef.current.isCurrent(load)) {
+            return ptbActionError('Transaction load was superseded.');
+          }
+          const batch = candidateIds.slice(
+            start,
+            start + OBJECT_METADATA_FETCH_CONCURRENCY,
+          );
+          const batchFetched = await Promise.all(
+            batch.map(async (oid) => {
+              try {
+                return await fetchObjectData(localClient, oid);
+              } catch (error) {
+                if (lifecycleRef.current.isCurrent(load)) {
+                  toastImpl({
+                    message: formatModelErrorMessage(
+                      error,
+                      `Failed to fetch object ${oid}.`,
+                    ),
+                    variant: 'warning',
+                  });
+                }
+                return undefined;
               }
-              return undefined;
-            }
-          }),
-        );
+            }),
+          );
+          fetched.push(...batchFetched);
+        }
         if (!lifecycleRef.current.isCurrent(load)) {
           return ptbActionError('Transaction load was superseded.');
         }
@@ -1267,13 +1286,15 @@ export function PtbProvider({
 
   function computeWellKnownPresence(g: PTBGraph): Record<WellKnownId, boolean> {
     const set = new Set((g.nodes || []).map((n) => n.id));
+    const hasGas = (g.nodes || []).some(
+      (node) =>
+        node.id === KNOWN_IDS.GAS ||
+        (node.kind === 'Variable' && node.semantic?.kind === 'GasCoin'),
+    );
     return {
       [KNOWN_IDS.START]: set.has(KNOWN_IDS.START),
       [KNOWN_IDS.END]: set.has(KNOWN_IDS.END),
-      [KNOWN_IDS.GAS]: set.has(KNOWN_IDS.GAS),
-      [KNOWN_IDS.SYSTEM]: set.has(KNOWN_IDS.SYSTEM),
-      [KNOWN_IDS.CLOCK]: set.has(KNOWN_IDS.CLOCK),
-      [KNOWN_IDS.RANDOM]: set.has(KNOWN_IDS.RANDOM),
+      [KNOWN_IDS.GAS]: hasGas,
     };
   }
 

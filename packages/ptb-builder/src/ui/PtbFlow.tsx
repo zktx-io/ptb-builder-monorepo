@@ -72,7 +72,11 @@ import {
   defaultObjectRawUsage,
 } from '../ptb/objectAuthoring';
 import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
-import { buildCommandPorts } from '../ptb/registry';
+import {
+  buildCommandPorts,
+  patchCommandUIParams,
+  sanitizeCommandUIParams,
+} from '../ptb/registry';
 import { buildTransactionFromIR } from '../ptb/runtimeAdapter';
 
 // ===== pure helpers (file-scope) =============================================
@@ -151,7 +155,6 @@ function edgesSig(edges: RFEdge<RFEdgeData>[]): string {
     t: e.target,
     sh: e.sourceHandle ?? undefined,
     th: e.targetHandle ?? undefined,
-    l: (e as any).label ?? undefined,
     d: e.data ?? undefined,
   }));
   arr.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -355,22 +358,24 @@ export function PTBFlow() {
           const node = currentPTB.nodes.find((n) => n.id === nodeId);
           if (!node || node.kind !== 'Command') return prev;
 
-          const prevUI =
-            ((node.params?.ui ?? {}) as Record<string, unknown>) || {};
-          const nextUI: Record<string, unknown> = { ...prevUI };
-          for (const k of Object.keys(patch)) {
-            const v = (patch as any)[k];
-            if (typeof v === 'undefined') delete nextUI[k];
-            else nextUI[k] = v;
-          }
-          node.params = {
-            ...(node.params ?? {}),
-            ui: nextUI,
-          };
+          const nextUI = patchCommandUIParams(
+            node.command,
+            node.params?.ui,
+            patch,
+            node.params?.runtime,
+          );
+          const runtime = node.params?.runtime;
+          node.params =
+            nextUI || runtime
+              ? {
+                  ...(nextUI ? { ui: nextUI } : {}),
+                  ...(runtime ? { runtime } : {}),
+                }
+              : undefined;
           node.ports = buildCommandPorts(
             node.command,
             nextUI,
-            node.params.runtime,
+            runtime,
             node.ports,
           );
 
@@ -409,10 +414,6 @@ export function PTBFlow() {
           const node = currentPTB.nodes.find((n) => n.id === nodeId);
           if (!node || node.kind !== 'Command') return prev;
 
-          const nextUI =
-            patch.ui === undefined
-              ? node.params?.ui
-              : ({ ...(patch.ui as Record<string, unknown>) } as any);
           const nextRuntime =
             patch.runtime === undefined
               ? node.params?.runtime
@@ -421,6 +422,14 @@ export function PTBFlow() {
                     ([, value]) => value !== undefined,
                   ),
                 ) as CommandRuntimeParams);
+          const nextUI =
+            patch.ui === undefined
+              ? sanitizeCommandUIParams(
+                  node.command,
+                  node.params?.ui,
+                  nextRuntime,
+                )
+              : sanitizeCommandUIParams(node.command, patch.ui, nextRuntime);
           const hasRuntime =
             nextRuntime !== undefined && Object.keys(nextRuntime).length > 0;
           node.params =
@@ -465,12 +474,13 @@ export function PTBFlow() {
                 ...node,
                 position: rfNode.position,
               };
-              if ('value' in patch)
-                (nextNode as any).value = (patch as any).value;
+              if ('value' in patch) {
+                if (patch.value === undefined) delete nextNode.value;
+                else nextNode.value = patch.value;
+              }
               if ('rawInput' in patch) {
-                if (patch.rawInput === undefined)
-                  delete (nextNode as any).rawInput;
-                else (nextNode as any).rawInput = patch.rawInput;
+                if (patch.rawInput === undefined) delete nextNode.rawInput;
+                else nextNode.rawInput = patch.rawInput;
               }
 
               changed = true;
@@ -498,12 +508,15 @@ export function PTBFlow() {
           if (!node || node.kind !== 'Variable') return prev;
 
           const v = node as VariableNode;
-          if ('value' in patch) (v as any).value = (patch as any).value;
+          if ('value' in patch) {
+            if (patch.value === undefined) delete v.value;
+            else v.value = patch.value;
+          }
           if ('varType' in patch && patch.varType !== undefined)
             v.varType = patch.varType;
           if ('rawInput' in patch) {
-            if (patch.rawInput === undefined) delete (v as any).rawInput;
-            else (v as any).rawInput = patch.rawInput;
+            if (patch.rawInput === undefined) delete v.rawInput;
+            else v.rawInput = patch.rawInput;
           }
 
           const { nodes: freshRFNodes, edges: freshRFEdges } =
@@ -887,7 +900,6 @@ export function PTBFlow() {
           sourceHandle: conn.sourceHandle ?? undefined,
           targetHandle: conn.targetHandle ?? undefined,
           data: cast ? { cast } : undefined,
-          label: cast ? `as ${cast.to}` : undefined,
         };
 
         const nextEdges = pruneDanglingEdges(prev.rfNodes, [

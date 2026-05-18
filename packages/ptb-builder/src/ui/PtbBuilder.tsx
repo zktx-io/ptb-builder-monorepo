@@ -13,7 +13,8 @@
 // - executeTx       : adapter for executing transactions
 // - simulateTx      : adapter for simulating transactions
 // - createClient    : adapter for read-only SDK Core client creation
-// - address         : optional runtime envelope sender
+// - address         : optional runtime envelope sender; short-form Sui
+//                     addresses are normalized through the model parser
 // - gasBudget       : optional runtime envelope gas budget
 // - toast           : toast adapter; if absent, provider falls back to console
 // - onDocChange     : PTBDoc-level autosave callback
@@ -36,6 +37,7 @@ import React, { createContext, useContext, useMemo } from 'react';
 
 import type { Transaction } from '@mysten/sui/transactions';
 import { ReactFlowProvider } from '@xyflow/react';
+import { parseObjectId } from '@zktx.io/ptb-model';
 
 import type { PTBActionResult, PTBExportDocResult } from './actionResult';
 import type {
@@ -45,7 +47,7 @@ import type {
 import { PTBFlow } from './PtbFlow';
 import { PtbProvider, usePtb } from './PtbProvider';
 import type { PTBDoc } from '../ptb/ptbDoc';
-import type { RuntimeEnvelope } from '../ptb/runtimeAdapter';
+import type { RuntimeEnvelope, RuntimeGasBudget } from '../ptb/runtimeEnvelope';
 import type { PtbCoreClient } from '../ptb/suiClient';
 import type { Chain, Theme, ToastAdapter } from '../types';
 
@@ -68,7 +70,7 @@ export type PTBBuilderProps = {
   ) => Promise<HostSimulationResult>;
   createClient?: (chain: Chain) => PtbCoreClient;
   address?: string;
-  gasBudget?: number;
+  gasBudget?: RuntimeGasBudget;
   toast?: ToastAdapter;
   onDocChange?: (doc: PTBDoc) => void;
   children?: React.ReactNode;
@@ -142,8 +144,9 @@ export function PTBBuilder({
 }: PTBBuilderProps) {
   const execOpts = useMemo<RuntimeEnvelope>(() => {
     const envelope: RuntimeEnvelope = {};
-    if (address) envelope.sender = address;
-    if (typeof gasBudget === 'number') envelope.gasBudget = gasBudget;
+    const sender = typeof address === 'string' ? address.trim() : '';
+    if (sender) envelope.sender = parseObjectId(sender) ?? sender;
+    if (gasBudget !== undefined) envelope.gasBudget = gasBudget;
     return envelope;
   }, [address, gasBudget]);
 

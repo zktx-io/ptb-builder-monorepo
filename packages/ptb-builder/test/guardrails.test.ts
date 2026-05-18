@@ -101,6 +101,13 @@ describe('builder source guardrails', () => {
     expect(text).not.toMatch(/\bmode\s*:/);
   });
 
+  it('keeps transaction abort styling on structured status data', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'StatusBar.tsx'), 'utf8');
+
+    expect(text).toContain('isMoveAbortTransaction(transaction)');
+    expect(text).not.toMatch(/\.startsWith\(['"]MoveAbort['"]\)/);
+  });
+
   it('keeps on-chain transaction loading atomic until a decoded graph is ready', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'PtbProvider.tsx'),
@@ -303,9 +310,22 @@ describe('builder source guardrails', () => {
     expect(text).toContain('type VectorEditorItem = string | boolean');
     expect(text).toContain('useState<VectorEditorItem[]>');
     expect(text).toContain('parseBoolEditorValue(variableValue ?? scalarBuf)');
+    expect(text).toContain('allowUnset');
+    expect(text).toContain('onUnset');
     expect(text).toContain('value={variableValue as boolean | undefined}');
     expect(text).not.toContain('newVal as any');
     expect(text).not.toContain('copy as any');
+  });
+
+  it('keeps transaction object metadata fetches concurrency-bounded', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+
+    expect(text).toContain('OBJECT_METADATA_FETCH_CONCURRENCY');
+    expect(text).toContain('candidateIds.slice(');
+    expect(text).not.toContain('candidateIds.map(async');
   });
 
   it('keeps Variable-node value patches off full RF-to-PTB conversion', () => {
@@ -361,6 +381,52 @@ describe('builder source guardrails', () => {
     expect(menuData).not.toContain('option<number>');
   });
 
+  it('keeps resource helpers limited to model-semantic gas', () => {
+    const factories = readFileSync(
+      join(sourceRoot, 'ptb', 'factories.ts'),
+      'utf8',
+    );
+    const seedGraph = readFileSync(
+      join(sourceRoot, 'ptb', 'seedGraph.ts'),
+      'utf8',
+    );
+    const menuActions = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'menu.actions.ts'),
+      'utf8',
+    );
+    const menuData = readFileSync(
+      join(sourceRoot, 'ui', 'menu', 'menu.data.tsx'),
+      'utf8',
+    );
+    const varNode = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+    const icons = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'icons', 'index.tsx'),
+      'utf8',
+    );
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+
+    expect(factories).not.toMatch(/make(?:Clock|Random|System)Object/);
+    expect(seedGraph).not.toMatch(/\b(?:CLOCK|RANDOM|SYSTEM)\b/);
+    expect(menuActions).not.toMatch(/var\/resource\/(?:clock|random|system)/);
+    expect(menuData).not.toMatch(/var\/resource\/(?:clock|random|system)/);
+    expect(varNode).toContain("v?.semantic?.kind === 'GasCoin'");
+    expect(varNode).not.toContain("new Set(['gas', 'clock'");
+    expect(varNode).not.toMatch(/=== ['"]sui['"]/);
+    expect(varNode).not.toContain('parseMoveTypeTag');
+    expect(icons).toContain("v?.semantic?.kind === 'GasCoin'");
+    expect(icons).not.toMatch(/name === ['"]sui['"]/);
+    expect(icons).not.toContain('parseMoveTypeTag');
+    expect(icons).not.toContain('IconSui');
+    expect(icons).not.toMatch(/\bClock\b|\bCog\b|\bDices\b/);
+    expect(provider).toContain("node.semantic?.kind === 'GasCoin'");
+  });
+
   it('keeps IO handles memoized and out of full React Flow store subscriptions', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'handles', 'PTBHandleIO.tsx'),
@@ -381,6 +447,15 @@ describe('builder source guardrails', () => {
 
     expect(text).not.toContain('failedImages');
     expect(text).not.toContain('setFailedImages');
+  });
+
+  it('keeps SVG data images out of asset image allow-list', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'AssetsModal.tsx'),
+      'utf8',
+    );
+
+    expect(text).not.toContain("'image/svg+xml'");
   });
 
   it('keeps asset browsing behind a valid sender address', () => {
@@ -418,6 +493,8 @@ describe('builder source guardrails', () => {
     expect(text).toContain('parseHandleTypeSuffix');
     expect(text).not.toContain("split('|', 1)");
     expect(text).not.toContain('nodeById');
+    expect(text).not.toContain('ptbEdge');
+    expect(text).not.toContain("startsWith('io:')");
   });
 
   it('keeps flow topology checks on the shared flow-edge helper', () => {
@@ -434,8 +511,11 @@ describe('builder source guardrails', () => {
     expect(flow).toContain('export function isFlowEdge');
     expect(flow).toContain('export function createsFlowLoop');
     expect(flow).not.toContain("startsWith('flow:')");
+    expect(flow).not.toContain('ptbEdge');
     expect(ptbFlow).not.toContain('function createsLoop');
     expect(ptbFlow).toContain('createsFlowLoop(filtered');
+    expect(ptbFlow).not.toContain('label: cast ?');
+    expect(ptbFlow).not.toContain('(e as any).label');
     expect(autoLayout).toContain("import { isFlowEdge } from './flowPath';");
     expect(autoLayout).not.toContain('function isFlowEdge');
   });

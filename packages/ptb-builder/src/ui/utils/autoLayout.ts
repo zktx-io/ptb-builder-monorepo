@@ -6,11 +6,16 @@
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
+import {
+  indexedHandleSuffix,
+  indexedInputHandleIndex,
+  RESULT_HANDLE_ID,
+} from '@zktx.io/ptb-model';
 import type { ElkNode } from 'elkjs/lib/elk.bundled.js';
 
 import { isFlowEdge } from './flowPath';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
-import { firstInPorts, outPortsWithPrefix } from '../../ptb/portQueries';
+import { inputIoPorts, outPortsWithPrefix } from '../../ptb/portQueries';
 import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
 import {
   BOTTOM_PADDING,
@@ -27,30 +32,21 @@ export type AutoLayoutOptions = {
 // ---- Node helpers -----------------------------------------------------------
 
 function nodeKind(n: RFNode<RFNodeData>): string | undefined {
-  return (n.data as any)?.ptbNode?.kind;
+  return n.data?.ptbNode?.kind;
 }
-function ptbNode(n: RFNode<RFNodeData>): any | undefined {
-  return (n.data as any)?.ptbNode;
+function ptbNode(n: RFNode<RFNodeData>) {
+  return n.data?.ptbNode;
 }
 function getNodeSize(kind?: string) {
   return (NODE_SIZES as any)[kind ?? ''] ?? { width: 180, height: 100 };
 }
 
-/** Well-known singleton objects rendered as label-only (no extra inputs). */
-const WELL_KNOWN_OBJECT_LABELS = new Set(['gas', 'clock', 'random', 'system']);
-
 function isWellKnownObjectVar(n: RFNode<RFNodeData>): boolean {
   const p = ptbNode(n);
-  if (!p) return false;
+  if (!p || p.kind !== 'Variable') return false;
   const vt = p.varType;
   if (!vt || vt.kind !== 'object') return false;
-
-  // Prefer label; fall back to name (both lower-cased)
-  const label = typeof p.label === 'string' ? p.label.toLowerCase() : '';
-  const name = typeof p.name === 'string' ? p.name.toLowerCase() : '';
-  return (
-    WELL_KNOWN_OBJECT_LABELS.has(label) || WELL_KNOWN_OBJECT_LABELS.has(name)
-  );
+  return p.semantic?.kind === 'GasCoin';
 }
 
 // ---- constants --------------------------------------------------------------
@@ -85,7 +81,7 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
   if (!kind || !p) return undefined;
 
   // Variables (data-only)
-  if (kind === 'Variable') {
+  if (p.kind === 'Variable') {
     const base = getNodeSize('Variable').height ?? 100;
     const vt = p.varType;
 
@@ -94,27 +90,22 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     }
 
     if (vt?.kind === 'vector') {
-      return base + getLength((p as any).value) * TEXT_INPUT_H + 4;
+      return base + getLength(p.value) * TEXT_INPUT_H + 4;
     }
 
     return base;
   }
 
   // Commands (ports-only: title + paddings + rows + group gaps)
-  if (kind === 'Command') {
-    const pCmd = p as any;
-    const inPorts = firstInPorts(pCmd);
-    const outRet = outPortsWithPrefix(pCmd, 'out_ret_');
-    const outCoin = outPortsWithPrefix(pCmd, 'out_coin_');
-    const outVec = outPortsWithPrefix(pCmd, 'out_vec');
-    const allOut = ((pCmd.ports ?? []) as any[]).filter(
+  if (p.kind === 'Command') {
+    const inPorts = inputIoPorts(p);
+    const outResult = outPortsWithPrefix(p, RESULT_HANDLE_ID);
+    const allOut = (p.ports ?? []).filter(
       (q) => q.role === 'io' && q.direction === 'out',
     );
-    const knownOutIds = new Set(
-      [...outRet, ...outCoin, ...outVec].map((q) => String(q.id)),
-    );
+    const knownOutIds = new Set(outResult.map((q) => String(q.id)));
     const otherOut = allOut.filter((q) => !knownOutIds.has(String(q.id)));
-    const outPorts = [...outRet, ...outCoin, ...outVec, ...otherOut];
+    const outPorts = [...outResult, ...otherOut];
 
     const inRows = inPorts.length;
     const outRows = outPorts.length;
@@ -122,14 +113,29 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     // BaseCommand: right offset only for splitCoins
     const rightOffsetRows = p?.command === 'splitCoins' ? 1 : 0;
 
-    // MoveCall: fixed controls offset (3 rows + extra)
-    const controlsOffset = p?.command === 'moveCall' ? 3 * ROW_SPACING + 24 : 0;
+    const moveCallTypeArgumentCount =
+      p?.command === 'moveCall' &&
+      Array.isArray(p?.params?.runtime?.typeArguments)
+        ? p.params.runtime.typeArguments.length
+        : 0;
+    const controlsOffset =
+      p?.command === 'moveCall'
+        ? (4 + moveCallTypeArgumentCount) * ROW_SPACING + 24
+        : 0;
+    const makeMoveVecOffset = p?.command === 'makeMoveVec' ? 28 : 0;
+    const inspectionOffset =
+      p?.command === 'publish' || p?.command === 'upgrade' ? 18 : 0;
 
     const rowCount = Math.max(inRows, outRows + rightOffsetRows);
     const gaps = Math.max(0, rowCount - 1);
 
     return (
-      TITLE_TO_IO_GAP + controlsOffset + gaps * ROW_SPACING + BOTTOM_PADDING
+      TITLE_TO_IO_GAP +
+      controlsOffset +
+      makeMoveVecOffset +
+      inspectionOffset +
+      gaps * ROW_SPACING +
+      BOTTOM_PADDING
     );
   }
 
@@ -283,12 +289,8 @@ function layoutSingleRowPositions(
 
   // --- local helpers --------------------------------------------------------
   const kindOf = (n: RFNode<RFNodeData>) =>
-    (n.data as any)?.ptbNode?.kind as string | undefined;
-  const isIo = (e: RFEdge<RFEdgeData>) => {
-    if (e.type === 'ptb-io') return true;
-    const k = (e.data as any)?.ptbEdge?.kind;
-    return k === 'io' || String(e.id).startsWith('io:');
-  };
+    n.data?.ptbNode?.kind as string | undefined;
+  const isIo = (e: RFEdge<RFEdgeData>) => e.type === 'ptb-io';
 
   /** Strip optional serialized type suffix, keep only the raw handle id. */
   const baseHandle = (h?: string | null) =>
@@ -301,17 +303,17 @@ function layoutSingleRowPositions(
    */
   const parseInKey = (
     h?: string | null,
-    fallback?: string,
   ): { group: 'arg' | 'other'; idx: number } => {
-    const s = (baseHandle(h) || fallback || '').toLowerCase();
+    const s = baseHandle(h).toLowerCase();
     if (!s) return { group: 'other', idx: Number.POSITIVE_INFINITY };
 
     let group: 'arg' | 'other' = 'other';
-    if (s.startsWith('in_arg')) group = 'arg';
-    else if (s.startsWith('in_')) group = 'other';
+    const argIndex = indexedInputHandleIndex(s, 'arg');
+    if (argIndex !== undefined) return { group: 'arg', idx: argIndex };
+    if (s.startsWith('in_')) group = 'other';
 
-    const m = s.match(/_(\d+)(?:$|[^0-9])/);
-    if (m) return { group, idx: Number(m[1]) };
+    const indexed = indexedHandleSuffix(s);
+    if (indexed) return { group, idx: indexed.index };
     // Single, non-indexed input (e.g., "in_coin") → treat as index 0
     if (s.startsWith('in_')) return { group, idx: 0 };
 
@@ -400,8 +402,7 @@ function layoutSingleRowPositions(
       const ci = commands.findIndex((c) => c.id === e.target);
       if (ci < 0) continue;
 
-      const fb = (e.data as any)?.ptbEdge?.targetHandle as string | undefined;
-      const { group, idx } = parseInKey(e.targetHandle ?? undefined, fb);
+      const { group, idx } = parseInKey(e.targetHandle ?? undefined);
       const gr = groupRank(group);
 
       // lexicographic min: cmdIdx → groupRank → argIdx

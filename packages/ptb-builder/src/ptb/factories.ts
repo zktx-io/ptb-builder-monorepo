@@ -31,6 +31,7 @@ import {
   countDefaultOf,
   countKeyOf,
   defaultLabelOf,
+  sanitizeCommandUIParams,
 } from './registry';
 import { KNOWN_IDS } from './seedGraph';
 
@@ -48,6 +49,16 @@ function makeVarOut(dataType: PTBType): Port {
   return { id: VAR_OUT, role: 'io', direction: 'out', dataType };
 }
 
+function withoutUndefinedFields<T extends object>(
+  value: T | undefined,
+): T | undefined {
+  if (!value) return undefined;
+  const entries = Object.entries(value).filter(
+    ([, item]) => item !== undefined,
+  );
+  return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
+}
+
 // --------------------------------- Factories ---------------------------------
 /** Create a Command node (flow + IO ports via registry). */
 export function makeCommandNode(
@@ -62,34 +73,38 @@ export function makeCommandNode(
 ): CommandNode {
   const id = opts?.id ?? createUniqueId(`cmd-${kind}`);
   const label = opts?.label ?? defaultLabelOf(kind);
+  const runtime = withoutUndefinedFields(opts?.runtime);
 
   // Seed command UI with default counts when absent.
   const key = countKeyOf(kind);
   const def = countDefaultOf(kind);
+  const sanitizedUI = sanitizeCommandUIParams(kind, opts?.ui, runtime);
   const seededUI: CommandUIParams | undefined = (() => {
-    const base = opts?.ui ? { ...opts.ui } : undefined;
     if (key && typeof def === 'number') {
-      if (!base || typeof (base as any)[key] !== 'number') {
-        return { ...(base ?? {}), [key]: def } as CommandUIParams;
+      if (
+        (sanitizedUI as Record<string, unknown> | undefined)?.[key] ===
+        undefined
+      ) {
+        return { ...(sanitizedUI ?? {}), [key]: def } as CommandUIParams;
       }
     }
-    return base;
+    return sanitizedUI;
   })();
 
-  const runtime = opts?.runtime ? { ...opts.runtime } : undefined;
+  const params =
+    seededUI || runtime
+      ? {
+          ...(seededUI ? { ui: seededUI } : {}),
+          ...(runtime ? { runtime } : {}),
+        }
+      : undefined;
 
   const node: CommandNode = {
     id,
     kind: 'Command',
     label,
     command: kind,
-    params:
-      seededUI || runtime
-        ? {
-            ui: seededUI,
-            runtime,
-          }
-        : undefined,
+    params,
     ports: [],
     position: opts?.position ?? { x: 0, y: 0 },
   };
@@ -113,67 +128,64 @@ export function makeVariableNode(
 ): VariableNode {
   const id = opts?.id ?? createUniqueId('var');
 
-  return {
+  const node: VariableNode = {
     id,
     kind: 'Variable',
     label: opts?.label ?? 'var',
     name: '',
     varType,
-    value: opts?.value,
-    rawInput: opts?.rawInput,
     ports: [makeVarOut(varType)],
     position: opts?.position ?? { x: 0, y: 0 },
   };
+  if (opts && Object.prototype.hasOwnProperty.call(opts, 'value')) {
+    if (opts.value !== undefined) node.value = opts.value;
+  }
+  if (opts?.rawInput !== undefined) node.rawInput = opts.rawInput;
+  return node;
 }
+
+type VariableFactoryOpts = Omit<
+  NonNullable<Parameters<typeof makeVariableNode>[1]>,
+  'label'
+>;
 
 // ---------------------------- Convenience makers -----------------------------
 /** Scalars */
-export const makeAddress = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(S('address'), { ...opts, label: 'address' });
+export const makeAddress = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(S('address'), { ...opts, label: 'address' });
 
-export const makeNumber = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(S('number'), { ...opts, label: 'number' });
+export const makeNumber = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(S('number'), { ...opts, label: 'number' });
 
-export const makeBool = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(S('bool'), { ...opts, label: 'bool' });
+export const makeBool = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(S('bool'), { ...opts, label: 'bool' });
 
-export const makeString = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(S('string'), { ...opts, label: 'string' });
+export const makeString = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(S('string'), { ...opts, label: 'string' });
 
-export const makeId = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(S('id'), { ...opts, label: 'id' });
+export const makeId = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(S('id'), { ...opts, label: 'id' });
 
-export const makeObject = (
-  typeTag?: string,
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(O(typeTag), { ...opts, label: 'object' });
+export const makeObject = (typeTag?: string, opts?: VariableFactoryOpts) =>
+  makeVariableNode(O(typeTag), { ...opts, label: 'object' });
 
 /** Vectors */
-export const makeAddressVector = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(V(S('address')), { ...opts, label: 'vector<address>' });
+export const makeAddressVector = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(V(S('address')), { ...opts, label: 'vector<address>' });
 
-export const makeBoolVector = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(V(S('bool')), { ...opts, label: 'vector<bool>' });
+export const makeBoolVector = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(V(S('bool')), { ...opts, label: 'vector<bool>' });
 
-export const makeStringVector = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(V(S('string')), { ...opts, label: 'vector<string>' });
+export const makeStringVector = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(V(S('string')), { ...opts, label: 'vector<string>' });
 
-export const makeIdVector = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) => makeVariableNode(V(S('id')), { ...opts, label: 'vector<id>' });
+export const makeIdVector = (opts?: VariableFactoryOpts) =>
+  makeVariableNode(V(S('id')), { ...opts, label: 'vector<id>' });
 
 /** Move numeric vectors: vector<u8|u16|u32|u64|u128|u256> */
 export function makeMoveNumericVector(
   width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256',
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+  opts?: VariableFactoryOpts,
 ) {
   return makeVariableNode(V(M(width)), {
     ...opts,
@@ -182,55 +194,47 @@ export function makeMoveNumericVector(
 }
 
 /** Options */
-export const makeAddressOption = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
+export const makeAddressOption = (opts?: VariableFactoryOpts) =>
   makeVariableNode(Opt(S('address')), {
-    value: NULL_VALUE,
     ...opts,
+    value: opts?.value ?? NULL_VALUE,
     label: 'option<address>',
   });
 
-export const makeBoolOption = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
+export const makeBoolOption = (opts?: VariableFactoryOpts) =>
   makeVariableNode(Opt(S('bool')), {
-    value: NULL_VALUE,
     ...opts,
+    value: opts?.value ?? NULL_VALUE,
     label: 'option<bool>',
   });
 
-export const makeStringOption = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
+export const makeStringOption = (opts?: VariableFactoryOpts) =>
   makeVariableNode(Opt(S('string')), {
-    value: NULL_VALUE,
     ...opts,
+    value: opts?.value ?? NULL_VALUE,
     label: 'option<string>',
   });
 
-export const makeIdOption = (
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
-) =>
+export const makeIdOption = (opts?: VariableFactoryOpts) =>
   makeVariableNode(Opt(S('id')), {
-    value: NULL_VALUE,
     ...opts,
+    value: opts?.value ?? NULL_VALUE,
     label: 'option<id>',
   });
 
 /** Move numeric options: option<u8|u16|u32|u64|u128|u256> */
 export function makeMoveNumericOption(
   width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256',
-  opts?: Omit<Parameters<typeof makeVariableNode>[1], 'label'>,
+  opts?: VariableFactoryOpts,
 ) {
   return makeVariableNode(Opt(M(width)), {
-    value: NULL_VALUE,
     ...opts,
+    value: opts?.value ?? NULL_VALUE,
     label: `option<${width}>`,
   });
 }
 
-// ------------------------------ Well-known vars ------------------------------
+// ------------------------------ Well-known var -------------------------------
 
 /** Gas coin object — fixed ID. */
 export function makeGasObject(): VariableNode {
@@ -242,48 +246,6 @@ export function makeGasObject(): VariableNode {
     name: 'gas',
     varType: t,
     semantic: { kind: 'GasCoin' },
-    ports: [makeVarOut(t)],
-    position: { x: 0, y: 0 },
-  };
-}
-
-/** Clock object — fixed ID. */
-export function makeClockObject(): VariableNode {
-  const t = O();
-  return {
-    id: KNOWN_IDS.CLOCK,
-    kind: 'Variable',
-    label: 'clock',
-    name: 'clock',
-    varType: t,
-    ports: [makeVarOut(t)],
-    position: { x: 0, y: 0 },
-  };
-}
-
-/** Random object — fixed ID. */
-export function makeRandomObject(): VariableNode {
-  const t = O();
-  return {
-    id: KNOWN_IDS.RANDOM,
-    kind: 'Variable',
-    label: 'random',
-    name: 'random',
-    varType: t,
-    ports: [makeVarOut(t)],
-    position: { x: 0, y: 0 },
-  };
-}
-
-/** System object — fixed ID. */
-export function makeSystemObject(): VariableNode {
-  const t = O();
-  return {
-    id: KNOWN_IDS.SYSTEM,
-    kind: 'Variable',
-    label: 'system',
-    name: 'system',
-    varType: t,
     ports: [makeVarOut(t)],
     position: { x: 0, y: 0 },
   };

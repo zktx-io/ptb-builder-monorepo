@@ -78,6 +78,11 @@ The following command nodes are available from the builder context menu:
   function names explicitly; the builder verifies the selected function
   signature through the SDK Core API.
 
+Loaded PTBs may also render **Publish** and **Upgrade** command nodes for
+inspection. PTB Builder does not expose context-menu authoring for those
+commands because editing module bytes, dependencies, and package upgrade data
+requires the Move toolchain and remains outside the builder UI boundary.
+
 The package does not expose a public command registry extension API.
 
 ## Supported Inputs
@@ -135,7 +140,11 @@ assumes your app already wraps this component in the dapp-kit provider setup
 shown by the local `packages/example` app.
 
 ```tsx
-import { useCurrentAccount, useCurrentNetwork, useDAppKit } from '@mysten/dapp-kit-react';
+import {
+  useCurrentAccount,
+  useCurrentNetwork,
+  useDAppKit,
+} from '@mysten/dapp-kit-react';
 import type { Transaction } from '@mysten/sui/transactions';
 import { PTBBuilder, type Chain } from '@zktx.io/ptb-builder';
 
@@ -150,7 +159,8 @@ export function BuilderWithHostAdapters() {
   const network = useCurrentNetwork() ?? 'testnet';
   const dAppKit = useDAppKit();
 
-  const createClient = (chain: Chain) => dAppKit.getClient(chainToNetwork(chain));
+  const createClient = (chain: Chain) =>
+    dAppKit.getClient(chainToNetwork(chain));
 
   const simulateTx = async (chain: Chain, transaction?: Transaction) => {
     if (!transaction) return { error: 'No transaction to simulate' };
@@ -173,7 +183,9 @@ export function BuilderWithHostAdapters() {
     if (!account) return { error: 'Wallet not connected' };
     if (!transaction) return { error: 'No transaction to execute' };
     if (network !== chainToNetwork(chain)) {
-      return { error: `Switch to ${chainToNetwork(chain)} before executing this PTB` };
+      return {
+        error: `Switch to ${chainToNetwork(chain)} before executing this PTB`,
+      };
     }
     const result = await dAppKit.signAndExecuteTransaction({ transaction });
     if (result.$kind === 'FailedTransaction') {
@@ -239,8 +251,8 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 <PTBBuilder
   theme="dark" // initial theme (dark | light | cobalt2 | tokyo-night | cream | mint-breeze); defaults to "dark"
   initialChain="sui:testnet" // optional: start with a fresh editable PTB for this chain
-  address={connectedAddress} // optional runtime envelope sender and Assets modal owner
-  gasBudget={500_000_000} // optional runtime envelope gas budget
+  address={connectedAddress} // optional runtime sender and Assets modal owner; short or canonical form
+  gasBudget={500_000_000} // optional runtime gas budget; number, bigint, or u64 string
   executeTx={execAdapter} // host-provided execution adapter
   createClient={clientFactory} // host-provided SDK Core client factory for reads/loads
   onDocChange={saveDoc} // PTBDoc autosave callback (debounced)
@@ -255,13 +267,8 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 ```tsx
 import { usePTB } from '@zktx.io/ptb-builder';
 
-const {
-  exportDoc,
-  exportDocResult,
-  loadFromDoc,
-  loadFromOnChainTx,
-  setTheme,
-} = usePTB();
+const { exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme } =
+  usePTB();
 
 // Export the active PTB document with structured error information
 const exportResult = exportDocResult({ sender: connectedAddress });
@@ -309,22 +316,22 @@ setTheme('tokyo-night');
 
 ## Props Reference (`<PTBBuilder />`)
 
-| Prop                | Type                                                                                  | Default  | Description                                                   |
-| ------------------- | ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                             |
-| `initialChain`      | `Chain`                                                                               | –        | Optional chain used to create a fresh editable PTB on mount. Later document changes should use `loadFromDoc()`. |
-| `className`         | `string`                                                                              | –        | Optional class for a host-controlled container around the builder. |
-| `style`             | `React.CSSProperties`                                                                 | –        | Optional style for the same container; useful for setting width/height directly on `<PTBBuilder />`. |
-| `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.              |
-| `address`           | `string`                                                                              | –        | Optional runtime envelope sender and owner address for the Assets modal. It is not substituted into graph arguments. |
-| `gasBudget`         | `number`                                                                              | –        | Optional runtime envelope gas budget.                         |
-| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                              |
-| `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Optional host-provided simulation adapter; required only when the Dry run action is used. |
-| `createClient`      | `(chain: Chain) => ClientWithCoreApi`                                                 | gRPC     | Optional host-provided SDK Core client factory for read/load paths. |
-| `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                    |
-| `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                |
-| `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel. |
-| `children`          | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                        |
+| Prop                | Type                                                                                  | Default  | Description                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme`             | `Theme` (`dark` \| `light` \| `cobalt2` \| `tokyo-night` \| `cream` \| `mint-breeze`) | `"dark"` | Initial UI theme.                                                                                                                                                                                                      |
+| `initialChain`      | `Chain`                                                                               | –        | Optional chain used to create a fresh editable PTB on mount. Later document changes should use `loadFromDoc()`.                                                                                                        |
+| `className`         | `string`                                                                              | –        | Optional class for a host-controlled container around the builder.                                                                                                                                                     |
+| `style`             | `React.CSSProperties`                                                                 | –        | Optional style for the same container; useful for setting width/height directly on `<PTBBuilder />`.                                                                                                                   |
+| `showThemeSelector` | `boolean`                                                                             | `true`   | Renders the theme dropdown in the CodePip panel.                                                                                                                                                                       |
+| `address`           | `string`                                                                              | –        | Optional runtime envelope sender and owner address for the Assets modal. Short or canonical Sui address forms are accepted and normalized before runtime helpers use them. It is not substituted into graph arguments. |
+| `gasBudget`         | `number \| bigint \| string`                                                          | –        | Optional runtime envelope gas budget. String values must be unsigned u64 strings.                                                                                                                                      |
+| `executeTx`         | `(chain: Chain, tx?: Transaction) => Promise<{ digest?: string; error?: string }>`    | –        | Host-provided execution adapter.                                                                                                                                                                                       |
+| `simulateTx`        | `(chain: Chain, tx?: Transaction) => Promise<{ success?: boolean; error?: string }>`  | –        | Optional host-provided simulation adapter; required only when the Dry run action is used.                                                                                                                              |
+| `createClient`      | `(chain: Chain) => ClientWithCoreApi`                                                 | gRPC     | Optional host-provided SDK Core client factory for read/load paths.                                                                                                                                                    |
+| `toast`             | `ToastAdapter`                                                                        | console  | Custom toast adapter used by the provider.                                                                                                                                                                             |
+| `onDocChange`       | `(doc: PTBDoc) => void`                                                               | –        | Autosave callback (debounced).                                                                                                                                                                                         |
+| `showExportButton`  | `boolean`                                                                             | `false`  | If `true`, shows **Export .ptb** button in the CodePip panel.                                                                                                                                                          |
+| `children`          | `React.ReactNode`                                                                     | –        | Children rendered inside the Provider.                                                                                                                                                                                 |
 
 ---
 

@@ -20,7 +20,6 @@ const SAFE_DATA_IMAGE_MIME = new Set([
   'image/gif',
   'image/webp',
   'image/avif',
-  'image/svg+xml',
 ]);
 
 function safeAssetImageUrl(value: unknown): string | undefined {

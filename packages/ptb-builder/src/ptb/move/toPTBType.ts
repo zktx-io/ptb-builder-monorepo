@@ -18,19 +18,12 @@
 import { type TypeTag, TypeTagSerializer } from '@mysten/sui/bcs';
 import {
   parseMoveTypeTag,
+  parseObjectId,
   type RawOpenSignature,
   type RawOpenSignatureBody,
 } from '@zktx.io/ptb-model';
 
 import type { PTBType } from '../graph/types';
-
-/** Normalize Sui address for comparison (lowercase, strip leading zeros). */
-function normAddr(a: string): string {
-  const x = a.toLowerCase();
-  if (!x.startsWith('0x')) return x;
-  const body = x.slice(2).replace(/^0+/, '');
-  return '0x' + (body.length ? body : '0');
-}
 
 /** Struct tag equality (address/module/name) with normalized address. */
 function isStructTag(
@@ -39,8 +32,12 @@ function isStructTag(
   module: string,
   name: string,
 ): boolean {
+  const left = parseObjectId(s.address);
+  const right = parseObjectId(addr);
   return (
-    normAddr(s.address) === normAddr(addr) &&
+    left !== undefined &&
+    right !== undefined &&
+    left === right &&
     s.module === module &&
     s.name === name
   );

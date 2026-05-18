@@ -7,7 +7,7 @@
 //   NOTE: vector<object> is intentionally not offered at UI level.
 // - Options: grouped submenu (u8..u256, bool, string, address, id)
 //   NOTE: option<object> is intentionally not offered at UI level.
-// - Resources: grouped submenu (gas, clock, random, system)
+// - Resources: grouped submenu (gas)
 // Scalars/vectors/options/resources use type markers (colored handles).
 // -----------------------------------------------------------------------------
 
@@ -188,7 +188,7 @@ export const CanvasOption = {
 };
 
 /** ------------------------------------------------------------------
- * Resources submenu (singletons / convenience)
+ * Resources submenu (builder-owned convenience)
  * Canonical action keys: "var/resource/<name>"
  * ----------------------------------------------------------------- */
 export const CanvasResources = {
@@ -197,21 +197,6 @@ export const CanvasResources = {
     {
       name: 'gas',
       action: 'var/resource/gas',
-      icon: <span className="ptb-marker ptb-marker--object" />,
-    },
-    {
-      name: 'clock',
-      action: 'var/resource/clock',
-      icon: <span className="ptb-marker ptb-marker--object" />,
-    },
-    {
-      name: 'random',
-      action: 'var/resource/random',
-      icon: <span className="ptb-marker ptb-marker--object" />,
-    },
-    {
-      name: 'system',
-      action: 'var/resource/system',
       icon: <span className="ptb-marker ptb-marker--object" />,
     },
   ],

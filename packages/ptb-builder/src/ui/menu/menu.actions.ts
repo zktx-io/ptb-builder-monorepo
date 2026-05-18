@@ -17,11 +17,8 @@ import {
   makeStringVector,
   makeIdVector,
   makeMoveNumericVector,
-  // well-known resources
+  // well-known resource
   makeGasObject,
-  makeClockObject,
-  makeRandomObject,
-  makeSystemObject,
   makeAddressOption,
   makeBoolOption,
   makeStringOption,
@@ -41,7 +38,7 @@ type CreateNodeId = (prefix?: string) => string;
  *   NOTE: vector<object> is intentionally not offered at UI level.
  * - Options  : "var/option/<u8|u16|u32|u64|u128|u256|bool|string|address|id>"
  *   NOTE: option<object> is intentionally not offered at UI level.
- * - Resources: "var/resource/<gas|clock|random|system>"
+ * - Resources: "var/resource/<gas>"
  */
 export function handleMenuAction(
   action: string,
@@ -166,15 +163,6 @@ export function handleMenuAction(
     switch (name) {
       case 'gas':
         placeAndAdd(makeGasObject());
-        break;
-      case 'clock':
-        placeAndAdd(makeClockObject());
-        break;
-      case 'random':
-        placeAndAdd(makeRandomObject());
-        break;
-      case 'system':
-        placeAndAdd(makeSystemObject());
         break;
       default:
         // no-op

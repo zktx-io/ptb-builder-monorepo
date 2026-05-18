@@ -1,10 +1,13 @@
 import {
   graphToTransactionIR,
   hasErrors,
+  nestedResultHandle,
   NULL_VALUE,
   PTBModelError,
   type PTBType,
+  RESULT_HANDLE_ID,
   type TransactionIR,
+  transactionIRToGraph,
   transactionIRToTsSdkCode,
 } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +19,7 @@ import {
   makeObject,
   makeString,
 } from '../src/ptb/factories';
-import type { PTBGraph } from '../src/ptb/graph/types';
+import { parseHandleTypeSuffix, type PTBGraph } from '../src/ptb/graph/types';
 import { ptbToRF, rfToPTB } from '../src/ptb/ptbAdapter';
 import { buildCommandPorts, buildMoveCallPorts } from '../src/ptb/registry';
 import { buildTransactionFromIR } from '../src/ptb/runtimeAdapter';
@@ -90,7 +93,7 @@ function splitGasGraph(): PTBGraph {
             dataType: { kind: 'move_numeric', width: 'u64' },
           },
           {
-            id: 'out_coin_0',
+            id: 'out_result',
             direction: 'out',
             role: 'io',
             dataType: { kind: 'object' },
@@ -272,6 +275,22 @@ describe('model-root PTB boundary', () => {
     expect(preview.ok).toBe(true);
     expect(preview.code).toContain('// Preview metadata only');
     expect(preview.code).toContain(`// sender: ${ADDRESS}`);
+    expect(preview.code).toContain('// gasBudget: 123');
+    expect(preview.code).toContain('export function buildTransaction()');
+    expect(preview.code).toContain('tx.splitCoins');
+  });
+
+  it('renders current model code with an invalid runtime envelope warning', () => {
+    const preview = renderCodePreview(splitGasGraph(), {
+      chain: 'sui:testnet',
+      envelope: { sender: '0x1', gasBudget: 123 },
+    });
+
+    expect(preview.ok).toBe(true);
+    expect(preview.code).toContain('// envelope: invalid (');
+    expect(preview.code).toContain(
+      'Runtime sender must be a canonical Sui address.',
+    );
     expect(preview.code).toContain('export function buildTransaction()');
     expect(preview.code).toContain('tx.splitCoins');
   });
@@ -550,13 +569,15 @@ describe('model-root PTB boundary', () => {
       dataType: { kind: 'move_numeric', width: 'u64' },
       typeStr: 'u64',
     });
-    expect(numericPorts.find((port) => port.id === 'out_vec')).toMatchObject({
-      dataType: {
-        kind: 'vector',
-        elem: { kind: 'move_numeric', width: 'u64' },
+    expect(numericPorts.find((port) => port.id === 'out_result')).toMatchObject(
+      {
+        dataType: {
+          kind: 'vector',
+          elem: { kind: 'move_numeric', width: 'u64' },
+        },
+        typeStr: 'vector<u64>',
       },
-      typeStr: 'vector<u64>',
-    });
+    );
 
     const objectPorts = buildCommandPorts(
       'makeMoveVec',
@@ -569,7 +590,7 @@ describe('model-root PTB boundary', () => {
     expect(objectPorts.find((port) => port.id === 'in_elem_0')).toMatchObject({
       dataType: { kind: 'object', typeTag: canonicalSuiType },
     });
-    expect(objectPorts.find((port) => port.id === 'out_vec')).toMatchObject({
+    expect(objectPorts.find((port) => port.id === 'out_result')).toMatchObject({
       dataType: {
         kind: 'vector',
         elem: { kind: 'object', typeTag: canonicalSuiType },
@@ -600,7 +621,7 @@ describe('model-root PTB boundary', () => {
             { id: 'out', role: 'flow', direction: 'out' },
             { id: 'in_coin', role: 'io', direction: 'in' },
             { id: 'in_amount_0', role: 'io', direction: 'in' },
-            { id: 'out_coin_0', role: 'io', direction: 'out' },
+            { id: 'out_result', role: 'io', direction: 'out' },
           ],
         },
         {
@@ -639,7 +660,7 @@ describe('model-root PTB boundary', () => {
             { id: 'in', role: 'flow', direction: 'in' },
             { id: 'out', role: 'flow', direction: 'out' },
             { id: 'in_elem_0', role: 'io', direction: 'in' },
-            { id: 'out_vec', role: 'io', direction: 'out' },
+            { id: 'out_result', role: 'io', direction: 'out' },
           ],
         },
         {
@@ -652,7 +673,7 @@ describe('model-root PTB boundary', () => {
             { id: 'in', role: 'flow', direction: 'in' },
             { id: 'out', role: 'flow', direction: 'out' },
             { id: 'in_arg_0', role: 'io', direction: 'in' },
-            { id: 'out_ret_0', role: 'io', direction: 'out' },
+            { id: 'out_result', role: 'io', direction: 'out' },
           ],
         },
       ],
@@ -708,6 +729,316 @@ describe('model-root PTB boundary', () => {
     expect(stableGraphSig(roundTripAgain)).toBe(stableGraphSig(roundTrip));
   });
 
+  it('preserves model-owned MoveCall result handles through RF projection', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'source',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'module',
+          function: 'source',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 1,
+        },
+        {
+          id: 'consumer',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'module',
+          function: 'consume',
+          typeArguments: [],
+          arguments: [{ kind: 'Result', commandIndex: 0 }],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const rf = ptbToRF(graph);
+    const source = rf.nodes.find((node) => node.id === 'cmd-0')?.data.ptbNode;
+    const sourcePorts = source?.kind === 'Command' ? source.ports : [];
+
+    expect(sourcePorts.map((port) => port.id)).toEqual(
+      expect.arrayContaining(['prev', 'next', 'out_result']),
+    );
+    expect(sourcePorts.map((port) => port.id)).not.toContain('out_ret_0');
+    expect(
+      rf.edges.find(
+        (edge) =>
+          edge.type === 'ptb-io' &&
+          edge.source === 'cmd-0' &&
+          edge.target === 'cmd-1',
+      ),
+    ).toMatchObject({
+      sourceHandle: 'out_result',
+      targetHandle: 'in_arg_0',
+    });
+
+    const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
+    const projected = graphToTransactionIR(roundTrip);
+    const consumer = projected.commands[1];
+
+    expect(projected.diagnostics).toEqual([]);
+    expect(consumer?.kind).toBe('MoveCall');
+    if (consumer?.kind !== 'MoveCall') throw new Error('Expected MoveCall');
+    expect(consumer.arguments).toEqual([{ kind: 'Result', commandIndex: 0 }]);
+  });
+
+  it('preserves model-owned MoveCall nested result handles through RF projection', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'source',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'module',
+          function: 'source',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 2,
+        },
+        {
+          id: 'consumer',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'module',
+          function: 'consume',
+          typeArguments: [],
+          arguments: [
+            { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+            { kind: 'NestedResult', commandIndex: 0, resultIndex: 1 },
+          ],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const rf = ptbToRF(graph);
+    const source = rf.nodes.find((node) => node.id === 'cmd-0')?.data.ptbNode;
+    const sourcePortIds =
+      source?.kind === 'Command' ? source.ports.map((port) => port.id) : [];
+    const sourceHandles = rf.edges
+      .filter(
+        (edge) =>
+          edge.type === 'ptb-io' &&
+          edge.source === 'cmd-0' &&
+          edge.target === 'cmd-1',
+      )
+      .map((edge) => edge.sourceHandle)
+      .sort();
+
+    expect(sourcePortIds).toEqual(expect.arrayContaining(['out_0', 'out_1']));
+    expect(sourcePortIds).not.toContain('out_result');
+    expect(sourcePortIds).not.toContain('out_ret_0');
+    expect(sourceHandles).toEqual(['out_0', 'out_1']);
+
+    const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
+    const projected = graphToTransactionIR(roundTrip);
+    const consumer = projected.commands[1];
+
+    expect(projected.diagnostics).toEqual([]);
+    expect(consumer?.kind).toBe('MoveCall');
+    if (consumer?.kind !== 'MoveCall') throw new Error('Expected MoveCall');
+    expect(consumer.arguments).toEqual([
+      { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+      { kind: 'NestedResult', commandIndex: 0, resultIndex: 1 },
+    ]);
+  });
+
+  it.each([
+    {
+      label: 'Publish',
+      ir: {
+        version: 'transaction_ir_1',
+        inputs: [],
+        diagnostics: [],
+        commands: [
+          {
+            id: 'source',
+            kind: 'Publish',
+            modules: ['AA=='],
+            dependencies: [],
+            resultCount: 1,
+          },
+          {
+            id: 'consumer',
+            kind: 'MoveCall',
+            package: ADDRESS,
+            module: 'module',
+            function: 'consume',
+            typeArguments: [],
+            arguments: [
+              { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+            ],
+            resultCount: 0,
+          },
+        ],
+      } satisfies TransactionIR,
+    },
+    {
+      label: 'MakeMoveVec',
+      ir: {
+        version: 'transaction_ir_1',
+        inputs: [],
+        diagnostics: [],
+        commands: [
+          {
+            id: 'source',
+            kind: 'MakeMoveVec',
+            type: 'u64',
+            elements: [],
+            resultCount: 1,
+          },
+          {
+            id: 'consumer',
+            kind: 'MoveCall',
+            package: ADDRESS,
+            module: 'module',
+            function: 'consume',
+            typeArguments: [],
+            arguments: [
+              { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+            ],
+            resultCount: 0,
+          },
+        ],
+      } satisfies TransactionIR,
+    },
+    {
+      label: 'Upgrade',
+      ir: {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'ticket',
+            kind: 'Object',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: ADDRESS,
+              version: '1',
+              digest: TEST_DIGEST,
+            },
+          },
+        ],
+        diagnostics: [],
+        commands: [
+          {
+            id: 'source',
+            kind: 'Upgrade',
+            modules: ['AA=='],
+            dependencies: [],
+            package: ADDRESS,
+            ticket: { kind: 'Input', index: 0 },
+            resultCount: 1,
+          },
+          {
+            id: 'consumer',
+            kind: 'MoveCall',
+            package: ADDRESS,
+            module: 'module',
+            function: 'consume',
+            typeArguments: [],
+            arguments: [
+              { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+            ],
+            resultCount: 0,
+          },
+        ],
+      } satisfies TransactionIR,
+    },
+    {
+      label: 'SplitCoins',
+      ir: {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'coin',
+            kind: 'Object',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: ADDRESS,
+              version: '1',
+              digest: TEST_DIGEST,
+            },
+          },
+          {
+            id: 'amount',
+            kind: 'Pure',
+            value: '1',
+            type: { kind: 'move_numeric', width: 'u64' },
+          },
+        ],
+        diagnostics: [],
+        commands: [
+          {
+            id: 'source',
+            kind: 'SplitCoins',
+            coin: { kind: 'Input', index: 0 },
+            amounts: [{ kind: 'Input', index: 1 }],
+            resultCount: 1,
+          },
+          {
+            id: 'consumer',
+            kind: 'MoveCall',
+            package: ADDRESS,
+            module: 'module',
+            function: 'consume',
+            typeArguments: [],
+            arguments: [
+              { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+            ],
+            resultCount: 0,
+          },
+        ],
+      } satisfies TransactionIR,
+    },
+  ])(
+    'preserves model-owned $label single-result nested handles through RF projection',
+    ({ ir }) => {
+      const graph = transactionIRToGraph(ir);
+      const rf = ptbToRF(graph);
+      const source = rf.nodes.find((node) => node.id === 'cmd-0')?.data.ptbNode;
+      const sourcePortIds =
+        source?.kind === 'Command' ? source.ports.map((port) => port.id) : [];
+      const sourceHandles = rf.edges
+        .filter(
+          (edge) =>
+            edge.type === 'ptb-io' &&
+            edge.source === 'cmd-0' &&
+            edge.target === 'cmd-1',
+        )
+        .map((edge) => edge.sourceHandle);
+      const sourceHandleBases = sourceHandles.map(
+        (handle) => parseHandleTypeSuffix(handle).baseId,
+      );
+
+      expect(sourcePortIds).toEqual(
+        expect.arrayContaining([RESULT_HANDLE_ID, nestedResultHandle(0)]),
+      );
+      expect(sourceHandleBases).toEqual([nestedResultHandle(0)]);
+
+      const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
+      const projected = graphToTransactionIR(roundTrip);
+      const consumer = projected.commands[1];
+
+      expect(projected.diagnostics).toEqual([]);
+      expect(consumer?.kind).toBe('MoveCall');
+      if (consumer?.kind !== 'MoveCall') throw new Error('Expected MoveCall');
+      expect(consumer.arguments).toEqual([
+        { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
+      ]);
+    },
+  );
+
   it('projects model flow handles to RF handles and persists them back to graph handles', () => {
     const graph: PTBGraph = {
       nodes: [
@@ -728,7 +1059,7 @@ describe('model-root PTB boundary', () => {
             { id: 'out', role: 'flow', direction: 'out' },
             { id: 'in_coin', role: 'io', direction: 'in' },
             { id: 'in_amount_0', role: 'io', direction: 'in' },
-            { id: 'out_0', role: 'io', direction: 'out' },
+            { id: 'out_result', role: 'io', direction: 'out' },
           ],
         },
         {
@@ -766,7 +1097,11 @@ describe('model-root PTB boundary', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'prev', role: 'flow', direction: 'in' }),
         expect.objectContaining({ id: 'next', role: 'flow', direction: 'out' }),
-        expect.objectContaining({ id: 'out_0', role: 'io', direction: 'out' }),
+        expect.objectContaining({
+          id: 'out_result',
+          role: 'io',
+          direction: 'out',
+        }),
       ]),
     );
     expect(rf.edges).toEqual(
@@ -790,7 +1125,11 @@ describe('model-root PTB boundary', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'in', role: 'flow', direction: 'in' }),
         expect.objectContaining({ id: 'out', role: 'flow', direction: 'out' }),
-        expect.objectContaining({ id: 'out_0', role: 'io', direction: 'out' }),
+        expect.objectContaining({
+          id: 'out_result',
+          role: 'io',
+          direction: 'out',
+        }),
       ]),
     );
     expect(roundTrip.edges).toEqual(graph.edges);
@@ -895,13 +1234,24 @@ describe('model-root PTB boundary', () => {
     const ir = graphToTransactionIR(splitGasGraph());
     const tx = buildTransactionFromIR(ir, {
       sender: ADDRESS,
-      gasBudget: 123,
+      gasBudget: 123n,
     });
     const data = tx.getData();
 
     expect(data.sender).toBe(ADDRESS);
     expect(data.gasData.budget).toBe('123');
     expect(JSON.stringify(data)).not.toContain('myAddress');
+  });
+
+  it('rejects non-canonical runtime envelope values before SDK transaction mutation', () => {
+    const ir = graphToTransactionIR(splitGasGraph());
+
+    expect(() => buildTransactionFromIR(ir, { sender: '0x1' })).toThrow(
+      'Runtime sender must be a canonical Sui address.',
+    );
+    expect(() => buildTransactionFromIR(ir, { gasBudget: 1.5 })).toThrow(
+      'Runtime gasBudget must be a canonical unsigned u64 value.',
+    );
   });
 
   it('materializes MoveCall ports from an explicit function signature', () => {
@@ -913,8 +1263,14 @@ describe('model-root PTB boundary', () => {
     expect(materializedPorts.map((port) => port.id)).toEqual([
       'in_arg_0',
       'in_arg_1',
-      'out_ret_0',
+      'out_result',
     ]);
+    expect(
+      buildMoveCallPorts(
+        [],
+        [{ kind: 'object' }, { kind: 'scalar', name: 'address' }],
+      ).map((port) => port.id),
+    ).toEqual(['out_0', 'out_1']);
 
     const resolvedNodePorts = buildCommandPorts(
       'moveCall',
@@ -939,7 +1295,7 @@ describe('model-root PTB boundary', () => {
       'next',
       'in_arg_0',
       'in_arg_1',
-      'out_ret_0',
+      'out_result',
     ]);
   });
 });

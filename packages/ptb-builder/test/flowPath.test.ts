@@ -23,20 +23,10 @@ function edge(
 describe('flowPath', () => {
   it('identifies flow edges through the shared RF/model projection rules', () => {
     expect(isFlowEdge(edge('e1', 'a', 'b', 'ptb-flow'))).toBe(true);
-    expect(
-      isFlowEdge({
-        ...edge('e2', 'a', 'b', 'ptb-io'),
-        data: { ptbEdge: { kind: 'flow' } },
-      }),
-    ).toBe(false);
+    expect(isFlowEdge(edge('e2', 'a', 'b', 'ptb-io'))).toBe(false);
     expect(isFlowEdge(edge('flow:a:b', 'a', 'b', 'ptb-io'))).toBe(false);
     expect(isFlowEdge(edge('io:a:b', 'a', 'b', 'ptb-io'))).toBe(false);
-    expect(
-      isFlowEdge({
-        ...edge('flow:a:b', 'a', 'b', ''),
-        data: { ptbEdge: { kind: 'flow' } },
-      }),
-    ).toBe(true);
+    expect(isFlowEdge(edge('flow:a:b', 'a', 'b', ''))).toBe(false);
   });
 
   it('checks Start-to-End reachability through flow edges only', () => {

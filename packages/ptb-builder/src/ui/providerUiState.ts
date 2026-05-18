@@ -1,5 +1,6 @@
 export type TxStatus = {
   status: 'success' | 'failure';
+  errorKind?: string;
   error?: string;
 };
 
@@ -119,4 +120,10 @@ export function providerReadyReadonlyTransaction(
   transaction?: TxStatus,
 ): ProviderUiState {
   return transaction ? { transaction } : {};
+}
+
+export function isMoveAbortTransaction(transaction?: TxStatus): boolean {
+  return (
+    transaction?.status === 'failure' && transaction.errorKind === 'MoveAbort'
+  );
 }

@@ -6,14 +6,11 @@
 // - START/END ids are canonical; provider normalizes duplicates onto these ids.
 // -----------------------------------------------------------------------------
 
-import { PTBGraph } from './graph/types';
+import type { PTBGraph } from './graph/types';
 export const KNOWN_IDS = {
   START: '@start',
   END: '@end',
   GAS: '@gas',
-  SYSTEM: '@system',
-  CLOCK: '@clock',
-  RANDOM: '@random',
 } as const;
 
 export type WellKnownId = (typeof KNOWN_IDS)[keyof typeof KNOWN_IDS];

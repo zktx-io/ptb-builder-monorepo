@@ -19,7 +19,7 @@ import type {
   PTBNode,
 } from '../../../../ptb/graph/types';
 import { toPTBTypeFromConcreteTypeArgument } from '../../../../ptb/move/toPTBType';
-import { countKeyOf } from '../../../../ptb/registry';
+import { countKeyOf, countMinOf } from '../../../../ptb/registry';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -63,6 +63,7 @@ export const BaseCommand = memo(function BaseCommand({
   const runtimeType =
     typeof runtime.type === 'string' ? runtime.type : undefined;
   const showMakeMoveVecType = cmdKind === 'makeMoveVec';
+  const inspectionOnly = cmdKind === 'publish' || cmdKind === 'upgrade';
   const makeMoveVecTypeValue = showMakeMoveVecType ? (runtimeType ?? '') : '';
   const makeMoveVecTypeValid =
     !makeMoveVecTypeValue.trim() ||
@@ -70,12 +71,13 @@ export const BaseCommand = memo(function BaseCommand({
 
   // Which counter does this command support (if any)?
   const countKey = cmdKind ? countKeyOf(cmdKind) : undefined;
+  const countMin = countMinOf(cmdKind, runtime) ?? 1;
 
   // Right-column offset policy (visual alignment)
   const rightOffsetRows = cmdKind === 'splitCoins' ? 1 : 0;
 
   // Compute height from IO rows + right offset.
-  const ioOffset = showMakeMoveVecType ? 28 : 0;
+  const ioOffset = (showMakeMoveVecType ? 28 : 0) + (inspectionOnly ? 18 : 0);
   const rowCount = Math.max(inIO.length, outIO.length + rightOffsetRows);
   const gaps = Math.max(0, rowCount - 1);
   const minHeight =
@@ -102,7 +104,7 @@ export const BaseCommand = memo(function BaseCommand({
               nodeId={node?.id}
               ui={ui}
               onPatchUI={data?.onPatchUI}
-              min={1}
+              min={countMin}
               disabled={readOnly}
               countKey={countKey}
             />
@@ -110,6 +112,15 @@ export const BaseCommand = memo(function BaseCommand({
             <></>
           )}
         </div>
+
+        {inspectionOnly ? (
+          <div
+            className="px-2 mb-1 text-[10px] text-amber-700 dark:text-amber-300"
+            title="Publish and Upgrade authoring requires the Move toolchain."
+          >
+            Inspection only
+          </div>
+        ) : undefined}
 
         {showMakeMoveVecType ? (
           <div className="px-2 mb-1">

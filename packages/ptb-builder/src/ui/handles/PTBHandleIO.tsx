@@ -95,7 +95,7 @@ function PTBHandleIOComponent({
 
     // Unknown → show debugInfo only
     if (!t || t.kind === 'unknown') {
-      const dbg = (t as any)?.debugInfo;
+      const dbg = t?.debugInfo;
       return typeof dbg === 'string' && dbg.trim().length > 0 ? dbg : 'unknown';
     }
 
@@ -104,7 +104,7 @@ function PTBHandleIOComponent({
       return t.typeTag ? `object<${t.typeTag}>` : 'object';
     }
     if (t.kind === 'vector' && t.elem?.kind === 'object') {
-      const tt = (t.elem as any)?.typeTag;
+      const tt = t.elem.typeTag;
       return tt ? `vector<object<${tt}>>` : 'vector<object>';
     }
 

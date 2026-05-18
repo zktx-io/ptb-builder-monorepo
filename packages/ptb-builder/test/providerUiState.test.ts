@@ -4,6 +4,7 @@ import {
   clearProviderClientUnavailableNoticeState,
   clearProviderNoticeState,
   INITIAL_PROVIDER_UI_STATE,
+  isMoveAbortTransaction,
   providerClientUnavailable,
   providerDocumentLoadError,
   providerNoticeLabel,
@@ -68,6 +69,44 @@ describe('provider UI state transitions', () => {
         kind: 'transaction-load-error',
         message: 'Transaction was not found.',
         dismissible: true,
+      },
+    });
+  });
+
+  it('classifies Move aborts from the structured execution error kind', () => {
+    expect(
+      isMoveAbortTransaction({
+        status: 'failure',
+        errorKind: 'MoveAbort',
+        error: 'MoveAbort in 1st command',
+      }),
+    ).toBe(true);
+    expect(
+      isMoveAbortTransaction({
+        status: 'failure',
+        error: 'MoveAbort in 1st command',
+      }),
+    ).toBe(false);
+    expect(
+      isMoveAbortTransaction({
+        status: 'success',
+        errorKind: 'MoveAbort',
+      }),
+    ).toBe(false);
+  });
+
+  it('preserves structured transaction error kind in readonly viewer state', () => {
+    expect(
+      providerReadyReadonlyTransaction({
+        status: 'failure',
+        errorKind: 'MoveAbort',
+        error: 'MoveAbort in 1st command',
+      }),
+    ).toEqual({
+      transaction: {
+        status: 'failure',
+        errorKind: 'MoveAbort',
+        error: 'MoveAbort in 1st command',
       },
     });
   });

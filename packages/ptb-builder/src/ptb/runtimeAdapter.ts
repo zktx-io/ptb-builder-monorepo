@@ -6,6 +6,7 @@ import {
   NULL_VALUE,
   parseObjectId,
   PTBModelError,
+  pureTypeName,
 } from '@zktx.io/ptb-model';
 import type {
   IRArgRef,
@@ -16,10 +17,11 @@ import type {
   TransactionIR,
 } from '@zktx.io/ptb-model';
 
-export type RuntimeEnvelope = {
-  sender?: string;
-  gasBudget?: number;
-};
+import {
+  normalizeRuntimeEnvelope,
+  type RuntimeEnvelope,
+} from './runtimeEnvelope';
+export type { RuntimeEnvelope } from './runtimeEnvelope';
 
 type TxArg = ReturnType<Transaction['pure']>;
 type TxResult = ReturnType<Transaction['splitCoins']>;
@@ -31,9 +33,11 @@ export function buildTransactionFromIR(
   assertRuntimeRenderableIR(ir);
 
   const tx = new Transaction();
-  if (envelope.sender) tx.setSenderIfNotSet(envelope.sender);
-  if (typeof envelope.gasBudget === 'number') {
-    tx.setGasBudgetIfNotSet(envelope.gasBudget);
+  const normalizedEnvelope = normalizeRuntimeEnvelope(envelope);
+  if (normalizedEnvelope.sender)
+    tx.setSenderIfNotSet(normalizedEnvelope.sender);
+  if (normalizedEnvelope.gasBudget !== undefined) {
+    tx.setGasBudgetIfNotSet(normalizedEnvelope.gasBudget);
   }
 
   const inputs = ir.inputs.map((input, index) => buildInput(tx, input, index));
@@ -239,28 +243,6 @@ function resolveArg(
       return (results[ref.commandIndex] as unknown as TxArg[])[
         ref.resultIndex
       ]!;
-  }
-}
-
-function pureTypeName(type: PTBType | undefined): string | undefined {
-  if (!type) return undefined;
-  switch (type.kind) {
-    case 'move_numeric':
-      return type.width;
-    case 'scalar':
-      return type.name === 'number' ? undefined : type.name;
-    case 'vector': {
-      const elem = pureTypeName(type.elem);
-      return elem ? `vector<${elem}>` : undefined;
-    }
-    case 'option': {
-      const elem = pureTypeName(type.elem);
-      return elem ? `option<${elem}>` : undefined;
-    }
-    case 'object':
-    case 'tuple':
-    case 'unknown':
-      return undefined;
   }
 }
 

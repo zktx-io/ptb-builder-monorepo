@@ -11,7 +11,7 @@ import type { Port, PTBNode } from '../../../ptb/graph/types';
 
 /** Human-friendly label fallback for a Port. */
 export function labelOf(p: Port): string {
-  return (p as any).label ?? p.id ?? '';
+  return p.label ?? p.id ?? '';
 }
 
 /** Split all ports into IO buckets (left=in, right=out). */
@@ -24,8 +24,8 @@ function splitIO(ports: Port[]) {
 /** Hook: extract & bucket a node's ports for command renderers. */
 export function useCommandPorts(node?: PTBNode) {
   const ports: Port[] = useMemo(() => {
-    const raw = (node as any)?.ports;
-    return Array.isArray(raw) ? (raw as Port[]) : [];
+    const raw = node?.ports;
+    return Array.isArray(raw) ? raw : [];
   }, [node]);
 
   const { inIO, outIO } = useMemo(() => splitIO(ports), [ports]);

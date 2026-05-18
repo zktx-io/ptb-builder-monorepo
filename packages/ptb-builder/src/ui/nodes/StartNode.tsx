@@ -4,9 +4,10 @@ import { memo } from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
 
 import { NODE_SIZES } from './nodeLayout';
+import type { PTBNode } from '../../ptb/graph/types';
 import { PTBHandleFlow } from '../handles/PTBHandleFlow';
 
-export type StartData = { label?: string };
+export type StartData = { label?: string; ptbNode?: PTBNode };
 export type StartRFNode = Node<StartData, 'ptb-start'>;
 
 export const StartNode = memo(function StartNode({
@@ -19,7 +20,7 @@ export const StartNode = memo(function StartNode({
         style={{ width: NODE_SIZES.Start.width }}
       >
         <p className="text-base text-center text-gray-700 dark:text-gray-300">
-          {data?.label ?? 'Start'}
+          {(data?.label ?? '').trim() || 'Start'}
         </p>
         <PTBHandleFlow type="source" />
       </div>

@@ -4,9 +4,10 @@ import { memo } from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
 
 import { NODE_SIZES } from './nodeLayout';
+import type { PTBNode } from '../../ptb/graph/types';
 import { PTBHandleFlow } from '../handles/PTBHandleFlow';
 
-export type EndData = { label?: string };
+export type EndData = { label?: string; ptbNode?: PTBNode };
 export type EndRFNode = Node<EndData, 'ptb-end'>;
 
 export const EndNode = memo(function EndNode({ data }: NodeProps<EndRFNode>) {
@@ -17,7 +18,7 @@ export const EndNode = memo(function EndNode({ data }: NodeProps<EndRFNode>) {
         style={{ width: NODE_SIZES.End.width }}
       >
         <p className="text-base text-center text-gray-700 dark:text-gray-300">
-          {data?.label ?? 'End'}
+          {(data?.label ?? '').trim() || 'End'}
         </p>
         <PTBHandleFlow type="target" />
       </div>

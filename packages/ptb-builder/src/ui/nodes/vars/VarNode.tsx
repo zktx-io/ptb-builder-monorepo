@@ -150,7 +150,7 @@ export const VarNode = memo(function VarNode({
   const v = data?.ptbNode as VariableNode | undefined;
   const nodeId = v?.id;
   const varType = v?.varType;
-  const variableValue = (v as any)?.value;
+  const variableValue = v?.value;
 
   const updateNodeInternals = useUpdateNodeInternals();
   const { lookupObjectForAuthoring, readOnly, toast } = usePtb();
@@ -168,20 +168,9 @@ export const VarNode = memo(function VarNode({
   // Visual category for node chrome
   const category = ioCategoryOf(varType);
 
-  // Helper variables (label-only)
-  const helperNames = useMemo(
-    () => new Set(['gas', 'clock', 'system', 'random']),
-    [],
-  );
   // NOTE: helpers have chrome-only visuals (no editor area & fixed labels).
-  const isHelperByName = useMemo(() => {
-    const n = (v?.name ?? '').toLowerCase().trim();
-    return helperNames.has(n);
-  }, [v?.name, helperNames]);
-  const isSuiConst =
-    (data?.label ?? v?.label ?? '').trim() === '0x2::sui::SUI' ||
-    (v?.name ?? '').trim().toLowerCase() === 'sui';
-  const isHelper = isHelperByName || isSuiConst;
+  const isGasSemantic = v?.semantic?.kind === 'GasCoin';
+  const isHelper = isGasSemantic;
 
   // Local UI buffers
   const [scalarBuf, setScalarBuf] = useState(''); // scalar & object id (also Option<T> inner)
@@ -247,9 +236,7 @@ export const VarNode = memo(function VarNode({
   );
   const vecElemIsBool = vecElem?.kind === 'scalar' && vecElem.name === 'bool';
   const rawObject =
-    (v as any)?.rawInput?.kind === 'Object'
-      ? (v as any).rawInput.object
-      : undefined;
+    v?.rawInput?.kind === 'Object' ? v.rawInput.object : undefined;
 
   // Sync buffers from graph → keep previous buffer when option is None
   useEffect(() => {
@@ -498,7 +485,7 @@ export const VarNode = memo(function VarNode({
     requestInternals,
   ]);
 
-  const title = (data?.label ?? v?.label ?? 'variable').trim();
+  const title = (data?.label ?? v?.label ?? '').trim() || 'variable';
   const nodeClassName = isOption
     ? `ptb-node--${category} ptb-node--option`
     : `ptb-node--${category}`;
@@ -510,24 +497,24 @@ export const VarNode = memo(function VarNode({
       <div className="space-y-1">
         {vecItems.map((val, i) => {
           if (isBoolElem) {
-            const b =
-              typeof val === 'boolean'
-                ? val
-                : typeof val === 'string'
-                  ? val.trim().toLowerCase() === 'true'
-                    ? true
-                    : val.trim().toLowerCase() === 'false'
-                      ? false
-                      : undefined
-                  : undefined;
+            const b = parseBoolEditorValue(val);
             return (
               <SelectBool
                 key={`vec-bool-${i}`}
                 value={b}
+                allowUnset
                 onChange={(newVal) => {
                   cancelPendingPureValueDrafts();
                   const next = vecItemsRef.current.slice();
                   next[i] = newVal;
+                  replaceVectorItems(next);
+                  patchVar({ value: next });
+                  requestInternals();
+                }}
+                onUnset={() => {
+                  cancelPendingPureValueDrafts();
+                  const next = vecItemsRef.current.slice();
+                  next[i] = '';
                   replaceVectorItems(next);
                   patchVar({ value: next });
                   requestInternals();
@@ -580,7 +567,7 @@ export const VarNode = memo(function VarNode({
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
-            {iconOfVar(v, data?.label)}
+            {iconOfVar(v)}
             {title}
           </p>
 
@@ -697,7 +684,7 @@ export const VarNode = memo(function VarNode({
                   <div className="mt-1 space-y-1">
                     <div className="flex gap-1">
                       <TextInput
-                        value={(varType as any)?.typeTag || ''}
+                        value={varType.typeTag || ''}
                         placeholder={
                           objTypeLoading ? 'Loading type…' : 'type (read-only)'
                         }

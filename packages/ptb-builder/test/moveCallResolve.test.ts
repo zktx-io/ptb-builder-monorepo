@@ -1,6 +1,10 @@
 import { NULL_VALUE, type RawOpenSignature } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
+import {
+  isTxContextOpenSignature,
+  toPTBTypeFromOpenSignature,
+} from '../src/ptb/move/toPTBType';
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
 
 const PACKAGE_ID =
@@ -32,6 +36,35 @@ const genericOpenSignatures: {
 };
 
 describe('MoveCall resolve state', () => {
+  it('normalizes open-signature struct addresses through the model parser', () => {
+    const txContext: RawOpenSignature = {
+      reference: NULL_VALUE,
+      body: {
+        $kind: 'datatype',
+        datatype: {
+          typeName: '0x2::tx_context::TxContext',
+          typeParameters: [],
+        },
+      },
+    };
+    const objectId: RawOpenSignature = {
+      reference: NULL_VALUE,
+      body: {
+        $kind: 'datatype',
+        datatype: {
+          typeName: `${PACKAGE_ID}::object::ID`,
+          typeParameters: [],
+        },
+      },
+    };
+
+    expect(isTxContextOpenSignature(txContext)).toBe(true);
+    expect(toPTBTypeFromOpenSignature(objectId)).toEqual({
+      kind: 'scalar',
+      name: 'id',
+    });
+  });
+
   it('commits target and ports even before generic type arguments are complete', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',

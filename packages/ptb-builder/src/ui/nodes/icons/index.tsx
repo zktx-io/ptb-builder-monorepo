@@ -1,10 +1,6 @@
 import React from 'react';
 
-import {
-  parseMoveTypeTag,
-  type PTBType,
-  type VariableNode,
-} from '@zktx.io/ptb-model';
+import type { PTBType, VariableNode } from '@zktx.io/ptb-model';
 import {
   AtSign,
   BookA,
@@ -12,9 +8,6 @@ import {
   Brackets,
   Calculator,
   CircleQuestionMark,
-  Clock,
-  Cog,
-  Dices,
   Download,
   Fuel,
   FunctionSquare,
@@ -23,11 +16,6 @@ import {
   Power,
   Split,
 } from 'lucide-react';
-
-import { IconSui } from './IconSui';
-
-const SUI_TYPE_TAG =
-  '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
 
 /** Resolve an icon for a PTBType (vector unwraps to its element type) */
 function iconOfType(t?: PTBType): React.ReactNode {
@@ -59,22 +47,9 @@ function iconOfType(t?: PTBType): React.ReactNode {
   }
 }
 
-/** Resolve an icon for a variable node based on its name/type */
-export function iconOfVar(
-  v?: VariableNode,
-  displayLabel?: string,
-): React.ReactNode {
-  const name = (v?.name ?? '').toLowerCase().trim();
-  const lbl = (displayLabel ?? v?.label ?? '').trim();
-  const canonicalLabel = lbl ? parseMoveTypeTag(lbl) : undefined;
-
-  // helpers / constants
-  if (name === 'gas') return <Fuel size={14} />;
-  if (name === 'clock') return <Clock size={14} />;
-  if (name === 'system') return <Cog size={14} />;
-  if (name === 'random') return <Dices size={14} />;
-  if (name === 'sui' || canonicalLabel === SUI_TYPE_TAG)
-    return <IconSui size={14} />;
+/** Resolve an icon for a variable node based on explicit semantics/type. */
+export function iconOfVar(v?: VariableNode): React.ReactNode {
+  if (v?.semantic?.kind === 'GasCoin') return <Fuel size={14} />;
 
   // fallback to type
   return iconOfType(v?.varType);

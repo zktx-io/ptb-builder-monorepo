@@ -12,15 +12,21 @@
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
+import {
+  indexedInputHandleIndex,
+  nestedResultHandle,
+  nestedResultHandleIndex,
+  RESULT_HANDLE_ID,
+} from '@zktx.io/ptb-model';
 
 import type {
   CommandNode,
+  CommandUIParams,
   NumericWidth,
   Port,
   PTBEdge,
   PTBGraph,
   PTBNode,
-  VariableNode,
 } from './graph/types';
 import {
   buildHandleId,
@@ -28,7 +34,7 @@ import {
   serializePTBType,
 } from './graph/types';
 import { PORTS } from './portTemplates';
-import { buildCommandPorts } from './registry';
+import { buildCommandPorts, sanitizeCommandUIParams } from './registry';
 import { extractHandles } from '../ui/handles/handleUtils';
 
 type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
@@ -50,8 +56,8 @@ export interface RFEdgeData extends Record<string, unknown> {
 
 /** Ensure a Variable node carries a concrete IO out port that reflects its varType. */
 function materializeVarOutPort(n: PTBNode): PTBNode {
-  if ((n as any)?.kind !== 'Variable') return n;
-  const v = n as VariableNode;
+  if (n.kind !== 'Variable') return n;
+  const v = n;
 
   const existingOut =
     (v.ports || []).find((p) => p.role === 'io' && p.direction === 'out')?.id ??
@@ -82,6 +88,8 @@ function keyedPort(port: Port): string {
   return `${port.role}:${port.direction}:${port.id}`;
 }
 
+// Preserve command output handles only when the model-aligned projection count
+// matches the registry materialization. Otherwise the registry projection wins.
 function mergeOutputPorts(
   existing: readonly Port[],
   materialized: readonly Port[],
@@ -94,9 +102,27 @@ function mergeOutputPorts(
   );
   if (existingOutputs.length === 0)
     return materializedOutputs.map((port) => ({ ...port }));
+  if (existingOutputs.length !== materializedOutputs.length) {
+    const singleResultAlias = nestedResultHandle(0);
+    if (
+      materializedOutputs.length === 1 &&
+      materializedOutputs[0]?.id === RESULT_HANDLE_ID &&
+      existingOutputs.length === 2 &&
+      existingOutputs.some((port) => port.id === RESULT_HANDLE_ID) &&
+      existingOutputs.some((port) => port.id === singleResultAlias)
+    ) {
+      const typed = materializedOutputs[0];
+      return existingOutputs.map((port) => ({
+        ...port,
+        ...(typed.dataType ? { dataType: typed.dataType } : {}),
+        ...(typed.typeStr ? { typeStr: typed.typeStr } : {}),
+      }));
+    }
+    return materializedOutputs.map((port) => ({ ...port }));
+  }
 
   return existingOutputs.map((port, index) => {
-    const typed = materializedOutputs[index] ?? materializedOutputs[0];
+    const typed = materializedOutputs[index];
     return {
       ...port,
       ...(typed?.dataType ? { dataType: typed.dataType } : {}),
@@ -105,13 +131,84 @@ function mergeOutputPorts(
   });
 }
 
+function maxIndexedPortCount(
+  ports: readonly Port[] | undefined,
+  indexOf: (handle: string) => number | undefined,
+): number | undefined {
+  let count = 0;
+  for (const port of ports ?? []) {
+    const index = indexOf(port.id);
+    if (index !== undefined) count = Math.max(count, index + 1);
+  }
+  return count === 0 ? undefined : count;
+}
+
+function materializedUIFromPorts(
+  command: CommandNode,
+): CommandUIParams | undefined {
+  const ports = command.ports ?? [];
+  const sanitized = sanitizeCommandUIParams(
+    command.command,
+    command.params?.ui,
+    command.params?.runtime,
+  );
+  switch (command.command) {
+    case 'makeMoveVec': {
+      const count =
+        maxIndexedPortCount(ports, (handle) =>
+          indexedInputHandleIndex(handle, 'elem'),
+        ) ?? sanitized?.elemsCount;
+      if (count !== undefined) return { ...sanitized, elemsCount: count };
+      if (
+        typeof command.params?.runtime?.type === 'string' &&
+        ports.some((port) => port.id === RESULT_HANDLE_ID)
+      ) {
+        return { ...sanitized, elemsCount: 0 };
+      }
+      return sanitized;
+    }
+    case 'mergeCoins': {
+      const count =
+        maxIndexedPortCount(ports, (handle) =>
+          indexedInputHandleIndex(handle, 'source'),
+        ) ?? sanitized?.sourcesCount;
+      return count === undefined
+        ? sanitized
+        : { ...sanitized, sourcesCount: count };
+    }
+    case 'splitCoins': {
+      const count =
+        maxIndexedPortCount(ports, (handle) =>
+          indexedInputHandleIndex(handle, 'amount'),
+        ) ??
+        maxIndexedPortCount(ports, nestedResultHandleIndex) ??
+        sanitized?.amountsCount;
+      return count === undefined
+        ? sanitized
+        : { ...sanitized, amountsCount: count };
+    }
+    case 'transferObjects': {
+      const count =
+        maxIndexedPortCount(ports, (handle) =>
+          indexedInputHandleIndex(handle, 'object'),
+        ) ?? sanitized?.objectsCount;
+      return count === undefined
+        ? sanitized
+        : { ...sanitized, objectsCount: count };
+    }
+    default:
+      return sanitized;
+  }
+}
+
 /** Ensure a Command node carries RF-projected typed ports for React Flow editing. */
 function materializeCommandPorts(n: PTBNode): PTBNode {
   if (n.kind !== 'Command') return n;
   const command = n as CommandNode;
+  const ui = materializedUIFromPorts(command);
   const materialized = buildCommandPorts(
     command.command,
-    command.params?.ui,
+    ui,
     command.params?.runtime,
     command.ports,
   );
@@ -129,9 +226,20 @@ function materializeCommandPorts(n: PTBNode): PTBNode {
     seen.add(key);
     return true;
   });
+  // Rebuild params from the supported UI keys plus the existing runtime block.
+  // Unknown UI keys are intentionally not re-emitted into the RF projection.
+  const runtime = command.params?.runtime;
+  const params =
+    ui !== undefined || runtime !== undefined
+      ? {
+          ...(ui !== undefined ? { ui } : {}),
+          ...(runtime !== undefined ? { runtime } : {}),
+        }
+      : undefined;
 
   return {
     ...command,
+    params,
     ports,
   };
 }
@@ -276,9 +384,8 @@ export function ptbToRF(graph: PTBGraph): {
       type: mapPTBEdgeToRFType(e),
       data: {
         dataType: srcTypeStr,
-        cast: (e as any).cast,
+        cast: e.cast,
       },
-      label: (e as any).label,
     };
     return edge;
   });
@@ -379,8 +486,7 @@ function mapPTBNodeToRFType(n: PTBNode): string {
     case 'Variable':
       return 'ptb-var';
     case 'Command': {
-      const cmd = (n as any)?.command;
-      return cmd === 'moveCall' ? 'ptb-mvc' : 'ptb-cmd';
+      return n.command === 'moveCall' ? 'ptb-mvc' : 'ptb-cmd';
     }
   }
   const _exhaustive: never = n;

@@ -4,22 +4,13 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 
 type FlowEdgeLike = {
-  id?: string;
   type?: string | null;
   source: string;
   target: string;
-  data?: unknown;
 };
 
-export function isFlowEdge(edge: {
-  id?: string;
-  type?: string | null;
-  data?: unknown;
-}): boolean {
-  if (edge.type === 'ptb-flow') return true;
-  if (edge.type === 'ptb-io') return false;
-  const data = edge.data as { ptbEdge?: { kind?: unknown } } | undefined;
-  return data?.ptbEdge?.kind === 'flow';
+export function isFlowEdge(edge: { type?: string | null }): boolean {
+  return edge.type === 'ptb-flow';
 }
 
 function buildFlowAdjacency(

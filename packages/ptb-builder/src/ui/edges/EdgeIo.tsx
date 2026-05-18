@@ -5,7 +5,6 @@
  * - Uses a Bezier path for smooth curvature.
  * - Derives a coarse IO category for CSS from the serialized type:
  *   props.data.dataType (preferred) → source/target handle suffix.
- * - Reads both handle field spellings used by local React Flow edge helpers.
  */
 
 import { memo, useMemo } from 'react';
@@ -15,6 +14,7 @@ import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import type { RFEdgeData } from '../../ptb/ptbAdapter';
+import { extractHandles } from '../handles/handleUtils';
 
 /**
  * IO edge renderer:
@@ -47,10 +47,7 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
     [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition],
   );
 
-  const srcH: string | undefined =
-    (props as any).sourceHandleId ?? (props as any).sourceHandle;
-  const tgtH: string | undefined =
-    (props as any).targetHandleId ?? (props as any).targetHandle;
+  const { source: srcH, target: tgtH } = extractHandles(props);
 
   const edgeData = props.data as RFEdgeData | undefined;
 

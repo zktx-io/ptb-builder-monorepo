@@ -1,7 +1,11 @@
 // src/ui/StatusBar.tsx
 import { AlertTriangle, CheckCircle, X, XCircle } from 'lucide-react';
 
-import { providerNoticeLabel, type ProviderUiState } from './providerUiState';
+import {
+  isMoveAbortTransaction,
+  providerNoticeLabel,
+  type ProviderUiState,
+} from './providerUiState';
 
 type Props = {
   transaction?: ProviderUiState['transaction'];
@@ -13,7 +17,7 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
   const status = transaction?.status;
   const error = transaction?.error;
   const isSuccess = status === 'success';
-  const isAbort = !isSuccess && error?.startsWith('MoveAbort');
+  const isAbort = isMoveAbortTransaction(transaction);
 
   // Pick CSS variable set per state
   const transactionVars = isSuccess

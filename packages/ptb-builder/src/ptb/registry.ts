@@ -1,8 +1,8 @@
 // src/ptb/registry.ts
-
-// src/ptb/registry.ts
 // -----------------------------------------------------------------------------
-// Single source of truth for command IO port specifications (IO only).
+// Builder-side registry for command IO port rendering.
+// The model package owns canonical handle conventions; this file uses its
+// exported handle helpers and adds UI-only count/materialization policy.
 // Flow ports are defined by PORTS.commandBase() and merged here.
 // Policy notes:
 // - No "expanded" toggle flag; multiplicity is controlled solely by count steppers.
@@ -12,6 +12,15 @@
 //   ports. Resolved package, module, function, and type arguments live in
 //   params.runtime.
 // -----------------------------------------------------------------------------
+
+import {
+  indexedInputHandle,
+  indexedInputHandleIndex,
+  inputHandle,
+  isNestedResultHandle,
+  nestedResultHandle,
+  RESULT_HANDLE_ID,
+} from '@zktx.io/ptb-model';
 
 import { M, O, S, V } from './graph/typeHelpers';
 import {
@@ -25,10 +34,6 @@ import {
 import { toPTBTypeFromConcreteTypeArgument } from './move/toPTBType';
 import { ioIn, ioOut, PORTS } from './portTemplates';
 
-// Helpers for graph-only commands
-const VEC_VEC_U8: PTBType = V(V(M('u8')));
-const VEC_ADDR: PTBType = V(S('address'));
-
 // -----------------------------------------------------------------------------
 // Spec interface
 // -----------------------------------------------------------------------------
@@ -38,9 +43,21 @@ export interface CommandSpec {
   label: string;
   /** Build IO ports based on model runtime params and UI-only counts. */
   buildIO(ui?: CommandUIParams, runtime?: CommandRuntimeParams): Port[];
-  /** True if this command is graph-only (for decode/visualization). */
-  graphOnly?: boolean;
 }
+
+type CountCommandKind =
+  | 'splitCoins'
+  | 'mergeCoins'
+  | 'transferObjects'
+  | 'makeMoveVec';
+type CountKey = 'amountsCount' | 'sourcesCount' | 'objectsCount' | 'elemsCount';
+
+const COUNT_KEYS: Record<CountCommandKind, CountKey> = {
+  splitCoins: 'amountsCount',
+  mergeCoins: 'sourcesCount',
+  transferObjects: 'objectsCount',
+  makeMoveVec: 'elemsCount',
+};
 
 // -----------------------------------------------------------------------------
 // Core commands
@@ -51,7 +68,7 @@ export interface CommandSpec {
  *    - in_coin: object (single)
  *    - in_amount_0..N-1: u64 (expanded scalar, count = amountsCount, default 2)
  *  outputs:
- *    - out_coin_0..N-1: object (expanded, count = amountsCount)
+ *    - out_result when count is 1; out_0..N-1 when count is greater than 1
  */
 const splitCoinsSpec: CommandSpec = {
   label: 'SplitCoins',
@@ -59,17 +76,16 @@ const splitCoinsSpec: CommandSpec = {
     const count = Math.max(1, Math.floor(ui?.amountsCount ?? 2));
     const ports: Port[] = [];
 
-    ports.push(ioIn('in_coin', { dataType: O(), label: 'in_coin' }));
+    const coinHandle = inputHandle('coin');
+    ports.push(ioIn(coinHandle, { dataType: O(), label: coinHandle }));
 
     for (let i = 0; i < count; i++) {
-      ports.push(
-        ioIn(`in_amount_${i}`, { dataType: M('u64'), label: `in_amount_${i}` }),
-      );
+      const id = indexedInputHandle('amount', i);
+      ports.push(ioIn(id, { dataType: M('u64'), label: id }));
     }
     for (let i = 0; i < count; i++) {
-      ports.push(
-        ioOut(`out_coin_${i}`, { dataType: O(), label: `out_coin_${i}` }),
-      );
+      const id = count === 1 ? RESULT_HANDLE_ID : nestedResultHandle(i);
+      ports.push(ioOut(id, { dataType: O(), label: id }));
     }
     return ports;
   },
@@ -88,15 +104,14 @@ const mergeCoinsSpec: CommandSpec = {
     const ports: Port[] = [];
 
     ports.push(
-      ioIn('in_destination', {
+      ioIn(inputHandle('destination'), {
         dataType: O(),
-        label: 'in_destination',
+        label: inputHandle('destination'),
       }),
     );
     for (let i = 0; i < count; i++) {
-      ports.push(
-        ioIn(`in_source_${i}`, { dataType: O(), label: `in_source_${i}` }),
-      );
+      const id = indexedInputHandle('source', i);
+      ports.push(ioIn(id, { dataType: O(), label: id }));
     }
     return ports;
   },
@@ -115,13 +130,13 @@ const transferObjectsSpec: CommandSpec = {
     const ports: Port[] = [];
 
     // Recipient first (UX)
+    const recipientHandle = inputHandle('recipient');
     ports.push(
-      ioIn('in_recipient', { dataType: S('address'), label: 'in_recipient' }),
+      ioIn(recipientHandle, { dataType: S('address'), label: recipientHandle }),
     );
     for (let i = 0; i < count; i++) {
-      ports.push(
-        ioIn(`in_object_${i}`, { dataType: O(), label: `in_object_${i}` }),
-      );
+      const id = indexedInputHandle('object', i);
+      ports.push(ioIn(id, { dataType: O(), label: id }));
     }
     return ports;
   },
@@ -129,12 +144,16 @@ const transferObjectsSpec: CommandSpec = {
 
 /** MakeMoveVec:
  *  inputs : in_elem_0..N-1 (T, expanded; T = runtime.type or unknown)
- *  outputs: out_vec (vector<T>, single)
+ *  outputs: out_result (vector<T>, single)
  */
 const makeMoveVecSpec: CommandSpec = {
   label: 'MakeMoveVec',
   buildIO(ui, runtime) {
-    const count = Math.max(1, Math.floor(ui?.elemsCount ?? 2));
+    const count = normalizeCount(
+      ui?.elemsCount,
+      countMinOf('makeMoveVec', runtime) ?? 1,
+      2,
+    );
     const runtimeType =
       typeof runtime?.type === 'string' ? runtime.type : undefined;
     const elemT: PTBType = runtimeType
@@ -145,19 +164,20 @@ const makeMoveVecSpec: CommandSpec = {
       : O();
     const ports: Port[] = [];
     for (let i = 0; i < count; i++) {
+      const id = indexedInputHandle('elem', i);
       ports.push(
-        ioIn(`in_elem_${i}`, {
+        ioIn(id, {
           dataType: elemT,
           typeStr: runtimeType,
-          label: `in_elem_${i}`,
+          label: id,
         }),
       );
     }
     ports.push(
-      ioOut('out_vec', {
+      ioOut(RESULT_HANDLE_ID, {
         dataType: V(elemT),
         typeStr: runtimeType ? `vector<${runtimeType}>` : undefined,
-        label: 'out_vec',
+        label: RESULT_HANDLE_ID,
       }),
     );
     return ports;
@@ -177,8 +197,9 @@ export function buildMoveCallPorts(
 ): Port[] {
   const ports: Port[] = [];
   inputs.forEach((t, index) => {
+    const id = indexedInputHandle('arg', index);
     ports.push({
-      id: `in_arg_${index}`,
+      id,
       role: 'io',
       direction: 'in',
       dataType: t,
@@ -187,13 +208,15 @@ export function buildMoveCallPorts(
     });
   });
   outputs.forEach((t, index) => {
+    const id =
+      outputs.length === 1 ? RESULT_HANDLE_ID : nestedResultHandle(index);
     ports.push({
-      id: `out_ret_${index}`,
+      id,
       role: 'io',
       direction: 'out',
       dataType: t,
       typeStr: serializePTBType(t),
-      label: `ret${index}`,
+      label: id,
     });
   });
   return ports;
@@ -201,74 +224,42 @@ export function buildMoveCallPorts(
 
 function isMoveCallValuePort(port: Port): boolean {
   if (port.role !== 'io') return false;
-  if (port.direction === 'in') return /^in_arg_\d+$/.test(port.id);
-  if (port.direction === 'out') return /^out_ret_\d+$/.test(port.id);
+  if (port.direction === 'in')
+    return indexedInputHandleIndex(port.id, 'arg') !== undefined;
+  if (port.direction === 'out')
+    return port.id === RESULT_HANDLE_ID || isNestedResultHandle(port.id);
   return false;
 }
 
 // -----------------------------------------------------------------------------
-// Graph-only commands (unchanged).
+// Runtime-param commands.
 // -----------------------------------------------------------------------------
 
-/** Publish (graph-only):
- *  Inputs:
- *    - in_modules: vector<vector<u8>>
- *    - in_deps:    vector<address>
- *  Outputs:
- *    - out_packageId: id
- *    - out_upgradeCap: object<0x2::package::UpgradeCap>
- */
+/** Publish runtime params hold modules/dependencies. The single result uses the model handle. */
 const publishSpec: CommandSpec = {
   label: 'Publish',
-  graphOnly: true,
   buildIO() {
-    return [
-      ioIn('in_modules', {
-        dataType: VEC_VEC_U8,
-        label: 'modules: vector<vector<u8>>',
-      }),
-      ioIn('in_deps', { dataType: VEC_ADDR, label: 'deps: vector<address>' }),
-      ioOut('out_packageId', { dataType: S('id'), label: 'packageId' }),
-      ioOut('out_upgradeCap', {
-        dataType: O('0x2::package::UpgradeCap'),
-        label: 'upgradeCap',
-      }),
-    ];
+    return [ioOut(RESULT_HANDLE_ID, { label: RESULT_HANDLE_ID })];
   },
 };
 
-/** Upgrade (graph-only):
- *  Inputs:
- *    - in_upgradeCap: object<0x2::package::UpgradeCap>
- *    - in_modules:    vector<vector<u8>>
- *    - in_deps:       vector<address>
- *    - in_policy:     u8
- *  Outputs:
- *    - out_packageId: id
- */
+/** Upgrade runtime params hold package/modules/dependencies; only the ticket is an IO arg. */
 const upgradeSpec: CommandSpec = {
   label: 'Upgrade',
-  graphOnly: true,
   buildIO() {
+    const upgradeCapHandle = inputHandle('upgradeCap');
     return [
-      ioIn('in_upgradeCap', {
+      ioIn(upgradeCapHandle, {
         dataType: O('0x2::package::UpgradeCap'),
         label: 'upgradeCap',
       }),
-      ioIn('in_modules', {
-        dataType: VEC_VEC_U8,
-        label: 'modules: vector<vector<u8>>',
-      }),
-      ioIn('in_deps', { dataType: VEC_ADDR, label: 'deps: vector<address>' }),
-      ioIn('in_policy', { dataType: M('u8'), label: 'policy' }),
-      ioOut('out_packageId', { dataType: S('id'), label: 'packageId' }),
+      ioOut(RESULT_HANDLE_ID, { label: RESULT_HANDLE_ID }),
     ];
   },
 };
 
 const unsupportedSpec: CommandSpec = {
   label: 'Unsupported',
-  graphOnly: true,
   buildIO() {
     return [];
   },
@@ -312,32 +303,83 @@ export function buildCommandPorts(
 
 /** Command → UI params count key (for BaseCommand stepper) */
 export function countKeyOf(cmdKind?: string): string | undefined {
-  switch (cmdKind) {
-    case 'splitCoins':
-      return 'amountsCount';
-    case 'mergeCoins':
-      return 'sourcesCount';
-    case 'transferObjects':
-      return 'objectsCount';
-    case 'makeMoveVec':
-      return 'elemsCount';
-    default:
-      return undefined;
-  }
+  return isCountCommandKind(cmdKind) ? COUNT_KEYS[cmdKind] : undefined;
 }
 
 /** Command → Default count (must match registry defaults) */
 export function countDefaultOf(cmdKind?: string): number | undefined {
-  switch (cmdKind) {
-    case 'splitCoins':
-      return 2;
-    case 'mergeCoins':
-      return 2;
-    case 'transferObjects':
-      return 2;
-    case 'makeMoveVec':
-      return 2;
-    default:
-      return undefined;
+  return isCountCommandKind(cmdKind) ? 2 : undefined;
+}
+
+export function countMinOf(
+  cmdKind?: string,
+  runtime?: CommandRuntimeParams,
+): number | undefined {
+  if (!isCountCommandKind(cmdKind)) return undefined;
+  return cmdKind === 'makeMoveVec' && typeof runtime?.type === 'string' ? 0 : 1;
+}
+
+export function sanitizeCommandUIParams(
+  cmdKind: CommandKind,
+  ui: Record<string, unknown> | CommandUIParams | undefined,
+  runtime?: CommandRuntimeParams,
+): CommandUIParams | undefined {
+  const key = countKeyOf(cmdKind) as CountKey | undefined;
+  if (!key) return undefined;
+  const count = normalizeOptionalCount(
+    ui?.[key],
+    countMinOf(cmdKind, runtime) ?? 1,
+  );
+  return count === undefined
+    ? undefined
+    : ({ [key]: count } as CommandUIParams);
+}
+
+export function patchCommandUIParams(
+  cmdKind: CommandKind,
+  current: CommandUIParams | undefined,
+  patch: Record<string, unknown>,
+  runtime?: CommandRuntimeParams,
+): CommandUIParams | undefined {
+  const key = countKeyOf(cmdKind) as CountKey | undefined;
+  if (!key) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(patch, key)) {
+    return sanitizeCommandUIParams(cmdKind, current, runtime);
   }
+  if (patch[key] === undefined) return undefined;
+  const count = normalizeOptionalCount(
+    patch[key],
+    countMinOf(cmdKind, runtime) ?? 1,
+  );
+  return count === undefined
+    ? undefined
+    : ({ [key]: count } as CommandUIParams);
+}
+
+function isCountCommandKind(value: unknown): value is CountCommandKind {
+  return (
+    value === 'splitCoins' ||
+    value === 'mergeCoins' ||
+    value === 'transferObjects' ||
+    value === 'makeMoveVec'
+  );
+}
+
+function normalizeOptionalCount(
+  value: unknown,
+  min: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  return normalizeCount(value, min, min);
+}
+
+function normalizeCount(value: unknown, min: number, fallback: number): number {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : fallback;
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.floor(numeric));
 }

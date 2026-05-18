@@ -7,9 +7,9 @@
 //     NOTE: vector<object> is intentionally not offered at UI level.
 //   - Option (submenu: u8..u256, bool, string, address, id)
 //     NOTE: option<object> is intentionally not offered at UI level.
-//   - Resources (submenu: gas/clock/random/system)
+//   - Resources (submenu: gas)
 //
-// Resource submenu keeps singleton gating (gas/clock/random/system).
+// Resource submenu keeps singleton gating for the builder-owned gas helper.
 
 import React, {
   useCallback,
@@ -75,21 +75,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, []);
 
   /** Map menu actions to well-known singleton keys. */
-  const actionToWellKnown: Record<string, keyof typeof KNOWN_IDS> = useMemo(
-    () => ({
-      'var/resource/gas': 'GAS',
-      'var/resource/clock': 'CLOCK',
-      'var/resource/random': 'RANDOM',
-      'var/resource/system': 'SYSTEM',
-    }),
+  const actionToWellKnown = useMemo(
+    () =>
+      ({
+        'var/resource/gas': KNOWN_IDS.GAS,
+      }) as const,
     [],
   );
 
   /** Disabled action set computed from singleton availability. */
   const disabledActions = useMemo(() => {
     const set = new Set<string>();
-    for (const [action, wkKey] of Object.entries(actionToWellKnown)) {
-      const wkId = KNOWN_IDS[wkKey];
+    for (const [action, wkId] of Object.entries(actionToWellKnown)) {
       if (!isWellKnownAvailable(wkId)) set.add(action);
     }
     return set;
