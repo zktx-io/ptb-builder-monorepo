@@ -1,3 +1,16 @@
+import {
+  indexedHandleSuffix,
+  indexedInputHandle,
+  inputHandle,
+  isIndexedInputHandle,
+  isInputHandle,
+  knownResultOutputHandles,
+  nestedResultHandle,
+  nestedResultHandleIndex,
+  RESULT_HANDLE_ID,
+  singleResultOutputHandles,
+  unknownResultOutputHandles,
+} from './handles.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import { validatePTBGraph } from './types.js';
 import type {
@@ -16,6 +29,11 @@ import {
   hasErrors,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import {
+  isNonNegativeSafeInteger,
+  isU16Index,
+  MAX_RESULT_COUNT,
+} from '../ir/limits.js';
 import {
   finalizeStructuralTransactionIR,
   isStructuralTransactionIR,
@@ -38,16 +56,21 @@ import {
   parseObjectDigest,
   parseObjectId,
 } from '../raw/types.js';
-import { cloneJsonLike, isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
+import {
+  cloneJsonLike,
+  isDenseArray,
+  isPlainObject,
+  NULL_VALUE,
+} from '../utils.js';
 
 const GAS_NODE_ID = 'gas';
 const GAS_HANDLE_ID = 'out';
-const RESULT_HANDLE_ID = 'out_result';
 const NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES = ['graph.rawInput'] as const;
 const NON_BLOCKING_GRAPH_COMMAND_DIAGNOSTIC_PREFIXES = [
   'graph.command.params.runtime.target',
   'graph.command.params.runtime.field',
   'graph.command.params.runtime.typeArguments',
+  'graph.command.params.runtime.resultCount',
   'graph.command.params.runtime.type',
   'graph.command.params.runtime.modules',
   'graph.command.params.runtime.dependencies',
@@ -85,7 +108,7 @@ interface GraphInputPlans {
 }
 
 interface GraphInputConstraint {
-  cast?: NumericWidth;
+  cast: NumericWidth;
   path: string;
 }
 
@@ -144,7 +167,6 @@ export function graphToTransactionIR(graph: PTBGraph): TransactionIR {
       node,
       referencedOutPorts,
       inputConstraints,
-      `$.nodes[${nodeIndex}]`,
       diagnostics,
     );
     const input = variableNodeToInput(
@@ -322,7 +344,6 @@ function resolveGraphInputType(
   node: VariableNode,
   referencedOutPorts: readonly Port[],
   constraintsByInputKey: Map<string, GraphInputConstraint[]>,
-  nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): PTBType {
   let resolved = node.varType;
@@ -344,8 +365,6 @@ function applyGraphInputCast(
   constraint: GraphInputConstraint,
   diagnostics: TransactionDiagnostic[],
 ): PTBType {
-  if (constraint.cast === undefined) return currentType;
-
   if (currentType.kind === 'scalar' && currentType.name === 'number') {
     return { kind: 'move_numeric', width: constraint.cast };
   }
@@ -511,16 +530,35 @@ function variableNodeToInput(
   }
 
   if (node.semantic?.kind === 'UnsupportedInput') {
+    const hasValue =
+      Object.prototype.hasOwnProperty.call(node, 'value') &&
+      node.value !== undefined;
     return {
       id,
       kind: 'Unsupported',
       sourceKind: node.semantic.sourceKind,
-      value: cloneJsonLike(node.value),
+      ...(hasValue ? { value: cloneJsonLike(node.value) } : {}),
     };
   }
 
   if (inputType.kind === 'object') {
-    const object = isRecord(node.value) ? node.value : undefined;
+    const object = isPlainObject(node.value) ? node.value : undefined;
+    const objectKind = object?.kind;
+    if (objectKind !== undefined && objectKind !== 'ImmOrOwnedObject') {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.input.object.invalidKind',
+          `Object variable ${node.id} cannot use value.kind ${String(objectKind)} without rawInput; use rawInput for SharedObject, Receiving, or other raw PTB object inputs.`,
+          `${nodePath}.value.kind`,
+        ),
+      );
+      return {
+        id,
+        kind: 'Object',
+        type: inputType,
+      };
+    }
+
     const objectId = canonicalObjectId(object?.objectId);
     const version = canonicalJsonU64(object?.version);
     const digest = parseObjectDigest(object?.digest);
@@ -574,7 +612,8 @@ function variableNodeToInput(
 function graphInputValueParam(input: IRInput): { value: unknown } | {} {
   switch (input.kind) {
     case 'Pure':
-      return Object.prototype.hasOwnProperty.call(input, 'value')
+      return Object.prototype.hasOwnProperty.call(input, 'value') &&
+        input.value !== undefined
         ? { value: cloneJsonLike(input.value) }
         : {};
     case 'Object':
@@ -584,7 +623,8 @@ function graphInputValueParam(input: IRInput): { value: unknown } | {} {
     case 'FundsWithdrawal':
       return { value: cloneJsonLike(input.value) };
     case 'Unsupported':
-      return Object.prototype.hasOwnProperty.call(input, 'value')
+      return Object.prototype.hasOwnProperty.call(input, 'value') &&
+        input.value !== undefined
         ? { value: cloneJsonLike(input.value) }
         : {};
   }
@@ -638,7 +678,7 @@ function rawInputToIRInput(
         id,
         kind: 'Pure',
         bytes: canonicalRaw.bytes,
-        type,
+        ...(type.kind === 'unknown' ? {} : { type }),
         canonicalRaw,
       };
     }
@@ -648,7 +688,9 @@ function rawInputToIRInput(
         id,
         kind: 'Object',
         object: canonicalRaw.object,
-        type,
+        ...(type.kind === 'object' && type.typeTag === undefined
+          ? {}
+          : { type }),
         canonicalRaw,
       };
     }
@@ -688,8 +730,6 @@ function commandNodeToIRCommand(
 ): IRCommand {
   const arg = (handle: string) =>
     readIncomingArg(
-      node,
-      nodePath,
       incomingEdges,
       inputRefs,
       commandIndexes,
@@ -707,7 +747,7 @@ function commandNodeToIRCommand(
 
   switch (node.command) {
     case 'splitCoins': {
-      const amounts = args((handle) => matchesInputHandle(handle, 'amount'));
+      const amounts = args((handle) => isIndexedInputHandle(handle, 'amount'));
       const coin = arg('coin');
       if (coin.invalid || amounts.invalid || !coin.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
@@ -733,7 +773,7 @@ function commandNodeToIRCommand(
     }
     case 'mergeCoins': {
       const destination = arg('destination');
-      const sources = args((handle) => matchesInputHandle(handle, 'source'));
+      const sources = args((handle) => isIndexedInputHandle(handle, 'source'));
       if (destination.invalid || sources.invalid || !destination.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -757,7 +797,7 @@ function commandNodeToIRCommand(
       };
     }
     case 'transferObjects': {
-      const objects = args((handle) => matchesInputHandle(handle, 'object'));
+      const objects = args((handle) => isIndexedInputHandle(handle, 'object'));
       const address = arg('recipient');
       if (objects.invalid || address.invalid || !address.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
@@ -782,11 +822,7 @@ function commandNodeToIRCommand(
       };
     }
     case 'makeMoveVec': {
-      const elements = args(
-        (handle) =>
-          matchesInputHandle(handle, 'elem') ||
-          matchesInputHandle(handle, 'arg'),
-      );
+      const elements = args((handle) => isIndexedInputHandle(handle, 'elem'));
       if (elements.invalid) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -853,7 +889,7 @@ function commandNodeToIRCommand(
         );
         return invalidGraphCommand(node, 'InvalidMoveCallTarget');
       }
-      const moveArgs = args((handle) => matchesInputHandle(handle, 'arg'));
+      const moveArgs = args((handle) => isIndexedInputHandle(handle, 'arg'));
       if (moveArgs.invalid) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -869,6 +905,7 @@ function commandNodeToIRCommand(
         function: functionName,
         typeArguments,
         arguments: moveArgs.refs,
+        ...moveCallResultCountParam(node),
       };
     }
     case 'publish': {
@@ -953,8 +990,6 @@ function requireNonEmptyGraphArgs(
 }
 
 function readIncomingArg(
-  node: CommandNode,
-  nodePath: string,
   incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
@@ -965,7 +1000,7 @@ function readIncomingArg(
     incomingEdges,
     inputRefs,
     commandIndexes,
-    (handle) => matchesInputHandle(handle, handleNeedle),
+    (handle) => isInputHandle(handle, handleNeedle),
     diagnostics,
   );
   if (result.refs[0]) {
@@ -975,13 +1010,6 @@ function readIncomingArg(
     };
   }
 
-  diagnostics.push(
-    errorDiagnostic(
-      'graph.arg.missing',
-      `Command ${node.id} is missing input ${handleNeedle}.`,
-      nodePath,
-    ),
-  );
   return {
     invalid: true,
   };
@@ -998,7 +1026,7 @@ function readIncomingArgs(
   let invalid = false;
 
   incomingEdges
-    .filter(({ edge }) => match(baseHandle(edge.targetHandle)))
+    .filter(({ edge }) => match(edge.targetHandle))
     .sort((a, b) => compareHandles(a.edge.targetHandle, b.edge.targetHandle))
     .map(({ edge, edgeIndex }): IRArgRef | undefined => {
       const directInput = inputRefs.get(
@@ -1019,7 +1047,7 @@ function readIncomingArgs(
         return undefined;
       }
 
-      const resultIndex = trailingIndex(baseHandle(edge.sourceHandle));
+      const resultIndex = nestedResultHandleIndex(edge.sourceHandle);
       return resultIndex === undefined
         ? { kind: 'Result', commandIndex }
         : { kind: 'NestedResult', commandIndex, resultIndex };
@@ -1128,49 +1156,19 @@ function commandOutputHandles(
   }
 }
 
-function singleResultOutputHandles(
-  referencedNestedResultIndexes: readonly number[],
-): string[] {
-  return [
-    RESULT_HANDLE_ID,
-    ...nestedResultOutputHandles(referencedNestedResultIndexes),
-  ];
-}
-
 function moveCallOutputHandles(
   command: Extract<IRCommand, { kind: 'MoveCall' }>,
   referencedNestedResultIndexes: readonly number[],
 ): string[] {
   if (command.resultCount === 0) return [];
   if (command.resultCount === undefined) {
-    return referencedNestedResultIndexes.length > 0
-      ? singleResultOutputHandles(referencedNestedResultIndexes)
-      : [RESULT_HANDLE_ID];
+    return unknownResultOutputHandles(referencedNestedResultIndexes);
   }
 
   return knownResultOutputHandles(
     command.resultCount,
     referencedNestedResultIndexes,
   );
-}
-
-function knownResultOutputHandles(
-  resultCount: number,
-  referencedNestedResultIndexes: readonly number[],
-): string[] {
-  if (resultCount <= 0) return [];
-  if (resultCount === 1)
-    return singleResultOutputHandles(referencedNestedResultIndexes);
-
-  return denseNestedResultOutputHandles(resultCount);
-}
-
-function denseNestedResultOutputHandles(count: number): string[] {
-  return Array.from({ length: count }, (_value, index) => `out_${index}`);
-}
-
-function nestedResultOutputHandles(indexes: readonly number[]): string[] {
-  return indexes.map((index) => `out_${index}`);
 }
 
 function nestedResultHandlesByCommand(
@@ -1181,7 +1179,7 @@ function nestedResultHandlesByCommand(
   commands.forEach((command) => {
     irCommandArgRefs(command).forEach((arg) => {
       if (arg.kind !== 'NestedResult') return;
-      if (!Number.isSafeInteger(arg.resultIndex) || arg.resultIndex < 0) return;
+      if (!isU16Index(arg.resultIndex)) return;
       const currentIndexes = indexes.get(arg.commandIndex) ?? new Set<number>();
       currentIndexes.add(arg.resultIndex);
       indexes.set(arg.commandIndex, currentIndexes);
@@ -1206,6 +1204,9 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
         runtime: {
           target: `${command.package}::${command.module}::${command.function}`,
           typeArguments: [...command.typeArguments],
+          ...(command.resultCount !== undefined
+            ? { resultCount: command.resultCount }
+            : {}),
         },
       };
     case 'Publish':
@@ -1229,13 +1230,17 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
           type: command.type,
         },
       };
-    case 'Unsupported':
+    case 'Unsupported': {
+      const hasValue =
+        Object.prototype.hasOwnProperty.call(command, 'value') &&
+        command.value !== undefined;
       return {
         runtime: {
           sourceKind: command.sourceKind,
-          value: cloneJsonLike(command.value),
+          ...(hasValue ? { value: cloneJsonLike(command.value) } : {}),
         },
       };
+    }
     default:
       return undefined;
   }
@@ -1269,39 +1274,39 @@ function commandArgEntries(
     case 'MoveCall':
       return command.arguments.map((arg, index) => ({
         arg,
-        handle: `in_arg_${index}`,
+        handle: indexedInputHandle('arg', index),
       }));
     case 'TransferObjects':
       return [
         ...command.objects.map((arg, index) => ({
           arg,
-          handle: `in_object_${index}`,
+          handle: indexedInputHandle('object', index),
         })),
-        { arg: command.address, handle: 'in_recipient' },
+        { arg: command.address, handle: inputHandle('recipient') },
       ];
     case 'SplitCoins':
       return [
-        { arg: command.coin, handle: 'in_coin' },
+        { arg: command.coin, handle: inputHandle('coin') },
         ...command.amounts.map((arg, index) => ({
           arg,
-          handle: `in_amount_${index}`,
+          handle: indexedInputHandle('amount', index),
         })),
       ];
     case 'MergeCoins':
       return [
-        { arg: command.destination, handle: 'in_destination' },
+        { arg: command.destination, handle: inputHandle('destination') },
         ...command.sources.map((arg, index) => ({
           arg,
-          handle: `in_source_${index}`,
+          handle: indexedInputHandle('source', index),
         })),
       ];
     case 'MakeMoveVec':
       return command.elements.map((arg, index) => ({
         arg,
-        handle: `in_elem_${index}`,
+        handle: indexedInputHandle('elem', index),
       }));
     case 'Upgrade':
-      return [{ arg: command.ticket, handle: 'in_upgradeCap' }];
+      return [{ arg: command.ticket, handle: inputHandle('upgradeCap') }];
     case 'Publish':
     case 'Unsupported':
       return [];
@@ -1317,7 +1322,7 @@ function sourceForArg(arg: IRArgRef): { node: string; handle: string } {
     case 'NestedResult':
       return {
         node: `cmd-${arg.commandIndex}`,
-        handle: `out_${arg.resultIndex}`,
+        handle: nestedResultHandle(arg.resultIndex),
       };
     case 'GasCoin':
       return { node: GAS_NODE_ID, handle: GAS_HANDLE_ID };
@@ -1329,17 +1334,20 @@ function isGasArg(arg: IRArgRef): boolean {
 }
 
 function unsupportedGraphCommand(node: CommandNode): IRCommand {
-  const runtime = isRecord(node.params?.runtime) ? node.params.runtime : {};
+  const runtime = isPlainObject(node.params?.runtime)
+    ? node.params.runtime
+    : {};
   const sourceKind =
     typeof runtime.sourceKind === 'string'
       ? runtime.sourceKind
       : 'UnsupportedGraphCommand';
+  const hasValue = 'value' in runtime && runtime.value !== undefined;
 
   return {
     id: node.id,
     kind: 'Unsupported',
     sourceKind,
-    value: 'value' in runtime ? cloneJsonLike(runtime.value) : undefined,
+    ...(hasValue ? { value: cloneJsonLike(runtime.value) } : {}),
     resultCount: 0,
   };
 }
@@ -1359,10 +1367,22 @@ function invalidGraphCommand(node: CommandNode, sourceKind: string): IRCommand {
 
 function moveCallTarget(node: CommandNode): string | undefined {
   const params = node.params as Record<string, unknown> | undefined;
-  const runtime = isRecord(params?.runtime) ? params.runtime : undefined;
+  const runtime = isPlainObject(params?.runtime) ? params.runtime : undefined;
 
   if (typeof runtime?.target === 'string') return runtime.target;
   return undefined;
+}
+
+function moveCallResultCountParam(
+  node: CommandNode,
+): { resultCount: number } | undefined {
+  const params = node.params as Record<string, unknown> | undefined;
+  const runtime = isPlainObject(params?.runtime) ? params.runtime : undefined;
+  const resultCount = runtime?.resultCount;
+  return isNonNegativeSafeInteger(resultCount) &&
+    resultCount <= MAX_RESULT_COUNT
+    ? { resultCount }
+    : undefined;
 }
 
 function moveCallTypeArguments(
@@ -1371,7 +1391,7 @@ function moveCallTypeArguments(
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
   const params = node.params as Record<string, unknown> | undefined;
-  const runtime = isRecord(params?.runtime) ? params.runtime : undefined;
+  const runtime = isPlainObject(params?.runtime) ? params.runtime : undefined;
   const typeArguments = runtime?.typeArguments;
   if (typeArguments === undefined) return [];
   if (isDenseArray(typeArguments)) {
@@ -1405,7 +1425,7 @@ function objectIdParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string | undefined {
-  const runtime = isRecord(node.params?.runtime)
+  const runtime = isPlainObject(node.params?.runtime)
     ? node.params.runtime
     : undefined;
   const objectId = canonicalObjectId(runtime?.[key]);
@@ -1427,7 +1447,7 @@ function objectIdArrayParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = isRecord(node.params?.runtime)
+  const runtime = isPlainObject(node.params?.runtime)
     ? node.params.runtime
     : undefined;
   const value = runtime?.[key];
@@ -1468,7 +1488,7 @@ function base64BytesArrayParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = isRecord(node.params?.runtime)
+  const runtime = isPlainObject(node.params?.runtime)
     ? node.params.runtime
     : undefined;
   const value = runtime?.[key];
@@ -1529,7 +1549,7 @@ function typeTagFromNode(
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): string | null | undefined {
-  const runtime = isRecord(node.params?.runtime)
+  const runtime = isPlainObject(node.params?.runtime)
     ? node.params.runtime
     : undefined;
   if (runtime === undefined || runtime.type === undefined) return NULL_VALUE;
@@ -1551,26 +1571,13 @@ function typeTagFromNode(
   return undefined;
 }
 
-function matchesInputHandle(handle: string, name: string): boolean {
-  const normalized = baseHandle(handle).replace(/^in[_-]/, '');
-  return (
-    normalized === name ||
-    normalized.startsWith(`${name}_`) ||
-    normalized.startsWith(`${name}-`)
-  );
-}
-
 function edgeKey(nodeId: string, handleId: string): string {
-  return `${nodeId}:${baseHandle(handleId)}`;
-}
-
-function baseHandle(handle: string): string {
-  return handle.split(':')[0];
+  return `${nodeId}:${handleId}`;
 }
 
 function compareHandles(left: string, right: string): number {
-  const leftKey = handleSortKey(baseHandle(left));
-  const rightKey = handleSortKey(baseHandle(right));
+  const leftKey = handleSortKey(left);
+  const rightKey = handleSortKey(right);
 
   if (leftKey.prefix === rightKey.prefix) {
     if (leftKey.index !== undefined && rightKey.index !== undefined) {
@@ -1588,13 +1595,8 @@ function handleSortKey(value: string): {
   prefix: string;
   index?: number;
 } {
-  const match = value.match(/^(.*?)(?:_|-)(\d+)$/);
-  return match
-    ? { raw: value, prefix: match[1], index: Number(match[2]) }
+  const suffix = indexedHandleSuffix(value);
+  return suffix
+    ? { raw: value, prefix: suffix.prefix, index: suffix.index }
     : { raw: value, prefix: value };
-}
-
-function trailingIndex(value: string): number | undefined {
-  const match = value.match(/(?:_|-)(\d+)$/);
-  return match ? Number(match[1]) : undefined;
 }

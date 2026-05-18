@@ -11,7 +11,6 @@ import {
   isCanonicalDecimalUnsignedIntegerString,
   isDenseArray,
   isPlainObject,
-  isRecord,
   NULL_VALUE,
 } from '../utils.js';
 

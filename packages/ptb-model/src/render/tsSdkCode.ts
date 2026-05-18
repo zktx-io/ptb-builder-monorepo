@@ -127,7 +127,7 @@ export function assertTsSdkRenderableIR(ir: TransactionIR): void {
 
 export function validateTsSdkRenderableIR(
   ir: TransactionIR,
-): TransactionDiagnostic[] {
+): readonly TransactionDiagnostic[] {
   const diagnostics = [
     ...(isStructuralTransactionIR(ir)
       ? []

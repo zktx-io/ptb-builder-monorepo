@@ -12,7 +12,7 @@ import {
   parseObjectDigest,
   parseObjectId,
 } from '../raw/types.js';
-import { isRecord } from '../utils.js';
+import { isPlainObject } from '../utils.js';
 
 const RAW_INPUT_KEYS_BY_KIND = {
   Pure: ['kind', 'bytes'],
@@ -46,7 +46,7 @@ export function normalizeGraphRawInput(
   diagnostics: TransactionDiagnostic[],
 ): RawCallArg | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value) || typeof value.kind !== 'string') {
+  if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
       errorDiagnostic(
         'graph.rawInput',
@@ -130,7 +130,7 @@ function normalizeGraphRawObject(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawObjectArg | undefined {
-  if (!isRecord(value) || typeof value.kind !== 'string') {
+  if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
       errorDiagnostic(
         'graph.rawInput.object',
@@ -220,7 +220,7 @@ function normalizeGraphFundsWithdrawal(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): RawFundsWithdrawalArg | undefined {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic(
         'graph.rawInput.fundsWithdrawal',
@@ -233,11 +233,11 @@ function normalizeGraphFundsWithdrawal(
   if (!validateOnlyKeys(value, RAW_FUNDS_WITHDRAWAL_KEYS, path, diagnostics)) {
     return undefined;
   }
-  const reservation = isRecord(value.reservation)
+  const reservation = isPlainObject(value.reservation)
     ? value.reservation
     : undefined;
-  const typeArg = isRecord(value.typeArg) ? value.typeArg : undefined;
-  const withdrawFrom = isRecord(value.withdrawFrom)
+  const typeArg = isPlainObject(value.typeArg) ? value.typeArg : undefined;
+  const withdrawFrom = isPlainObject(value.withdrawFrom)
     ? value.withdrawFrom
     : undefined;
 

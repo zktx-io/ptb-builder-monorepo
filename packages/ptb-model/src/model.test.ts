@@ -12,8 +12,21 @@ import {
   detectPTBDocVersion,
   freezeDiagnostics,
   graphToTransactionIR,
+  indexedHandleSuffix,
+  indexedInputHandle,
+  indexedInputHandleIndex,
+  inputHandle,
+  isIndexedInputHandle,
+  isInputHandle,
+  isNestedResultHandle,
+  isNonNegativeSafeInteger,
   isStructuralTransactionIR,
+  isU16Index,
+  isUnknownResultOutputHandle,
   jsonStringifyWithBigInt,
+  MAX_RESULT_COUNT,
+  nestedResultHandle,
+  nestedResultHandleIndex,
   NULL_VALUE,
   parseBase64Bytes,
   parseJsonU64,
@@ -24,7 +37,10 @@ import {
   parsePTBDocV4,
   parseStructuralTransactionIR,
   PTBModelError,
+  pureTypeName,
+  RAW_ARGUMENT_INDEX_MAX,
   rawTransactionToIR,
+  RESULT_HANDLE_ID,
   transactionIRToGraph,
   transactionIRToMermaid,
   transactionIRToRaw,
@@ -39,6 +55,7 @@ import {
 import type {
   CommandNode,
   IRInput,
+  Port,
   PTBGraph,
   PTBType,
   RawCallArg,
@@ -84,6 +101,31 @@ describe('public package surface', () => {
     expect(packageJson.dependencies ?? {}).toEqual({
       '@mysten/sui': '2.16.2',
     });
+    expect(
+      pureTypeName({
+        kind: 'option',
+        elem: { kind: 'move_numeric', width: 'u64' },
+      }),
+    ).toBe('option<u64>');
+    expect(inputHandle('coin')).toBe('in_coin');
+    expect(isInputHandle('in_coin', 'coin')).toBe(true);
+    expect(indexedInputHandle('amount', 0)).toBe('in_amount_0');
+    expect(isIndexedInputHandle('in_amount_0', 'amount')).toBe(true);
+    expect(indexedInputHandleIndex('in_amount_0', 'amount')).toBe(0);
+    expect(RESULT_HANDLE_ID).toBe('out_result');
+    expect(nestedResultHandle(0)).toBe('out_0');
+    expect(nestedResultHandleIndex('out_0')).toBe(0);
+    expect(isNestedResultHandle('out_65535')).toBe(true);
+    expect(isUnknownResultOutputHandle('out_result')).toBe(true);
+    expect(indexedHandleSuffix('in_arg_10')).toEqual({
+      prefix: 'in_arg',
+      index: 10,
+    });
+    expect(RAW_ARGUMENT_INDEX_MAX).toBe(65_535);
+    expect(MAX_RESULT_COUNT).toBe(65_536);
+    expect(isNonNegativeSafeInteger(65_536)).toBe(true);
+    expect(isU16Index(65_535)).toBe(true);
+    expect(isU16Index(65_536)).toBe(false);
   });
 
   it('keeps model source free of UI framework and runtime client imports', () => {
@@ -1072,6 +1114,72 @@ describe('rawTransactionToIR', () => {
       'receiving 0x00000000...000008 v9 7msXn7aieHy73WkRxh3Xdqh9PEoPY...',
     );
     expect(code).toContain('tx.receivingRef');
+  });
+
+  it('does not reintroduce placeholder rawInput types through graph round-trips', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'rawBytes',
+          kind: 'Pure',
+          bytes: 'AQID',
+        },
+        {
+          id: 'explicitUnknownBytes',
+          kind: 'Pure',
+          bytes: 'BAUG',
+          type: { kind: 'unknown', debugInfo: 'Pure' },
+        },
+        {
+          id: 'typedBytes',
+          kind: 'Pure',
+          bytes: 'AQIDBA==',
+          type: { kind: 'move_numeric', width: 'u32' },
+        },
+        {
+          id: 'rawObject',
+          kind: 'Object',
+          object: {
+            kind: 'Receiving',
+            objectId: normalizedObjectId('8'),
+            version: '9',
+            digest: TEST_DIGEST_2,
+          },
+        },
+        {
+          id: 'typedObject',
+          kind: 'Object',
+          object: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('9'),
+            version: '10',
+            digest: TEST_DIGEST_3,
+          },
+          type: { kind: 'object', typeTag: TEST_COIN_SUI_TYPE },
+        },
+      ],
+      commands: [],
+      diagnostics: [],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const roundTripped = graphToTransactionIR(
+      JSON.parse(JSON.stringify(graph)) as PTBGraph,
+    );
+
+    expect(roundTripped.diagnostics).toEqual([]);
+    expect(roundTripped.inputs[0]).not.toHaveProperty('type');
+    expect(roundTripped.inputs[1]).not.toHaveProperty('type');
+    expect(roundTripped.inputs[2]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'move_numeric', width: 'u32' },
+    });
+    expect(roundTripped.inputs[3]).not.toHaveProperty('type');
+    expect(roundTripped.inputs[4]).toMatchObject({
+      kind: 'Object',
+      type: { kind: 'object', typeTag: TEST_COIN_SUI_TYPE },
+    });
   });
 
   it('normalizes SDK v2 NestedResult tuple arguments', () => {
@@ -2833,7 +2941,7 @@ describe('graph conversion', () => {
 
     expect(
       ir.diagnostics.some(
-        (diagnostic) => diagnostic.code === 'graph.arg.missing',
+        (diagnostic) => diagnostic.code === 'graph.command.inputMissing',
       ),
     ).toBe(true);
   });
@@ -3979,6 +4087,71 @@ describe('graph conversion', () => {
           },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
+        {
+          id: 'explicit-owned-object',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'explicitOwnedObject',
+          value: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('8'),
+            version: '8',
+            digest: TEST_DIGEST_2,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'explicit-owned-invalid-object',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'explicitOwnedInvalidObject',
+          value: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('8'),
+            version: '0x8',
+            digest: TEST_DIGEST_2,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'receiving-value-object',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'receivingValueObject',
+          value: {
+            kind: 'Receiving',
+            objectId: normalizedObjectId('9'),
+            version: '9',
+            digest: TEST_DIGEST_3,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'shared-value-object',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'sharedValueObject',
+          value: {
+            kind: 'SharedObject',
+            objectId: normalizedObjectId('10'),
+            initialSharedVersion: '10',
+            mutable: true,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'bogus-kind-object',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'bogusKindObject',
+          value: {
+            kind: 'FutureObject',
+            objectId: normalizedObjectId('11'),
+            version: '11',
+            digest: TEST_DIGEST_1,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
       ],
       edges: [],
     };
@@ -3999,6 +4172,30 @@ describe('graph conversion', () => {
       id: 'invalidObject',
     });
     expect('object' in ir.inputs[2]).toBe(false);
+    expect(ir.inputs[3]).toMatchObject({
+      kind: 'Object',
+      object: { kind: 'ImmOrOwnedObject', version: '8' },
+    });
+    expect(ir.inputs[4]).toMatchObject({
+      kind: 'Object',
+      id: 'explicitOwnedInvalidObject',
+    });
+    expect('object' in ir.inputs[4]).toBe(false);
+    expect(ir.inputs[5]).toMatchObject({
+      kind: 'Object',
+      id: 'receivingValueObject',
+    });
+    expect('object' in ir.inputs[5]).toBe(false);
+    expect(ir.inputs[6]).toMatchObject({
+      kind: 'Object',
+      id: 'sharedValueObject',
+    });
+    expect('object' in ir.inputs[6]).toBe(false);
+    expect(ir.inputs[7]).toMatchObject({
+      kind: 'Object',
+      id: 'bogusKindObject',
+    });
+    expect('object' in ir.inputs[7]).toBe(false);
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'graph.input.object.unresolved',
@@ -4011,6 +4208,80 @@ describe('graph conversion', () => {
         path: '$.nodes[2]',
       }),
     );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.input.object.unresolved',
+        path: '$.nodes[4]',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.input.object.invalidKind',
+        path: '$.nodes[5].value.kind',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.input.object.invalidKind',
+        path: '$.nodes[6].value.kind',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.input.object.invalidKind',
+        path: '$.nodes[7].value.kind',
+      }),
+    );
+  });
+
+  it('omits undefined Unsupported values across graph and IR round-trips', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'future-input',
+          kind: 'Variable',
+          varType: { kind: 'unknown', debugInfo: 'FutureInput' },
+          name: 'futureInput',
+          semantic: { kind: 'UnsupportedInput', sourceKind: 'FutureInput' },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'future-command',
+          kind: 'Command',
+          command: 'unsupported',
+          params: { runtime: { sourceKind: 'FutureCommand' } },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+          ],
+        },
+      ],
+      edges: [],
+    };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.inputs[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'FutureInput',
+    });
+    expect(ir.inputs[0]).not.toHaveProperty('value');
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'FutureCommand',
+    });
+    expect(ir.commands[0]).not.toHaveProperty('value');
+
+    const roundTrippedGraph = transactionIRToGraph(ir);
+    const futureInput = roundTrippedGraph.nodes.find(
+      (node) => node.kind === 'Variable' && node.name === 'futureInput',
+    ) as VariableNode | undefined;
+    const futureCommand = roundTrippedGraph.nodes.find(
+      (node) => node.id === 'cmd-0',
+    ) as CommandNode | undefined;
+
+    expect(futureInput).not.toHaveProperty('value');
+    expect(futureCommand?.params?.runtime).not.toHaveProperty('value');
   });
 
   it('round-trips semantic IR through graph without React Flow types', () => {
@@ -4581,6 +4852,19 @@ describe('graph conversion', () => {
     const upgradeGraph: PTBGraph = {
       nodes: [
         {
+          id: 'ticket',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'ticket',
+          value: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('7'),
+            version: '1',
+            digest: TEST_DIGEST_1,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
           id: 'upgrade',
           kind: 'Command',
           command: 'upgrade',
@@ -4590,10 +4874,19 @@ describe('graph conversion', () => {
               dependencies: [],
             },
           },
-          ports: [],
+          ports: [{ id: 'in_upgradeCap', direction: 'in', role: 'io' }],
         },
       ],
-      edges: [],
+      edges: [
+        {
+          id: 'ticket-edge',
+          kind: 'io',
+          source: 'ticket',
+          sourceHandle: 'out',
+          target: 'upgrade',
+          targetHandle: 'in_upgradeCap',
+        },
+      ],
     };
 
     const publishIR = graphToTransactionIR(publishGraph);
@@ -5482,7 +5775,7 @@ describe('validateTransactionIR', () => {
       ],
       commands: [],
     });
-    const repaired: TransactionIR = {
+    const current: TransactionIR = {
       ...stale,
       inputs: [
         {
@@ -5498,7 +5791,7 @@ describe('validateTransactionIR', () => {
       ],
     };
 
-    expect(transactionIRToRaw(repaired)).toEqual({
+    expect(transactionIRToRaw(current)).toEqual({
       inputs: [
         {
           kind: 'Object',
@@ -6682,6 +6975,545 @@ describe('model graph command argument semantics', () => {
     expect(() => transactionIRToTsSdkCode(ir)).toThrow(PTBModelError);
   });
 
+  it('rejects typed raw byte inputs with the wrong command pure width', () => {
+    const graph = splitCoinsAmountGraph({ kind: 'move_numeric', width: 'u32' });
+    const amount = graph.nodes.find((node) => node.id === 'amount') as
+      | VariableNode
+      | undefined;
+    if (!amount) throw new Error('Expected amount variable');
+    delete amount.value;
+    amount.rawInput = { kind: 'Pure', bytes: 'AQIDBA==' };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      bytes: 'AQIDBA==',
+      type: { kind: 'move_numeric', width: 'u32' },
+    });
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'ir.arg.pureType',
+    );
+  });
+
+  it('treats unknown raw byte type hints as untyped for command pure checks', () => {
+    const diagnostics = validateTransactionIR({
+      version: 'transaction_ir_1',
+      inputs: [
+        { id: 'coin', kind: 'Object' },
+        {
+          id: 'amount',
+          kind: 'Pure',
+          bytes: 'AQID',
+          type: { kind: 'unknown', debugInfo: 'Pure' },
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0, type: 'object' },
+          amounts: [{ kind: 'Input', index: 1, type: 'pure' }],
+          resultCount: 1,
+        },
+      ],
+      diagnostics: [],
+    });
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'ir.arg.pureType',
+    );
+  });
+
+  it('rejects non-canonical graph command output ports', () => {
+    const flowPorts: Port[] = [
+      { id: 'in', direction: 'in', role: 'flow' },
+      { id: 'out', direction: 'out', role: 'flow' },
+    ];
+    const graphFor = (
+      command: CommandNode['command'],
+      ports: Port[],
+      params?: CommandNode['params'],
+    ): PTBGraph => ({
+      nodes: [
+        {
+          id: `cmd-${command}`,
+          kind: 'Command',
+          command,
+          ...(params ? { params } : {}),
+          ports,
+        },
+      ],
+      edges: [],
+    });
+
+    const zeroResultCases: Array<{
+      command: CommandNode['command'];
+      params?: CommandNode['params'];
+    }> = [
+      { command: 'transferObjects' },
+      { command: 'mergeCoins' },
+      {
+        command: 'unsupported',
+        params: { runtime: { sourceKind: 'UnsupportedCommand' } },
+      },
+    ];
+
+    zeroResultCases.forEach(({ command, params }) => {
+      const validCodes = validatePTBGraph(
+        graphFor(command, flowPorts, params),
+      ).map((diagnostic) => diagnostic.code);
+      expect(validCodes).not.toContain('graph.command.outputPort.invalid');
+
+      ['out_result', 'out_0'].forEach((outputId) => {
+        const invalidCodes = validatePTBGraph(
+          graphFor(
+            command,
+            [...flowPorts, { id: outputId, direction: 'out', role: 'io' }],
+            params,
+          ),
+        ).map((diagnostic) => diagnostic.code);
+        expect(invalidCodes).toContain('graph.command.outputPort.invalid');
+      });
+    });
+
+    const aliasCases: Array<{
+      command: CommandNode['command'];
+      invalidOutput: string;
+      params?: CommandNode['params'];
+    }> = [
+      { command: 'splitCoins', invalidOutput: 'out_coin_0' },
+      {
+        command: 'moveCall',
+        invalidOutput: 'out_ret_0',
+        params: { runtime: { target: `${normalizedObjectId('2')}::m::f` } },
+      },
+    ];
+
+    aliasCases.forEach(({ command, invalidOutput, params }) => {
+      const diagnostics = validatePTBGraph(
+        graphFor(
+          command,
+          [...flowPorts, { id: invalidOutput, direction: 'out', role: 'io' }],
+          params,
+        ),
+      );
+      expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        'graph.command.outputPort.invalid',
+      );
+    });
+
+    const validResultCodes = validatePTBGraph(
+      graphFor('splitCoins', [
+        ...flowPorts,
+        { id: 'out_result', direction: 'out', role: 'io' },
+        { id: 'out_0', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(validResultCodes).not.toContain('graph.command.outputPort.invalid');
+  });
+
+  it('rejects non-canonical graph command input ports', () => {
+    const flowPorts: Port[] = [
+      { id: 'in', direction: 'in', role: 'flow' },
+      { id: 'out', direction: 'out', role: 'flow' },
+    ];
+    const graphFor = (
+      command: CommandNode['command'],
+      ports: Port[],
+      params?: CommandNode['params'],
+    ): PTBGraph => ({
+      nodes: [
+        {
+          id: `cmd-${command}`,
+          kind: 'Command',
+          command,
+          ...(params ? { params } : {}),
+          ports,
+        },
+      ],
+      edges: [],
+    });
+
+    const invalidCases: Array<{
+      command: CommandNode['command'];
+      invalidInput: string;
+      params?: CommandNode['params'];
+    }> = [
+      { command: 'splitCoins', invalidInput: 'amount_0' },
+      { command: 'splitCoins', invalidInput: 'in_coin_0' },
+      { command: 'makeMoveVec', invalidInput: 'in_arg_0' },
+      { command: 'publish', invalidInput: 'in_arg_0' },
+    ];
+
+    invalidCases.forEach(({ command, invalidInput, params }) => {
+      const codes = validatePTBGraph(
+        graphFor(
+          command,
+          [...flowPorts, { id: invalidInput, direction: 'in', role: 'io' }],
+          params,
+        ),
+      ).map((diagnostic) => diagnostic.code);
+      expect(codes).toContain('graph.command.inputPort.invalid');
+    });
+
+    const sparseCodes = validatePTBGraph(
+      graphFor('moveCall', [
+        ...flowPorts,
+        { id: 'in_arg_1', direction: 'in', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(sparseCodes).toContain('graph.command.inputPort.invalid');
+
+    const validCases: Array<{
+      command: CommandNode['command'];
+      inputs: string[];
+    }> = [
+      { command: 'splitCoins', inputs: ['in_coin', 'in_amount_0'] },
+      { command: 'moveCall', inputs: ['in_arg_0', 'in_arg_1'] },
+      { command: 'makeMoveVec', inputs: ['in_elem_0'] },
+      { command: 'upgrade', inputs: ['in_upgradeCap'] },
+    ];
+
+    validCases.forEach(({ command, inputs }) => {
+      const codes = validatePTBGraph(
+        graphFor(command, [
+          ...flowPorts,
+          ...inputs.map((id): Port => ({ id, direction: 'in', role: 'io' })),
+        ]),
+      ).map((diagnostic) => diagnostic.code);
+      expect(codes).not.toContain('graph.command.inputPort.invalid');
+    });
+  });
+
+  it('does not report sparse indexed input ports for duplicate indexes', () => {
+    const diagnostics = validatePTBGraph({
+      nodes: [
+        {
+          id: 'cmd-moveCall',
+          kind: 'Command',
+          command: 'moveCall',
+          params: { runtime: { target: `${normalizedObjectId('2')}::m::f` } },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [],
+    });
+    const codes = diagnostics.map((diagnostic) => diagnostic.code);
+
+    expect(codes).toContain('graph.port.duplicate');
+    expect(codes).not.toContain('graph.command.inputPort.invalid');
+  });
+
+  it('preserves explicit MoveCall resultCount through graph round-trip', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 2,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+    const roundTripped = graphToTransactionIR(graph);
+
+    expect(command?.params).toEqual({
+      runtime: {
+        target: `${normalizedObjectId('2')}::m::f`,
+        typeArguments: [],
+        resultCount: 2,
+      },
+    });
+    expect(command?.ports.map((port) => port.id)).toEqual([
+      'in',
+      'out',
+      'out_0',
+      'out_1',
+    ]);
+    expect(roundTripped.commands[0]).toMatchObject({ resultCount: 2 });
+  });
+
+  it('does not infer MoveCall resultCount from raw PTB data', () => {
+    const ir = rawTransactionToIR({
+      inputs: [],
+      commands: [
+        {
+          $kind: 'MoveCall',
+          MoveCall: {
+            package: '0x2',
+            module: 'm',
+            function: 'f',
+            typeArguments: [],
+            arguments: [],
+          },
+        },
+      ],
+    });
+    const graph = transactionIRToGraph(ir);
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+    const roundTripped = graphToTransactionIR(graph);
+
+    expect(ir.commands[0]).not.toHaveProperty('resultCount');
+    expect(command?.params).toEqual({
+      runtime: {
+        target: `${normalizedObjectId('2')}::m::f`,
+        typeArguments: [],
+      },
+    });
+    expect(roundTripped.commands[0]).not.toHaveProperty('resultCount');
+  });
+
+  it('rejects invalid MoveCall graph resultCount evidence', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'cmd-moveCall',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::m::f`,
+              resultCount: 65_537,
+            },
+          },
+          ports: [],
+        },
+      ],
+      edges: [],
+    };
+    const validationCodes = validatePTBGraph(graph).map(
+      (diagnostic) => diagnostic.code,
+    );
+    const ir = graphToTransactionIR(graph);
+
+    expect(validationCodes).toContain(
+      'graph.command.params.runtime.resultCount',
+    );
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      package: normalizedObjectId('2'),
+      module: 'm',
+      function: 'f',
+    });
+    expect(ir.commands[0]).not.toHaveProperty('resultCount');
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.params.runtime.resultCount',
+    );
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'ir.command.resultCount',
+    );
+  });
+
+  it('rejects SplitCoins outputs that disagree with amount arity', () => {
+    const graph = splitCoinsAmountGraph({ kind: 'move_numeric', width: 'u64' });
+    const split = graph.nodes.find((node) => node.id === 'split');
+    const secondAmount: VariableNode = {
+      id: 'amount-1',
+      kind: 'Variable',
+      name: 'amount-1',
+      varType: { kind: 'move_numeric', width: 'u64' },
+      value: '6',
+      ports: [{ id: 'out', direction: 'out', role: 'io' }],
+    };
+    graph.nodes.push(secondAmount);
+    graph.edges.push({
+      id: 'amount-edge-1',
+      kind: 'io',
+      source: 'amount-1',
+      sourceHandle: 'out',
+      target: 'split',
+      targetHandle: 'in_amount_1',
+    });
+    if (split?.kind !== 'Command') throw new Error('Expected SplitCoins node');
+    split.ports.push(
+      { id: 'in_amount_1', direction: 'in', role: 'io' },
+      { id: 'out_result', direction: 'out', role: 'io' },
+      { id: 'out_2', direction: 'out', role: 'io' },
+    );
+
+    const diagnostics = validatePTBGraph(graph);
+    const invalidOutputPaths = diagnostics
+      .filter(
+        (diagnostic) => diagnostic.code === 'graph.command.outputPort.invalid',
+      )
+      .map((diagnostic) => diagnostic.path);
+
+    expect(invalidOutputPaths).toContain('$.nodes[2].ports[3].id');
+    expect(invalidOutputPaths).toContain('$.nodes[2].ports[4].id');
+  });
+
+  it('allows single-result nested output handles only when an edge uses them', () => {
+    const baseSource: CommandNode = {
+      id: 'source',
+      kind: 'Command',
+      command: 'moveCall',
+      params: {
+        runtime: {
+          target: `${normalizedObjectId('2')}::m::source`,
+          resultCount: 1,
+        },
+      },
+      ports: [
+        { id: 'in', direction: 'in', role: 'flow' },
+        { id: 'out', direction: 'out', role: 'flow' },
+        { id: 'out_0', direction: 'out', role: 'io' },
+      ],
+    };
+    const unusedCodes = validatePTBGraph({
+      nodes: [baseSource],
+      edges: [],
+    }).map((diagnostic) => diagnostic.code);
+    const usedCodes = validatePTBGraph({
+      nodes: [
+        baseSource,
+        {
+          id: 'consumer',
+          kind: 'Command',
+          command: 'moveCall',
+          params: { runtime: { target: `${normalizedObjectId('2')}::m::use` } },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'nested-edge',
+          kind: 'io',
+          source: 'source',
+          sourceHandle: 'out_0',
+          target: 'consumer',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    }).map((diagnostic) => diagnostic.code);
+
+    expect(unusedCodes).toContain('graph.command.outputPort.invalid');
+    expect(usedCodes).not.toContain('graph.command.outputPort.invalid');
+  });
+
+  it('keeps unknown MoveCall output arity structural without guessing a count', () => {
+    const graphFor = (outputId: string): PTBGraph => ({
+      nodes: [
+        {
+          id: 'cmd-moveCall',
+          kind: 'Command',
+          command: 'moveCall',
+          params: { runtime: { target: `${normalizedObjectId('2')}::m::f` } },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: outputId, direction: 'out', role: 'io' },
+          ],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(
+      validatePTBGraph(graphFor('out_65535')).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).not.toContain('graph.command.outputPort.invalid');
+    expect(
+      validatePTBGraph(graphFor('out_65536')).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain('graph.command.outputPort.invalid');
+  });
+
+  it('blocks graph to IR conversion for non-canonical command output ports', () => {
+    const ir = graphToTransactionIR({
+      nodes: [
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'out_result', direction: 'out', role: 'io' },
+          ],
+        },
+      ],
+      edges: [],
+    });
+
+    expect(ir.inputs).toEqual([]);
+    expect(ir.commands).toEqual([]);
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.outputPort.invalid',
+    );
+  });
+
+  it('blocks graph to IR conversion for non-canonical command input ports', () => {
+    const ir = graphToTransactionIR({
+      nodes: [
+        {
+          id: 'input',
+          kind: 'Variable',
+          varType: { kind: 'object' },
+          name: 'input',
+          value: {
+            kind: 'ImmOrOwnedObject',
+            objectId: normalizedObjectId('2'),
+            version: '1',
+            digest: TEST_DIGEST_1,
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'makeMoveVec',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-0',
+          kind: 'io',
+          source: 'input',
+          sourceHandle: 'out',
+          target: 'cmd-0',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    });
+
+    expect(ir.inputs).toEqual([]);
+    expect(ir.commands).toEqual([]);
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.inputPort.invalid',
+    );
+  });
+
   it('rejects host-authored SplitCoins amounts that use the wrong pure width', () => {
     const diagnostics = validateTransactionIR({
       version: 'transaction_ir_1',
@@ -6713,6 +7545,297 @@ describe('model graph command argument semantics', () => {
 });
 
 describe('structural ownership and defensive renderers', () => {
+  it('rejects class-shaped PTBGraph containers before conversion', () => {
+    const validVariable = {
+      id: 'var-0',
+      kind: 'Variable' as const,
+      varType: { kind: 'scalar' as const, name: 'string' as const },
+      name: 'input_0',
+      value: 'hello',
+      ports: [{ id: 'out', direction: 'out' as const, role: 'io' as const }],
+    };
+    const validCommand = {
+      id: 'cmd-0',
+      kind: 'Command' as const,
+      command: 'moveCall' as const,
+      params: {
+        runtime: {
+          target: `${normalizedObjectId('2')}::m::f`,
+          typeArguments: [],
+        },
+      },
+      ports: [{ id: 'in', direction: 'in' as const, role: 'io' as const }],
+    };
+
+    class GraphShape {
+      nodes = [validVariable];
+      edges = [];
+    }
+    class VariableShape {
+      id = validVariable.id;
+      kind = validVariable.kind;
+      varType = validVariable.varType;
+      name = validVariable.name;
+      value = validVariable.value;
+      ports = validVariable.ports;
+    }
+    class PortShape {
+      id = 'out';
+      direction = 'out';
+      role = 'io';
+    }
+    class PositionShape {
+      x = 0;
+      y = 0;
+    }
+    class ParamsShape {
+      runtime = { sourceKind: 'UnsupportedCommand' };
+    }
+    class RuntimeShape {
+      sourceKind = 'UnsupportedCommand';
+    }
+    class UIShape {
+      readOnly = true;
+    }
+    class EdgeShape {
+      id = 'edge-0';
+      kind = 'io';
+      source = 'var-0';
+      sourceHandle = 'out';
+      target = 'cmd-0';
+      targetHandle = 'in';
+    }
+    class CastShape {
+      to = 'u64';
+    }
+
+    const cases: Array<{
+      graph: unknown;
+      code: string;
+    }> = [
+      { graph: new GraphShape(), code: 'graph.invalid' },
+      {
+        graph: { nodes: [new VariableShape()], edges: [] },
+        code: 'graph.node',
+      },
+      {
+        graph: {
+          nodes: [{ ...validVariable, ports: [new PortShape()] }],
+          edges: [],
+        },
+        code: 'graph.port',
+      },
+      {
+        graph: {
+          nodes: [{ ...validVariable, position: new PositionShape() }],
+          edges: [],
+        },
+        code: 'graph.node.position',
+      },
+      {
+        graph: {
+          nodes: [
+            {
+              ...validCommand,
+              command: 'unsupported',
+              params: new ParamsShape(),
+            },
+          ],
+          edges: [],
+        },
+        code: 'graph.command.params',
+      },
+      {
+        graph: {
+          nodes: [
+            {
+              ...validCommand,
+              command: 'unsupported',
+              params: { runtime: new RuntimeShape() },
+            },
+          ],
+          edges: [],
+        },
+        code: 'graph.command.params.runtime',
+      },
+      {
+        graph: {
+          nodes: [{ ...validCommand, params: { ui: new UIShape() } }],
+          edges: [],
+        },
+        code: 'graph.command.params.ui',
+      },
+      {
+        graph: {
+          nodes: [validVariable, validCommand],
+          edges: [new EdgeShape()],
+        },
+        code: 'graph.edge',
+      },
+      {
+        graph: {
+          nodes: [validVariable, validCommand],
+          edges: [
+            {
+              id: 'edge-0',
+              kind: 'io',
+              source: 'var-0',
+              sourceHandle: 'out',
+              target: 'cmd-0',
+              targetHandle: 'in',
+              cast: new CastShape(),
+            },
+          ],
+        },
+        code: 'graph.edge.cast',
+      },
+    ];
+
+    cases.forEach(({ graph, code }) => {
+      expect(
+        validatePTBGraph(graph).map((diagnostic) => diagnostic.code),
+      ).toContain(code);
+    });
+  });
+
+  it('rejects class-shaped graph raw inputs and raw payload values', () => {
+    const objectPayload = {
+      kind: 'ImmOrOwnedObject' as const,
+      objectId: normalizedObjectId('2'),
+      version: '1',
+      digest: TEST_DIGEST_1,
+    };
+    const fundsPayload = {
+      reservation: { kind: 'MaxAmountU64' as const, amount: '1' },
+      typeArg: { kind: 'Balance' as const, type: TEST_SUI_TYPE },
+      withdrawFrom: { kind: 'Sender' as const },
+    };
+
+    class RawPureShape {
+      kind = 'Pure';
+      bytes = 'AQID';
+    }
+    class RawObjectShape {
+      kind = 'Object';
+      object = objectPayload;
+    }
+    class RawObjectPayloadShape {
+      kind = objectPayload.kind;
+      objectId = objectPayload.objectId;
+      version = objectPayload.version;
+      digest = objectPayload.digest;
+    }
+    class RawFundsShape {
+      kind = 'FundsWithdrawal';
+      value = fundsPayload;
+    }
+    class RawFundsPayloadShape {
+      reservation = fundsPayload.reservation;
+      typeArg = fundsPayload.typeArg;
+      withdrawFrom = fundsPayload.withdrawFrom;
+    }
+
+    const variable = (extra: Partial<VariableNode>): PTBGraph => ({
+      nodes: [
+        {
+          id: 'var-0',
+          kind: 'Variable',
+          varType: { kind: 'scalar', name: 'string' },
+          name: 'input_0',
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+          ...extra,
+        },
+      ],
+      edges: [],
+    });
+
+    const validationCases: Array<{ graph: PTBGraph; code: string }> = [
+      {
+        graph: variable({ rawInput: new RawPureShape() as never }),
+        code: 'graph.rawInput',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'object' },
+          rawInput: new RawObjectShape() as never,
+        }),
+        code: 'graph.rawInput',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'object' },
+          rawInput: {
+            kind: 'Object',
+            object: new RawObjectPayloadShape() as never,
+          },
+        }),
+        code: 'graph.rawInput.object',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'unknown', debugInfo: 'FundsWithdrawal' },
+          rawInput: new RawFundsShape() as never,
+        }),
+        code: 'graph.rawInput',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'unknown', debugInfo: 'FundsWithdrawal' },
+          rawInput: {
+            kind: 'FundsWithdrawal',
+            value: new RawFundsPayloadShape() as never,
+          },
+        }),
+        code: 'graph.rawInput.fundsWithdrawal',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'object' },
+          rawInput: { kind: 'Object', object: objectPayload },
+          value: new RawObjectPayloadShape(),
+        }),
+        code: 'graph.variable.rawInputValue',
+      },
+      {
+        graph: variable({
+          varType: { kind: 'unknown', debugInfo: 'FundsWithdrawal' },
+          rawInput: { kind: 'FundsWithdrawal', value: fundsPayload },
+          value: new RawFundsPayloadShape(),
+        }),
+        code: 'graph.variable.rawInputValue',
+      },
+    ];
+
+    validationCases.forEach(({ graph, code }) => {
+      expect(
+        validatePTBGraph(graph).map((diagnostic) => diagnostic.code),
+      ).toContain(code);
+    });
+
+    const rawInputIR = graphToTransactionIR(
+      variable({ rawInput: new RawPureShape() as never }),
+    );
+    expect(isStructuralTransactionIR(rawInputIR)).toBe(false);
+    expect(rawInputIR.inputs[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidRawInput',
+    });
+    expect(rawInputIR.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(
+      expect.arrayContaining(['graph.rawInput', 'ir.plainData']),
+    );
+
+    const objectValueIR = graphToTransactionIR(
+      variable({
+        varType: { kind: 'object' },
+        value: new RawObjectPayloadShape(),
+      }),
+    );
+    expect(objectValueIR.inputs).toEqual([]);
+    expect(
+      objectValueIR.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain('graph.plainData');
+  });
+
   it('rejects class-shaped graph types before graph-to-IR conversion can brand them', () => {
     class ScalarType {
       kind = 'scalar';

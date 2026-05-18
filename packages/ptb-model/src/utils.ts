@@ -54,6 +54,13 @@ type CloneFrame =
       target: Record<string, unknown>;
     };
 
+/**
+ * Detach arrays and plain objects while preserving primitive values.
+ *
+ * Non-plain objects are returned as-is so callers can still surface diagnostics
+ * for unsupported source payloads instead of throwing before validation. Callers
+ * that need model-owned data must pair this with findNonPlainData().
+ */
 export function cloneJsonLike<T>(value: T): T {
   if (!Array.isArray(value) && !isPlainObject(value)) {
     return value;

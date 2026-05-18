@@ -1,6 +1,16 @@
+import {
+  indexedInputHandle,
+  indexedInputHandleIndex,
+  inputHandle,
+  isInputHandle,
+  isUnknownResultOutputHandle,
+  nestedResultHandleIndex,
+  RESULT_HANDLE_ID,
+} from './handles.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -9,10 +19,10 @@ import {
   parseObjectId,
 } from '../raw/types.js';
 import {
+  findNonPlainData,
   isDenseArray,
   isFiniteNumber,
   isPlainObject,
-  isRecord,
   MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
@@ -64,15 +74,12 @@ export interface CommandUIParams {
   sourcesCount?: number;
   objectsCount?: number;
   elemsCount?: number;
-  modulesCount?: number;
-  depsCount?: number;
-  policyWidth?: NumericWidth;
-  readOnly?: boolean;
 }
 
 export interface CommandRuntimeParams {
   target?: string;
   typeArguments?: string[];
+  resultCount?: number;
   type?: string | typeof NULL_VALUE;
   modules?: string[];
   dependencies?: string[];
@@ -202,7 +209,7 @@ const COMMAND_RUNTIME_KEYS_BY_KIND = {
   splitCoins: [],
   mergeCoins: [],
   transferObjects: [],
-  moveCall: ['target', 'typeArguments'],
+  moveCall: ['target', 'typeArguments', 'resultCount'],
   makeMoveVec: ['type'],
   publish: ['modules', 'dependencies'],
   upgrade: ['modules', 'dependencies', 'package'],
@@ -213,17 +220,17 @@ const COMMAND_UI_COUNT_KEYS = [
   'sourcesCount',
   'objectsCount',
   'elemsCount',
-  'modulesCount',
-  'depsCount',
 ] as const;
-const COMMAND_UI_KEYS = [
-  ...COMMAND_UI_COUNT_KEYS,
-  'policyWidth',
-  'readOnly',
-] as const;
+const COMMAND_UI_KEYS = [...COMMAND_UI_COUNT_KEYS] as const;
 interface GraphNodeIndex {
+  id: string;
   kind: PTBNode['kind'];
   ports: Map<string, Port>;
+  ioInputPortIds: Set<string>;
+  ioOutputPorts: Array<{ id: string; path: string }>;
+  path: string;
+  command?: CommandKind;
+  runtime?: Record<string, unknown>;
 }
 
 export function validatePTBGraph(
@@ -232,7 +239,7 @@ export function validatePTBGraph(
 ): readonly TransactionDiagnostic[] {
   const diagnostics: TransactionDiagnostic[] = [];
 
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic('graph.invalid', 'PTB graph must be an object.', path),
     );
@@ -306,7 +313,7 @@ function validateNode(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic('graph.node', 'PTB graph node must be an object.', path),
     );
@@ -398,6 +405,126 @@ function validateCommandNode(
     `${path}.params`,
     diagnostics,
   );
+  validateCommandInputPorts(value, commandKind, path, diagnostics);
+}
+
+type CommandInputPortMatch =
+  | { kind: 'single' }
+  | { kind: 'indexed'; group: string; index: number };
+
+function validateCommandInputPorts(
+  value: Record<string, unknown>,
+  commandKind: CommandKind | undefined,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (commandKind === undefined) return;
+  if (!isDenseArray(value.ports)) return;
+
+  const indexedGroups = new Map<
+    string,
+    Array<{ index: number; portIndex: number; portId: string }>
+  >();
+
+  value.ports.forEach((port, portIndex) => {
+    if (
+      !isPlainObject(port) ||
+      port.direction !== 'in' ||
+      port.role !== 'io' ||
+      typeof port.id !== 'string'
+    ) {
+      return;
+    }
+
+    const match = commandInputPortMatch(commandKind, port.id);
+    if (match === undefined) {
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.command.inputPort.invalid',
+          `PTB graph ${commandKind} command declares non-canonical IO input port ${port.id}. Use the command-specific model input handles only.`,
+          `${path}.ports[${portIndex}].id`,
+        ),
+      );
+      return;
+    }
+
+    if (match.kind === 'indexed') {
+      const group = indexedGroups.get(match.group) ?? [];
+      group.push({ index: match.index, portIndex, portId: port.id });
+      indexedGroups.set(match.group, group);
+    }
+  });
+
+  indexedGroups.forEach((ports) => {
+    const sorted = [...ports].sort((left, right) => left.index - right.index);
+    const seenIndexes = new Set<number>();
+    let expectedIndex = 0;
+    sorted.forEach((port) => {
+      if (seenIndexes.has(port.index)) return;
+      seenIndexes.add(port.index);
+      if (port.index === expectedIndex) {
+        expectedIndex += 1;
+        return;
+      }
+      diagnostics.push(
+        errorDiagnostic(
+          'graph.command.inputPort.invalid',
+          `PTB graph ${commandKind} command declares sparse IO input port ${port.portId}. Indexed model input handles must be dense from zero.`,
+          `${path}.ports[${port.portIndex}].id`,
+        ),
+      );
+      expectedIndex = port.index + 1;
+    });
+  });
+}
+
+function commandInputPortMatch(
+  commandKind: CommandKind,
+  portId: string,
+): CommandInputPortMatch | undefined {
+  switch (commandKind) {
+    case 'splitCoins':
+      return (
+        singleInputPortMatch(portId, 'coin') ??
+        indexedInputPortMatch(portId, 'amount')
+      );
+    case 'mergeCoins':
+      return (
+        singleInputPortMatch(portId, 'destination') ??
+        indexedInputPortMatch(portId, 'source')
+      );
+    case 'transferObjects':
+      return (
+        singleInputPortMatch(portId, 'recipient') ??
+        indexedInputPortMatch(portId, 'object')
+      );
+    case 'makeMoveVec':
+      return indexedInputPortMatch(portId, 'elem');
+    case 'moveCall':
+      return indexedInputPortMatch(portId, 'arg');
+    case 'upgrade':
+      return singleInputPortMatch(portId, 'upgradeCap');
+    case 'publish':
+    case 'unsupported':
+      return undefined;
+  }
+}
+
+function singleInputPortMatch(
+  portId: string,
+  name: string,
+): CommandInputPortMatch | undefined {
+  return isInputHandle(portId, name) ? { kind: 'single' } : undefined;
+}
+
+function indexedInputPortMatch(
+  portId: string,
+  name: string,
+): CommandInputPortMatch | undefined {
+  const index = indexedInputHandleIndex(portId, name);
+  return index === undefined
+    ? undefined
+    : { kind: 'indexed', group: name, index };
 }
 
 function validateVariableNode(
@@ -421,7 +548,7 @@ function validateVariableNode(
     diagnostics,
     new WeakSet<object>(),
   );
-  if (isRecord(value.varType) && value.varType.kind === 'option') {
+  if (isPlainObject(value.varType) && value.varType.kind === 'option') {
     const hasValue = Object.prototype.hasOwnProperty.call(value, 'value');
     if (!hasValue || value.value === undefined) {
       diagnostics.push(
@@ -435,6 +562,13 @@ function validateVariableNode(
       );
     }
   }
+  validatePlainDataField(
+    value,
+    'value',
+    `${path}.value`,
+    'PTB graph variable value',
+    diagnostics,
+  );
   validateVariableSemantic(value.semantic, `${path}.semantic`, diagnostics);
   const rawInput = normalizeGraphRawInput(
     value.rawInput,
@@ -485,7 +619,7 @@ function rawObjectValueMatches(
   raw: Extract<RawCallArg, { kind: 'Object' }>['object'],
   value: unknown,
 ): boolean {
-  if (!isRecord(value) || value.kind !== raw.kind) return false;
+  if (!isPlainObject(value) || value.kind !== raw.kind) return false;
   switch (raw.kind) {
     case 'ImmOrOwnedObject':
     case 'Receiving':
@@ -513,12 +647,12 @@ function rawFundsWithdrawalValueMatches(
   raw: Extract<RawCallArg, { kind: 'FundsWithdrawal' }>['value'],
   value: unknown,
 ): boolean {
-  if (!isRecord(value)) return false;
-  const reservation = isRecord(value.reservation)
+  if (!isPlainObject(value)) return false;
+  const reservation = isPlainObject(value.reservation)
     ? value.reservation
     : undefined;
-  const typeArg = isRecord(value.typeArg) ? value.typeArg : undefined;
-  const withdrawFrom = isRecord(value.withdrawFrom)
+  const typeArg = isPlainObject(value.typeArg) ? value.typeArg : undefined;
+  const withdrawFrom = isPlainObject(value.withdrawFrom)
     ? value.withdrawFrom
     : undefined;
 
@@ -543,8 +677,8 @@ function validateVariableSourceCompatibility(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
-  const semantic = isRecord(node.semantic) ? node.semantic : undefined;
-  const varType = isRecord(node.varType) ? node.varType : undefined;
+  const semantic = isPlainObject(node.semantic) ? node.semantic : undefined;
+  const varType = isPlainObject(node.varType) ? node.varType : undefined;
 
   if (semantic?.kind === 'GasCoin') {
     if (rawInput !== undefined) {
@@ -625,7 +759,7 @@ function isPureGraphType(type: Record<string, unknown> | undefined): boolean {
       return type.name !== 'number';
     case 'vector':
     case 'option':
-      return isRecord(type.elem) && isPureGraphType(type.elem);
+      return isPlainObject(type.elem) && isPureGraphType(type.elem);
     case 'object':
     case 'tuple':
       return false;
@@ -639,7 +773,7 @@ function validatePort(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic('graph.port', 'PTB graph port must be an object.', path),
     );
@@ -722,7 +856,7 @@ function validateEdge(
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic('graph.edge', 'PTB graph edge must be an object.', path),
     );
@@ -780,7 +914,7 @@ function validateFlowTopology(
 ): void {
   const typedNodes = nodes
     .map((node, index) =>
-      isRecord(node) &&
+      isPlainObject(node) &&
       typeof node.id === 'string' &&
       isOneOf(node.kind, NODE_KINDS)
         ? { id: node.id, kind: node.kind, path: `${path}.nodes[${index}]` }
@@ -796,7 +930,7 @@ function validateFlowTopology(
   const hasDeclaredFlow =
     starts.length > 0 ||
     ends.length > 0 ||
-    edges.some((edge) => isRecord(edge) && edge.kind === 'flow');
+    edges.some((edge) => isPlainObject(edge) && edge.kind === 'flow');
 
   if (!hasDeclaredFlow) return;
 
@@ -825,7 +959,7 @@ function validateFlowTopology(
   const outgoing = new Map<string, string>();
   edges.forEach((edge) => {
     if (
-      isRecord(edge) &&
+      isPlainObject(edge) &&
       edge.kind === 'flow' &&
       typeof edge.source === 'string' &&
       typeof edge.target === 'string' &&
@@ -891,7 +1025,7 @@ function validateGraphReferences(
 
   nodes.forEach((node, index) => {
     if (
-      !isRecord(node) ||
+      !isPlainObject(node) ||
       typeof node.id !== 'string' ||
       !isOneOf(node.kind, NODE_KINDS) ||
       !isDenseArray(node.ports)
@@ -930,10 +1064,12 @@ function validateGraphReferences(
     }
 
     const ports = new Map<string, Port>();
+    const ioInputPortIds = new Set<string>();
+    const ioOutputPorts: Array<{ id: string; path: string }> = [];
     const seenPortIds = new Set<string>();
     node.ports.forEach((port, portIndex) => {
       if (
-        !isRecord(port) ||
+        !isPlainObject(port) ||
         typeof port.id !== 'string' ||
         !isOneOf(port.direction, PORT_DIRECTIONS) ||
         !isOneOf(port.role, PORT_ROLES)
@@ -957,19 +1093,45 @@ function validateGraphReferences(
         direction: port.direction,
         role: port.role,
       });
+      if (port.role === 'io' && port.direction === 'in') {
+        ioInputPortIds.add(port.id);
+      }
+      if (port.role === 'io' && port.direction === 'out') {
+        ioOutputPorts.push({
+          id: port.id,
+          path: `${path}.nodes[${index}].ports[${portIndex}].id`,
+        });
+      }
     });
 
-    nodesById.set(node.id, { kind: node.kind, ports });
+    nodesById.set(node.id, {
+      id: node.id,
+      kind: node.kind,
+      ports,
+      ioInputPortIds,
+      ioOutputPorts,
+      path: `${path}.nodes[${index}]`,
+      ...(node.kind === 'Command' && isOneOf(node.command, COMMAND_KINDS)
+        ? {
+            command: node.command,
+            runtime: commandRuntimeParams(node),
+          }
+        : {}),
+    });
   });
 
   const seenEdgeIds = new Set<string>();
   const ioTargets = new Set<string>();
   const flowSources = new Set<string>();
   const flowTargets = new Set<string>();
+  const validIoIncomingHandlesByCommand = new Map<string, Set<string>>();
+  const validIoOutgoingHandlesByCommand = new Map<string, Set<string>>();
+  const invalidInputCommands = new Set<string>();
+  const invalidOutputCommands = new Set<string>();
 
   edges.forEach((edge, index) => {
     if (
-      !isRecord(edge) ||
+      !isPlainObject(edge) ||
       typeof edge.id !== 'string' ||
       typeof edge.source !== 'string' ||
       typeof edge.sourceHandle !== 'string' ||
@@ -1012,6 +1174,16 @@ function validateGraphReferences(
 
     if (edge.kind === 'io') {
       const key = `${edge.target}:${edge.targetHandle}`;
+      const targetCommand = nodesById.get(edge.target)?.command;
+      const sourceCommand = nodesById.get(edge.source)?.command;
+      const sourceValid = isValidIoSourceEndpoint(source);
+      const targetValid = isValidIoTargetEndpoint(target);
+      if (sourceCommand !== undefined && !sourceValid) {
+        invalidOutputCommands.add(edge.source);
+      }
+      if (targetCommand !== undefined && !targetValid) {
+        invalidInputCommands.add(edge.target);
+      }
       if (ioTargets.has(key)) {
         diagnostics.push(
           errorDiagnostic(
@@ -1020,6 +1192,22 @@ function validateGraphReferences(
             `${path}.edges[${index}].targetHandle`,
           ),
         );
+        if (targetCommand !== undefined) invalidInputCommands.add(edge.target);
+      } else if (sourceValid && targetValid) {
+        if (targetCommand !== undefined) {
+          addHandleToMap(
+            validIoIncomingHandlesByCommand,
+            edge.target,
+            edge.targetHandle,
+          );
+        }
+        if (sourceCommand !== undefined) {
+          addHandleToMap(
+            validIoOutgoingHandlesByCommand,
+            edge.source,
+            edge.sourceHandle,
+          );
+        }
       }
       ioTargets.add(key);
     }
@@ -1050,11 +1238,286 @@ function validateGraphReferences(
     }
   });
 
+  validateCommandSemanticEdges(
+    nodesById,
+    validIoIncomingHandlesByCommand,
+    validIoOutgoingHandlesByCommand,
+    invalidInputCommands,
+    invalidOutputCommands,
+    diagnostics,
+  );
   validateFlowTopology(nodes, edges, path, diagnostics);
 }
 
+function addHandleToMap(
+  map: Map<string, Set<string>>,
+  nodeId: string,
+  handleId: string,
+): void {
+  const handles = map.get(nodeId) ?? new Set<string>();
+  handles.add(handleId);
+  map.set(nodeId, handles);
+}
+
+function isValidIoSourceEndpoint(
+  endpoint: { node: GraphNodeIndex; port: Port } | undefined,
+): boolean {
+  return (
+    endpoint !== undefined &&
+    endpoint.port.direction === 'out' &&
+    endpoint.port.role === 'io' &&
+    (endpoint.node.kind === 'Variable' || endpoint.node.kind === 'Command')
+  );
+}
+
+function isValidIoTargetEndpoint(
+  endpoint: { node: GraphNodeIndex; port: Port } | undefined,
+): boolean {
+  return (
+    endpoint !== undefined &&
+    endpoint.port.direction === 'in' &&
+    endpoint.port.role === 'io' &&
+    endpoint.node.kind === 'Command'
+  );
+}
+
+function validateCommandSemanticEdges(
+  nodesById: Map<string, GraphNodeIndex>,
+  incomingHandlesByCommand: Map<string, Set<string>>,
+  outgoingHandlesByCommand: Map<string, Set<string>>,
+  invalidInputCommands: Set<string>,
+  invalidOutputCommands: Set<string>,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  nodesById.forEach((node) => {
+    if (node.kind !== 'Command' || node.command === undefined) return;
+
+    const incomingHandles =
+      incomingHandlesByCommand.get(node.id) ?? new Set<string>();
+    const outgoingHandles =
+      outgoingHandlesByCommand.get(node.id) ?? new Set<string>();
+    const hasInputPortShapeIssue = commandInputPortShapeIssue(node);
+
+    if (!hasInputPortShapeIssue && !invalidInputCommands.has(node.id)) {
+      validateRequiredCommandInputs(
+        node,
+        incomingHandles,
+        invalidInputCommands,
+        diagnostics,
+      );
+    }
+
+    if (!invalidOutputCommands.has(node.id)) {
+      validateDeclaredCommandOutputs(
+        node,
+        incomingHandles,
+        outgoingHandles,
+        invalidInputCommands,
+        diagnostics,
+      );
+    }
+  });
+}
+
+function commandInputPortShapeIssue(node: GraphNodeIndex): boolean {
+  if (node.command === undefined) return false;
+
+  for (const portId of node.ioInputPortIds) {
+    if (commandInputPortMatch(node.command, portId) === undefined) return true;
+  }
+  return false;
+}
+
+function validateRequiredCommandInputs(
+  node: GraphNodeIndex,
+  incomingHandles: Set<string>,
+  invalidInputCommands: Set<string>,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (node.command === undefined) return;
+
+  const missing: string[] = [];
+  switch (node.command) {
+    case 'splitCoins':
+      if (!incomingHandles.has(inputHandle('coin'))) {
+        missing.push(inputHandle('coin'));
+      }
+      if (!hasIndexedIncomingHandle(incomingHandles, 'amount')) {
+        missing.push(indexedInputHandle('amount', 0));
+      }
+      break;
+    case 'mergeCoins':
+      if (!incomingHandles.has(inputHandle('destination'))) {
+        missing.push(inputHandle('destination'));
+      }
+      if (!hasIndexedIncomingHandle(incomingHandles, 'source')) {
+        missing.push(indexedInputHandle('source', 0));
+      }
+      break;
+    case 'transferObjects':
+      if (!incomingHandles.has(inputHandle('recipient'))) {
+        missing.push(inputHandle('recipient'));
+      }
+      if (!hasIndexedIncomingHandle(incomingHandles, 'object')) {
+        missing.push(indexedInputHandle('object', 0));
+      }
+      break;
+    case 'makeMoveVec':
+      if (
+        (node.runtime?.type === undefined ||
+          node.runtime.type === NULL_VALUE) &&
+        !hasIndexedIncomingHandle(incomingHandles, 'elem')
+      ) {
+        missing.push(indexedInputHandle('elem', 0));
+      }
+      break;
+    case 'upgrade':
+      if (!incomingHandles.has(inputHandle('upgradeCap'))) {
+        missing.push(inputHandle('upgradeCap'));
+      }
+      break;
+    case 'moveCall':
+    case 'publish':
+    case 'unsupported':
+      break;
+  }
+
+  missing.forEach((handle) => {
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.command.inputMissing',
+        `PTB graph ${node.command} command ${node.id} requires an IO edge into ${handle}.`,
+        node.path,
+      ),
+    );
+  });
+  if (missing.length > 0) invalidInputCommands.add(node.id);
+}
+
+function hasIndexedIncomingHandle(
+  incomingHandles: Set<string>,
+  name: string,
+): boolean {
+  for (const handle of incomingHandles) {
+    if (indexedInputHandleIndex(handle, name) !== undefined) return true;
+  }
+  return false;
+}
+
+function validateDeclaredCommandOutputs(
+  node: GraphNodeIndex,
+  incomingHandles: Set<string>,
+  outgoingHandles: Set<string>,
+  invalidInputCommands: Set<string>,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (node.command === undefined) return;
+
+  node.ioOutputPorts.forEach((port) => {
+    if (
+      node.command === 'splitCoins' &&
+      invalidInputCommands.has(node.id) &&
+      isUnknownResultOutputHandle(port.id)
+    ) {
+      return;
+    }
+    if (
+      isDeclaredCommandOutputAllowed(
+        node,
+        port.id,
+        incomingHandles,
+        outgoingHandles,
+      )
+    ) {
+      return;
+    }
+
+    diagnostics.push(
+      errorDiagnostic(
+        'graph.command.outputPort.invalid',
+        `PTB graph ${node.command} command declares non-canonical IO output port ${port.id}. Use model output handles such as out_result or out_N only when the command produces those results.`,
+        port.path,
+      ),
+    );
+  });
+}
+
+function isDeclaredCommandOutputAllowed(
+  node: GraphNodeIndex,
+  portId: string,
+  incomingHandles: Set<string>,
+  outgoingHandles: Set<string>,
+): boolean {
+  switch (node.command) {
+    case 'transferObjects':
+    case 'mergeCoins':
+    case 'unsupported':
+      return false;
+    case 'publish':
+    case 'makeMoveVec':
+    case 'upgrade':
+      return isSingleResultOutputAllowed(portId, outgoingHandles);
+    case 'splitCoins':
+      return isKnownResultOutputAllowed(
+        portId,
+        countIndexedIncomingHandles(incomingHandles, 'amount'),
+        outgoingHandles,
+      );
+    case 'moveCall': {
+      const resultCount = node.runtime?.resultCount;
+      return isNonNegativeSafeInteger(resultCount) &&
+        resultCount <= MAX_RESULT_COUNT
+        ? isKnownResultOutputAllowed(portId, resultCount, outgoingHandles)
+        : isUnknownResultOutputHandle(portId);
+    }
+    default:
+      return false;
+  }
+}
+
+function isSingleResultOutputAllowed(
+  portId: string,
+  outgoingHandles: Set<string>,
+): boolean {
+  return (
+    portId === RESULT_HANDLE_ID ||
+    (nestedResultHandleIndex(portId) === 0 && outgoingHandles.has(portId))
+  );
+}
+
+function isKnownResultOutputAllowed(
+  portId: string,
+  resultCount: number,
+  outgoingHandles: Set<string>,
+): boolean {
+  if (resultCount <= 0) return false;
+  if (resultCount === 1)
+    return isSingleResultOutputAllowed(portId, outgoingHandles);
+
+  const index = nestedResultHandleIndex(portId);
+  return index !== undefined && index < resultCount;
+}
+
+function countIndexedIncomingHandles(
+  incomingHandles: Set<string>,
+  name: string,
+): number {
+  let count = 0;
+  incomingHandles.forEach((handle) => {
+    if (indexedInputHandleIndex(handle, name) !== undefined) count += 1;
+  });
+  return count;
+}
+
+function commandRuntimeParams(
+  node: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!isPlainObject(node.params)) return undefined;
+  return isPlainObject(node.params.runtime) ? node.params.runtime : undefined;
+}
+
 function isGasSemantic(value: unknown): boolean {
-  return isRecord(value) && value.kind === 'GasCoin';
+  return isPlainObject(value) && value.kind === 'GasCoin';
 }
 
 function validateEdgeEndpoint(
@@ -1194,7 +1657,7 @@ function validateOptionalPosition(
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
-  if (isRecord(value)) {
+  if (isPlainObject(value)) {
     validateUnknownFields(
       value,
       POSITION_KEYS,
@@ -1234,7 +1697,7 @@ function validateCommandParams(
     }
     return;
   }
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic(
         'graph.command.params',
@@ -1280,7 +1743,7 @@ function validateCommandRuntimeParams(
     }
     return;
   }
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic(
         'graph.command.params.runtime',
@@ -1309,6 +1772,11 @@ function validateCommandRuntimeParams(
         `${path}.typeArguments`,
         'graph.command.params.runtime.typeArguments',
         'PTB graph MoveCall runtime typeArguments must be a dense array of valid Move type tags when present.',
+        diagnostics,
+      );
+      validateOptionalResultCountField(
+        value.resultCount,
+        `${path}.resultCount`,
         diagnostics,
       );
       return;
@@ -1377,6 +1845,13 @@ function validateCommandRuntimeParams(
           ),
         );
       }
+      validatePlainDataField(
+        value,
+        'value',
+        `${path}.value`,
+        'PTB graph Unsupported command runtime value',
+        diagnostics,
+      );
       return;
     case 'splitCoins':
     case 'mergeCoins':
@@ -1385,13 +1860,33 @@ function validateCommandRuntimeParams(
   }
 }
 
+function validatePlainDataField(
+  owner: Record<string, unknown>,
+  key: string,
+  path: string,
+  label: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (!Object.prototype.hasOwnProperty.call(owner, key)) return;
+  const issue = findNonPlainData(owner[key], path);
+  if (!issue) return;
+
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.plainData',
+      `${label} must contain only plain model-owned data. ${issue.message}`,
+      issue.path,
+    ),
+  );
+}
+
 function validateCommandUIParams(
   value: unknown,
   path: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic(
         'graph.command.params.ui',
@@ -1419,27 +1914,6 @@ function validateCommandUIParams(
       diagnostics,
     );
   });
-  if (
-    value.policyWidth !== undefined &&
-    !isOneOf(value.policyWidth, NUMERIC_WIDTHS)
-  ) {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.command.params.ui.policyWidth',
-        'PTB graph command UI policyWidth must be a supported numeric width when present.',
-        `${path}.policyWidth`,
-      ),
-    );
-  }
-  if (value.readOnly !== undefined && typeof value.readOnly !== 'boolean') {
-    diagnostics.push(
-      errorDiagnostic(
-        'graph.command.params.ui.readOnly',
-        'PTB graph command UI readOnly must be a boolean when present.',
-        `${path}.readOnly`,
-      ),
-    );
-  }
 }
 
 function validateEdgeCast(
@@ -1448,7 +1922,7 @@ function validateEdgeCast(
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     diagnostics.push(
       errorDiagnostic(
         'graph.edge.cast',
@@ -1587,6 +2061,22 @@ function validateMoveCallTargetField(
     errorDiagnostic(
       'graph.command.params.runtime.target',
       'PTB graph MoveCall runtime target must be canonical package::module::function.',
+      path,
+    ),
+  );
+}
+
+function validateOptionalResultCountField(
+  value: unknown,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (value === undefined) return;
+  if (isNonNegativeSafeInteger(value) && value <= MAX_RESULT_COUNT) return;
+  diagnostics.push(
+    errorDiagnostic(
+      'graph.command.params.runtime.resultCount',
+      `PTB graph MoveCall runtime resultCount must be a non-negative safe integer no greater than ${MAX_RESULT_COUNT} when present.`,
       path,
     ),
   );

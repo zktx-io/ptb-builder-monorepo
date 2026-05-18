@@ -1,4 +1,4 @@
-import { isDenseArray } from '../utils.js';
+import { isDenseArray, NULL_VALUE } from '../utils.js';
 
 export interface TransactionDiagnostic {
   readonly code: string;
@@ -94,7 +94,11 @@ function canonicalDiagnostic(
 function isCanonicalDiagnosticShape(
   value: unknown,
 ): value is TransactionDiagnostic {
-  if (typeof value !== 'object' || value == undefined || Array.isArray(value)) {
+  if (
+    typeof value !== 'object' ||
+    value === NULL_VALUE ||
+    Array.isArray(value)
+  ) {
     return false;
   }
   const diagnostic = value as Record<string, unknown>;

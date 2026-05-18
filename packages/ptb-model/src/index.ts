@@ -1,5 +1,4 @@
 export {
-  assertNoErrors,
   freezeDiagnostics,
   hasErrors,
   PTBModelError,
@@ -36,6 +35,20 @@ export type {
   VariableNode,
 } from './graph/types.js';
 export { isPTBType, validatePTBGraph, validatePTBType } from './graph/types.js';
+export type { IndexedHandleSuffix } from './graph/handles.js';
+export {
+  indexedHandleSuffix,
+  indexedInputHandle,
+  indexedInputHandleIndex,
+  inputHandle,
+  isIndexedInputHandle,
+  isInputHandle,
+  isNestedResultHandle,
+  isUnknownResultOutputHandle,
+  nestedResultHandle,
+  nestedResultHandleIndex,
+  RESULT_HANDLE_ID,
+} from './graph/handles.js';
 
 export type {
   IRArgRef,
@@ -45,6 +58,13 @@ export type {
   TransactionIR,
 } from './ir/types.js';
 export { createTransactionIR } from './ir/types.js';
+export {
+  isNonNegativeSafeInteger,
+  isU16Index,
+  MAX_RESULT_COUNT,
+  RAW_ARGUMENT_INDEX_MAX,
+} from './ir/limits.js';
+export { pureTypeName } from './ir/pure.js';
 export type { StructuralTransactionIR } from './ir/structural.js';
 export {
   isStructuralTransactionIR,

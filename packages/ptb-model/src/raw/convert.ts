@@ -26,6 +26,7 @@ import {
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import { isU16Index } from '../ir/limits.js';
 import {
   finalizeStructuralTransactionIR,
   isStructuralTransactionIR,
@@ -182,7 +183,7 @@ export function assertRawConvertibleIR(ir: TransactionIR): void {
 
 export function validateRawConvertibleIR(
   ir: TransactionIR,
-): TransactionDiagnostic[] {
+): readonly TransactionDiagnostic[] {
   const diagnostics = [
     ...(isStructuralTransactionIR(ir)
       ? []
@@ -1614,12 +1615,7 @@ function validateOnlyKeys(
 }
 
 function u16Index(value: unknown): number | undefined {
-  return typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 0 &&
-    value <= 65_535
-    ? value
-    : undefined;
+  return isU16Index(value) ? value : undefined;
 }
 
 function base64BytesArray(

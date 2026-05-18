@@ -1,5 +1,10 @@
 import { errorDiagnostic, freezeDiagnostics } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
+import {
+  isNonNegativeSafeInteger,
+  isU16Index,
+  MAX_RESULT_COUNT,
+} from './limits.js';
 import { pureBytesTypeHintDiagnostic, pureValueDiagnostic } from './pure.js';
 import { isIRArgRef } from './types.js';
 import type { IRArgRef, IRCommand, IRInput, TransactionIR } from './types.js';
@@ -24,9 +29,6 @@ import {
 } from '../utils.js';
 import type { PlainDataIssue } from '../utils.js';
 
-const RAW_ARGUMENT_INDEX_MAX = 65_535;
-// This is the raw argument index address space, not a Sui protocol execution limit.
-const MAX_RESULT_COUNT = RAW_ARGUMENT_INDEX_MAX + 1;
 const TRANSACTION_IR_KEYS = [
   'version',
   'inputs',
@@ -1499,12 +1501,13 @@ function validateArgRef(
       }
       if (expectedPureType !== undefined) {
         const input = ir.inputs[arg.index];
-        if (
-          input?.kind === 'Pure' &&
-          input.type !== undefined &&
-          input.bytes === undefined
-        ) {
-          if (!ptbTypeSatisfiesExpectation(input.type, expectedPureType)) {
+        if (input?.kind === 'Pure' && input.type !== undefined) {
+          const isUntypedRawByteHint =
+            input.bytes !== undefined && input.type.kind === 'unknown';
+          if (
+            !isUntypedRawByteHint &&
+            !ptbTypeSatisfiesExpectation(input.type, expectedPureType)
+          ) {
             diagnostics.push(
               errorDiagnostic(
                 'ir.arg.pureType',
@@ -1806,14 +1809,6 @@ function requiredResultCount(command: IRCommand): number | undefined {
     case 'Upgrade':
       return 1;
   }
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isU16Index(value: unknown): value is number {
-  return isNonNegativeSafeInteger(value) && value <= RAW_ARGUMENT_INDEX_MAX;
 }
 
 function uniqueDiagnostics(

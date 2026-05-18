@@ -8,7 +8,13 @@ import {
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { parseObjectId } from '../raw/types.js';
-import { isFiniteNumber, isRecord, NULL_VALUE } from '../utils.js';
+import {
+  cloneJsonLike,
+  isDenseArray,
+  isFiniteNumber,
+  isRecord,
+  NULL_VALUE,
+} from '../utils.js';
 
 export const PTB_DOC_VERSION_V4 = 'ptb_4' as const;
 export type PTBDocVersion = typeof PTB_DOC_VERSION_V4;
@@ -90,7 +96,7 @@ export function parsePTBDocV4(value: unknown): PTBDocV4 {
     throwDocError(diagnostics);
   }
 
-  return cloneDocumentJsonLike(value) as PTBDocV4;
+  return cloneJsonLike(value) as PTBDocV4;
 }
 
 function throwDocError(diagnostics: readonly TransactionDiagnostic[]): never {
@@ -217,7 +223,7 @@ function validateDocumentJsonLike(
     }
 
     if (Array.isArray(item)) {
-      if (!isDenseJsonArray(item)) {
+      if (!isDenseArray(item)) {
         diagnostics.push(
           errorDiagnostic(
             'doc.json',
@@ -279,93 +285,12 @@ function validateDocumentJsonLike(
   }
 }
 
-function cloneDocumentJsonLike<T>(value: T): T {
-  if (value === NULL_VALUE || typeof value !== 'object') return value;
-
-  const root = Array.isArray(value) ? [] : {};
-  const seen = new WeakMap<object, unknown>([[value, root]]);
-  const stack: Array<{
-    source: Record<string, unknown> | unknown[];
-    target: Record<string, unknown> | unknown[];
-  }> = [
-    {
-      source: value as Record<string, unknown> | unknown[],
-      target: root as Record<string, unknown> | unknown[],
-    },
-  ];
-
-  while (stack.length > 0) {
-    const frame = stack.pop();
-    if (!frame) continue;
-    const { source, target } = frame;
-
-    if (Array.isArray(source)) {
-      source.forEach((item, index) => {
-        assignJsonClone(item, target as unknown[], index, seen, stack);
-      });
-      continue;
-    }
-
-    Object.entries(source).forEach(([key, item]) => {
-      assignJsonClone(
-        item,
-        target as Record<string, unknown>,
-        key,
-        seen,
-        stack,
-      );
-    });
-  }
-
-  return root as T;
-}
-
-function assignJsonClone(
-  item: unknown,
-  target: Record<string, unknown> | unknown[],
-  key: string | number,
-  seen: WeakMap<object, unknown>,
-  stack: Array<{
-    source: Record<string, unknown> | unknown[];
-    target: Record<string, unknown> | unknown[];
-  }>,
-): void {
-  if (item === NULL_VALUE || typeof item !== 'object') {
-    if (Array.isArray(target)) target[key as number] = item;
-    else target[key as string] = item;
-    return;
-  }
-
-  const existing = seen.get(item);
-  if (existing) {
-    if (Array.isArray(target)) target[key as number] = existing;
-    else target[key as string] = existing;
-    return;
-  }
-
-  const clone = Array.isArray(item) ? [] : {};
-  seen.set(item, clone);
-  if (Array.isArray(target)) target[key as number] = clone;
-  else target[key as string] = clone;
-  stack.push({
-    source: item as Record<string, unknown> | unknown[],
-    target: clone as Record<string, unknown> | unknown[],
-  });
-}
-
 function isPlainDocumentObject(
   value: unknown,
 ): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === NULL_VALUE;
-}
-
-function isDenseJsonArray(value: unknown[]): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
-  }
-  return true;
 }
 
 function validateUnknownFields(
