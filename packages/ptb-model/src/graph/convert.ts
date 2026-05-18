@@ -935,7 +935,10 @@ function commandNodeToIRCommand(
         arguments: moveArgs.refs,
         ...moveCallResultCountParam(
           node,
-          graphMoveCallEvidenceState(moveCallRuntime(node), moveSignatures),
+          graphMoveCallEvidenceState(
+            graphCommandRuntimeParams(node),
+            moveSignatures,
+          ),
         ),
       };
     }
@@ -1365,9 +1368,7 @@ function isGasArg(arg: IRArgRef): boolean {
 }
 
 function unsupportedGraphCommand(node: CommandNode): IRCommand {
-  const runtime = isPlainObject(node.params?.runtime)
-    ? node.params.runtime
-    : {};
+  const runtime = graphCommandRuntimeParams(node) ?? {};
   const sourceKind =
     typeof runtime.sourceKind === 'string'
       ? runtime.sourceKind
@@ -1397,23 +1398,17 @@ function invalidGraphCommand(node: CommandNode, sourceKind: string): IRCommand {
 }
 
 function moveCallTarget(node: CommandNode): string | undefined {
-  const runtime = moveCallRuntime(node);
+  const runtime = graphCommandRuntimeParams(node);
 
   if (typeof runtime?.target === 'string') return runtime.target;
   return undefined;
-}
-
-function moveCallRuntime(
-  node: CommandNode,
-): Record<string, unknown> | undefined {
-  return graphCommandRuntimeParams(node);
 }
 
 function moveCallResultCountParam(
   node: CommandNode,
   evidenceState?: GraphMoveCallEvidenceState,
 ): { resultCount: number } | undefined {
-  const runtime = moveCallRuntime(node);
+  const runtime = graphCommandRuntimeParams(node);
   const resultCount = runtime?.resultCount;
   return isNonNegativeSafeInteger(resultCount) &&
     resultCount <= MAX_RESULT_COUNT
@@ -1428,7 +1423,7 @@ function moveCallTypeArguments(
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = moveCallRuntime(node);
+  const runtime = graphCommandRuntimeParams(node);
   const typeArguments = parseGraphMoveCallTypeArguments(
     runtime?.typeArguments,
   );
@@ -1450,9 +1445,7 @@ function objectIdParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string | undefined {
-  const runtime = isPlainObject(node.params?.runtime)
-    ? node.params.runtime
-    : undefined;
+  const runtime = graphCommandRuntimeParams(node);
   const objectId = canonicalObjectId(runtime?.[key]);
   if (objectId) return objectId;
 
@@ -1472,9 +1465,7 @@ function objectIdArrayParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = isPlainObject(node.params?.runtime)
-    ? node.params.runtime
-    : undefined;
+  const runtime = graphCommandRuntimeParams(node);
   const value = runtime?.[key];
   const path = `${nodePath}.params.runtime.${key}`;
   if (!isDenseArray(value)) {
@@ -1513,9 +1504,7 @@ function base64BytesArrayParam(
   key: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = isPlainObject(node.params?.runtime)
-    ? node.params.runtime
-    : undefined;
+  const runtime = graphCommandRuntimeParams(node);
   const value = runtime?.[key];
   const path = `${nodePath}.params.runtime.${key}`;
   if (!isDenseArray(value)) {
@@ -1574,9 +1563,7 @@ function typeTagFromNode(
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): string | null | undefined {
-  const runtime = isPlainObject(node.params?.runtime)
-    ? node.params.runtime
-    : undefined;
+  const runtime = graphCommandRuntimeParams(node);
   if (runtime === undefined || runtime.type === undefined) return NULL_VALUE;
   if (runtime.type === NULL_VALUE) {
     return runtime.type;

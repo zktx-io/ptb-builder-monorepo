@@ -723,6 +723,12 @@ SDK transaction-kind data returned by `Transaction.fromKind(...).getData()`.
 are `version`, `graph`, `chain`, `sender`, `modules`, `objects`, and `view`.
 Host-owned extension data should live in the explicit `modules` / `objects`
 records or outside the PTBDocV4 object.
+Move signature evidence is not persisted in `PTBDocV4`. `parsePTBDocV4()` and
+`validatePTBDocV4()` validate the embedded graph without `moveSignatures`; hosts
+that need evidence-aware graph checks should parse the document first, then call
+`validatePTBGraph(doc.graph, { moveSignatures })` or
+`graphToTransactionIR(doc.graph, { moveSignatures })` with separately validated
+evidence.
 When present, `sender` must be a canonical Sui address. `chain` is a host-owned
 string label; applications such as `@zktx.io/ptb-builder` may apply their own
 supported-chain policy after model parsing. When present, `view.zoom` must be a

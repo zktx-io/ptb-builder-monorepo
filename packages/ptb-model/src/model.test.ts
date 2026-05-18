@@ -1376,6 +1376,73 @@ describe('PTBDocV4', () => {
     );
   });
 
+  it('rejects Move signature evidence as a persisted document field', () => {
+    const diagnostics = validatePTBDocV4({
+      version: 'ptb_4',
+      graph: { nodes: [], edges: [] },
+      moveSignatures: {},
+    });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'doc.unknownField',
+        path: '$.moveSignatures',
+      }),
+    );
+  });
+
+  it('keeps document validation evidence-free after parsing', () => {
+    const packageId = normalizedObjectId('2');
+    const moduleName = 'm';
+    const functionName = 'f';
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        [moduleName]: {
+          [functionName]: {
+            typeParameterCount: 0,
+            parameters: [],
+            returns: [rawSignature({ $kind: 'u64' })],
+          },
+        },
+      },
+    };
+    const doc = {
+      version: 'ptb_4',
+      graph: {
+        nodes: [
+          {
+            id: 'cmd-moveCall',
+            kind: 'Command',
+            command: 'moveCall',
+            params: {
+              runtime: {
+                target: `${packageId}::${moduleName}::${functionName}`,
+              },
+            },
+            ports: [{ id: 'out_1', direction: 'out', role: 'io' }],
+          },
+        ],
+        edges: [],
+      },
+    };
+
+    expect(
+      validatePTBDocV4(doc).map((diagnostic) => diagnostic.code),
+    ).not.toContain('graph.command.outputPort.invalid');
+
+    const parsed = parsePTBDocV4(doc);
+    const graphDiagnostics = validatePTBGraph(parsed.graph, {
+      moveSignatures,
+    });
+
+    expect(graphDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.outputPort.invalid',
+        path: '$.nodes[0].ports[0].id',
+      }),
+    );
+  });
+
   it('rejects unknown PTB document view fields', () => {
     const diagnostics = validatePTBDocV4({
       version: 'ptb_4',
@@ -8598,6 +8665,26 @@ describe('model graph command argument semantics', () => {
 
     expect(codes).toContain('graph.command.moveCall.typeArgumentsCount');
     expect(codes).not.toContain('graph.command.outputPort.invalid');
+  });
+
+  it('reports graph MoveCall type argument mismatches without blocking graph conversion', () => {
+    const ir = graphToTransactionIR(moveCallGraph(), {
+      moveSignatures: graphEvidenceFor([graphU64Return], {
+        typeParameterCount: 1,
+      }),
+    });
+    const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
+
+    expect(codes).toContain('graph.command.moveCall.typeArgumentsCount');
+    expect(codes).toContain('ir.command.moveCall.typeArgumentsCount');
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      typeArguments: [],
+    });
+    expect(isStructuralTransactionIR(ir)).toBe(false);
+    expect(isStructuralTransactionIR(parseStructuralTransactionIR(ir))).toBe(
+      true,
+    );
   });
 
   it('does not add graph evidence diagnostics when runtime shape is invalid', () => {
