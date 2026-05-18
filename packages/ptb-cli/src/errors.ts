@@ -1,7 +1,4 @@
-import {
-  PTBModelError,
-  type TransactionDiagnostic,
-} from '@zktx.io/ptb-model';
+import { PTBModelError, type TransactionDiagnostic } from '@zktx.io/ptb-model';
 
 export interface CliErrorCause {
   kind: 'network' | 'sdk' | 'system';

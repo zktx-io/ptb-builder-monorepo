@@ -1,7 +1,4 @@
-import {
-  pureBcsSchemaFromTypeName,
-  type PureTypeName,
-} from '@mysten/sui/bcs';
+import { pureBcsSchemaFromTypeName, type PureTypeName } from '@mysten/sui/bcs';
 
 import { errorDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';

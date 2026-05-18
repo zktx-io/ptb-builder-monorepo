@@ -15,9 +15,9 @@ import {
   GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
   GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
   graphCommandRuntimeParams,
+  type GraphMoveCallEvidenceState,
   parseGraphMoveCallTarget,
   parseGraphMoveCallTypeArguments,
-  type GraphMoveCallEvidenceState,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import {
@@ -58,9 +58,7 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
-import {
-  isMovePackageSignatureEvidence,
-} from '../move/evidence.js';
+import { isMovePackageSignatureEvidence } from '../move/evidence.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -1411,7 +1409,7 @@ function moveCallResultCountParam(
     ? { resultCount }
     : evidenceState?.effectiveResultCount !== undefined
       ? { resultCount: evidenceState.effectiveResultCount }
-    : undefined;
+      : undefined;
 }
 
 function moveCallTypeArguments(
@@ -1420,9 +1418,7 @@ function moveCallTypeArguments(
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
   const runtime = graphCommandRuntimeParams(node);
-  const typeArguments = parseGraphMoveCallTypeArguments(
-    runtime?.typeArguments,
-  );
+  const typeArguments = parseGraphMoveCallTypeArguments(runtime?.typeArguments);
   if (typeArguments !== undefined) return typeArguments;
 
   diagnostics.push(

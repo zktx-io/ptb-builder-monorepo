@@ -34,9 +34,9 @@ export interface GraphMoveCallEvidenceState {
   effectiveResultCount: number;
 }
 
-export function graphCommandRuntimeParams(
-  node: { params?: unknown },
-): Record<string, unknown> | undefined {
+export function graphCommandRuntimeParams(node: {
+  params?: unknown;
+}): Record<string, unknown> | undefined {
   if (!isPlainObject(node.params)) return undefined;
   return isPlainObject(node.params.runtime) ? node.params.runtime : undefined;
 }

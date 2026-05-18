@@ -2,9 +2,9 @@ import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
   isRawOpenSignatureList,
   MAX_RAW_OPEN_SIGNATURE_DEPTH,
+  type ObjectId,
   parseMoveIdentifier,
   parseObjectId,
-  type ObjectId,
   type RawOpenSignature,
   type RawOpenSignatureBody,
 } from '../raw/types.js';

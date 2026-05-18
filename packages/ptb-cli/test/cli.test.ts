@@ -60,7 +60,10 @@ describe('ptb cli mermaid', () => {
     await withTempFile(txHex, async (file) => {
       const fileIo = memoryRuntime();
 
-      const fileCode = await runCli(['mermaid', file, '--json'], fileIo.runtime);
+      const fileCode = await runCli(
+        ['mermaid', file, '--json'],
+        fileIo.runtime,
+      );
 
       expect(fileCode).toBe(2);
       expect(JSON.parse(fileIo.stdout()).error.code).toBe('input.unsupported');

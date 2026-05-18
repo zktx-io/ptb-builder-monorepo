@@ -25,7 +25,8 @@ const GRAPHQL_URLS: Record<PtbCliNetwork, string> = {
 export const DEFAULT_NETWORK_TIMEOUT_MS = 30_000;
 
 type TransactionInclude = { transaction: true };
-type LoadedTransactionResult = SuiClientTypes.TransactionResult<TransactionInclude>;
+type LoadedTransactionResult =
+  SuiClientTypes.TransactionResult<TransactionInclude>;
 
 interface FetchRawTransactionOptions {
   grpcUrl?: string;

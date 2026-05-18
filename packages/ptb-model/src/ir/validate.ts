@@ -148,7 +148,8 @@ export function validateTransactionIR(
   value: unknown,
   options: ValidateTransactionIROptions = {},
 ): readonly TransactionDiagnostic[] {
-  const includeExistingDiagnostics = options.includeExistingDiagnostics ?? false;
+  const includeExistingDiagnostics =
+    options.includeExistingDiagnostics ?? false;
   const includeUnsupportedDiagnostics =
     options.includeUnsupportedDiagnostics ?? true;
   const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
@@ -1498,7 +1499,8 @@ function validateMakeMoveVecElementTypes(
   diagnostics: TransactionDiagnostic[],
   moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
 ): void {
-  if (command.kind !== 'MakeMoveVec' || typeof command.type !== 'string') return;
+  if (command.kind !== 'MakeMoveVec' || typeof command.type !== 'string')
+    return;
 
   const expectedType = toPTBTypeFromConcreteTypeArgument(command.type);
   if (expectedType === undefined) return;
@@ -1879,8 +1881,7 @@ function ptbTypesAreComparable(
       return true;
     case 'object':
       return (
-        actual.kind === 'object' &&
-        hasConcreteObjectTypeTags(actual, expected)
+        actual.kind === 'object' && hasConcreteObjectTypeTags(actual, expected)
       );
     case 'vector':
       return (
@@ -1918,8 +1919,7 @@ function ptbTypesExactlyMatch(
       return actual.kind === 'move_numeric' && actual.width === expected.width;
     case 'object':
       return (
-        actual.kind === 'object' &&
-        objectTypeTagsExactlyMatch(actual, expected)
+        actual.kind === 'object' && objectTypeTagsExactlyMatch(actual, expected)
       );
     case 'vector':
       return (

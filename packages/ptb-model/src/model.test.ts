@@ -860,13 +860,10 @@ describe('MoveCall signature evidence validation', () => {
   });
 
   it('does not add evidence mismatch diagnostics when resultCount shape is invalid', () => {
-    const ir = irUsingProducerResult(
-      { kind: 'Result', commandIndex: 0 },
-      {
-        ...moveCall(),
-        resultCount: '2',
-      } as unknown as Extract<IRCommand, { kind: 'MoveCall' }>,
-    );
+    const ir = irUsingProducerResult({ kind: 'Result', commandIndex: 0 }, {
+      ...moveCall(),
+      resultCount: '2',
+    } as unknown as Extract<IRCommand, { kind: 'MoveCall' }>);
     const codes = diagnosticCodes(ir, evidenceFor([u64Return, u64Return]));
 
     expect(codes).toContain('ir.command.resultCount');
@@ -890,11 +887,9 @@ describe('MoveCall signature evidence validation', () => {
 
   it('uses MoveCall result evidence to accept matching MakeMoveVec element types', () => {
     const codes = diagnosticCodes(
-      irUsingMakeMoveVec(
-        'u64',
-        [{ kind: 'Result', commandIndex: 0 }],
-        { producer: moveCall() },
-      ),
+      irUsingMakeMoveVec('u64', [{ kind: 'Result', commandIndex: 0 }], {
+        producer: moveCall(),
+      }),
       evidenceFor([u64Return]),
     );
 
@@ -903,11 +898,9 @@ describe('MoveCall signature evidence validation', () => {
 
   it('reports MoveCall result type mismatches in MakeMoveVec elements', () => {
     const codes = diagnosticCodes(
-      irUsingMakeMoveVec(
-        'address',
-        [{ kind: 'Result', commandIndex: 0 }],
-        { producer: moveCall() },
-      ),
+      irUsingMakeMoveVec('address', [{ kind: 'Result', commandIndex: 0 }], {
+        producer: moveCall(),
+      }),
       evidenceFor([u64Return]),
     );
 
@@ -929,34 +922,26 @@ describe('MoveCall signature evidence validation', () => {
 
   it('skips MakeMoveVec result type checks when MoveCall type arguments are unresolved', () => {
     const codes = diagnosticCodes(
-      irUsingMakeMoveVec(
-        TEST_SUI_TYPE,
-        [{ kind: 'Result', commandIndex: 0 }],
-        { producer: moveCall() },
-      ),
+      irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Result', commandIndex: 0 }], {
+        producer: moveCall(),
+      }),
       evidenceFor([typeParameterReturn], 1),
     );
 
     expect(codes).toContain('ir.command.moveCall.typeArgumentsCount');
-    expect(codes).not.toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
+    expect(codes).not.toContain('ir.command.makeMoveVec.elementTypeMismatch');
   });
 
   it('skips MakeMoveVec result type checks when explicit MoveCall resultCount conflicts with evidence', () => {
     const codes = diagnosticCodes(
-      irUsingMakeMoveVec(
-        'address',
-        [{ kind: 'Result', commandIndex: 0 }],
-        { producer: moveCall({ resultCount: 1 }) },
-      ),
+      irUsingMakeMoveVec('address', [{ kind: 'Result', commandIndex: 0 }], {
+        producer: moveCall({ resultCount: 1 }),
+      }),
       evidenceFor([u64Return, stringReturn]),
     );
 
     expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
-    expect(codes).not.toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
+    expect(codes).not.toContain('ir.command.makeMoveVec.elementTypeMismatch');
   });
 
   it('checks concrete object input typeTags in MakeMoveVec elements', () => {
@@ -1029,12 +1014,8 @@ describe('MoveCall signature evidence validation', () => {
       ),
     );
 
-    expect(vectorCodes).toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
-    expect(optionCodes).toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
+    expect(vectorCodes).toContain('ir.command.makeMoveVec.elementTypeMismatch');
+    expect(optionCodes).toContain('ir.command.makeMoveVec.elementTypeMismatch');
   });
 
   it('reports non-primitive Pure input mismatches through MakeMoveVec element type checks', () => {
@@ -1090,9 +1071,7 @@ describe('MoveCall signature evidence validation', () => {
     );
 
     expect(codes).toContain('ir.arg.pureType');
-    expect(codes).not.toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
+    expect(codes).not.toContain('ir.command.makeMoveVec.elementTypeMismatch');
   });
 
   it('keeps primitive MakeMoveVec input-kind mismatches on the existing semanticType path', () => {
@@ -1174,18 +1153,14 @@ describe('MoveCall signature evidence validation', () => {
 
   it('does not add MakeMoveVec type diagnostics for zero-return evidence', () => {
     const codes = diagnosticCodes(
-      irUsingMakeMoveVec(
-        'u64',
-        [{ kind: 'Result', commandIndex: 0 }],
-        { producer: moveCall() },
-      ),
+      irUsingMakeMoveVec('u64', [{ kind: 'Result', commandIndex: 0 }], {
+        producer: moveCall(),
+      }),
       evidenceFor([]),
     );
 
     expect(codes).toContain('ir.arg.noResult');
-    expect(codes).not.toContain(
-      'ir.command.makeMoveVec.elementTypeMismatch',
-    );
+    expect(codes).not.toContain('ir.command.makeMoveVec.elementTypeMismatch');
   });
 
   it('does not add MakeMoveVec type diagnostics for empty typed vectors', () => {
@@ -9137,9 +9112,7 @@ describe('model graph command argument semantics', () => {
               target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
             },
           },
-          ports: [
-            { id: 'out_result', direction: 'out', role: 'io' },
-          ],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
         {
           id: 'vec',

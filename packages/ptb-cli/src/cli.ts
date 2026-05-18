@@ -1,12 +1,12 @@
-import {
-  rawTransactionToIR,
-  transactionIRToMermaid,
-  type TransactionDiagnostic,
-} from '@zktx.io/ptb-model';
 import { fromHex } from '@mysten/bcs';
 import { Transaction } from '@mysten/sui/transactions';
+import {
+  rawTransactionToIR,
+  type TransactionDiagnostic,
+  transactionIRToMermaid,
+} from '@zktx.io/ptb-model';
 
-import { PtbCliError, normalizeCliError } from './errors.js';
+import { normalizeCliError, PtbCliError } from './errors.js';
 import type { CliErrorCause } from './errors.js';
 import type { PtbCliNetwork, PtbCliTransport } from './network.js';
 import {
@@ -172,7 +172,11 @@ function parseCliArgs(args: string[]): ParsedCliOptions {
       case '--stdin':
         throw unsupportedInputError();
       case '--grpc-url':
-        grpcUrl = parseHttpUrl(requireValue(args, i, arg), arg, 'usage.grpcUrl');
+        grpcUrl = parseHttpUrl(
+          requireValue(args, i, arg),
+          arg,
+          'usage.grpcUrl',
+        );
         i += 1;
         break;
       case '--graphql-url':
@@ -268,7 +272,8 @@ function parseCliArgs(args: string[]): ParsedCliOptions {
   if ((grpcUrl || graphqlUrl || transport) && !isNetworkInput) {
     throw new PtbCliError({
       code: 'usage.transport',
-      message: 'Network transport options require <network> <transaction-digest>.',
+      message:
+        'Network transport options require <network> <transaction-digest>.',
       exitCode: 2,
     });
   }

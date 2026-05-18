@@ -9,9 +9,9 @@ import {
 } from './handles.js';
 import {
   graphCommandRuntimeParams,
+  type GraphMoveCallEvidenceState,
   graphMoveCallEvidenceState,
   parseGraphMoveCallTarget,
-  type GraphMoveCallEvidenceState,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
@@ -544,11 +544,7 @@ function validateVariableNode(
     );
   }
 
-  validateGraphPTBTypeInto(
-    value.varType,
-    `${path}.varType`,
-    diagnostics,
-  );
+  validateGraphPTBTypeInto(value.varType, `${path}.varType`, diagnostics);
   if (isPlainObject(value.varType) && value.varType.kind === 'option') {
     const hasValue = Object.prototype.hasOwnProperty.call(value, 'value');
     if (!hasValue || value.value === undefined) {
@@ -829,11 +825,7 @@ function validatePort(
   }
 
   if (value.dataType !== undefined) {
-    validateGraphPTBTypeInto(
-      value.dataType,
-      `${path}.dataType`,
-      diagnostics,
-    );
+    validateGraphPTBTypeInto(value.dataType, `${path}.dataType`, diagnostics);
   }
   validateOptionalStringField(
     value.typeStr,
@@ -1021,7 +1013,10 @@ function validateGraphReferences(
   diagnostics: TransactionDiagnostic[],
 ): Map<string, GraphMoveCallEvidenceState> {
   const nodesById = new Map<string, GraphNodeIndex>();
-  const moveCallEvidenceByNodeId = new Map<string, GraphMoveCallEvidenceState>();
+  const moveCallEvidenceByNodeId = new Map<
+    string,
+    GraphMoveCallEvidenceState
+  >();
   const seenNodeIds = new Set<string>();
   const seenInputNames = new Set<string>();
 
@@ -1489,7 +1484,8 @@ function isDeclaredCommandOutputAllowed(
       );
     case 'moveCall': {
       const resultCount =
-        node.moveCallEvidence?.effectiveResultCount ?? node.runtime?.resultCount;
+        node.moveCallEvidence?.effectiveResultCount ??
+        node.runtime?.resultCount;
       return isNonNegativeSafeInteger(resultCount) &&
         resultCount <= MAX_RESULT_COUNT
         ? isKnownResultOutputAllowed(portId, resultCount, outgoingHandles)
