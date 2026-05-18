@@ -1532,7 +1532,7 @@ describe('PTBDocV4', () => {
 });
 
 describe('PTB type validation', () => {
-  it('requires object PTB type tags to use an outer Move struct type tag', () => {
+  it('requires object PTB type tags to use a top-level Move struct type tag', () => {
     const nonStringObjectType = {
       kind: 'object',
       typeTag: 7,

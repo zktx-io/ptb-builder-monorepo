@@ -19,6 +19,7 @@ const option = (elem: PTBType): PTBType => ({ kind: 'option', elem });
 const vector = (elem: PTBType): PTBType => ({ kind: 'vector', elem });
 const canonicalSui =
   '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI';
+const vectorSuiTypeTag = 'vector<0x2::sui::SUI>';
 
 function out(dataType: PTBType): Port {
   return { id: 'out', role: 'io', direction: 'out', dataType };
@@ -41,6 +42,9 @@ describe('canConnectIO', () => {
     [object('u8'), object('u8'), false],
     [object(), object('u8'), false],
     [object('u8'), object(), false],
+    [object(vectorSuiTypeTag), object(vectorSuiTypeTag), false],
+    [object(), object(vectorSuiTypeTag), false],
+    [object(vectorSuiTypeTag), object(), false],
     [option(scalar('bool')), scalar('bool'), false],
     [option(scalar('number')), option(moveNumeric('u64')), false],
     [vector(scalar('number')), vector(moveNumeric('u64')), false],
@@ -59,6 +63,28 @@ describe('canConnectIO', () => {
         input(scalar('address')),
       ),
     ).toBe(false);
+  });
+
+  it('keeps missing object typeTag leniency at the top-level edge only', () => {
+    expect(canConnectIO(out(object()), input(object(canonicalSui)))).toBe(true);
+    expect(
+      canConnectIO(out(vector(object())), input(vector(object(canonicalSui)))),
+    ).toBe(false);
+    expect(
+      canConnectIO(out(option(object())), input(option(object(canonicalSui)))),
+    ).toBe(false);
+    expect(
+      canConnectIO(
+        out(vector(object('0x2::sui::SUI'))),
+        input(vector(object(canonicalSui))),
+      ),
+    ).toBe(true);
+    expect(
+      canConnectIO(
+        out(option(object('0x2::sui::SUI'))),
+        input(option(object(canonicalSui))),
+      ),
+    ).toBe(true);
   });
 
   it('infers casts only for top-level abstract number sources', () => {

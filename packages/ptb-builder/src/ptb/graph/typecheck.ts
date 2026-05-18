@@ -15,10 +15,10 @@
 //     * option<X> vs non-option are incompatible; option<X> ↔ option<Y> uses exact inner types.
 //     * scalar(number) → move_numeric(uXX) is compatible only at top level
 //       (edge.cast carries width).
-//     * vector<X> ↔ vector<Y> uses exact inner types.
+//     * vector<X> ↔ vector<Y> uses exact inner types, including object tags.
 //     * move_numeric ↔ move_numeric compatible only if width matches.
-//     * object ↔ object: lenient if either side lacks typeTag; canonical Move struct
-//       type-tag equality if both present.
+//     * top-level object ↔ object: lenient if either side lacks typeTag; canonical
+//       Move struct type-tag equality if both present.
 // - Serialized-type helpers unwrap vector/option/tuple syntax conservatively.
 // ---------------------------------------------------------------------
 
@@ -100,7 +100,7 @@ export function ioCategoryOf(t?: PTBType): IOCategory {
   }
 }
 
-/* Structural equality (strict) */
+/* Structural equality (strict, used for nested vector/option/tuple members). */
 function isSameType(a: PTBType, b: PTBType, depth = 0): boolean {
   if (depth > MAX_TYPE_DEPTH) return false; // Prevent infinite recursion
   if (a.kind !== b.kind) return false;
@@ -142,6 +142,10 @@ function isSameObjectType(a: PTBType, b: PTBType): boolean {
   return !!canonicalA && !!canonicalB && canonicalA === canonicalB;
 }
 
+/* Top-level object edge compatibility is intentionally more lenient than
+ * strict object equality because builder inputs may omit fetched type metadata.
+ * A present but model-invalid typeTag is never compatible.
+ */
 function isObjectTypeCompatible(src: PTBType, dst: PTBType): boolean {
   if (!isObject(src) || !isObject(dst)) return false;
   const sourceTag = (src.typeTag ?? '').trim();

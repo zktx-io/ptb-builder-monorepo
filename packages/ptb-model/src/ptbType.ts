@@ -230,7 +230,7 @@ function validatePTBTypeShape(
         diagnostics.push(
           errorDiagnostic(
             `${context.codePrefix}.object`,
-            `Object ${context.label} typeTag must be an outer Move struct type tag, not a primitive or vector type tag, when present.`,
+            `Object ${context.label} typeTag must be a top-level Move struct type tag, not a primitive or vector type tag, when present.`,
             `${path}.typeTag`,
           ),
         );

@@ -24,8 +24,8 @@ export const M = (width: NumericWidth): PTBType => ({
 });
 
 /**
- * Object type factory. When present, typeTag must already be a model-valid
- * outer Move struct type tag.
+ * Object type factory. When present, typeTag must already be accepted by the
+ * `parseMoveStructTypeTag()` helper from `@zktx.io/ptb-model`.
  */
 export const O = (typeTag?: string): PTBType =>
   typeTag ? { kind: 'object', typeTag } : { kind: 'object' };

@@ -133,8 +133,8 @@ model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
 report `graph.type.*` diagnostics for graph-authored `varType` and port
 `dataType` fields so graph source diagnostics remain clearly attributable to
 the graph layer. Object PTB type hints may omit `typeTag`; when present,
-`typeTag` must be an outer Move struct type tag, not a primitive or vector type
-tag.
+`typeTag` must be a top-level Move struct type tag, not a primitive or vector
+type tag.
 
 Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The
@@ -419,7 +419,7 @@ components inside type tags follow the same `0x`/`0X` input and lowercase
 canonical-output rule. `signer` type tags are not accepted in canonical PTB
 type-tag fields. `parseMoveTypeTag()` accepts canonical PTB Move type tags,
 including primitives, vectors, and structs. `parseMoveStructTypeTag()` first
-applies the same canonical parser and then accepts only outer struct tags;
+applies the same canonical parser and then accepts only top-level struct tags;
 use it for fields such as `PTBType.object.typeTag`. Struct module and type
 identifiers follow the model's Sui Move identifier rule, including
 multi-character leading-underscore identifiers such as `_module`; do not
