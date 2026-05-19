@@ -160,7 +160,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
         moduleName: result.moduleName,
         functionName: result.functionName,
         signature: sig,
-        openSignatures: result.openSignatures,
+        openSignatures: result.signature.openSignatures,
         typeArgumentBuffers: typeArgBufs,
       });
 

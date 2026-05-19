@@ -342,7 +342,9 @@ PTB Builder persists graphs as `PTBDoc` objects containing:
 - **version** — documents use `ptb_4`
 - **graph** — nodes and edges of the PTB
 - **modules** — embedded Move function signature metadata for already-resolved
-  MoveCall targets
+  MoveCall targets. Function entries retain both the resolved PTB port types and
+  the SDK Core open signatures needed to recompute generic MoveCall ports after
+  reload.
 - **objects** — embedded object metadata for display and type lookup. Runtime object arguments must come from graph raw input data such as SDK-reported object id, version, and digest; metadata embeds are not a source of signing authority.
 - **chain** — target Sui network (e.g., `sui:testnet`)
 - **view** — saved editor viewport `{ x, y, zoom }`

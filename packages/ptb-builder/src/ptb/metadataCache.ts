@@ -9,7 +9,6 @@ import type {
 } from '@zktx.io/ptb-model';
 
 import type { Chain } from '../types';
-import type { PTBFunctionOpenSignatures } from './move/toPTBModuleData';
 import type {
   PTBFunctionData,
   PTBModulesEmbed,
@@ -20,25 +19,19 @@ import type {
 export type PTBMetadataCache = {
   objectsByChain: Partial<Record<Chain, PTBObjectsEmbed>>;
   modulesByChain: Partial<Record<Chain, PTBModulesEmbed>>;
-  moveFunctionsByChain: Partial<
-    Record<Chain, Record<string, CachedMoveFunction>>
-  >;
 };
 
 export type CachedMoveFunction = {
-  completeness: 'partial' | 'complete';
   packageId: string;
   moduleName: string;
   functionName: string;
   signature: PTBFunctionData[string];
-  openSignatures?: PTBFunctionOpenSignatures;
 };
 
 export function createPTBMetadataCache(): PTBMetadataCache {
   return {
     objectsByChain: {},
     modulesByChain: {},
-    moveFunctionsByChain: {},
   };
 }
 
@@ -81,19 +74,7 @@ function replaceCachedModules(
       ...cache.modulesByChain,
       [chain]: modules,
     },
-    moveFunctionsByChain: {
-      ...cache.moveFunctionsByChain,
-      [chain]: {},
-    },
   };
-}
-
-function moveFunctionKey(
-  packageId: string,
-  moduleName: string,
-  functionName: string,
-): string {
-  return `${packageId}::${moduleName}::${functionName}`;
 }
 
 export function replaceCachedChainData(
@@ -113,10 +94,6 @@ export function replaceCachedChainData(
     modulesByChain: {
       ...cache.modulesByChain,
       [chain]: data.modules,
-    },
-    moveFunctionsByChain: {
-      ...cache.moveFunctionsByChain,
-      [chain]: {},
     },
   };
 }
@@ -142,26 +119,12 @@ export function getCachedMoveFunction(
   packageId: string,
   moduleName: string,
   functionName: string,
-  opts?: { requireComplete?: boolean },
 ): CachedMoveFunction | undefined {
-  const cached =
-    cache.moveFunctionsByChain[chain]?.[
-      moveFunctionKey(packageId, moduleName, functionName)
-    ];
-  if (
-    cached &&
-    (!opts?.requireComplete || cached.completeness === 'complete')
-  ) {
-    return cached;
-  }
-
   const signature = getCachedModules(cache, chain)[packageId]?.[moduleName]?.[
     functionName
   ];
   if (!signature) return undefined;
-  if (opts?.requireComplete) return undefined;
   return {
-    completeness: 'partial',
     packageId,
     moduleName,
     functionName,
@@ -173,40 +136,39 @@ export function moveSignatureEvidenceFromCache(
   cache: PTBMetadataCache,
   chain: Chain,
 ): MovePackageSignatureEvidence | undefined {
-  const moveFunctions = cache.moveFunctionsByChain[chain];
-  if (moveFunctions === undefined) return undefined;
+  const modules = cache.modulesByChain[chain];
+  if (modules === undefined) return undefined;
 
   const evidence: MovePackageSignatureEvidence = {};
   let hasEvidence = false;
 
-  for (const entry of Object.values(moveFunctions)) {
-    if (entry.completeness !== 'complete') continue;
-    if (entry.openSignatures === undefined) continue;
+  for (const [rawPackageId, moduleMap] of Object.entries(modules)) {
+    const packageId = parseObjectId(rawPackageId);
+    if (packageId === undefined) continue;
 
-    const packageId = parseObjectId(entry.packageId);
-    const moduleName = parseMoveIdentifier(entry.moduleName);
-    const functionName = parseMoveIdentifier(entry.functionName);
-    if (
-      packageId === undefined ||
-      moduleName === undefined ||
-      moduleName !== entry.moduleName ||
-      functionName === undefined ||
-      functionName !== entry.functionName
-    ) {
-      continue;
+    for (const [rawModuleName, functions] of Object.entries(moduleMap)) {
+      const moduleName = parseMoveIdentifier(rawModuleName);
+      if (moduleName === undefined || moduleName !== rawModuleName) continue;
+
+      for (const [rawFunctionName, signature] of Object.entries(functions)) {
+        const functionName = parseMoveIdentifier(rawFunctionName);
+        if (functionName === undefined || functionName !== rawFunctionName) {
+          continue;
+        }
+
+        const signatureEvidence: MoveFunctionSignatureEvidence = {
+          typeParameterCount: signature.tparamCount,
+          parameters: signature.openSignatures.parameters,
+          returns: signature.openSignatures.returns,
+        };
+        if (!isMoveFunctionSignatureEvidence(signatureEvidence)) continue;
+
+        evidence[packageId] = evidence[packageId] ?? {};
+        evidence[packageId][moduleName] = evidence[packageId][moduleName] ?? {};
+        evidence[packageId][moduleName][functionName] = signatureEvidence;
+        hasEvidence = true;
+      }
     }
-
-    const signatureEvidence: MoveFunctionSignatureEvidence = {
-      typeParameterCount: entry.signature.tparamCount,
-      parameters: entry.openSignatures.parameters,
-      returns: entry.openSignatures.returns,
-    };
-    if (!isMoveFunctionSignatureEvidence(signatureEvidence)) continue;
-
-    evidence[packageId] = evidence[packageId] ?? {};
-    evidence[packageId][moduleName] = evidence[packageId][moduleName] ?? {};
-    evidence[packageId][moduleName][functionName] = signatureEvidence;
-    hasEvidence = true;
   }
 
   return hasEvidence ? evidence : undefined;
@@ -215,44 +177,22 @@ export function moveSignatureEvidenceFromCache(
 export function upsertCachedMoveFunction(
   cache: PTBMetadataCache,
   chain: Chain,
-  entry: Omit<CachedMoveFunction, 'completeness'> &
-    Partial<Pick<CachedMoveFunction, 'completeness'>>,
+  entry: CachedMoveFunction,
 ): { cache: PTBMetadataCache; modules: PTBModulesEmbed } {
   const modules = getCachedModules(cache, chain);
-  const moveFunctions = cache.moveFunctionsByChain[chain] ?? {};
-  const nextEntry: CachedMoveFunction = {
-    ...entry,
-    completeness:
-      entry.completeness ??
-      (entry.openSignatures !== undefined ? 'complete' : 'partial'),
-  };
   const nextModules = {
     ...modules,
-    [nextEntry.packageId]: {
-      ...(modules[nextEntry.packageId] ?? {}),
-      [nextEntry.moduleName]: {
-        ...(modules[nextEntry.packageId]?.[nextEntry.moduleName] ?? {}),
-        [nextEntry.functionName]: nextEntry.signature,
+    [entry.packageId]: {
+      ...(modules[entry.packageId] ?? {}),
+      [entry.moduleName]: {
+        ...(modules[entry.packageId]?.[entry.moduleName] ?? {}),
+        [entry.functionName]: entry.signature,
       },
     },
   };
 
-  const nextCache = replaceCachedModules(cache, chain, nextModules);
   return {
-    cache: {
-      ...nextCache,
-      moveFunctionsByChain: {
-        ...cache.moveFunctionsByChain,
-        [chain]: {
-          ...moveFunctions,
-          [moveFunctionKey(
-            entry.packageId,
-            entry.moduleName,
-            entry.functionName,
-          )]: nextEntry,
-        },
-      },
-    },
+    cache: replaceCachedModules(cache, chain, nextModules),
     modules: nextModules,
   };
 }

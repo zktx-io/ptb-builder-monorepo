@@ -15,6 +15,7 @@ const signature = {
   tparamCount: 1,
   ins: [{ kind: 'object' as const }],
   outs: [{ kind: 'move_numeric' as const, width: 'u64' as const }],
+  openSignatures: { parameters: [], returns: [] },
 };
 
 const genericOpenSignatures: {
@@ -77,6 +78,10 @@ describe('MoveCall resolve state', () => {
       tparamCount: 0,
       ins: [{ kind: 'scalar', name: 'id' }],
       outs: [],
+      openSignatures: {
+        parameters: [objectId],
+        returns: [],
+      },
     });
   });
 
@@ -166,6 +171,7 @@ describe('MoveCall resolve state', () => {
             },
           },
         ],
+        openSignatures: genericOpenSignatures,
       },
       openSignatures: genericOpenSignatures,
       typeArgumentBuffers: ['u64'],

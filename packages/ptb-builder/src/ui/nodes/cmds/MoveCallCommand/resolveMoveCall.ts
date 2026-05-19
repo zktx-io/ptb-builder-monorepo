@@ -5,8 +5,10 @@ import {
 } from '@zktx.io/ptb-model';
 
 import type { CommandRuntimeParams, Port } from '../../../../ptb/graph/types';
-import type { PTBFunctionOpenSignatures } from '../../../../ptb/move/toPTBModuleData';
-import type { PTBFunctionData } from '../../../../ptb/ptbDoc';
+import type {
+  PTBFunctionData,
+  PTBFunctionOpenSignatures,
+} from '../../../../ptb/ptbDoc';
 import { buildMoveCallPorts } from '../../../../ptb/registry';
 
 export type ResolvedMoveCallPatch = {

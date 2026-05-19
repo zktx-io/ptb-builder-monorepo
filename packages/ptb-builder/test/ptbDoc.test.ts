@@ -16,6 +16,7 @@ const graph: PTBGraph = {
   nodes: [],
   edges: [],
 };
+const emptyOpenSignatures = { parameters: [], returns: [] };
 
 describe('PTB document boundary', () => {
   it('builds and parses only current ptb_4 documents', () => {
@@ -155,6 +156,7 @@ describe('PTB document boundary', () => {
             tparamCount: 0,
             ins: [{ kind: 'scalar', name: 'address' }],
             outs: [],
+            openSignatures: emptyOpenSignatures,
           },
         },
       },
@@ -303,7 +305,19 @@ describe('PTB document boundary', () => {
       '0x2': { coin: { SUI: { tparamCount: 'bad' } } },
     };
     const invalidTypedModules = {
-      '0x2': { coin: { SUI: { tparamCount: 0, ins: ['bad'], outs: [] } } },
+      '0x2': {
+        coin: {
+          SUI: {
+            tparamCount: 0,
+            ins: ['bad'],
+            outs: [],
+            openSignatures: emptyOpenSignatures,
+          },
+        },
+      },
+    };
+    const missingOpenSignaturesModules = {
+      '0x2': { coin: { SUI: { tparamCount: 0, ins: [], outs: [] } } },
     };
     const invalidCountModules = {
       '0x2': {
@@ -312,6 +326,7 @@ describe('PTB document boundary', () => {
             tparamCount: Number.NaN,
             ins: [],
             outs: [],
+            openSignatures: emptyOpenSignatures,
           },
         },
       },
@@ -323,6 +338,7 @@ describe('PTB document boundary', () => {
             tparamCount: 0,
             ins: [],
             outs: [],
+            openSignatures: emptyOpenSignatures,
             visibility: 'public',
           },
         },
@@ -354,6 +370,15 @@ describe('PTB document boundary', () => {
         graph,
         view: { x: 5, y: 10, zoom: 1.25 },
         modules: invalidTypedModules,
+        objects: {},
+      }),
+    ).toThrow('PTB document modules must match the PTB modules embed shape');
+    expect(() =>
+      buildDoc({
+        chain: 'sui:mainnet',
+        graph,
+        view: { x: 5, y: 10, zoom: 1.25 },
+        modules: missingOpenSignaturesModules,
         objects: {},
       }),
     ).toThrow('PTB document modules must match the PTB modules embed shape');

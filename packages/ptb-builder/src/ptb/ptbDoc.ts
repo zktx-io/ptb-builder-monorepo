@@ -8,10 +8,11 @@
 
 import {
   isPTBType,
+  isRawOpenSignatureList,
   parsePTBDocV4,
   PTB_DOC_VERSION_V4,
 } from '@zktx.io/ptb-model';
-import type { PTBDocV4 } from '@zktx.io/ptb-model';
+import type { PTBDocV4, RawOpenSignature } from '@zktx.io/ptb-model';
 
 import { isSuiChain } from '../types';
 import type { Chain } from '../types';
@@ -32,9 +33,14 @@ export const PTB_VERSION = PTB_DOC_VERSION_V4;
 
 // ----- normalized ABI --------------------------------------------------------
 
+export type PTBFunctionOpenSignatures = {
+  parameters: RawOpenSignature[];
+  returns: RawOpenSignature[];
+};
+
 /**
  * Normalized function table for a single module.
- * key: function name → { tparamCount, ins, outs }
+ * key: function name → { tparamCount, ins, outs, openSignatures }
  */
 export type PTBFunctionData = Record<
   string,
@@ -45,6 +51,8 @@ export type PTBFunctionData = Record<
     ins: PTBType[];
     /** Normalized PTB output types (order-preserving). */
     outs: PTBType[];
+    /** Open SDK signatures retained so generic MoveCall ports can be recomputed after reload. */
+    openSignatures: PTBFunctionOpenSignatures;
   }
 >;
 
@@ -95,7 +103,13 @@ export type LoadedPTBDocState = {
 
 // ----- validation (strict ptb_4 document shape) ------------------------------
 
-const PTB_FUNCTION_ENTRY_KEYS = ['tparamCount', 'ins', 'outs'] as const;
+const PTB_FUNCTION_ENTRY_KEYS = [
+  'tparamCount',
+  'ins',
+  'outs',
+  'openSignatures',
+] as const;
+const PTB_FUNCTION_OPEN_SIGNATURES_KEYS = ['parameters', 'returns'] as const;
 const PTB_OBJECT_DATA_KEYS = ['objectId', 'typeTag'] as const;
 
 /** Narrow check for PTBFunctionData entry. */
@@ -103,6 +117,7 @@ function isPTBFunctionEntry(x: unknown): x is {
   tparamCount: number;
   ins: PTBType[];
   outs: PTBType[];
+  openSignatures: PTBFunctionOpenSignatures;
 } {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return false;
   const e = x as any;
@@ -111,7 +126,20 @@ function isPTBFunctionEntry(x: unknown): x is {
     Number.isInteger(e.tparamCount) &&
     e.tparamCount >= 0 &&
     isPTBTypeArray(e.ins) &&
-    isPTBTypeArray(e.outs)
+    isPTBTypeArray(e.outs) &&
+    isPTBFunctionOpenSignatures(e.openSignatures)
+  );
+}
+
+function isPTBFunctionOpenSignatures(
+  value: unknown,
+): value is PTBFunctionOpenSignatures {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const signatures = value as Record<string, unknown>;
+  return (
+    hasOnlyKeys(signatures, PTB_FUNCTION_OPEN_SIGNATURES_KEYS) &&
+    isRawOpenSignatureList(signatures.parameters) &&
+    isRawOpenSignatureList(signatures.returns)
   );
 }
 

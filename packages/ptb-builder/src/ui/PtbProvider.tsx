@@ -82,10 +82,7 @@ import {
   upsertCachedMoveFunction,
   upsertCachedObjectData,
 } from '../ptb/metadataCache';
-import {
-  toPTBFunctionDataEntry,
-  toPTBFunctionOpenSignatures,
-} from '../ptb/move/toPTBModuleData';
+import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
 import { normalizeGraph } from '../ptb/normalizeGraph';
 import {
   type ObjectAuthoringInfo,
@@ -191,7 +188,7 @@ export type PtbContextValue = {
     packageId: string,
     moduleName: string,
     functionName: string,
-    opts?: { forceRefresh?: boolean; requireComplete?: boolean },
+    opts?: { forceRefresh?: boolean },
   ) => Promise<MoveFunctionSignature | undefined>;
 
   getOwnedObjects: (
@@ -777,7 +774,6 @@ export function PtbProvider({
 
       const chain = activeChainRef.current;
       if (!chain) return undefined;
-      const requireComplete = opts?.requireComplete ?? true;
 
       if (!opts?.forceRefresh) {
         const cached = getCachedMoveFunction(
@@ -786,7 +782,6 @@ export function PtbProvider({
           id,
           module,
           name,
-          { requireComplete },
         );
         if (cached) return cached;
       }
@@ -798,7 +793,7 @@ export function PtbProvider({
       }
 
       const inflightKey = `${chain}:${id}::${module}::${name}`;
-      if (requireComplete && !opts?.forceRefresh) {
+      if (!opts?.forceRefresh) {
         const inflight = moveFunctionInflightRef.current.get(inflightKey);
         if (inflight) return inflight;
       }
@@ -812,18 +807,15 @@ export function PtbProvider({
           name,
         });
         const signature = toPTBFunctionDataEntry(response.function);
-        const openSignatures = toPTBFunctionOpenSignatures(response.function);
         const resolvedPackageId = response.function.packageId || id;
         const resolvedModuleName = response.function.moduleName || module;
         const resolvedFunctionName = response.function.name || name;
 
         const moveFunction: MoveFunctionSignature = {
-          completeness: 'complete',
           packageId: resolvedPackageId,
           moduleName: resolvedModuleName,
           functionName: resolvedFunctionName,
           signature,
-          openSignatures,
         };
         const next = upsertCachedMoveFunction(
           metadataCacheRef.current,
@@ -840,7 +832,7 @@ export function PtbProvider({
       };
 
       try {
-        if (!requireComplete || opts?.forceRefresh) {
+        if (opts?.forceRefresh) {
           return await fetchMoveFunction();
         }
         const promise = fetchMoveFunction().finally(() => {

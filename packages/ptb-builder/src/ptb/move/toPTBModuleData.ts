@@ -2,7 +2,8 @@
 
 // -----------------------------------------------------------------------------
 // Convert SDK Core open signatures into PTB-friendly function metadata.
-// PTBFunctionData captures only what PTB needs: tparamCount, ins, outs.
+// PTBFunctionData keeps both resolved PTB port types and the original open
+// signatures so generic MoveCall ports can be recomputed after reload.
 // TxContext is not modeled by PTB and is dropped from both parameters/returns.
 // -----------------------------------------------------------------------------
 
@@ -12,12 +13,7 @@ import {
   toPTBTypeFromOpenSignature,
 } from '@zktx.io/ptb-model';
 
-import type { PTBFunctionData } from '../ptbDoc';
-
-export type PTBFunctionOpenSignatures = {
-  parameters: RawOpenSignature[];
-  returns: RawOpenSignature[];
-};
+import type { PTBFunctionData, PTBFunctionOpenSignatures } from '../ptbDoc';
 
 export function toPTBFunctionOpenSignatures(data: {
   parameters?: RawOpenSignature[];
@@ -50,5 +46,6 @@ export function toPTBFunctionDataEntry(data: {
     outs: open.returns.map((signature) =>
       toPTBTypeFromOpenSignature(signature),
     ),
+    openSignatures: open,
   };
 }
