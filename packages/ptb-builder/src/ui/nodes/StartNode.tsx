@@ -19,9 +19,9 @@ export const StartNode = memo(function StartNode({
         className={`ptb-node-shell rounded-full py-2 px-2 border-2 shadow`}
         style={{ width: NODE_SIZES.Start.width }}
       >
-        <p className="text-base text-center text-gray-700 dark:text-gray-300">
+        <div className="text-base text-center text-gray-700 dark:text-gray-300">
           {(data?.label ?? '').trim() || 'Start'}
-        </p>
+        </div>
         <PTBHandleFlow type="source" />
       </div>
     </div>

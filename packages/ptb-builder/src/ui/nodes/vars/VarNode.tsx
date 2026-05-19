@@ -566,10 +566,10 @@ export const VarNode = memo(function VarNode({
       >
         {/* Header */}
         <div className="flex items-center justify-between">
-          <p className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
+          <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfVar(v)}
             {title}
-          </p>
+          </div>
 
           <div className="flex items-center gap-1">
             {/* Vector stepper */}

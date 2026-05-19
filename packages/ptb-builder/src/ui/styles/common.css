@@ -80,6 +80,13 @@
   border: 1px solid var(--ptb-menu-border);
 }
 
+.ptb-menu ul,
+.ptb-menu li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .ptb-menu__list {
   color: var(--ptb-menu-fg);
 }

@@ -87,11 +87,11 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
           {notice.dismissible && (
             <button
               type="button"
-              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded"
+              className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-black/10 dark:hover:bg-white/10"
               onClick={onDismissNotice}
               aria-label="Dismiss notice"
             >
-              <X size={11} />
+              <X size={16} strokeWidth={2.25} color="#fff" />
             </button>
           )}
         </div>

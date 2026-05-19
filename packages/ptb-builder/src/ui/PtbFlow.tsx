@@ -233,6 +233,7 @@ export function PTBFlow() {
   >(undefined);
   const persistSnapshotRef = useRef<(snapshot: RFSnapshot) => void>(() => {});
   const onAutoLayoutRef = useRef<() => void | Promise<void>>(() => {});
+  const measuredLayoutFrameRef = useRef<number | undefined>(undefined);
 
   // Patch callback refs (avoid TDZ during initial render)
   const patchUIRef = useRef<
@@ -662,6 +663,10 @@ export function PTBFlow() {
 
   useEffect(
     () => () => {
+      if (measuredLayoutFrameRef.current !== undefined) {
+        cancelAnimationFrame(measuredLayoutFrameRef.current);
+        measuredLayoutFrameRef.current = undefined;
+      }
       commitControllerRef.current?.cancel();
     },
     [],
@@ -750,12 +755,25 @@ export function PTBFlow() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // During programmatic rehydrate, ignore RF's callbacks to avoid loop.
-      if (rehydratingRef.current) return;
+      const rehydrating = rehydratingRef.current;
+      const isMeasuredSizeChange = (change: NodeChange) =>
+        change.type === 'dimensions';
+      const isReadOnlyNodeChange = (change: NodeChange) =>
+        change.type === 'select' || isMeasuredSizeChange(change);
+
+      // During programmatic rehydrate, keep React Flow's measured node sizes
+      // but ignore interaction changes that would feed back into graph state.
+      const effective = rehydrating
+        ? changes.filter(isMeasuredSizeChange)
+        : readOnly
+          ? changes.filter(isReadOnlyNodeChange)
+          : changes;
+      if (effective.length === 0) return;
+      const hasMeasuredSizeChange = effective.some(isMeasuredSizeChange);
 
       // During dragging, defer updates until drag ends. Read-only mode keeps
-      // the PTBGraph immutable, so only selection changes are allowed through.
-      if (!readOnly) {
+      // the PTBGraph immutable, so only selection and measurements pass through.
+      if (!readOnly && !rehydrating) {
         for (const change of changes) {
           if (change.type !== 'position') continue;
           const nodeId = (change as { id?: string }).id;
@@ -765,9 +783,6 @@ export function PTBFlow() {
           if (dragging === false) commitControllerRef.current?.endDrag(nodeId);
         }
       }
-      const effective = readOnly
-        ? changes.filter((ch) => ch.type === 'select')
-        : changes;
 
       setRF((prev) => {
         // Prevent deleting Start/End via bulk remove.
@@ -786,7 +801,7 @@ export function PTBFlow() {
 
         // Do NOT re-inject callbacks here; prev.rfNodes already have them.
         const nextNodes = applyNodeChanges(filtered, prev.rfNodes);
-        if (readOnly) {
+        if (readOnly || rehydrating) {
           return nextNodes === prev.rfNodes
             ? prev
             : { ...prev, rfNodes: nextNodes };
@@ -811,6 +826,14 @@ export function PTBFlow() {
 
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
+
+      if ((readOnly || rehydrating) && hasMeasuredSizeChange) {
+        if (measuredLayoutFrameRef.current !== undefined) return;
+        measuredLayoutFrameRef.current = requestAnimationFrame(() => {
+          measuredLayoutFrameRef.current = undefined;
+          onAutoLayoutRef.current();
+        });
+      }
     },
     [readOnly],
   );

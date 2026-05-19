@@ -92,8 +92,8 @@ export const BaseCommand = memo(function BaseCommand({
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Title row */}
-        <div className="flex items-center justify-between px-2 mb-1">
-          <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
+        <div className="mb-1 flex h-4 items-center justify-between px-2">
+          <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200">
             {iconOfCommand(cmdKind)}
             {title}
           </div>

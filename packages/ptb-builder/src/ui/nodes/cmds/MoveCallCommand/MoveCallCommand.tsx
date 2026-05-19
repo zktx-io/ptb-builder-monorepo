@@ -217,8 +217,8 @@ export const MoveCallCommand = memo(function MoveCallCommand({
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-2 mb-1">
-          <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200 select-none">
+        <div className="mb-1 flex h-4 items-center justify-between px-2">
+          <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200 select-none">
             {iconOfCommand('moveCall')}
             {data?.label ?? node?.label ?? 'Move Call'}
           </div>
@@ -270,7 +270,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             />
             <button
               type="button"
-              className="px-2 py-1 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
+              className="h-6 min-w-[42px] px-2 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
               onMouseDown={(e) => e.preventDefault()}
               onClick={resolveFunction}
               disabled={

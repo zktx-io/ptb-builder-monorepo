@@ -39,7 +39,7 @@ import { usePtb } from '../PtbProvider';
 type ContextType = 'canvas' | 'node' | 'edge';
 
 // Base item/submenu styles. Visual tokens come from CSS variables via .ptb-menu*
-const MenuStyle = 'cursor-pointer px-2 w-full relative ptb-menu__item';
+const MenuStyle = 'cursor-pointer px-1.5 w-full relative ptb-menu__item';
 const MenuSubStyle =
   'absolute left-full top-0 mt-0 ml-0 rounded-md shadow-lg z-50 w-[240px] whitespace-normal break-words ptb-menu__submenu';
 const DisabledStyle = 'ptb-menu__item--disabled';
@@ -279,7 +279,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       (el.offsetParent as HTMLElement) || el.parentElement || document.body;
     const parentRect = parent.getBoundingClientRect();
     const rect = el.getBoundingClientRect();
-    const MARGIN = 8;
+    const MARGIN = 4;
 
     // Clamp within the parent (ReactFlow container) bounds.
     const maxLeft = parentRect.width - rect.width - MARGIN;
@@ -365,7 +365,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       >
         {CanvasVector.label}
         <svg
-          className="w-4 h-4 ml-2"
+          className="w-4 h-4 ml-1"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -423,7 +423,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       >
         {CanvasOption.label}
         <svg
-          className="w-4 h-4 ml-2"
+          className="w-4 h-4 ml-1"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -481,7 +481,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       >
         {CanvasResources.label}
         <svg
-          className="w-4 h-4 ml-2"
+          className="w-4 h-4 ml-1"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -556,7 +556,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       role="menu"
       aria-label="Context menu"
     >
-      <ul className="flex flex-col py-1 text-left text-sm ptb-menu__list">
+      <ul className="flex flex-col py-0.5 text-left text-sm ptb-menu__list">
         {type === 'canvas' && (
           <>
             {/* Auto layout */}
@@ -582,12 +582,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               Auto layout
             </li>
 
-            <li className="my-1 ptb-menu__sep" />
+            <li className="my-0.5 ptb-menu__sep" />
 
             {/* Commands (flat) */}
             {renderCmds()}
 
-            <li className="my-1 ptb-menu__sep" />
+            <li className="my-0.5 ptb-menu__sep" />
 
             {/* Scalars (flat) */}
             {renderScalars()}

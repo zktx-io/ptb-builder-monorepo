@@ -1,6 +1,6 @@
 // src/ui/utils/autoLayout.ts
 // -----------------------------------------------------------------------------
-// PTB-aware auto layout (single-row flow) with data-driven node heights.
+// PTB-aware auto layout (single-row flow) with rendered node heights.
 // Returns positions only. If options.targetCenter is provided, the layout is
 // shifted so its visual center aligns with that flow-space point.
 // -----------------------------------------------------------------------------
@@ -56,9 +56,22 @@ const ROW_Y = 0;
 const MARGIN_X = 40;
 
 const VAR_PAD_TOP = 60;
+const VAR_STACK_GAP_Y = ROW_SPACING;
 const TEXT_INPUT_H = 28;
 
-// ---- Height estimation (data → measured → heuristic) ------------------------
+// ---- Height estimation (measured → data → heuristic) ------------------------
+
+function positiveFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function measuredHeight(n: RFNode<RFNodeData>): number | undefined {
+  return (
+    positiveFiniteNumber(n.measured?.height) ?? positiveFiniteNumber(n.height)
+  );
+}
 
 function getLength(val: unknown): number {
   if (val === undefined) return 0;
@@ -143,9 +156,11 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
   return getNodeSize(kind).height ?? 120;
 }
 
-/** Final height: data estimate → measured → heuristic fallback. */
+/** Final height: rendered measurement → data estimate → heuristic fallback. */
 function nodeHeight(n: RFNode<RFNodeData>): number {
   const kind = nodeKind(n);
+  const byMeasurement = measuredHeight(n);
+  if (byMeasurement !== undefined) return byMeasurement;
   const byData = estimateHeightFromData(n);
   if (typeof byData === 'number' && byData > 0) return byData;
   return getNodeSize(kind).height ?? 120;
@@ -323,12 +338,7 @@ function layoutSingleRowPositions(
   /** Group rank: keep value inputs ahead of other command inputs. */
   const groupRank = (g: 'arg' | 'other') => (g === 'arg' ? 0 : 1);
 
-  const hOf = (n: RFNode<RFNodeData>) => {
-    const byData = estimateHeightFromData(n);
-    if (typeof byData === 'number' && byData > 0) return byData;
-    const k = kindOf(n);
-    return getNodeSize(k).height ?? 120;
-  };
+  const hOf = nodeHeight;
 
   // --- classify nodes -------------------------------------------------------
   const commands = orderedCmdIds
@@ -461,7 +471,7 @@ function layoutSingleRowPositions(
     }
     const cur = stackY.has(colIdx) ? stackY.get(colIdx)! : top;
     const y = cur;
-    stackY.set(colIdx, cur + hOf(n));
+    stackY.set(colIdx, cur + hOf(n) + VAR_STACK_GAP_Y);
     return y;
   };
 
