@@ -24,6 +24,7 @@ import {
   type AnalyzePTBGraphOptions,
   type ExecutablePTBGraph,
   executablePTBGraphFacts,
+  freezePTBGraph,
   graphDocumentDiagnostics,
   isExecutablePTBGraph,
   type PTBGraphAnalysis,
@@ -532,7 +533,7 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     targetHandle: 'in',
   });
 
-  return { nodes, edges };
+  return freezePTBGraph({ nodes, edges });
 }
 
 function inputType(input: IRInput) {

@@ -17,7 +17,18 @@ type Props = {
   editorValidation?: EditorValidationState;
   editorValidationUnavailable?: string;
   onDismissNotice?: () => void;
+  onDismissEditorValidation?: () => void;
 };
+
+const statusItemClass = [
+  'ptb-statusbar',
+  'flex w-80 max-w-[calc(100vw-2rem)] items-start gap-2 text-xxs px-3 py-1.5',
+  'rounded-md mx-1 my-1',
+].join(' ');
+const statusMessageClass =
+  'min-w-0 flex-1 whitespace-pre-line break-words select-text';
+const statusDismissClass =
+  'ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-current transition-colors hover:bg-black/10 dark:hover:bg-white/10';
 
 export function StatusBar({
   transaction,
@@ -25,6 +36,7 @@ export function StatusBar({
   editorValidation,
   editorValidationUnavailable,
   onDismissNotice,
+  onDismissEditorValidation,
 }: Props) {
   const status = transaction?.status;
   const error = transaction?.error;
@@ -43,6 +55,10 @@ export function StatusBar({
   const noticeVars = {
     bg: 'var(--ptb-status-failure-bg)',
     fg: 'var(--ptb-status-failure-fg)',
+  };
+  const warningVars = {
+    bg: 'var(--ptb-status-abort-bg)',
+    fg: 'var(--ptb-status-abort-fg)',
   };
   const validationSummary = editorValidation
     ? editorValidationSummary(editorValidation)
@@ -65,48 +81,38 @@ export function StatusBar({
         <div
           role="status"
           aria-live="polite"
-          className={[
-            'ptb-statusbar',
-            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
-            'rounded-md mx-1 my-1',
-          ].join(' ')}
+          className={statusItemClass}
           style={{
             backgroundColor: transactionVars.bg,
             color: transactionVars.fg,
           }}
         >
           {icon}
-          <span className="whitespace-pre-line break-words max-w-xs select-text">
-            {label}
-          </span>
+          <span className={statusMessageClass}>{label}</span>
         </div>
       )}
       {notice && (
         <div
           role="status"
           aria-live="polite"
-          className={[
-            'ptb-statusbar',
-            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
-            'rounded-md mx-1 my-1',
-          ].join(' ')}
+          className={statusItemClass}
           style={{
             backgroundColor: noticeVars.bg,
             color: noticeVars.fg,
           }}
         >
-          <AlertTriangle size={12} />
-          <span className="whitespace-pre-line break-words max-w-xs select-text">
+          <XCircle size={12} />
+          <span className={statusMessageClass}>
             {providerNoticeLabel(notice)}
           </span>
           {notice.dismissible && (
             <button
               type="button"
-              className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+              className={statusDismissClass}
               onClick={onDismissNotice}
               aria-label="Dismiss notice"
             >
-              <X size={16} strokeWidth={2.25} color="#fff" />
+              <X size={16} strokeWidth={2.25} />
             </button>
           )}
         </div>
@@ -115,38 +121,38 @@ export function StatusBar({
         <div
           role="status"
           aria-live="polite"
-          className={[
-            'ptb-statusbar',
-            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
-            'rounded-md mx-1 my-1',
-          ].join(' ')}
+          className={statusItemClass}
           style={{
-            backgroundColor: noticeVars.bg,
-            color: noticeVars.fg,
+            backgroundColor: warningVars.bg,
+            color: warningVars.fg,
           }}
         >
           <AlertTriangle size={12} />
-          <span className="whitespace-pre-line break-words max-w-xs select-text">
-            {validationSummary}
-          </span>
+          <span className={statusMessageClass}>{validationSummary}</span>
+          {onDismissEditorValidation && (
+            <button
+              type="button"
+              className={statusDismissClass}
+              onClick={onDismissEditorValidation}
+              aria-label="Dismiss graph diagnostic warning"
+            >
+              <X size={16} strokeWidth={2.25} />
+            </button>
+          )}
         </div>
       )}
       {editorValidationUnavailable && (
         <div
           role="status"
           aria-live="polite"
-          className={[
-            'ptb-statusbar',
-            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
-            'rounded-md mx-1 my-1',
-          ].join(' ')}
+          className={statusItemClass}
           style={{
             backgroundColor: noticeVars.bg,
             color: noticeVars.fg,
           }}
         >
-          <AlertTriangle size={12} />
-          <span className="whitespace-pre-line break-words max-w-xs select-text">
+          <XCircle size={12} />
+          <span className={statusMessageClass}>
             {editorValidationUnavailable}
           </span>
         </div>

@@ -44,8 +44,6 @@ import { renderCodePreview } from './codePreview';
 import { filterConflictingIOEdges, pruneExistingIOEdges } from './edgePruning';
 import { EdgeTypes } from './edges';
 import {
-  applyEditorValidationToEdges,
-  applyEditorValidationToNodes,
   buildEditorValidationState,
   emptyEditorValidationState,
 } from './editorValidationState';
@@ -583,10 +581,7 @@ export function PTBFlow() {
     try {
       const analysis = analyzePTBGraph(converted.graph, { moveSignatures });
       return {
-        validation: buildEditorValidationState(
-          converted.graph,
-          analysis.diagnostics,
-        ),
+        validation: buildEditorValidationState(analysis.diagnostics),
         unavailable: undefined,
       };
     } catch (error) {
@@ -601,14 +596,19 @@ export function PTBFlow() {
   }, [moveSignatures, rfEdges, rfNodes, safeRfToPTB]);
   const editorValidation = editorValidationResult.validation;
   const editorValidationUnavailable = editorValidationResult.unavailable;
-  const displayedRfNodes = useMemo(
-    () => applyEditorValidationToNodes(rfNodes, editorValidation),
-    [editorValidation, rfNodes],
-  );
-  const displayedRfEdges = useMemo(
-    () => applyEditorValidationToEdges(rfEdges, editorValidation),
-    [editorValidation, rfEdges],
-  );
+  const [dismissedEditorValidationKey, setDismissedEditorValidationKey] =
+    useState('');
+  const editorValidationVisible =
+    editorValidation.totalCount > 0 &&
+    editorValidation.noticeKey !== dismissedEditorValidationKey;
+  const visibleEditorValidation = editorValidationVisible
+    ? editorValidation
+    : undefined;
+  const dismissEditorValidation = useCallback(() => {
+    if (editorValidation.noticeKey) {
+      setDismissedEditorValidationKey(editorValidation.noticeKey);
+    }
+  }, [editorValidation.noticeKey]);
   const rfSnapshotRef = useRef({ rfNodes, rfEdges });
 
   useEffect(() => {
@@ -1333,8 +1333,8 @@ export function PTBFlow() {
     >
       <ReactFlow
         colorMode={toColorMode(theme)}
-        nodes={displayedRfNodes}
-        edges={displayedRfEdges}
+        nodes={rfNodes}
+        edges={rfEdges}
         /** Enable auto fit only after positions are laid out */
         fitView={layoutReady}
         /** block graph-position edits when read-only */
@@ -1416,15 +1416,16 @@ export function PTBFlow() {
         <Panel position="top-left" style={{ pointerEvents: 'none' }}>
           {(loadTxStatus ||
             providerUiState.notice ||
-            editorValidation.totalCount > 0 ||
+            editorValidationVisible ||
             editorValidationUnavailable) && (
             <div style={{ pointerEvents: 'auto' }}>
               <StatusBar
                 transaction={loadTxStatus}
                 notice={providerUiState.notice}
-                editorValidation={editorValidation}
+                editorValidation={visibleEditorValidation}
                 editorValidationUnavailable={editorValidationUnavailable}
                 onDismissNotice={clearProviderNotice}
+                onDismissEditorValidation={dismissEditorValidation}
               />
             </div>
           )}

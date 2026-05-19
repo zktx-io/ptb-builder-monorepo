@@ -395,9 +395,14 @@ function markExecutablePTBGraph(graph: PTBGraph): ExecutablePTBGraph {
       `ExecutablePTBGraph cannot contain non-plain data at ${plainDataIssue.path}.`,
     );
   }
-  deepFreezeGraph(graph);
+  freezePTBGraph(graph);
   executableGraphs.add(graph);
   return graph as ExecutablePTBGraph;
+}
+
+export function freezePTBGraph<T extends PTBGraph>(graph: T): T {
+  deepFreezeGraph(graph);
+  return graph;
 }
 
 function deepFreezeGraph(value: unknown): void {

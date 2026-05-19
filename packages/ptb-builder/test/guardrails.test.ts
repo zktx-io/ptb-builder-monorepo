@@ -96,7 +96,7 @@ describe('builder source guardrails', () => {
     expect(directCalls).toHaveLength(1);
   });
 
-  it('keeps editor validation on the inline/status surface, not the toast channel', () => {
+  it('keeps editor validation on the status surface, not node styling or toast', () => {
     const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
     const start = text.indexOf('const editorValidationResult = useMemo');
     const end = text.indexOf('const rfSnapshotRef = useRef', start);
@@ -107,9 +107,50 @@ describe('builder source guardrails', () => {
     expect(segment).toContain('analyzePTBGraph');
     expect(segment).toContain('buildEditorValidationState');
     expect(segment).not.toContain('toast');
-    expect(text).toContain('nodes={displayedRfNodes}');
-    expect(text).toContain('edges={displayedRfEdges}');
-    expect(text).toContain('editorValidation={editorValidation}');
+    expect(text).toContain('nodes={rfNodes}');
+    expect(text).toContain('edges={rfEdges}');
+    expect(text).toContain('editorValidation={visibleEditorValidation}');
+    expect(text).toContain(
+      'onDismissEditorValidation={dismissEditorValidation}',
+    );
+    expect(text).toContain(
+      'editorValidation.noticeKey !== dismissedEditorValidationKey',
+    );
+  });
+
+  it('keeps editor validation summary dismissible and warning-colored', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'StatusBar.tsx'), 'utf8');
+    const start = text.indexOf('{validationSummary &&');
+    const end = text.indexOf('{editorValidationUnavailable &&', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('onDismissEditorValidation');
+    expect(segment).toContain('Dismiss graph diagnostic warning');
+    expect(segment).toContain('warningVars.bg');
+    expect(segment).toContain('<AlertTriangle');
+    expect(segment).not.toContain('noticeVars.bg');
+    expect(segment).not.toContain('<XCircle');
+    expect(text).toContain("'ml-auto inline-flex");
+    expect(text).toContain('flex w-80 max-w-[calc(100vw-2rem)]');
+    expect(text).toContain('<XCircle size={12} />');
+  });
+
+  it('does not reintroduce diagnostic badges or diagnostic node styling', () => {
+    const violations: string[] = [];
+    for (const file of sourceFiles) {
+      const text = readFileSync(file, 'utf8');
+      if (
+        /EditorDiagnosticBadge|editorDiagnostics|has-editor-diagnostics|ptb-diagnostic-badge/.test(
+          text,
+        )
+      ) {
+        violations.push(file);
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 
   it('keeps provider UI state focused on visible transaction and notice data', () => {
@@ -574,6 +615,38 @@ describe('builder source guardrails', () => {
     expect(provider).toContain(
       'if (!hadOnDocChange && hasOnDocChange && !readOnly)',
     );
+  });
+
+  it('hides node authoring buttons and helper notes in read-only mode', () => {
+    const baseCommand = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'cmds', 'BaseCommand', 'BaseCommand.tsx'),
+      'utf8',
+    );
+    const moveCall = readFileSync(
+      join(
+        sourceRoot,
+        'ui',
+        'nodes',
+        'cmds',
+        'MoveCallCommand',
+        'MoveCallCommand.tsx',
+      ),
+      'utf8',
+    );
+    const varNode = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
+
+    expect(baseCommand).toContain(
+      'const showInspectionNote = inspectionOnly && !readOnly;',
+    );
+    expect(baseCommand).toContain('{!readOnly && countKey ?');
+    expect(moveCall).toContain('{!readOnly && (');
+    expect(moveCall).toContain('Resolve a function to materialize IO ports.');
+    expect(varNode).toContain('const showAuthoringControls = !readOnly;');
+    expect(varNode).toContain('{!readOnly && (');
+    expect(varNode).toContain('!readOnly && !objectInfoMatchesInput');
   });
 
   it('keeps document autosave and emission failures out of the toast channel', () => {

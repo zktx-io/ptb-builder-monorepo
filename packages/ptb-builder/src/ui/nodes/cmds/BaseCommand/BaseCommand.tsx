@@ -11,10 +11,7 @@ import { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
-import {
-  toPTBTypeFromConcreteTypeArgument,
-  type TransactionDiagnostic,
-} from '@zktx.io/ptb-model';
+import { toPTBTypeFromConcreteTypeArgument } from '@zktx.io/ptb-model';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import type {
@@ -23,7 +20,6 @@ import type {
   PTBNode,
 } from '../../../../ptb/graph/types';
 import { countKeyOf, countMinOf } from '../../../../ptb/registry';
-import { EditorDiagnosticBadge } from '../../../EditorDiagnosticBadge';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -47,7 +43,6 @@ type BaseCmdData = {
     nodeId: string,
     patch: { runtime?: CommandRuntimeParams },
   ) => void;
-  editorDiagnostics?: readonly TransactionDiagnostic[];
 };
 export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
 
@@ -82,7 +77,9 @@ export const BaseCommand = memo(function BaseCommand({
   const rightOffsetRows = cmdKind === 'splitCoins' ? 1 : 0;
 
   // Compute height from IO rows + right offset.
-  const ioOffset = (showMakeMoveVecType ? 28 : 0) + (inspectionOnly ? 18 : 0);
+  const showInspectionNote = inspectionOnly && !readOnly;
+  const ioOffset =
+    (showMakeMoveVecType ? 28 : 0) + (showInspectionNote ? 18 : 0);
   const rowCount = Math.max(inIO.length, outIO.length + rightOffsetRows);
   const gaps = Math.max(0, rowCount - 1);
   const minHeight =
@@ -93,12 +90,7 @@ export const BaseCommand = memo(function BaseCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className={[
-          'ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative',
-          data?.editorDiagnostics?.length ? 'has-editor-diagnostics' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
+        className="ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative"
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Title row */}
@@ -106,17 +98,15 @@ export const BaseCommand = memo(function BaseCommand({
           <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200">
             {iconOfCommand(cmdKind)}
             {title}
-            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
 
           {/* Count stepper when supported */}
-          {countKey ? (
+          {!readOnly && countKey ? (
             <CommandCountStepper
               nodeId={node?.id}
               ui={ui}
               onPatchUI={data?.onPatchUI}
               min={countMin}
-              disabled={readOnly}
               countKey={countKey}
             />
           ) : (
@@ -124,7 +114,7 @@ export const BaseCommand = memo(function BaseCommand({
           )}
         </div>
 
-        {inspectionOnly ? (
+        {showInspectionNote ? (
           <div
             className="px-2 mb-1 text-[10px] text-amber-700 dark:text-amber-300"
             title="Publish and Upgrade authoring requires the Move toolchain."
@@ -143,7 +133,7 @@ export const BaseCommand = memo(function BaseCommand({
               className={
                 makeMoveVecTypeValid
                   ? 'h-5 py-0 text-[10px]'
-                  : 'h-5 py-0 text-[10px] border-red-500'
+                  : 'h-5 py-0 text-[10px] border-amber-500'
               }
               onMouseDown={(event) => event.stopPropagation()}
               onChange={(event) => {

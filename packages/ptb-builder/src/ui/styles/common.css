@@ -134,12 +134,6 @@
   animation: ptb-flow-dash 1.8s linear infinite;
 }
 
-.ptb-flow-edge.has-editor-diagnostics,
-.ptb-io-edge.has-editor-diagnostics {
-  stroke: var(--ptb-status-failure-bg);
-  stroke-width: 3px;
-}
-
 /* IO (solid) */
 .ptb-io-edge {
   stroke-dasharray: none !important;
@@ -229,26 +223,6 @@
     background-color 0.15s ease;
   will-change: border-color, background-color;
   animation: ptb-fade-in 140ms ease-out;
-}
-
-.ptb-node-shell.has-editor-diagnostics {
-  border-color: var(--ptb-status-failure-bg) !important;
-}
-
-.ptb-diagnostic-badge {
-  display: inline-flex;
-  min-width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0 4px;
-  background: var(--ptb-status-failure-bg);
-  color: var(--ptb-status-failure-fg);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
 }
 
 /* Remove default shadow; keep ring */

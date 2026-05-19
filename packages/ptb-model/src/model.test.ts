@@ -2456,6 +2456,35 @@ describe('rawTransactionToIR', () => {
     expect(code).toContain('tx.receivingRef');
   });
 
+  it('returns frozen graph data from transactionIRToGraph', () => {
+    const ir = rawTransactionToIR({
+      inputs: [{ kind: 'Pure', bytes: 'AQID' }],
+      commands: [],
+    });
+
+    const graph = transactionIRToGraph(ir);
+
+    expect(Object.isFrozen(graph)).toBe(true);
+    expect(Object.isFrozen(graph.nodes)).toBe(true);
+    expect(Object.isFrozen(graph.edges)).toBe(true);
+    expect(Object.isFrozen(graph.nodes[0])).toBe(true);
+    expect(Object.isFrozen(graph.nodes[0].ports)).toBe(true);
+    expect(Object.isFrozen(graph.nodes[0].position)).toBe(true);
+    expect(() => {
+      (graph.nodes as unknown[]).push({
+        id: 'mutated',
+        kind: 'Start',
+        label: 'Mutated',
+        ports: [],
+        position: { x: 0, y: 0 },
+      });
+    }).toThrow();
+    expect(() => {
+      (graph.nodes[0].position as { x: number }).x = 99;
+    }).toThrow();
+    expect(graphToTransactionIR(graph).diagnostics).toEqual([]);
+  });
+
   it('does not reintroduce placeholder rawInput types through graph round-trips', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
@@ -4575,30 +4604,34 @@ describe('graph conversion', () => {
   });
 
   it('omits graph variables that are not referenced by command inputs from executable IR', () => {
-    const graph = transactionIRToGraph({
-      version: 'transaction_ir_1',
-      inputs: [
-        {
-          id: 'recipient',
-          kind: 'Pure',
-          value: normalizedObjectId('1'),
-          type: { kind: 'scalar', name: 'address' },
-        },
-      ],
-      diagnostics: [],
-      commands: [
-        {
-          id: 'call',
-          kind: 'MoveCall',
-          package: normalizedObjectId('2'),
-          module: 'sui',
-          function: 'transfer',
-          typeArguments: [],
-          arguments: [{ kind: 'Input', index: 0 }],
-          resultCount: 0,
-        },
-      ],
-    });
+    const graph = JSON.parse(
+      JSON.stringify(
+        transactionIRToGraph({
+          version: 'transaction_ir_1',
+          inputs: [
+            {
+              id: 'recipient',
+              kind: 'Pure',
+              value: normalizedObjectId('1'),
+              type: { kind: 'scalar', name: 'address' },
+            },
+          ],
+          diagnostics: [],
+          commands: [
+            {
+              id: 'call',
+              kind: 'MoveCall',
+              package: normalizedObjectId('2'),
+              module: 'sui',
+              function: 'transfer',
+              typeArguments: [],
+              arguments: [{ kind: 'Input', index: 0 }],
+              resultCount: 0,
+            },
+          ],
+        }),
+      ),
+    ) as PTBGraph;
     graph.nodes.push({
       id: 'orphan',
       kind: 'Variable',
@@ -5911,12 +5944,20 @@ describe('graph conversion', () => {
     const graphObject = graph.nodes.find((node) => node.id === 'var-1') as
       | VariableNode
       | undefined;
-    if (
-      graphObject?.rawInput?.kind === 'Object' &&
-      graphObject.rawInput.object.kind === 'ImmOrOwnedObject'
-    ) {
-      graphObject.rawInput.object.objectId = '0xgraph-mutated';
-    }
+    const sourceObject = source.inputs[1] as Extract<
+      IRInput,
+      { kind: 'Object' }
+    >;
+
+    expect(graphObject?.rawInput).not.toBe(sourceObject.object);
+    expect(() => {
+      if (
+        graphObject?.rawInput?.kind === 'Object' &&
+        graphObject.rawInput.object.kind === 'ImmOrOwnedObject'
+      ) {
+        graphObject.rawInput.object.objectId = '0xgraph-mutated';
+      }
+    }).toThrow();
 
     expect(source.inputs[1]).toMatchObject({
       kind: 'Object',

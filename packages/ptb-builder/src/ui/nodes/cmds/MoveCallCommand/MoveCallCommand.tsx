@@ -3,7 +3,6 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
-import type { TransactionDiagnostic } from '@zktx.io/ptb-model';
 
 import type {
   CommandNode,
@@ -29,7 +28,6 @@ import {
   buildResolvedMoveCallState,
   padTypeArguments,
 } from './resolveMoveCall';
-import { EditorDiagnosticBadge } from '../../../EditorDiagnosticBadge';
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
@@ -55,7 +53,6 @@ export type MoveCallData = {
       ports?: Port[];
     },
   ) => void;
-  editorDiagnostics?: readonly TransactionDiagnostic[];
 };
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
@@ -216,12 +213,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className={[
-          'ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative',
-          data?.editorDiagnostics?.length ? 'has-editor-diagnostics' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
+        className="ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative"
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Header */}
@@ -229,7 +221,6 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200 select-none">
             {iconOfCommand('moveCall')}
             {data?.label ?? node?.label ?? 'Move Call'}
-            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
         </div>
 
@@ -277,22 +268,23 @@ export const MoveCallCommand = memo(function MoveCallCommand({
               }}
               readOnly={readOnly}
             />
-            <button
-              type="button"
-              className="h-6 min-w-[42px] px-2 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={resolveFunction}
-              disabled={
-                readOnly ||
-                loading ||
-                !pkgIdBuf.trim() ||
-                !moduleBuf.trim() ||
-                !funcBuf.trim()
-              }
-              title="Resolve function signature"
-            >
-              {loading ? '...' : 'Use'}
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className="h-6 min-w-[42px] px-2 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={resolveFunction}
+                disabled={
+                  loading ||
+                  !pkgIdBuf.trim() ||
+                  !moduleBuf.trim() ||
+                  !funcBuf.trim()
+                }
+                title="Resolve function signature"
+              >
+                {loading ? '...' : 'Use'}
+              </button>
+            )}
           </div>
           {typeArgumentCount > 0
             ? Array.from({ length: typeArgumentCount }, (_value, index) => (
@@ -314,10 +306,12 @@ export const MoveCallCommand = memo(function MoveCallCommand({
                 />
               ))
             : undefined}
-          <div className="px-1 text-[10px] text-gray-500 dark:text-gray-400">
-            Resolve a function to materialize IO ports. Generic functions need
-            concrete type arguments before runtime build.
-          </div>
+          {!readOnly && (
+            <div className="px-1 text-[10px] text-gray-500 dark:text-gray-400">
+              Resolve a function to materialize IO ports. Generic functions need
+              concrete type arguments before runtime build.
+            </div>
+          )}
         </div>
 
         {/* IO handles */}

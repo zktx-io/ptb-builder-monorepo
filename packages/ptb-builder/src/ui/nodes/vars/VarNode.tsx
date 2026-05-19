@@ -7,9 +7,8 @@ import {
   Position,
   useUpdateNodeInternals,
 } from '@xyflow/react';
-import { NULL_VALUE, type TransactionDiagnostic } from '@zktx.io/ptb-model';
+import { NULL_VALUE } from '@zktx.io/ptb-model';
 
-import { EditorDiagnosticBadge } from '../../EditorDiagnosticBadge';
 import { MiniStepper } from './inputs/MiniStepper';
 import { OptionToggle } from './inputs/OptionToggle';
 import { SelectBool } from './inputs/SelectBool';
@@ -55,7 +54,6 @@ type VectorEditorItem = string | boolean;
 export type VarData = {
   label?: string;
   ptbNode?: PTBNode;
-  editorDiagnostics?: readonly TransactionDiagnostic[];
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
@@ -166,6 +164,7 @@ export const VarNode = memo(function VarNode({
 
   // Editability
   const canEdit = Boolean(nodeId && data?.onPatchVar) && !readOnly;
+  const showAuthoringControls = !readOnly;
 
   // Visual category for node chrome
   const category = ioCategoryOf(varType);
@@ -479,7 +478,6 @@ export const VarNode = memo(function VarNode({
     requestInternals();
   }, [
     rfNodeId,
-    data?.editorDiagnostics?.length,
     vecItems.length,
     hasEditor,
     isVector,
@@ -489,7 +487,6 @@ export const VarNode = memo(function VarNode({
   ]);
 
   const title = (data?.label ?? v?.label ?? '').trim() || 'variable';
-  const hasEditorDiagnostics = (data?.editorDiagnostics?.length ?? 0) > 0;
   const nodeClassName = isOption
     ? `ptb-node--${category} ptb-node--option`
     : `ptb-node--${category}`;
@@ -562,10 +559,7 @@ export const VarNode = memo(function VarNode({
   return (
     <div className={nodeClassName}>
       <div
-        className={[
-          'ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative',
-          hasEditorDiagnostics ? 'has-editor-diagnostics' : '',
-        ].join(' ')}
+        className="ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative"
         style={{
           minWidth: 140,
           width: isHelper ? NODE_SIZES.Helper.width : NODE_SIZES.Variable.width,
@@ -576,44 +570,45 @@ export const VarNode = memo(function VarNode({
           <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfVar(v)}
             {title}
-            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
 
-          <div className="flex items-center gap-1">
-            {/* Vector stepper */}
-            {!isHelper && isVector && (
-              <MiniStepper
-                decDisabled={!canEdit || vecItems.length <= 1 || readOnly}
-                incDisabled={!canEdit || readOnly}
-                onDec={() => stepVec(-1)}
-                onInc={() => stepVec(+1)}
-              />
-            )}
+          {showAuthoringControls && !isHelper && (isVector || isOption) ? (
+            <div className="flex items-center gap-1">
+              {/* Vector stepper */}
+              {isVector && (
+                <MiniStepper
+                  decDisabled={!canEdit || vecItems.length <= 1}
+                  incDisabled={!canEdit}
+                  onDec={() => stepVec(-1)}
+                  onInc={() => stepVec(+1)}
+                />
+              )}
 
-            {/* iOS-style option toggle */}
-            {!isHelper && isOption && (
-              <OptionToggle
-                some={optSome}
-                disabled={!canEdit || readOnly}
-                onToggle={(next) => {
-                  cancelPendingPureValueDrafts();
-                  setOptSome(next);
-                  if (optionInnerIsBool) {
-                    const nextValue = optionBoolValue ?? true;
-                    if (next) setScalarBuf(String(nextValue));
-                    patchVar({
-                      value: next ? nextValue : OPTION_NONE_VALUE,
-                    });
-                  } else {
-                    patchVar({
-                      value: next ? scalarBuf : OPTION_NONE_VALUE,
-                    });
-                  }
-                  requestInternals();
-                }}
-              />
-            )}
-          </div>
+              {/* iOS-style option toggle */}
+              {isOption && (
+                <OptionToggle
+                  some={optSome}
+                  disabled={!canEdit}
+                  onToggle={(next) => {
+                    cancelPendingPureValueDrafts();
+                    setOptSome(next);
+                    if (optionInnerIsBool) {
+                      const nextValue = optionBoolValue ?? true;
+                      if (next) setScalarBuf(String(nextValue));
+                      patchVar({
+                        value: next ? nextValue : OPTION_NONE_VALUE,
+                      });
+                    } else {
+                      patchVar({
+                        value: next ? scalarBuf : OPTION_NONE_VALUE,
+                      });
+                    }
+                    requestInternals();
+                  }}
+                />
+              )}
+            </div>
+          ) : undefined}
         </div>
 
         {/* Editors */}
@@ -701,16 +696,18 @@ export const VarNode = memo(function VarNode({
                         aria-readonly="true"
                         onChange={() => {}}
                       />
-                      <button
-                        type="button"
-                        className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 disabled:opacity-50"
-                        disabled={
-                          !canEdit || objTypeLoading || !scalarBuf.trim()
-                        }
-                        onClick={handleObjectLookup}
-                      >
-                        {objTypeLoading ? 'Lookup…' : 'Lookup'}
-                      </button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 disabled:opacity-50"
+                          disabled={
+                            !canEdit || objTypeLoading || !scalarBuf.trim()
+                          }
+                          onClick={handleObjectLookup}
+                        >
+                          {objTypeLoading ? 'Lookup…' : 'Lookup'}
+                        </button>
+                      )}
                     </div>
 
                     {objectInfo ? (
@@ -723,7 +720,7 @@ export const VarNode = memo(function VarNode({
                         </div>
                         <div>Version: {objectInfo.version}</div>
                         <div>Digest: {shortMiddle(objectInfo.digest)}</div>
-                        {!objectInfoMatchesInput && (
+                        {!readOnly && !objectInfoMatchesInput && (
                           <div className="text-amber-700 dark:text-amber-300">
                             Run Lookup to refresh object metadata.
                           </div>
@@ -780,20 +777,21 @@ export const VarNode = memo(function VarNode({
                           </option>
                         </select>
                       </div>
-                    ) : objectDraft.status === 'error' ? (
+                    ) : !readOnly && objectDraft.status === 'error' ? (
                       <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">
                         {objectDraft.error || 'Object lookup failed.'}
                       </div>
                     ) : currentObjectUsage ? (
                       <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
-                        Raw input: {currentObjectUsage}. Run Lookup to refresh
-                        object metadata.
+                        {readOnly
+                          ? `Raw input: ${currentObjectUsage}.`
+                          : `Raw input: ${currentObjectUsage}. Run Lookup to refresh object metadata.`}
                       </div>
-                    ) : (
+                    ) : !readOnly ? (
                       <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-500">
                         Run Lookup before executing object inputs.
                       </div>
-                    )}
+                    ) : undefined}
                   </div>
                 ) : (
                   <></>
