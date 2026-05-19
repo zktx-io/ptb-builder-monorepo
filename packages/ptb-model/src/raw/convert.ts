@@ -21,8 +21,9 @@ import {
 } from './types.js';
 import {
   assertNoErrors,
-  errorDiagnostic,
+  existingGraphDiagnostics,
   hasErrors,
+  errorDiagnostic as modelDiagnostic,
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
@@ -42,6 +43,14 @@ import {
   isRecord,
   NULL_VALUE,
 } from '../utils.js';
+
+function rawDiagnostic(
+  code: string,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, 'shape', message, path);
+}
 
 interface EnumView {
   kind: string;
@@ -81,7 +90,7 @@ export function rawTransactionToIR(value: unknown): TransactionIR {
     !isDenseArray(value.commands)
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.transaction',
         'Raw programmable transaction must have dense inputs and commands arrays.',
         '$',
@@ -99,7 +108,7 @@ export function rawTransactionToIR(value: unknown): TransactionIR {
   );
   if ('version' in value && value.version !== 2) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.transaction.version',
         'SDK TransactionData envelope version must be 2 when present.',
         '$.version',
@@ -188,6 +197,9 @@ export function validateRawConvertibleIR(
   ir: TransactionIR,
 ): readonly TransactionDiagnostic[] {
   const diagnostics = [
+    ...existingGraphDiagnostics(ir).filter(
+      (diagnostic) => diagnostic.blocks.execution,
+    ),
     ...(isStructuralTransactionIR(ir)
       ? []
       : validateTransactionIR(ir, {
@@ -204,7 +216,7 @@ export function validateRawConvertibleIR(
       case 'Pure':
         if (input.bytes === undefined) {
           diagnostics.push(
-            errorDiagnostic(
+            rawDiagnostic(
               'raw.ir.pureBytes',
               `Pure input ${index} requires raw bytes for raw PTB conversion.`,
               `$.inputs[${index}].bytes`,
@@ -215,7 +227,7 @@ export function validateRawConvertibleIR(
       case 'Object':
         if (!input.object) {
           diagnostics.push(
-            errorDiagnostic(
+            rawDiagnostic(
               'raw.ir.object',
               `Object input ${index} requires a resolved object argument for raw PTB conversion.`,
               `$.inputs[${index}].object`,
@@ -227,7 +239,7 @@ export function validateRawConvertibleIR(
         return;
       case 'Unsupported':
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.ir.unsupportedInput',
             `Unsupported input ${index} cannot be converted to raw PTB.`,
             `$.inputs[${index}]`,
@@ -240,7 +252,7 @@ export function validateRawConvertibleIR(
   ir.commands.forEach((command, index) => {
     if (command.kind !== 'Unsupported') return;
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.ir.unsupportedCommand',
         `Unsupported command ${index} cannot be converted to raw PTB.`,
         `$.commands[${index}]`,
@@ -465,7 +477,7 @@ function throwRawConversionError(
   path: string,
 ): never {
   throw new PTBModelError('TransactionIR cannot be converted to raw PTB.', [
-    errorDiagnostic(code, message, path),
+    rawDiagnostic(code, message, path),
   ]);
 }
 
@@ -477,7 +489,7 @@ function normalizeRawCallArg(
   const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
-      errorDiagnostic('raw.input', 'Input must be an enum object.', path),
+      rawDiagnostic('raw.input', 'Input must be an enum object.', path),
     );
     return undefined;
   }
@@ -502,7 +514,7 @@ function normalizeRawCallArg(
       );
       if (bytes === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.base64Bytes',
             'Pure input requires base64-decodable base64 bytes.',
             `${path}.bytes`,
@@ -579,7 +591,7 @@ function normalizeRawCallArg(
     case 'UnresolvedPure':
     case 'UnresolvedObject':
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.input.unresolved',
           `${view.kind} is an SDK builder convenience and is not canonical raw PTB.`,
           path,
@@ -588,7 +600,7 @@ function normalizeRawCallArg(
       return undefined;
     default:
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.input.unsupported',
           `Unsupported input kind ${view.kind}.`,
           path,
@@ -606,18 +618,14 @@ function normalizeRawObjectArg(
   const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
-      errorDiagnostic(
-        'raw.object',
-        'Object input must be an enum object.',
-        path,
-      ),
+      rawDiagnostic('raw.object', 'Object input must be an enum object.', path),
     );
     return undefined;
   }
 
   if (!isRecord(view.payload)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.object.payload',
         'Object payload must be an object.',
         path,
@@ -645,7 +653,7 @@ function normalizeRawObjectArg(
       const digest = parseObjectDigest(view.payload.digest);
       if (!objectId || !version || !digest) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.object.ref',
             'Owned object requires objectId, version, and digest.',
             path,
@@ -675,7 +683,7 @@ function normalizeRawObjectArg(
       const mutable = asBoolean(view.payload.mutable);
       if (!objectId || !initialSharedVersion || mutable === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.object.shared',
             'Shared object requires objectId, initialSharedVersion, and mutable.',
             path,
@@ -703,7 +711,7 @@ function normalizeRawObjectArg(
       const digest = parseObjectDigest(view.payload.digest);
       if (!objectId || !version || !digest) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.object.receiving',
             'Receiving object requires objectId, version, and digest.',
             path,
@@ -715,7 +723,7 @@ function normalizeRawObjectArg(
     }
     default:
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.object.unsupported',
           `Unsupported object kind ${view.kind}.`,
           path,
@@ -732,7 +740,7 @@ function normalizeFundsWithdrawal(
 ): RawFundsWithdrawalArg | undefined {
   if (!isRecord(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.funds',
         'FundsWithdrawal payload must be an object.',
         path,
@@ -767,7 +775,7 @@ function normalizeFundsWithdrawal(
 
   if (reservation?.kind !== 'MaxAmountU64') {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.funds.reservation',
         'FundsWithdrawal reservation must be MaxAmountU64.',
         path,
@@ -790,7 +798,7 @@ function normalizeFundsWithdrawal(
 
   if (typeArg?.kind !== 'Balance') {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.funds.typeArg',
         'FundsWithdrawal typeArg must be Balance.',
         path,
@@ -813,7 +821,7 @@ function normalizeFundsWithdrawal(
 
   if (withdrawFrom?.kind !== 'Sender' && withdrawFrom?.kind !== 'Sponsor') {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.funds.withdrawFrom',
         'FundsWithdrawal withdrawFrom must be Sender or Sponsor.',
         path,
@@ -844,7 +852,7 @@ function normalizeFundsWithdrawal(
   );
   if (!amount || !type) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.funds.payload',
         'FundsWithdrawal amount and Balance type are required.',
         path,
@@ -868,14 +876,14 @@ function normalizeRawCommand(
   const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
-      errorDiagnostic('raw.command', 'Command must be an enum object.', path),
+      rawDiagnostic('raw.command', 'Command must be an enum object.', path),
     );
     return undefined;
   }
 
   if (view.kind === '$Intent') {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.command.intent',
         '$Intent is an SDK builder convenience and is not canonical raw PTB.',
         path,
@@ -891,7 +899,7 @@ function normalizeRawCommand(
       : undefined;
   if (!payload) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.command.payload',
         'Command payload must be an object.',
         path,
@@ -1032,7 +1040,7 @@ function normalizeRawCommand(
       }
       if (type === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.command.makeMoveVec.type',
             'MakeMoveVec type must be a string or null.',
             `${path}.type`,
@@ -1041,7 +1049,7 @@ function normalizeRawCommand(
       }
       if (type === NULL_VALUE && elements?.length === 0) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.command.emptyInput',
             'MakeMoveVec elements must not be empty when type is null.',
             `${path}.elements`,
@@ -1080,7 +1088,7 @@ function normalizeRawCommand(
       const packageId = parseObjectId(payload.package);
       if (!packageId) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.command.upgrade.package',
             'Upgrade requires package.',
             `${path}.package`,
@@ -1098,7 +1106,7 @@ function normalizeRawCommand(
     }
     default:
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.command.unsupported',
           `Unsupported command kind ${view.kind}.`,
           path,
@@ -1147,7 +1155,7 @@ function normalizeMoveCall(
 
   if (!packageId) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.objectId',
         'MoveCall package must be a Sui object ID.',
         `${path}.package`,
@@ -1156,7 +1164,7 @@ function normalizeMoveCall(
   }
   if (!module) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.moveIdentifier',
         'MoveCall module must be a Move identifier.',
         `${path}.module`,
@@ -1165,7 +1173,7 @@ function normalizeMoveCall(
   }
   if (!fn) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.moveIdentifier',
         'MoveCall function must be a Move identifier.',
         `${path}.function`,
@@ -1209,7 +1217,7 @@ function normalizeMoveCallArgumentTypes(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    rawDiagnostic(
       'raw.command.moveCall.argumentTypes',
       'MoveCall _argumentTypes must match the SDK OpenSignature array schema or null when provided.',
       path,
@@ -1225,7 +1233,7 @@ function normalizeArgumentArray(
 ): RawArgument[] | undefined {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.argument.array',
         'Argument list must be an array.',
         path,
@@ -1253,7 +1261,7 @@ function normalizeNonEmptyArgumentArray(
   if (args.length > 0) return args;
 
   diagnostics.push(
-    errorDiagnostic(
+    rawDiagnostic(
       'raw.command.emptyInput',
       `${label} must not be empty.`,
       path,
@@ -1270,7 +1278,7 @@ function normalizeRawArgument(
   const view = enumView(value, diagnostics, path);
   if (!view) {
     diagnostics.push(
-      errorDiagnostic('raw.argument', 'Argument must be an enum object.', path),
+      rawDiagnostic('raw.argument', 'Argument must be an enum object.', path),
     );
     return undefined;
   }
@@ -1298,7 +1306,7 @@ function normalizeRawArgument(
       );
       if (index === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.argument.input',
             'Input argument requires a u16 index.',
             path,
@@ -1320,7 +1328,7 @@ function normalizeRawArgument(
         : u16Index(view.payload);
       if (commandIndex === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.argument.result',
             'Result argument requires a u16 command index.',
             path,
@@ -1350,7 +1358,7 @@ function normalizeRawArgument(
         : u16Index(tuple[1]);
       if (commandIndex === undefined || resultIndex === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          rawDiagnostic(
             'raw.argument.nestedResult',
             'NestedResult requires u16 command and result indexes.',
             path,
@@ -1362,7 +1370,7 @@ function normalizeRawArgument(
     }
     default:
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.argument.unsupported',
           `Unsupported argument kind ${view.kind}.`,
           path,
@@ -1398,7 +1406,7 @@ function normalizeRawInputArgumentType(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    rawDiagnostic(
       'raw.argument.input.type',
       'Input argument type metadata must be pure, object, or withdrawal when provided.',
       path,
@@ -1440,7 +1448,7 @@ function enumView(
 
   if (modelKind && sdkKind && modelKind !== sdkKind) {
     diagnostics?.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.enum.conflict',
         `Raw enum object has conflicting kind ${modelKind} and $kind ${sdkKind}.`,
         path,
@@ -1607,7 +1615,7 @@ function validateOnlyKeys(
     .forEach((key) => {
       valid = false;
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           code,
           `${label} does not support field ${key}.`,
           `${path}.${key}`,
@@ -1629,7 +1637,7 @@ function base64BytesArray(
 ): string[] | undefined {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.base64Bytes',
         `${label} must be an array of base64-decodable base64 byte strings.`,
         path,
@@ -1642,7 +1650,7 @@ function base64BytesArray(
     const bytes = parseBase64Bytes(item);
     if (bytes === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.base64Bytes',
           `${label} item ${index} must be base64-decodable base64 bytes.`,
           `${path}[${index}]`,
@@ -1668,7 +1676,7 @@ function nonEmptyBase64BytesArray(
   if (items.length > 0) return items;
 
   diagnostics.push(
-    errorDiagnostic(
+    rawDiagnostic(
       'raw.command.emptyInput',
       `${label} must not be empty.`,
       path,
@@ -1685,7 +1693,7 @@ function objectIdArray(
 ): string[] | undefined {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.objectIdArray',
         `${label} must be an array of Sui object IDs.`,
         path,
@@ -1698,7 +1706,7 @@ function objectIdArray(
     const objectId = parseObjectId(item);
     if (objectId === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.objectId',
           `${label} item ${index} must be a Sui object ID.`,
           `${path}[${index}]`,
@@ -1721,7 +1729,7 @@ function moveTypeTagArray(
 ): string[] | undefined {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      rawDiagnostic(
         'raw.moveTypeTagArray',
         `${label} must be an array of Move type tag strings.`,
         path,
@@ -1734,7 +1742,7 @@ function moveTypeTagArray(
     const typeTag = parseMoveTypeTag(item);
     if (typeTag === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        rawDiagnostic(
           'raw.moveTypeTag',
           `${label} item ${index} must be a valid Move type tag string.`,
           `${path}[${index}]`,

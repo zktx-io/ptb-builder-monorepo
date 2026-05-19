@@ -119,8 +119,6 @@ import { toColorMode } from '../types';
 const VIEW_CHANGE_DEBOUNCE_MS = 250;
 const DOC_CHANGE_DEBOUNCE_MS = 150;
 const DOC_CHANGE_MAX_WAIT_MS = 1000;
-const DOC_EMIT_ERROR_REPEAT_MS = 30_000;
-const DOC_EMIT_ERROR_REPEAT_COUNT = 5;
 const OBJECT_METADATA_FETCH_CONCURRENCY = 8;
 const EMPTY_OBJECTS = Object.freeze({}) as PTBObjectsEmbed;
 const EMPTY_MODULES = Object.freeze({}) as PTBModulesEmbed;
@@ -444,7 +442,6 @@ export function PtbProvider({
   // Reset caches on chain change
   const resetBeforeLoad = () => {
     lastDocSigRef.current = undefined;
-    lastDocEmitErrorRef.current = undefined;
     setActiveChain(undefined);
     setObjects(EMPTY_OBJECTS);
     setModules(EMPTY_MODULES);
@@ -565,14 +562,6 @@ export function PtbProvider({
   const onDocChangeRef = useRef(onDocChange);
   onDocChangeRef.current = onDocChange;
   const hadOnDocChangeRef = useRef(Boolean(onDocChange));
-  const lastDocEmitErrorRef = useRef<
-    | {
-        message: string;
-        count: number;
-        reportedAt: number;
-      }
-    | undefined
-  >(undefined);
   const emitDocChangeRef = useRef<() => void>(() => undefined);
   const docEmissionSchedulerRef = useRef<DocumentEmissionScheduler | undefined>(
     undefined,
@@ -596,72 +585,45 @@ export function PtbProvider({
     });
   }, []);
 
-  const reportDocEmitError = useCallback(
-    (error: unknown, fallback: string) => {
-      const message = formatModelErrorMessage(error, fallback);
-      const previous = lastDocEmitErrorRef.current;
-      const now = Date.now();
-      const count = previous?.message === message ? previous.count + 1 : 1;
-      const shouldReport =
-        !previous ||
-        previous.message !== message ||
-        count % DOC_EMIT_ERROR_REPEAT_COUNT === 0 ||
-        now - previous.reportedAt >= DOC_EMIT_ERROR_REPEAT_MS;
+  const deliverDocChange = useCallback((doc: PTBDoc): PTBActionResult => {
+    const nextSig = stablePTBDocSignature(doc);
+    const onDocChangeCurrent = onDocChangeRef.current;
+    if (!onDocChangeCurrent) {
+      lastDocSigRef.current = undefined;
+      return PTB_ACTION_OK;
+    }
+    if (lastDocSigRef.current === nextSig) return PTB_ACTION_OK;
 
-      if (shouldReport) {
-        toastImpl({
-          message: count > 1 ? `${message} (repeated ${count} times)` : message,
-          variant: 'error',
-        });
-      }
-      setProviderUiState((prev) =>
-        providerDocumentEmitError(
-          prev,
-          count > 1 ? `${message} (repeated ${count} times)` : message,
-        ),
+    try {
+      onDocChangeCurrent(doc);
+      lastDocSigRef.current = nextSig;
+      return PTB_ACTION_OK;
+    } catch (error) {
+      const message = formatModelErrorMessage(
+        error,
+        'PTB document change handler failed.',
       );
-
-      lastDocEmitErrorRef.current = {
-        message,
-        count,
-        reportedAt: shouldReport ? now : (previous?.reportedAt ?? now),
-      };
-    },
-    [toastImpl],
-  );
-
-  const deliverDocChange = useCallback(
-    (doc: PTBDoc) => {
-      const nextSig = stablePTBDocSignature(doc);
-      const onDocChangeCurrent = onDocChangeRef.current;
-      if (!onDocChangeCurrent) {
-        lastDocSigRef.current = undefined;
-        return;
-      }
-      if (lastDocSigRef.current === nextSig) return;
-
-      try {
-        onDocChangeCurrent(doc);
-        lastDocSigRef.current = nextSig;
-        lastDocEmitErrorRef.current = undefined;
-      } catch (error) {
-        reportDocEmitError(error, 'PTB document change handler failed.');
-      }
-    },
-    [reportDocEmitError],
-  );
+      setProviderUiState((prev) => providerDocumentEmitError(prev, message));
+      return ptbActionError(message);
+    }
+  }, []);
 
   const emitDocChange = useCallback(() => {
     let doc: PTBDoc | undefined;
     try {
       doc = buildDocFromRefs();
     } catch (error) {
-      reportDocEmitError(error, 'PTB document update failed.');
+      setProviderUiState((prev) =>
+        providerDocumentEmitError(
+          prev,
+          formatModelErrorMessage(error, 'PTB document update failed.'),
+        ),
+      );
       return;
     }
     if (!doc) return;
     deliverDocChange(doc);
-  }, [buildDocFromRefs, deliverDocChange, reportDocEmitError]);
+  }, [buildDocFromRefs, deliverDocChange]);
   emitDocChangeRef.current = emitDocChange;
 
   if (!docEmissionSchedulerRef.current) {
@@ -1157,7 +1119,11 @@ export function PtbProvider({
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        deliverDocChange(doc.doc);
+        const delivery = deliverDocChange(doc.doc);
+        if (!delivery.ok) {
+          lifecycleRef.current.fail(load, delivery.error);
+          return delivery;
+        }
         lifecycleRef.current.complete(load, 'ready-editable');
         lifecycleRef.current.afterAnimationFrames(load, () => {
           flowActionsRef.current.updateViewport?.(nextView);
@@ -1195,23 +1161,19 @@ export function PtbProvider({
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        try {
-          deliverDocChange(doc);
-          lifecycleRef.current.complete(load, 'ready-editable');
-        } catch (error) {
-          lifecycleRef.current.fail(load, 'PTB document update failed.');
-          reportDocEmitError(error, 'PTB document update failed.');
-          return ptbActionError(
-            formatModelErrorMessage(error, 'PTB document update failed.'),
-          );
+        const delivery = deliverDocChange(doc);
+        if (!delivery.ok) {
+          lifecycleRef.current.fail(load, delivery.error);
+          return delivery;
         }
+        lifecycleRef.current.complete(load, 'ready-editable');
         lifecycleRef.current.afterAnimationFrames(load, () => {
           flowActionsRef.current.updateViewport?.(nextView);
         });
         return PTB_ACTION_OK;
       }
     },
-    [deliverDocChange, replaceGraphImmediate, reportDocEmitError, toastImpl],
+    [deliverDocChange, replaceGraphImmediate, toastImpl],
   );
 
   const loadFromDocRef = useRef(loadFromDoc);

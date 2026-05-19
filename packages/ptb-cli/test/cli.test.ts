@@ -241,7 +241,11 @@ describe('ptb cli mermaid', () => {
   it('normalizes model errors', () => {
     const normalized = normalizeCliError(
       new PTBModelError('model exploded', [
-        { code: 'x.test', message: 'test diagnostic' },
+        {
+          code: 'x.test',
+          category: 'semantic',
+          message: 'test diagnostic',
+        },
       ]),
     );
 

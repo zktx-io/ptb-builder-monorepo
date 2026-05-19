@@ -1,12 +1,15 @@
-import { validatePTBGraph } from '../graph/types.js';
+import { analyzePTBGraph, graphDocumentDiagnostics } from '../graph/types.js';
 import type { PTBGraph } from '../graph/types.js';
 import {
-  errorDiagnostic,
   freezeDiagnostics,
   hasErrors,
+  errorDiagnostic as modelDiagnostic,
   PTBModelError,
 } from '../ir/diagnostics.js';
-import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import type {
+  DiagnosticCategory,
+  TransactionDiagnostic,
+} from '../ir/diagnostics.js';
 import { parseObjectId } from '../raw/types.js';
 import {
   cloneJsonLike,
@@ -15,6 +18,15 @@ import {
   isRecord,
   NULL_VALUE,
 } from '../utils.js';
+
+function docDiagnostic(
+  code: string,
+  category: DiagnosticCategory,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, category, message, path);
+}
 
 export const PTB_DOC_VERSION_V4 = 'ptb_4' as const;
 export type PTBDocVersion = typeof PTB_DOC_VERSION_V4;
@@ -52,7 +64,12 @@ export function validatePTBDocV4(
 
   if (!isRecord(value)) {
     diagnostics.push(
-      errorDiagnostic('doc.invalid', 'PTB document must be an object.', '$'),
+      docDiagnostic(
+        'doc.invalid',
+        'shape',
+        'PTB document must be an object.',
+        '$',
+      ),
     );
     return freezeDiagnostics(diagnostics);
   }
@@ -61,8 +78,9 @@ export function validatePTBDocV4(
 
   if (value.version !== PTB_DOC_VERSION_V4) {
     diagnostics.push(
-      errorDiagnostic(
+      docDiagnostic(
         'doc.version',
+        'shape',
         'PTB document version must be ptb_4.',
         '$.version',
       ),
@@ -72,15 +90,20 @@ export function validatePTBDocV4(
     .filter((key) => !(PTB_DOC_V4_FIELDS as readonly string[]).includes(key))
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
+        docDiagnostic(
           'doc.unknownField',
+          'shape',
           `PTB document does not support field ${key}.`,
           `$.${key}`,
         ),
       );
     });
 
-  diagnostics.push(...validatePTBGraph(value.graph, { path: '$.graph' }));
+  diagnostics.push(
+    ...graphDocumentDiagnostics(
+      analyzePTBGraph(value.graph, { path: '$.graph' }).diagnostics,
+    ),
+  );
   validateOptionalString(value.chain, '$.chain', 'chain', diagnostics);
   validateOptionalSender(value.sender, '$.sender', diagnostics);
   validateOptionalRecord(value.modules, '$.modules', 'modules', diagnostics);
@@ -112,8 +135,9 @@ function validateOptionalString(
 ): void {
   if (value === undefined || typeof value === 'string') return;
   diagnostics.push(
-    errorDiagnostic(
+    docDiagnostic(
       `doc.${field}`,
+      'shape',
       `PTB document ${field} must be a string when present.`,
       path,
     ),
@@ -128,8 +152,9 @@ function validateOptionalSender(
   if (value === undefined) return;
   if (typeof value !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      docDiagnostic(
         'doc.sender',
+        'shape',
         'PTB document sender must be a string when present.',
         path,
       ),
@@ -140,8 +165,9 @@ function validateOptionalSender(
   const sender = parseObjectId(value);
   if (sender !== undefined && sender === value) return;
   diagnostics.push(
-    errorDiagnostic(
+    docDiagnostic(
       'doc.sender',
+      'reference',
       'PTB document sender must be a canonical Sui address when present.',
       path,
     ),
@@ -156,8 +182,9 @@ function validateOptionalRecord(
 ): void {
   if (value === undefined || isRecord(value)) return;
   diagnostics.push(
-    errorDiagnostic(
+    docDiagnostic(
       `doc.${field}`,
+      'shape',
       `PTB document ${field} must be an object when present.`,
       path,
     ),
@@ -182,8 +209,9 @@ function validateOptionalView(
     if (isView(value)) return;
   }
   diagnostics.push(
-    errorDiagnostic(
+    docDiagnostic(
       'doc.view',
+      'shape',
       'PTB document view must contain numeric x, y, and zoom when present.',
       path,
     ),
@@ -225,8 +253,9 @@ function validateDocumentJsonLike(
     if (Array.isArray(item)) {
       if (!isDenseArray(item)) {
         diagnostics.push(
-          errorDiagnostic(
+          docDiagnostic(
             'doc.json',
+            'shape',
             'PTB document values must use dense JSON arrays.',
             itemPath,
           ),
@@ -235,8 +264,9 @@ function validateDocumentJsonLike(
       }
       if (active.has(item)) {
         diagnostics.push(
-          errorDiagnostic(
+          docDiagnostic(
             'doc.json',
+            'shape',
             'PTB document values must not contain cyclic references.',
             itemPath,
           ),
@@ -254,8 +284,9 @@ function validateDocumentJsonLike(
     if (isPlainDocumentObject(item)) {
       if (active.has(item)) {
         diagnostics.push(
-          errorDiagnostic(
+          docDiagnostic(
             'doc.json',
+            'shape',
             'PTB document values must not contain cyclic references.',
             itemPath,
           ),
@@ -276,8 +307,9 @@ function validateDocumentJsonLike(
     }
 
     diagnostics.push(
-      errorDiagnostic(
+      docDiagnostic(
         'doc.json',
+        'shape',
         'PTB document values must be JSON primitives, dense arrays, or plain objects.',
         itemPath,
       ),
@@ -305,8 +337,9 @@ function validateUnknownFields(
     .filter((key) => !allowedKeys.includes(key))
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
+        docDiagnostic(
           code,
+          'shape',
           `${label} does not support field ${key}.`,
           `${path}.${key}`,
         ),

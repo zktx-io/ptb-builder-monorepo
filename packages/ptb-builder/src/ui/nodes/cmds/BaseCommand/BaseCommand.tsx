@@ -11,7 +11,10 @@ import { memo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
-import { toPTBTypeFromConcreteTypeArgument } from '@zktx.io/ptb-model';
+import {
+  toPTBTypeFromConcreteTypeArgument,
+  type TransactionDiagnostic,
+} from '@zktx.io/ptb-model';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import type {
@@ -20,6 +23,7 @@ import type {
   PTBNode,
 } from '../../../../ptb/graph/types';
 import { countKeyOf, countMinOf } from '../../../../ptb/registry';
+import { EditorDiagnosticBadge } from '../../../EditorDiagnosticBadge';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
 import { usePtb } from '../../../PtbProvider';
@@ -43,6 +47,7 @@ type BaseCmdData = {
     nodeId: string,
     patch: { runtime?: CommandRuntimeParams },
   ) => void;
+  editorDiagnostics?: readonly TransactionDiagnostic[];
 };
 export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
 
@@ -88,7 +93,12 @@ export const BaseCommand = memo(function BaseCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className="ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative"
+        className={[
+          'ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative',
+          data?.editorDiagnostics?.length ? 'has-editor-diagnostics' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Title row */}
@@ -96,6 +106,7 @@ export const BaseCommand = memo(function BaseCommand({
           <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200">
             {iconOfCommand(cmdKind)}
             {title}
+            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
 
           {/* Count stepper when supported */}

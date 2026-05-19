@@ -156,3 +156,120 @@ Before calling a change complete, review these boundaries together:
 
 Tests passing is not enough by itself. Walk the affected state and error paths
 and verify docs do not describe removed or unsupported behavior.
+
+## Compiler-Phase Review Oracle
+
+Use this oracle when reviewing graph document, diagnostic, conversion, renderer,
+or builder diagnostic-channel changes. The invariant is: each phase performs
+only its own responsibility, and a diagnostic must not disappear, move to the
+wrong channel, or authorize a later phase that it blocks.
+
+| Phase | Canonical API | Responsibility |
+| --- | --- | --- |
+| Save/load | `validatePTBDocV4()` / `parsePTBDocV4()` | Accept only canonical document data. It must not require execution completeness. |
+| Analyze | `analyzePTBGraph()` | Emit all graph diagnostics with `blocks.document` and `blocks.execution`. |
+| Compile gate | `parseExecutableGraph()` | Reject graph diagnostics that block execution and return an `ExecutablePTBGraph`. |
+| Lower | `graphToTransactionIR()` | For unbranded graphs, analyze first; for branded graphs, reuse stored analysis facts; then produce inspection IR. |
+| Emit artifact | `transactionIRToRaw()` / `transactionIRToTsSdkCode()` | Reject IR diagnostics that make raw or SDK-code output unsafe or misleading. |
+| Inspect | `transactionIRToMermaid()` and builder preview surfaces | Render best-effort inspection output and keep diagnostics visible. |
+
+Required review tests:
+
+- A phase matrix fixture set that runs the same graph through save/load,
+  analyze, compile gate, lower, raw emit, SDK-code emit, and inspection.
+- Diagnostic guardrail tests that prove graph diagnostics are created through
+  graph metadata, non-graph diagnostics cannot carry graph blocks, malformed
+  diagnostics fail at trust boundaries, and prefix routing is not reintroduced.
+- Bypass tests that prove execution, dry-run, raw emit, and SDK-code emit cannot
+  skip the executable graph or IR diagnostic gates.
+- Channel tests that prove analyze diagnostics have at least one visible UI
+  surface, autosave does not show diagnostic toasts, explicit user actions do
+  show failures, and host callback failures use a host/provider channel rather
+  than a model diagnostic channel.
+
+Treat matrix coverage as the first oracle. A document-valid but
+execution-invalid graph must save, analyze with diagnostics, fail the compile
+gate, lower to IR with diagnostics for inspection, fail raw/SDK-code emission,
+and remain renderable in inspection surfaces. A document-blocking graph must
+fail document parsing and lower only to an empty diagnostic IR.
+
+## Review Prompt Templates
+
+Use these prompts when asking an agent to review this repository. Adjust the
+target files or change description, but keep the evidence and boundary
+requirements intact.
+
+### Review Only
+
+```text
+Read AGENTS.md first. Review this change against the product purpose and the
+model/builder/CLI responsibilities.
+
+The goal is defect discovery, not praise or consensus. Do not defend the
+implementation or the plan. Verify whether code, tests, docs, package exports,
+examples, and user flows actually agree.
+
+Check for:
+- phase leaks across save/analyze/compile/lower/emit/inspect;
+- silent drops of diagnostics, evidence, errors, or host failures;
+- wrong channels for toast, inline diagnostics, provider notice, or host errors;
+- trust-boundary gaps for external JSON, host-built diagnostics, or forged brands;
+- bypass paths around parseExecutableGraph, raw/codegen gates, or the model boundary;
+- invariant drift across GRAPH_DIAGNOSTIC_META, README, tests, and public APIs.
+
+Report findings first, ordered by severity. Cite file and line evidence for
+each finding. Do not edit files. Classify each item as fix-now, separate-plan,
+or not-a-defect.
+```
+
+### Review And Fix
+
+```text
+Read AGENTS.md first. Self-review the current change without defending prior
+work or the plan.
+
+Use the product purpose, PTB data boundaries, and Compiler-Phase Review Oracle
+as the review criteria. If a finding is fix-now and belongs to the affected
+boundary, fix it in this turn. Before editing, inspect the related callers,
+callees, schemas, tests, docs, exports, and user flow. Fix the shared invariant,
+not only the symptom.
+
+After editing, run the relevant tests/build/lint commands and report only the
+observed results. Leave only issues that require a separate plan.
+```
+
+### Compiler-Phase Boundary Review
+
+```text
+Read AGENTS.md and README_DEV.md's Compiler-Phase Review Oracle first.
+
+Review the change by running the same input through:
+save/load -> analyze -> compile gate -> lower -> raw/SDK emit -> inspect.
+
+A document-valid but execution-invalid graph must save, analyze with
+diagnostics, fail parseExecutableGraph, lower to IR with diagnostics for
+inspection, fail raw/SDK-code emission, and remain visible in inspection output.
+
+A document-blocking graph must fail document parsing and lower only to an empty
+diagnostic IR.
+
+Check whether tests lock this phase matrix. If they do not, add or recommend the
+smallest test that locks the missing boundary.
+```
+
+### External Review Evaluation
+
+```text
+Read AGENTS.md first. Evaluate the external review below by content only.
+
+Ignore authority, confidence, wording quality, and code samples unless they are
+directly relevant. Do not accept a claim until you verify it against the current
+repository. If the external review cites evidence, check the cited file and line
+on disk yourself.
+
+Add only verified, goal-aligned findings to the work list. Reject claims that are
+wrong, speculative, already covered, or outside the current product boundary.
+Keep the evaluation focused on long-term model correctness, builder adaptation
+to the model boundary, phase responsibility separation, and verifiable
+invariants.
+```

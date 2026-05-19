@@ -50,6 +50,7 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
   const { source: srcH, target: tgtH } = extractHandles(props);
 
   const edgeData = props.data as RFEdgeData | undefined;
+  const diagnosticCount = edgeData?.editorDiagnostics?.length ?? 0;
 
   const srcType = parseHandleTypeSuffix(srcH).typeStr;
   const tgtType = parseHandleTypeSuffix(tgtH).typeStr;
@@ -60,14 +61,23 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
     <BaseEdge
       id={id}
       path={d}
-      className={`ptb-io-edge ptb-io-edge--${cat}${selected ? ' is-selected' : ''}`}
+      className={[
+        'ptb-io-edge',
+        `ptb-io-edge--${cat}`,
+        selected ? 'is-selected' : '',
+        diagnosticCount > 0 ? 'has-editor-diagnostics' : '',
+      ].join(' ')}
       interactionWidth={20}
       style={{
         fill: 'none',
         vectorEffect: 'non-scaling-stroke',
         cursor: 'pointer',
       }}
-      aria-label="io-edge"
+      aria-label={
+        diagnosticCount > 0
+          ? `io-edge with ${diagnosticCount} diagnostics`
+          : 'io-edge'
+      }
       data-edge-id={id}
     />
   );

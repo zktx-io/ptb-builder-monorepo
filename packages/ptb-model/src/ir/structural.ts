@@ -1,7 +1,8 @@
 import {
   assertNoErrors,
-  errorDiagnostic,
   freezeDiagnostics,
+  isGraphDiagnostic,
+  errorDiagnostic as modelDiagnostic,
 } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import type { TransactionIR } from './types.js';
@@ -13,6 +14,14 @@ import {
   NULL_VALUE,
 } from '../utils.js';
 
+function irDiagnostic(
+  code: string,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, 'semantic', message, path);
+}
+
 declare const STRUCTURAL_TRANSACTION_IR_BRAND: unique symbol;
 
 export type StructuralTransactionIR = TransactionIR & {
@@ -23,6 +32,53 @@ const structuralTransactionIRs = new WeakSet<object>();
 const STRUCTURAL_IGNORED_DIAGNOSTIC_CODES = new Set([
   'ir.input.unsupported',
   'ir.command.unsupported',
+]);
+export const STRUCTURAL_IGNORED_RAW_SOURCE_DIAGNOSTIC_CODES = new Set([
+  'raw.argument',
+  'raw.argument.array',
+  'raw.argument.input',
+  'raw.argument.input.type',
+  'raw.argument.nestedResult',
+  'raw.argument.result',
+  'raw.argument.unknownField',
+  'raw.argument.unsupported',
+  'raw.base64Bytes',
+  'raw.command',
+  'raw.command.emptyInput',
+  'raw.command.intent',
+  'raw.command.makeMoveVec.type',
+  'raw.command.moveCall.argumentTypes',
+  'raw.command.moveCall.unknownField',
+  'raw.command.payload',
+  'raw.command.unknownField',
+  'raw.command.unsupported',
+  'raw.command.upgrade.package',
+  'raw.enum.conflict',
+  'raw.funds',
+  'raw.funds.payload',
+  'raw.funds.reservation',
+  'raw.funds.typeArg',
+  'raw.funds.unknownField',
+  'raw.funds.withdrawFrom',
+  'raw.input',
+  'raw.input.unknownField',
+  'raw.input.unresolved',
+  'raw.input.unsupported',
+  'raw.moveIdentifier',
+  'raw.moveTypeTag',
+  'raw.moveTypeTagArray',
+  'raw.object',
+  'raw.object.payload',
+  'raw.object.receiving',
+  'raw.object.ref',
+  'raw.object.shared',
+  'raw.object.unknownField',
+  'raw.object.unsupported',
+  'raw.objectId',
+  'raw.objectIdArray',
+  'raw.transaction',
+  'raw.transaction.unknownField',
+  'raw.transaction.version',
 ]);
 
 export function isStructuralTransactionIR(
@@ -78,15 +134,18 @@ export function structuralTransactionIRDiagnostics(
   diagnostics: readonly TransactionDiagnostic[],
 ): readonly TransactionDiagnostic[] {
   return diagnostics.filter(
-    (diagnostic) => !isStructurallyIgnoredDiagnostic(diagnostic.code),
+    (diagnostic) => !isStructurallyIgnoredDiagnostic(diagnostic),
   );
 }
 
-function isStructurallyIgnoredDiagnostic(code: string): boolean {
+function isStructurallyIgnoredDiagnostic(
+  diagnostic: TransactionDiagnostic,
+): boolean {
+  if (isGraphDiagnostic(diagnostic)) return !diagnostic.blocks.document;
+  const { code } = diagnostic;
   return (
     STRUCTURAL_IGNORED_DIAGNOSTIC_CODES.has(code) ||
-    code.startsWith('graph.') ||
-    (code.startsWith('raw.') && !code.startsWith('raw.ir.'))
+    STRUCTURAL_IGNORED_RAW_SOURCE_DIAGNOSTIC_CODES.has(code)
   );
 }
 
@@ -121,7 +180,7 @@ function withPlainDataDiagnostics(
 
   return freezeDiagnostics([
     ...diagnostics,
-    errorDiagnostic(
+    irDiagnostic(
       'ir.plainData',
       `TransactionIR must contain only plain model-owned data. ${issue.message}`,
       issue.path,

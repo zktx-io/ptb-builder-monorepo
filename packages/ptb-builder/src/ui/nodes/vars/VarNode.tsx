@@ -7,8 +7,9 @@ import {
   Position,
   useUpdateNodeInternals,
 } from '@xyflow/react';
-import { NULL_VALUE } from '@zktx.io/ptb-model';
+import { NULL_VALUE, type TransactionDiagnostic } from '@zktx.io/ptb-model';
 
+import { EditorDiagnosticBadge } from '../../EditorDiagnosticBadge';
 import { MiniStepper } from './inputs/MiniStepper';
 import { OptionToggle } from './inputs/OptionToggle';
 import { SelectBool } from './inputs/SelectBool';
@@ -54,6 +55,7 @@ type VectorEditorItem = string | boolean;
 export type VarData = {
   label?: string;
   ptbNode?: PTBNode;
+  editorDiagnostics?: readonly TransactionDiagnostic[];
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
@@ -477,6 +479,7 @@ export const VarNode = memo(function VarNode({
     requestInternals();
   }, [
     rfNodeId,
+    data?.editorDiagnostics?.length,
     vecItems.length,
     hasEditor,
     isVector,
@@ -486,6 +489,7 @@ export const VarNode = memo(function VarNode({
   ]);
 
   const title = (data?.label ?? v?.label ?? '').trim() || 'variable';
+  const hasEditorDiagnostics = (data?.editorDiagnostics?.length ?? 0) > 0;
   const nodeClassName = isOption
     ? `ptb-node--${category} ptb-node--option`
     : `ptb-node--${category}`;
@@ -558,7 +562,10 @@ export const VarNode = memo(function VarNode({
   return (
     <div className={nodeClassName}>
       <div
-        className="ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative"
+        className={[
+          'ptb-node-shell rounded-lg py-2 px-2 border-2 shadow relative',
+          hasEditorDiagnostics ? 'has-editor-diagnostics' : '',
+        ].join(' ')}
         style={{
           minWidth: 140,
           width: isHelper ? NODE_SIZES.Helper.width : NODE_SIZES.Variable.width,
@@ -569,6 +576,7 @@ export const VarNode = memo(function VarNode({
           <div className="flex items-center gap-1 text-xxs text-gray-800 dark:text-gray-200">
             {iconOfVar(v)}
             {title}
+            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
 
           <div className="flex items-center gap-1">

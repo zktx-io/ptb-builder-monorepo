@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
+import type { TransactionDiagnostic } from '@zktx.io/ptb-model';
 
 import type {
   CommandNode,
@@ -28,6 +29,7 @@ import {
   buildResolvedMoveCallState,
   padTypeArguments,
 } from './resolveMoveCall';
+import { EditorDiagnosticBadge } from '../../../EditorDiagnosticBadge';
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
@@ -53,6 +55,7 @@ export type MoveCallData = {
       ports?: Port[];
     },
   ) => void;
+  editorDiagnostics?: readonly TransactionDiagnostic[];
 };
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
@@ -213,7 +216,12 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   return (
     <div className="ptb-node--command">
       <div
-        className="ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative"
+        className={[
+          'ptb-node-shell rounded-lg px-2 py-2 border-2 shadow relative',
+          data?.editorDiagnostics?.length ? 'has-editor-diagnostics' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         style={{ minHeight, width: NODE_SIZES.Command.width }}
       >
         {/* Header */}
@@ -221,6 +229,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
           <div className="flex h-4 items-center gap-1 text-xxs leading-none text-gray-800 dark:text-gray-200 select-none">
             {iconOfCommand('moveCall')}
             {data?.label ?? node?.label ?? 'Move Call'}
+            <EditorDiagnosticBadge diagnostics={data?.editorDiagnostics} />
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 import { pureBcsSchemaFromTypeName, type PureTypeName } from '@mysten/sui/bcs';
 
-import { errorDiagnostic } from './diagnostics.js';
+import { errorDiagnostic as modelDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import { isPTBType } from '../ptbType.js';
 import type { NumericWidth, PTBType } from '../ptbType.js';
@@ -11,6 +11,14 @@ import {
   MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
+
+function pureDiagnostic(
+  code: string,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, 'semantic', message, path);
+}
 
 const U64_MAX = 2n ** 64n - 1n;
 const U128_MAX = 2n ** 128n - 1n;
@@ -102,10 +110,10 @@ export function pureValueDiagnostic(
 ): TransactionDiagnostic | undefined {
   const unsupported = unsupportedPureTypeIssue(inputId, type, typePath);
   if (unsupported) {
-    return errorDiagnostic(code, unsupported.message, unsupported.path);
+    return pureDiagnostic(code, unsupported.message, unsupported.path);
   }
   const issue = describePureValueIssue(inputId, type, value, valuePath);
-  return issue ? errorDiagnostic(code, issue.message, issue.path) : undefined;
+  return issue ? pureDiagnostic(code, issue.message, issue.path) : undefined;
 }
 
 export function isPureValueCompatible(type: PTBType, value: unknown): boolean {
@@ -142,7 +150,7 @@ export function pureBytesTypeHintDiagnostic(
     // Fall through to the canonical BCS diagnostic below.
   }
 
-  return errorDiagnostic(
+  return pureDiagnostic(
     'ir.input.pureBytesType',
     `Pure input ${inputId} raw bytes must be canonical BCS for ${typeName}.`,
     path,

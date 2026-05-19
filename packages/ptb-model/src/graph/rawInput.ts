@@ -1,4 +1,4 @@
-import { errorDiagnostic } from '../ir/diagnostics.js';
+import { graphDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import type {
   RawCallArg,
@@ -48,7 +48,7 @@ export function normalizeGraphRawInput(
   if (value === undefined) return undefined;
   if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.rawInput',
         'PTB graph rawInput must be a canonical raw input object.',
         path,
@@ -69,7 +69,7 @@ export function normalizeGraphRawInput(
         return { kind: 'Pure', bytes };
       }
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.rawInput.pure',
           'PTB graph Pure rawInput bytes must be canonical base64.',
           `${path}.bytes`,
@@ -115,7 +115,7 @@ export function normalizeGraphRawInput(
     }
     default:
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.rawInput.kind',
           `Unsupported PTB graph rawInput kind ${value.kind}.`,
           `${path}.kind`,
@@ -132,7 +132,7 @@ function normalizeGraphRawObject(
 ): RawObjectArg | undefined {
   if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.rawInput.object',
         'PTB graph Object rawInput must contain a canonical raw object argument.',
         path,
@@ -166,7 +166,7 @@ function normalizeGraphRawObject(
         };
       }
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.rawInput.object',
           'PTB graph Object rawInput must contain a canonical raw object argument.',
           path,
@@ -195,7 +195,7 @@ function normalizeGraphRawObject(
         };
       }
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.rawInput.object',
           'PTB graph Object rawInput must contain a canonical raw object argument.',
           path,
@@ -205,7 +205,7 @@ function normalizeGraphRawObject(
     }
     default:
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.rawInput.objectKind',
           `Unsupported PTB graph raw object kind ${value.kind}.`,
           `${path}.kind`,
@@ -222,7 +222,7 @@ function normalizeGraphFundsWithdrawal(
 ): RawFundsWithdrawalArg | undefined {
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.rawInput.fundsWithdrawal',
         'PTB graph FundsWithdrawal rawInput must contain a canonical funds withdrawal value.',
         path,
@@ -274,7 +274,7 @@ function normalizeGraphFundsWithdrawal(
     (withdrawFrom?.kind !== 'Sender' && withdrawFrom?.kind !== 'Sponsor')
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.rawInput.fundsWithdrawal',
         'PTB graph FundsWithdrawal rawInput must contain a canonical funds withdrawal value.',
         path,
@@ -304,7 +304,7 @@ function validateOnlyKeys(
   );
   unknownKeys.forEach((key) => {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.rawInput.unknownField',
         `PTB graph rawInput does not support field ${key}.`,
         `${path}.${key}`,

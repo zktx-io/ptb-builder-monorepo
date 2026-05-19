@@ -1,4 +1,5 @@
 import {
+  errorDiagnostic,
   graphToTransactionIR,
   hasErrors,
   PTBModelError,
@@ -78,13 +79,13 @@ export function renderCodePreview(
     return diagnosticPreview(
       metadata,
       [
-        {
-          code: 'preview.unexpected',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Code preview generation failed.',
-        },
+        errorDiagnostic(
+          'preview.unexpected',
+          'semantic',
+          error instanceof Error
+            ? error.message
+            : 'Code preview generation failed.',
+        ),
       ],
       opts.previousModelCode,
     );

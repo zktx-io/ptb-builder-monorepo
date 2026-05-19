@@ -1,4 +1,4 @@
-import { errorDiagnostic } from '../ir/diagnostics.js';
+import { graphDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
@@ -126,7 +126,7 @@ export function graphMoveCallEvidenceState(
   if (typeArguments.length !== signature.typeParameterCount) {
     if (diagnostics !== undefined && nodePath !== undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
           `PTB graph MoveCall typeArguments length must match signature typeParameterCount ${signature.typeParameterCount}.`,
           `${nodePath}.params.runtime.typeArguments`,
@@ -143,7 +143,7 @@ export function graphMoveCallEvidenceState(
     if (explicitResultCount !== evidenceResultCount) {
       if (diagnostics !== undefined && nodePath !== undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
             `PTB graph MoveCall resultCount ${explicitResultCount} does not match signature returns length ${evidenceResultCount}.`,
             `${nodePath}.params.runtime.resultCount`,

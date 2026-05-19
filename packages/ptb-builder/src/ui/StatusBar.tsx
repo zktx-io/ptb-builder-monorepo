@@ -2,6 +2,10 @@
 import { AlertTriangle, CheckCircle, X, XCircle } from 'lucide-react';
 
 import {
+  type EditorValidationState,
+  editorValidationSummary,
+} from './editorValidationState';
+import {
   isMoveAbortTransaction,
   providerNoticeLabel,
   type ProviderUiState,
@@ -10,10 +14,18 @@ import {
 type Props = {
   transaction?: ProviderUiState['transaction'];
   notice?: ProviderUiState['notice'];
+  editorValidation?: EditorValidationState;
+  editorValidationUnavailable?: string;
   onDismissNotice?: () => void;
 };
 
-export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
+export function StatusBar({
+  transaction,
+  notice,
+  editorValidation,
+  editorValidationUnavailable,
+  onDismissNotice,
+}: Props) {
   const status = transaction?.status;
   const error = transaction?.error;
   const isSuccess = status === 'success';
@@ -32,6 +44,9 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
     bg: 'var(--ptb-status-failure-bg)',
     fg: 'var(--ptb-status-failure-fg)',
   };
+  const validationSummary = editorValidation
+    ? editorValidationSummary(editorValidation)
+    : undefined;
 
   let icon = <XCircle size={12} />;
   let label = `Failed${error ? `: ${error}` : ''}`;
@@ -94,6 +109,46 @@ export function StatusBar({ transaction, notice, onDismissNotice }: Props) {
               <X size={16} strokeWidth={2.25} color="#fff" />
             </button>
           )}
+        </div>
+      )}
+      {validationSummary && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={[
+            'ptb-statusbar',
+            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
+            'rounded-md mx-1 my-1',
+          ].join(' ')}
+          style={{
+            backgroundColor: noticeVars.bg,
+            color: noticeVars.fg,
+          }}
+        >
+          <AlertTriangle size={12} />
+          <span className="whitespace-pre-line break-words max-w-xs select-text">
+            {validationSummary}
+          </span>
+        </div>
+      )}
+      {editorValidationUnavailable && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={[
+            'ptb-statusbar',
+            'inline-flex items-start gap-2 text-xxs px-3 py-1.5',
+            'rounded-md mx-1 my-1',
+          ].join(' ')}
+          style={{
+            backgroundColor: noticeVars.bg,
+            color: noticeVars.fg,
+          }}
+        >
+          <AlertTriangle size={12} />
+          <span className="whitespace-pre-line break-words max-w-xs select-text">
+            {editorValidationUnavailable}
+          </span>
         </div>
       )}
     </div>

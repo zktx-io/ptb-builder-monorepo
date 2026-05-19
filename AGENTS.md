@@ -58,6 +58,7 @@ Current package commands:
 - CLI test source type check: `npm run typecheck:test --workspace @zktx.io/ptb-cli`
 - CLI test: `npm run test --workspace @zktx.io/ptb-cli`
 - Builder build: `cd packages/ptb-builder && npm run build`
+- Builder type check: `cd packages/ptb-builder && npm run typecheck`
 - Builder test: `cd packages/ptb-builder && npm run test`
 - Builder lint: `cd packages/ptb-builder && npm run lint`
 - Example dev: `cd packages/example && npm run dev`

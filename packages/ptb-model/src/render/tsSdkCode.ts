@@ -1,7 +1,8 @@
 import {
   assertNoErrors,
-  errorDiagnostic,
+  existingGraphDiagnostics,
   hasErrors,
+  errorDiagnostic as modelDiagnostic,
   PTBModelError,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
@@ -20,6 +21,14 @@ import type {
 import { validateTransactionIR } from '../ir/validate.js';
 import type { RawFundsWithdrawalArg } from '../raw/types.js';
 import { jsonStringifyWithBigInt } from '../utils.js';
+
+function renderDiagnostic(
+  code: string,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, 'semantic', message, path);
+}
 
 const TS_CODE_UNSAFE_LITERAL_CHAR =
   /[\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g;
@@ -129,6 +138,9 @@ export function validateTsSdkRenderableIR(
   ir: TransactionIR,
 ): readonly TransactionDiagnostic[] {
   const diagnostics = [
+    ...existingGraphDiagnostics(ir).filter(
+      (diagnostic) => diagnostic.blocks.execution,
+    ),
     ...(isStructuralTransactionIR(ir)
       ? []
       : validateTransactionIR(ir, {
@@ -147,7 +159,7 @@ export function validateTsSdkRenderableIR(
       case 'Object':
         if (!input.object) {
           diagnostics.push(
-            errorDiagnostic(
+            renderDiagnostic(
               'codegen.input.object',
               `Object input ${input.id} requires a resolved object reference for TS SDK code generation.`,
               `$.inputs[${index}].object`,
@@ -158,7 +170,7 @@ export function validateTsSdkRenderableIR(
       case 'FundsWithdrawal':
         if (input.value.withdrawFrom.kind !== 'Sender') {
           diagnostics.push(
-            errorDiagnostic(
+            renderDiagnostic(
               'codegen.input.fundsWithdrawalSponsor',
               'Sponsor FundsWithdrawal cannot be rendered with the public @mysten/sui Transaction helper surface.',
               `$.inputs[${index}].value.withdrawFrom`,
@@ -168,7 +180,7 @@ export function validateTsSdkRenderableIR(
         return;
       case 'Unsupported':
         diagnostics.push(
-          errorDiagnostic(
+          renderDiagnostic(
             'codegen.input.unsupported',
             `Unsupported input ${input.id} cannot be rendered to TS SDK code.`,
             `$.inputs[${index}]`,
@@ -181,7 +193,7 @@ export function validateTsSdkRenderableIR(
   ir.commands.forEach((command, index) => {
     if (command.kind !== 'Unsupported') return;
     diagnostics.push(
-      errorDiagnostic(
+      renderDiagnostic(
         'codegen.command.unsupported',
         `Unsupported command ${command.id} cannot be rendered to TS SDK code.`,
         `$.commands[${index}]`,
@@ -355,7 +367,7 @@ function throwTsSdkCodeError(
   path: string,
 ): never {
   throw new PTBModelError('TransactionIR cannot be rendered to TS SDK code.', [
-    errorDiagnostic(code, message, path),
+    renderDiagnostic(code, message, path),
   ]);
 }
 

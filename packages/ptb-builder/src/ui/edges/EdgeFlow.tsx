@@ -11,6 +11,8 @@ import { memo, useMemo } from 'react';
 
 import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
+import type { RFEdgeData } from '../../ptb/ptbAdapter';
+
 export const EdgeFlow = memo(function EdgeFlow(props: EdgeProps) {
   const {
     id,
@@ -35,19 +37,29 @@ export const EdgeFlow = memo(function EdgeFlow(props: EdgeProps) {
       }),
     [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition],
   );
+  const edgeData = props.data as RFEdgeData | undefined;
+  const diagnosticCount = edgeData?.editorDiagnostics?.length ?? 0;
 
   return (
     <BaseEdge
       id={id}
       path={d}
-      className={`ptb-flow-edge${selected ? ' is-selected' : ''}`}
+      className={[
+        'ptb-flow-edge',
+        selected ? 'is-selected' : '',
+        diagnosticCount > 0 ? 'has-editor-diagnostics' : '',
+      ].join(' ')}
       interactionWidth={24}
       style={{
         fill: 'none',
         vectorEffect: 'non-scaling-stroke',
         cursor: 'pointer',
       }}
-      aria-label="flow-edge"
+      aria-label={
+        diagnosticCount > 0
+          ? `flow-edge with ${diagnosticCount} diagnostics`
+          : 'flow-edge'
+      }
       data-edge-id={id}
     />
   );

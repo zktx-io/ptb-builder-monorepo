@@ -1,9 +1,16 @@
 export {
+  errorDiagnostic,
   freezeDiagnostics,
   hasErrors,
+  isGraphDiagnostic,
   PTBModelError,
 } from './ir/diagnostics.js';
-export type { TransactionDiagnostic } from './ir/diagnostics.js';
+export type {
+  DiagnosticBlocks,
+  DiagnosticCategory,
+  GraphDiagnostic,
+  TransactionDiagnostic,
+} from './ir/diagnostics.js';
 
 export {
   detectPTBDocVersion,
@@ -31,8 +38,13 @@ export type {
   StartNode,
   VariableNode,
 } from './graph/types.js';
-export { validatePTBGraph } from './graph/types.js';
-export type { ValidatePTBGraphOptions } from './graph/types.js';
+export { analyzePTBGraph, parseExecutableGraph } from './graph/types.js';
+export type {
+  AnalyzePTBGraphOptions,
+  ExecutablePTBGraph,
+  ParseExecutableGraphOptions,
+  PTBGraphAnalysis,
+} from './graph/types.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export {
   isPTBType,

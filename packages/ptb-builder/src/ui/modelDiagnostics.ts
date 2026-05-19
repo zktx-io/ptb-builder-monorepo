@@ -94,9 +94,17 @@ export function formatModelDiagnosticLine(diagnostic: DiagnosticLike): string {
 function formatModelDiagnostics(
   diagnostics: readonly DiagnosticLike[],
 ): string {
-  return displayModelDiagnostics(diagnostics)
-    .map(formatModelDiagnostic)
-    .join(' ');
+  const display = displayModelDiagnostics(diagnostics);
+  const first = display[0];
+  if (!first) return '';
+
+  const message = formatModelDiagnostic(first);
+  const remaining = display.length - 1;
+  if (remaining <= 0) return message;
+
+  const suffix =
+    remaining === 1 ? '1 more diagnostic.' : `${remaining} more diagnostics.`;
+  return `${message} ${suffix}`;
 }
 
 export function formatModelErrorMessage(

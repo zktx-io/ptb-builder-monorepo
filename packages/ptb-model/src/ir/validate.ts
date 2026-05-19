@@ -1,4 +1,9 @@
-import { errorDiagnostic, freezeDiagnostics } from './diagnostics.js';
+import {
+  freezeDiagnostics,
+  isCanonicalDiagnosticShape,
+  isGraphDiagnostic,
+  errorDiagnostic as modelDiagnostic,
+} from './diagnostics.js';
 import type { TransactionDiagnostic } from './diagnostics.js';
 import {
   isNonNegativeSafeInteger,
@@ -9,8 +14,8 @@ import { pureBytesTypeHintDiagnostic, pureValueDiagnostic } from './pure.js';
 import { isIRArgRef } from './types.js';
 import type { IRArgRef, IRCommand, IRInput, TransactionIR } from './types.js';
 import {
-  isMovePackageSignatureEvidence,
   lookupMoveSignatureEvidence,
+  normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
 import type {
   MoveFunctionSignatureEvidence,
@@ -41,6 +46,14 @@ import {
   NULL_VALUE,
 } from '../utils.js';
 import type { PlainDataIssue } from '../utils.js';
+
+function irDiagnostic(
+  code: string,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, 'semantic', message, path);
+}
 
 const TRANSACTION_IR_KEYS = [
   'version',
@@ -152,14 +165,14 @@ export function validateTransactionIR(
     options.includeExistingDiagnostics ?? false;
   const includeUnsupportedDiagnostics =
     options.includeUnsupportedDiagnostics ?? true;
-  const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
-    ? options.moveSignatures
-    : undefined;
+  const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
+    options.moveSignatures,
+  );
   const diagnostics: TransactionDiagnostic[] = [];
 
   if (!isRecord(value)) {
     diagnostics.push(
-      errorDiagnostic('ir.invalid', 'TransactionIR must be an object.', '$'),
+      irDiagnostic('ir.invalid', 'TransactionIR must be an object.', '$'),
     );
     return freezeDiagnostics(diagnostics);
   }
@@ -190,7 +203,7 @@ export function validateTransactionIR(
       }
 
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.diagnostic',
           `TransactionIR diagnostic ${index} is malformed.`,
           `$.diagnostics[${index}]`,
@@ -199,7 +212,7 @@ export function validateTransactionIR(
     });
   } else {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.diagnostics',
         'TransactionIR diagnostics must be a dense array.',
         '$.diagnostics',
@@ -209,7 +222,7 @@ export function validateTransactionIR(
 
   if (value.version !== 'transaction_ir_1') {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.version',
         'TransactionIR version must be transaction_ir_1.',
         '$.version',
@@ -224,7 +237,7 @@ export function validateTransactionIR(
 
   if (!inputsAreDense) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.inputs',
         'TransactionIR inputs must be a dense array.',
         '$.inputs',
@@ -234,7 +247,7 @@ export function validateTransactionIR(
 
   if (!commandsAreDense) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.commands',
         'TransactionIR commands must be a dense array.',
         '$.commands',
@@ -263,7 +276,7 @@ export function validateTransactionIR(
 
     if (input.kind === 'Unsupported' && includeUnsupportedDiagnostics) {
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.input.unsupported',
           `Input ${index} has unsupported source kind ${input.sourceKind}.`,
           `$.inputs[${index}]`,
@@ -298,7 +311,7 @@ export function validateTransactionIR(
         return;
       }
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.command.unsupported',
           `Command ${commandIndex} has unsupported source kind ${command.sourceKind}.`,
           `$.commands[${commandIndex}]`,
@@ -336,15 +349,7 @@ export function validateTransactionIR(
 function isTransactionDiagnosticShape(
   value: unknown,
 ): value is TransactionDiagnostic {
-  return (
-    isRecord(value) &&
-    typeof value.code === 'string' &&
-    typeof value.message === 'string' &&
-    (value.path === undefined || typeof value.path === 'string') &&
-    Object.keys(value).every(
-      (key) => key === 'code' || key === 'message' || key === 'path',
-    )
-  );
+  return isCanonicalDiagnosticShape(value);
 }
 
 function validateUniqueIds(
@@ -363,7 +368,7 @@ function validateUniqueIds(
       return;
     }
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         `ir.${label}.duplicateId`,
         `TransactionIR ${label} id ${item.id} is duplicated; first occurrence is at index ${firstIndex}.`,
         `${path}[${index}].id`,
@@ -382,7 +387,7 @@ function validateNonEmptyId(
   if (value.length > 0) return true;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       `ir.${label}.id`,
       `TransactionIR ${label} ${index} requires a non-empty id string.`,
       path,
@@ -407,7 +412,7 @@ function validateCanonicalRawField(
   );
   if (plainDataIssue) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         `ir.${label}.canonicalRaw`,
         `TransactionIR ${label} ${index} canonicalRaw must be plain data owned by TransactionIR. ${plainDataIssue.message}`,
         plainDataIssue.path,
@@ -421,7 +426,7 @@ function validateCanonicalRawField(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       `ir.${label}.canonicalRaw`,
       expected === undefined
         ? `TransactionIR ${label} ${index} cannot carry canonicalRaw because this ${label} does not represent a canonical raw PTB payload.`
@@ -435,7 +440,7 @@ function validateCanonicalRawField(
 function transactionIRPlainDataDiagnostic(
   issue: PlainDataIssue,
 ): TransactionDiagnostic {
-  return errorDiagnostic(
+  return irDiagnostic(
     'ir.plainData',
     `TransactionIR must contain only plain model-owned data. ${issue.message}`,
     issue.path,
@@ -454,7 +459,7 @@ function isIRInputShape(
     typeof value.kind !== 'string'
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.input',
         `Input ${inputIndex} is not a supported TransactionIR input.`,
         path,
@@ -488,7 +493,7 @@ function isIRInputShape(
           const bytes = value.bytes;
           if (Object.prototype.hasOwnProperty.call(value, 'value')) {
             diagnostics.push(
-              errorDiagnostic(
+              irDiagnostic(
                 'ir.input.pureRedundant',
                 `Pure input ${inputIndex} must choose raw bytes or a typed pure value, not both.`,
                 path,
@@ -518,7 +523,7 @@ function isIRInputShape(
             );
           }
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.input.pure',
               `Pure input ${inputIndex} bytes must be base64-decodable base64 bytes when provided.`,
               `${path}.bytes`,
@@ -528,7 +533,7 @@ function isIRInputShape(
         }
         if (!Object.prototype.hasOwnProperty.call(value, 'value')) {
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.input.pureValue',
               `Pure input ${inputIndex} requires an explicit typed value when raw bytes are absent.`,
               path,
@@ -538,7 +543,7 @@ function isIRInputShape(
         }
         if (value.value === undefined) {
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.input.pureValue',
               `Pure input ${inputIndex} must use null for None values; undefined is not canonical.`,
               `${path}.value`,
@@ -548,7 +553,7 @@ function isIRInputShape(
         }
         if (inputType === undefined) {
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.input.pureType',
               `Pure input ${inputIndex} requires an explicit type when raw bytes are absent.`,
               `${path}.type`,
@@ -585,7 +590,7 @@ function isIRInputShape(
         (!isRecord(value.type) || value.type.kind !== 'object')
       ) {
         diagnostics.push(
-          errorDiagnostic(
+          irDiagnostic(
             'ir.input.objectType',
             `Object input ${inputIndex} type hint must be an object PTB type when present.`,
             `${path}.type`,
@@ -604,7 +609,7 @@ function isIRInputShape(
           );
         }
         diagnostics.push(
-          errorDiagnostic(
+          irDiagnostic(
             'ir.input.object',
             `Object input ${inputIndex} has an invalid object argument.`,
             `${path}.object`,
@@ -631,7 +636,7 @@ function isIRInputShape(
         );
       }
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.input.fundsWithdrawal',
           `FundsWithdrawal input ${inputIndex} has an invalid value payload.`,
           `${path}.value`,
@@ -651,7 +656,7 @@ function isIRInputShape(
         return true;
       }
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.input.unsupportedShape',
           `Unsupported input ${inputIndex} requires a sourceKind string.`,
           `${path}.sourceKind`,
@@ -660,7 +665,7 @@ function isIRInputShape(
       return false;
     default:
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.input.kind',
           `Unsupported TransactionIR input kind ${value.kind}.`,
           `${path}.kind`,
@@ -694,7 +699,7 @@ function validateUnsupportedPayload(
   if (!issue) return;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       `ir.${ownerKind}.unsupportedValue`,
       `Unsupported ${ownerKind} ${ownerIndex} value must be plain data owned by TransactionIR. ${issue.message}`,
       issue.path,
@@ -713,7 +718,7 @@ function isIRCommandShape(
     typeof value.kind !== 'string'
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command',
         `Command ${commandIndex} is not a supported TransactionIR command.`,
         `$.commands[${commandIndex}]`,
@@ -939,7 +944,7 @@ function isIRCommandShape(
         value.elements.length === 0
       ) {
         diagnostics.push(
-          errorDiagnostic(
+          irDiagnostic(
             'ir.command.emptyInput',
             `Command ${commandIndex} MakeMoveVec elements must not be empty when type is null.`,
             `$.commands[${commandIndex}].elements`,
@@ -1017,7 +1022,7 @@ function isIRCommandShape(
       return true;
     default:
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.command.kind',
           `Unsupported TransactionIR command kind ${value.kind}.`,
           `$.commands[${commandIndex}].kind`,
@@ -1036,7 +1041,7 @@ function requireString(
   if (typeof value === 'string') return true;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.field',
       `Command ${commandIndex} requires string field ${key}.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1056,7 +1061,7 @@ function requireMoveIdentifier(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.moveIdentifier',
       `Command ${commandIndex} field ${key} must be a valid Move identifier.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1076,7 +1081,7 @@ function requireObjectId(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.objectId',
       `Command ${commandIndex} field ${key} must be a normalized Sui object ID.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1093,7 +1098,7 @@ function requireMoveTypeTagArray(
 ): boolean {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.moveTypeTagArray',
         `Command ${commandIndex} requires Move type tag array field ${key}.`,
         `$.commands[${commandIndex}].${key}`,
@@ -1107,7 +1112,7 @@ function requireMoveTypeTagArray(
     if (typeof item === 'string' && parseMoveTypeTag(item) === item) return;
     valid = false;
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.moveTypeTag',
         `Command ${commandIndex} field ${key} item ${index} must be a canonical Move type tag string.`,
         `$.commands[${commandIndex}].${key}[${index}]`,
@@ -1128,7 +1133,7 @@ function requireOptionalMoveCallArgumentTypes(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.argumentTypes',
       `Command ${commandIndex} field ${key} must match the SDK OpenSignature array schema or null when provided.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1148,7 +1153,7 @@ function validateMoveCallArgumentTypesLength(
   if (argumentTypes.length === args.length) return true;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.argumentTypesLength',
       `Command ${commandIndex} _argumentTypes length must match arguments length.`,
       `$.commands[${commandIndex}]._argumentTypes`,
@@ -1177,7 +1182,7 @@ function moveCallEvidenceState(
     command.typeArguments.length === signature.typeParameterCount;
   if (!typeArgumentsValid) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.moveCall.typeArgumentsCount',
         `MoveCall command ${commandIndex} typeArguments length must match signature typeParameterCount ${signature.typeParameterCount}.`,
         `$.commands[${commandIndex}].typeArguments`,
@@ -1198,7 +1203,7 @@ function moveCallEvidenceState(
 
     if (explicitResultCount !== evidenceResultCount) {
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.command.moveCall.resultCountMismatch',
           `MoveCall command ${commandIndex} resultCount ${explicitResultCount} does not match signature returns length ${evidenceResultCount}.`,
           `$.commands[${commandIndex}].resultCount`,
@@ -1226,7 +1231,7 @@ function requireObjectIdArray(
 ): boolean {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.field',
         `Command ${commandIndex} requires Sui object ID array field ${key}.`,
         `$.commands[${commandIndex}].${key}`,
@@ -1240,7 +1245,7 @@ function requireObjectIdArray(
     if (typeof item === 'string' && parseObjectId(item) === item) return;
     valid = false;
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.objectId',
         `Command ${commandIndex} field ${key} item ${index} must be a normalized Sui object ID.`,
         `$.commands[${commandIndex}].${key}[${index}]`,
@@ -1259,7 +1264,7 @@ function requireBase64StringArray(
 ): boolean {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.field',
         `Command ${commandIndex} requires base64-decodable base64 string array field ${key}.`,
         `$.commands[${commandIndex}].${key}`,
@@ -1273,7 +1278,7 @@ function requireBase64StringArray(
     if (typeof item === 'string' && parseBase64Bytes(item) === item) return;
     valid = false;
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.base64Bytes',
         `Command ${commandIndex} field ${key} item ${index} must be base64-decodable base64 bytes.`,
         `$.commands[${commandIndex}].${key}[${index}]`,
@@ -1297,7 +1302,7 @@ function requireNonEmptyBase64StringArray(
   if (value.length > 0) return true;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.emptyInput',
       `Command ${commandIndex} field ${key} must not be empty.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1318,7 +1323,7 @@ function requireNullableMoveTypeTag(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.moveTypeTag',
       `Command ${commandIndex} field ${key} must be a canonical Move type tag string or null.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1335,7 +1340,7 @@ function requireArgArray(
 ): boolean {
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.field',
         `Command ${commandIndex} requires argument array field ${key}.`,
         `$.commands[${commandIndex}].${key}`,
@@ -1370,7 +1375,7 @@ function requireNonEmptyArgArray(
   if (value.length > 0) return true;
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.emptyInput',
       `Command ${commandIndex} field ${key} must not be empty.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1396,7 +1401,7 @@ function requireArgRef(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.field',
       `Command ${commandIndex} requires argument field ${key}.`,
       `$.commands[${commandIndex}].${key}`,
@@ -1519,7 +1524,7 @@ function validateMakeMoveVecElementTypes(
     if (ptbTypesExactlyMatch(actualType, expectedType)) return;
 
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.makeMoveVec.elementTypeMismatch',
         `Command ${commandIndex} MakeMoveVec element ${index} type ${describePTBType(actualType)} must match explicit element type ${describePTBType(expectedType)}.`,
         `$.commands[${commandIndex}].elements[${index}]`,
@@ -1630,7 +1635,7 @@ function validateArgRefShape(
 ): value is IRArgRef {
   if (!isRecord(value) || typeof value.kind !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg',
         'TransactionIR argument reference must be an object with a kind.',
         path,
@@ -1655,7 +1660,7 @@ function validateArgRefShape(
       break;
     default:
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           'ir.arg.kind',
           `Unsupported TransactionIR argument reference kind ${value.kind}.`,
           `${path}.kind`,
@@ -1666,7 +1671,7 @@ function validateArgRefShape(
 
   if (!isIRArgRef(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg',
         'TransactionIR argument reference has an invalid shape.',
         path,
@@ -1681,7 +1686,7 @@ function validateArgRefShape(
     !isRawInputArgumentType(value.type)
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.type',
         'TransactionIR Input argument type metadata must be pure, object, or withdrawal when present.',
         `${path}.type`,
@@ -1709,7 +1714,7 @@ function validateArgRef(
     case 'Input':
       if (!isU16Index(arg.index) || arg.index >= ir.inputs.length) {
         diagnostics.push(
-          errorDiagnostic(
+          irDiagnostic(
             'ir.arg.input',
             `Input reference ${arg.index} must be a u16 index within the input list.`,
             path,
@@ -1722,7 +1727,7 @@ function validateArgRef(
         const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
         if (actual === undefined || arg.type !== actual) {
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.arg.typeMismatch',
               `Input reference ${arg.index} type metadata ${arg.type} does not match the referenced ${ir.inputs[arg.index]?.kind ?? 'unknown'} input.`,
               `${path}.type`,
@@ -1734,7 +1739,7 @@ function validateArgRef(
         const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
         if (actual === undefined || actual !== expectedInputType) {
           diagnostics.push(
-            errorDiagnostic(
+            irDiagnostic(
               'ir.arg.semanticType',
               `Input reference ${arg.index} must refer to a ${expectedInputType} input for this command argument.`,
               path,
@@ -1752,7 +1757,7 @@ function validateArgRef(
             !ptbTypeSatisfiesExpectation(input.type, expectedPureType)
           ) {
             diagnostics.push(
-              errorDiagnostic(
+              irDiagnostic(
                 'ir.arg.pureType',
                 `Input reference ${arg.index} must use ${describePTBType(expectedPureType)} for this command argument.`,
                 path,
@@ -2010,7 +2015,7 @@ function validateResultRef(
     targetCommandIndex >= ir.commands.length
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.result',
         `Result reference ${targetCommandIndex} must be a u16 index within the command list.`,
         path,
@@ -2021,7 +2026,7 @@ function validateResultRef(
 
   if (targetCommandIndex >= currentCommandIndex) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.futureResult',
         `Result reference ${targetCommandIndex} is not available before command ${currentCommandIndex}.`,
         path,
@@ -2042,7 +2047,7 @@ function validateResultRef(
     normalizedNestedResultIndex === undefined
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.nestedResult',
         `Nested result ${String(nestedResultIndex)} must be a u16 index.`,
         path,
@@ -2063,7 +2068,7 @@ function validateResultRef(
     resultCount > MAX_RESULT_COUNT
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.resultCount',
         `Command ${targetCommandIndex} resultCount must be a non-negative safe integer no greater than ${MAX_RESULT_COUNT}.`,
         `$.commands[${targetCommandIndex}].resultCount`,
@@ -2074,7 +2079,7 @@ function validateResultRef(
 
   if (resultCount <= 0) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.noResult',
         `Command ${targetCommandIndex} does not produce a usable result.`,
         path,
@@ -2085,7 +2090,7 @@ function validateResultRef(
 
   if (normalizedNestedResultIndex === undefined && resultCount !== 1) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.resultArity',
         `Result reference ${targetCommandIndex} requires a command with exactly one result; use NestedResult for ${resultCount} results.`,
         path,
@@ -2099,7 +2104,7 @@ function validateResultRef(
     normalizedNestedResultIndex >= resultCount
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.arg.nestedResult',
         `Nested result ${normalizedNestedResultIndex} must be within command ${targetCommandIndex} results.`,
         path,
@@ -2119,7 +2124,7 @@ function validateCommandResultCount(
     if (command.kind === 'MoveCall') return;
 
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.resultCount',
         `Command ${commandIndex} resultCount is required for ${commandKind}.`,
         `$.commands[${commandIndex}].resultCount`,
@@ -2133,7 +2138,7 @@ function validateCommandResultCount(
     resultCount > MAX_RESULT_COUNT
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      irDiagnostic(
         'ir.command.resultCount',
         `Command ${commandIndex} resultCount must be a non-negative safe integer no greater than ${MAX_RESULT_COUNT}.`,
         `$.commands[${commandIndex}].resultCount`,
@@ -2151,7 +2156,7 @@ function validateCommandResultCount(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    irDiagnostic(
       'ir.command.resultCount',
       `Command ${commandIndex} resultCount must be ${expectedResultCount} for ${command.kind}.`,
       `$.commands[${commandIndex}].resultCount`,
@@ -2185,8 +2190,12 @@ function uniqueDiagnostics(
   diagnostics.forEach((diagnostic) => {
     const key = [
       diagnostic.code,
+      diagnostic.category,
       diagnostic.path ?? '',
       diagnostic.message,
+      isGraphDiagnostic(diagnostic)
+        ? `${diagnostic.blocks.document}:${diagnostic.blocks.execution}`
+        : '',
     ].join('\u0000');
     if (seen.has(key)) return;
     seen.add(key);
@@ -2240,7 +2249,7 @@ function validateUnknownFields(
     .filter((key) => !allowedKeys.includes(key))
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
+        irDiagnostic(
           code,
           `${label} does not support field ${key}.`,
           `${path}.${key}`,

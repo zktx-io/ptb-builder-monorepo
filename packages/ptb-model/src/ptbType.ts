@@ -1,3 +1,5 @@
+import { graphDiagnostic } from './graph/diagnostics.js';
+import type { GraphDiagnosticCode } from './graph/diagnostics.js';
 import { errorDiagnostic, freezeDiagnostics } from './ir/diagnostics.js';
 import type { TransactionDiagnostic } from './ir/diagnostics.js';
 import { isKnownNonObjectStructTypeTag } from './move/structTypeTags.js';
@@ -52,19 +54,40 @@ const TYPE_KEYS_BY_KIND = {
 } as const satisfies Record<(typeof PTB_TYPE_KINDS)[number], readonly string[]>;
 
 interface PTBTypeDiagnosticContext {
-  codePrefix: string;
+  codeFamily: 'ptb' | 'graph';
   label: string;
 }
 
 const DEFAULT_TYPE_CONTEXT: PTBTypeDiagnosticContext = {
-  codePrefix: 'ptb.type',
+  codeFamily: 'ptb',
   label: 'PTB type',
 };
 
 const GRAPH_TYPE_CONTEXT: PTBTypeDiagnosticContext = {
-  codePrefix: 'graph.type',
+  codeFamily: 'graph',
   label: 'PTB graph type',
 };
+
+const TYPE_DIAGNOSTIC_CODES = {
+  base: { ptb: 'ptb.type', graph: 'graph.type' },
+  depth: { ptb: 'ptb.type.depth', graph: 'graph.type.depth' },
+  cycle: { ptb: 'ptb.type.cycle', graph: 'graph.type.cycle' },
+  kind: { ptb: 'ptb.type.kind', graph: 'graph.type.kind' },
+  scalar: { ptb: 'ptb.type.scalar', graph: 'graph.type.scalar' },
+  numeric: { ptb: 'ptb.type.numeric', graph: 'graph.type.numeric' },
+  tuple: { ptb: 'ptb.type.tuple', graph: 'graph.type.tuple' },
+  object: { ptb: 'ptb.type.object', graph: 'graph.type.object' },
+  unknown: { ptb: 'ptb.type.unknown', graph: 'graph.type.unknown' },
+  unknownField: {
+    ptb: 'ptb.type.unknownField',
+    graph: 'graph.type.unknownField',
+  },
+} as const satisfies Record<
+  string,
+  { readonly ptb: string; readonly graph: GraphDiagnosticCode }
+>;
+type PTBTypeDiagnosticKey = keyof typeof TYPE_DIAGNOSTIC_CODES;
+type PTBTypeDiagnosticSuffix = Exclude<PTBTypeDiagnosticKey, 'base'>;
 
 export function validatePTBType(
   value: unknown,
@@ -126,8 +149,9 @@ function validatePTBTypeShape(
 ): void {
   if (depth > MAX_PTB_TYPE_DEPTH) {
     diagnostics.push(
-      errorDiagnostic(
-        `${context.codePrefix}.depth`,
+      typeDiagnostic(
+        context,
+        'depth',
         `${context.label} nesting must not exceed ${MAX_PTB_TYPE_DEPTH}.`,
         path,
       ),
@@ -137,8 +161,9 @@ function validatePTBTypeShape(
 
   if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
-        context.codePrefix,
+      typeDiagnostic(
+        context,
+        undefined,
         `${context.label} must be an object with a kind.`,
         path,
       ),
@@ -148,8 +173,9 @@ function validatePTBTypeShape(
 
   if (seen.has(value)) {
     diagnostics.push(
-      errorDiagnostic(
-        `${context.codePrefix}.cycle`,
+      typeDiagnostic(
+        context,
+        'cycle',
         `${context.label} must not contain cyclic references.`,
         path,
       ),
@@ -160,8 +186,9 @@ function validatePTBTypeShape(
 
   if (!isOneOf(value.kind, PTB_TYPE_KINDS)) {
     diagnostics.push(
-      errorDiagnostic(
-        `${context.codePrefix}.kind`,
+      typeDiagnostic(
+        context,
+        'kind',
         `Unsupported ${context.label} kind ${value.kind}.`,
         `${path}.kind`,
       ),
@@ -175,8 +202,9 @@ function validatePTBTypeShape(
       validateTypeUnknownFields(value, path, diagnostics, context);
       if (!isOneOf(value.name, PTB_SCALARS)) {
         diagnostics.push(
-          errorDiagnostic(
-            `${context.codePrefix}.scalar`,
+          typeDiagnostic(
+            context,
+            'scalar',
             `Scalar ${context.label} requires a supported name.`,
             `${path}.name`,
           ),
@@ -188,8 +216,9 @@ function validatePTBTypeShape(
       validateTypeUnknownFields(value, path, diagnostics, context);
       if (!isOneOf(value.width, NUMERIC_WIDTHS)) {
         diagnostics.push(
-          errorDiagnostic(
-            `${context.codePrefix}.numeric`,
+          typeDiagnostic(
+            context,
+            'numeric',
             `Move numeric ${context.label} requires a supported width.`,
             `${path}.width`,
           ),
@@ -214,8 +243,9 @@ function validatePTBTypeShape(
       validateTypeUnknownFields(value, path, diagnostics, context);
       if (!isDenseArray(value.elems)) {
         diagnostics.push(
-          errorDiagnostic(
-            `${context.codePrefix}.tuple`,
+          typeDiagnostic(
+            context,
+            'tuple',
             `Tuple ${context.label} requires elems array.`,
             `${path}.elems`,
           ),
@@ -243,8 +273,9 @@ function validatePTBTypeShape(
           parsePTBObjectTypeTagCandidate(value.typeTag) === undefined)
       ) {
         diagnostics.push(
-          errorDiagnostic(
-            `${context.codePrefix}.object`,
+          typeDiagnostic(
+            context,
+            'object',
             `Object ${context.label} typeTag must be a PTB object type-tag candidate when present; primitives, vectors, and known non-object structs are not object candidates.`,
             `${path}.typeTag`,
           ),
@@ -259,8 +290,9 @@ function validatePTBTypeShape(
         typeof value.debugInfo !== 'string'
       ) {
         diagnostics.push(
-          errorDiagnostic(
-            `${context.codePrefix}.unknown`,
+          typeDiagnostic(
+            context,
+            'unknown',
             `Unknown ${context.label} debugInfo must be a string when present.`,
             `${path}.debugInfo`,
           ),
@@ -284,13 +316,33 @@ function validateTypeUnknownFields(
     .filter((key) => !allowedKeys.includes(key))
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
-          `${context.codePrefix}.unknownField`,
+        typeDiagnostic(
+          context,
+          'unknownField',
           `${context.label} does not support field ${key}.`,
           `${path}.${key}`,
         ),
       );
     });
+}
+
+function typeDiagnostic(
+  context: PTBTypeDiagnosticContext,
+  suffix: PTBTypeDiagnosticSuffix | undefined,
+  message: string,
+  path: string,
+): TransactionDiagnostic {
+  const key = suffix ?? 'base';
+  if (context.codeFamily === 'graph') {
+    return graphDiagnostic(TYPE_DIAGNOSTIC_CODES[key].graph, message, path);
+  }
+
+  return errorDiagnostic(
+    TYPE_DIAGNOSTIC_CODES[key].ptb,
+    'shape',
+    message,
+    path,
+  );
 }
 
 function isOneOf<const T extends readonly string[]>(

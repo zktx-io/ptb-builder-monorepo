@@ -1,4 +1,10 @@
 import {
+  blocksDocument,
+  blocksExecution,
+  graphDiagnostic,
+} from './diagnostics.js';
+import type { GraphDiagnosticCode } from './diagnostics.js';
+import {
   indexedInputHandle,
   indexedInputHandleIndex,
   inputHandle,
@@ -14,12 +20,19 @@ import {
   parseGraphMoveCallTarget,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
-import { errorDiagnostic, freezeDiagnostics } from '../ir/diagnostics.js';
-import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import {
+  assertNoErrors,
+  freezeDiagnostics,
+  isGraphDiagnostic,
+} from '../ir/diagnostics.js';
+import type {
+  GraphDiagnostic,
+  TransactionDiagnostic,
+} from '../ir/diagnostics.js';
 import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
-  isMovePackageSignatureEvidence,
   type MovePackageSignatureEvidence,
+  normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
 import { NUMERIC_WIDTHS, validateGraphPTBTypeInto } from '../ptbType.js';
 import type { NumericWidth, PTBType } from '../ptbType.js';
@@ -30,6 +43,7 @@ import {
   parseObjectId,
 } from '../raw/types.js';
 import {
+  cloneJsonLike,
   findNonPlainData,
   isDenseArray,
   isFiniteNumber,
@@ -135,6 +149,15 @@ export interface PTBGraph {
   edges: PTBEdge[];
 }
 
+declare const EXECUTABLE_PTB_GRAPH_BRAND: unique symbol;
+
+export type ExecutablePTBGraph = PTBGraph & {
+  readonly [EXECUTABLE_PTB_GRAPH_BRAND]: true;
+};
+
+const executableGraphs = new WeakSet<object>();
+const executableGraphFacts = new WeakMap<object, ExecutablePTBGraphFacts>();
+
 const NODE_KINDS = ['Start', 'End', 'Command', 'Variable'] as const;
 const COMMAND_KINDS = [
   'splitCoins',
@@ -214,37 +237,37 @@ interface GraphNodeIndex {
   moveCallEvidence?: GraphMoveCallEvidenceState;
 }
 
-export interface ValidatePTBGraphOptions {
+export interface AnalyzePTBGraphOptions {
   path?: string;
   moveSignatures?: MovePackageSignatureEvidence;
 }
 
-export interface PTBGraphValidationDetails {
+export type ParseExecutableGraphOptions = AnalyzePTBGraphOptions;
+
+export interface PTBGraphAnalysis {
   diagnostics: readonly TransactionDiagnostic[];
   moveCallEvidenceByNodeId: ReadonlyMap<string, GraphMoveCallEvidenceState>;
 }
 
-export function validatePTBGraph(
-  value: unknown,
-  options: ValidatePTBGraphOptions = {},
-): readonly TransactionDiagnostic[] {
-  return validatePTBGraphDetailed(value, options).diagnostics;
+export interface ExecutablePTBGraphFacts {
+  analysis: PTBGraphAnalysis;
+  moveSignatures?: MovePackageSignatureEvidence;
 }
 
-export function validatePTBGraphDetailed(
+export function analyzePTBGraph(
   value: unknown,
-  options: ValidatePTBGraphOptions = {},
-): PTBGraphValidationDetails {
+  options: AnalyzePTBGraphOptions = {},
+): PTBGraphAnalysis {
   const path = options.path ?? '$';
-  const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
-    ? options.moveSignatures
-    : undefined;
+  const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
+    options.moveSignatures,
+  );
   const diagnostics: TransactionDiagnostic[] = [];
   let moveCallEvidenceByNodeId = new Map<string, GraphMoveCallEvidenceState>();
 
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic('graph.invalid', 'PTB graph must be an object.', path),
+      graphDiagnostic('graph.invalid', 'PTB graph must be an object.', path),
     );
     return {
       diagnostics: freezeDiagnostics(diagnostics),
@@ -268,7 +291,7 @@ export function validatePTBGraphDetailed(
 
   if (!nodesAreDense) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.nodes',
         'PTB graph must have dense nodes and edges arrays.',
         `${path}.nodes`,
@@ -282,7 +305,7 @@ export function validatePTBGraphDetailed(
 
   if (!edgesAreDense) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edges',
         'PTB graph must have dense nodes and edges arrays.',
         `${path}.edges`,
@@ -310,6 +333,92 @@ export function validatePTBGraphDetailed(
   };
 }
 
+export function parseExecutableGraph(
+  value: unknown,
+  options: ParseExecutableGraphOptions = {},
+): ExecutablePTBGraph {
+  const analysis = analyzePTBGraph(value, options);
+  assertNoErrors(
+    'PTB graph is not executable.',
+    graphDiagnostics(analysis.diagnostics).filter(blocksExecution),
+  );
+  const graph = cloneJsonLike(value) as PTBGraph;
+  const executable = markExecutablePTBGraph(graph);
+  executableGraphFacts.set(executable, {
+    analysis,
+    moveSignatures: normalizeMovePackageSignatureEvidenceOption(
+      options.moveSignatures,
+    ),
+  });
+  return executable;
+}
+
+export function isExecutablePTBGraph(
+  value: unknown,
+): value is ExecutablePTBGraph {
+  return (
+    typeof value === 'object' &&
+    value !== NULL_VALUE &&
+    Object.isFrozen(value) &&
+    executableGraphs.has(value)
+  );
+}
+
+export function executablePTBGraphFacts(
+  graph: ExecutablePTBGraph,
+): ExecutablePTBGraphFacts | undefined {
+  return executableGraphFacts.get(graph);
+}
+
+export function graphDocumentDiagnostics(
+  diagnostics: readonly TransactionDiagnostic[],
+): readonly GraphDiagnostic[] {
+  return graphDiagnostics(diagnostics).filter(blocksDocument);
+}
+
+export function graphExecutionDiagnostics(
+  diagnostics: readonly TransactionDiagnostic[],
+): readonly GraphDiagnostic[] {
+  return graphDiagnostics(diagnostics).filter(blocksExecution);
+}
+
+function graphDiagnostics(
+  diagnostics: readonly TransactionDiagnostic[],
+): GraphDiagnostic[] {
+  return diagnostics.filter(isGraphDiagnostic);
+}
+
+function markExecutablePTBGraph(graph: PTBGraph): ExecutablePTBGraph {
+  const plainDataIssue = findNonPlainData(graph);
+  if (plainDataIssue) {
+    throw new TypeError(
+      `ExecutablePTBGraph cannot contain non-plain data at ${plainDataIssue.path}.`,
+    );
+  }
+  deepFreezeGraph(graph);
+  executableGraphs.add(graph);
+  return graph as ExecutablePTBGraph;
+}
+
+function deepFreezeGraph(value: unknown): void {
+  const stack: unknown[] = [value];
+  const seen = new WeakSet<object>();
+
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!Array.isArray(item) && !isPlainObject(item)) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+
+    if (Array.isArray(item)) {
+      item.forEach((child) => stack.push(child));
+    } else {
+      Object.values(item).forEach((child) => stack.push(child));
+    }
+    Object.freeze(item);
+  }
+}
+
 function validateNode(
   value: unknown,
   path: string,
@@ -317,14 +426,14 @@ function validateNode(
 ): void {
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic('graph.node', 'PTB graph node must be an object.', path),
+      graphDiagnostic('graph.node', 'PTB graph node must be an object.', path),
     );
     return;
   }
 
   if (typeof value.id !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.node.id',
         'PTB graph node id must be a string.',
         `${path}.id`,
@@ -334,7 +443,7 @@ function validateNode(
 
   if (!isOneOf(value.kind, NODE_KINDS)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.node.kind',
         'PTB graph node kind is not supported.',
         `${path}.kind`,
@@ -354,7 +463,7 @@ function validateNode(
 
   if (!isDenseArray(value.ports)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.node.ports',
         'PTB graph node ports must be a dense array.',
         `${path}.ports`,
@@ -394,7 +503,7 @@ function validateCommandNode(
     : undefined;
   if (commandKind === undefined) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.kind',
         'PTB graph command kind is not supported.',
         `${path}.command`,
@@ -441,7 +550,7 @@ function validateCommandInputPorts(
     const match = commandInputPortMatch(commandKind, port.id);
     if (match === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.inputPort.invalid',
           `PTB graph ${commandKind} command declares non-canonical IO input port ${port.id}. Use the command-specific model input handles only.`,
           `${path}.ports[${portIndex}].id`,
@@ -469,7 +578,7 @@ function validateCommandInputPorts(
         return;
       }
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.inputPort.invalid',
           `PTB graph ${commandKind} command declares sparse IO input port ${port.portId}. Indexed model input handles must be dense from zero.`,
           `${path}.ports[${port.portIndex}].id`,
@@ -536,7 +645,7 @@ function validateVariableNode(
 ): void {
   if (typeof value.name !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.variable.name',
         'PTB graph variable name must be a string.',
         `${path}.name`,
@@ -549,7 +658,7 @@ function validateVariableNode(
     const hasValue = Object.prototype.hasOwnProperty.call(value, 'value');
     if (!hasValue || value.value === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.optionValue',
           !hasValue
             ? 'PTB graph option variables must store None as null; missing value is not canonical.'
@@ -587,7 +696,7 @@ function validateVariableRawInputValue(
   if (rawInput.kind === 'Pure') {
     if (!hasValue) return;
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.variable.rawInputValue',
         'PTB graph Pure rawInput must not also store a typed value.',
         `${path}.value`,
@@ -604,7 +713,7 @@ function validateVariableRawInputValue(
   if (matches) return;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.variable.rawInputValue',
       'PTB graph variable value must match its canonical rawInput payload when both are present.',
       `${path}.value`,
@@ -680,7 +789,7 @@ function validateVariableSourceCompatibility(
   if (semantic?.kind === 'GasCoin') {
     if (rawInput !== undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.sourceConflict',
           'GasCoin semantic variables must not also contain rawInput.',
           `${path}.rawInput`,
@@ -689,7 +798,7 @@ function validateVariableSourceCompatibility(
     }
     if (Object.prototype.hasOwnProperty.call(node, 'value')) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.sourceConflict',
           'GasCoin semantic variables must not also contain a value.',
           `${path}.value`,
@@ -701,7 +810,7 @@ function validateVariableSourceCompatibility(
 
   if (semantic?.kind === 'UnsupportedInput' && rawInput !== undefined) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.variable.sourceConflict',
         'UnsupportedInput semantic variables must not also contain rawInput.',
         `${path}.rawInput`,
@@ -714,7 +823,7 @@ function validateVariableSourceCompatibility(
   if (rawInput.kind === 'Pure') {
     if (!isPureGraphType(varType)) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.rawInputType',
           'Pure rawInput requires a pure-compatible or unknown variable type.',
           `${path}.varType`,
@@ -726,7 +835,7 @@ function validateVariableSourceCompatibility(
   if (rawInput.kind === 'Object') {
     if (varType?.kind !== 'object') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.rawInputType',
           'Object rawInput requires an object variable type.',
           `${path}.varType`,
@@ -737,7 +846,7 @@ function validateVariableSourceCompatibility(
   }
   if (varType?.kind !== 'unknown') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.variable.rawInputType',
         'FundsWithdrawal rawInput requires an unknown variable type.',
         `${path}.varType`,
@@ -772,7 +881,7 @@ function validatePort(
 ): void {
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic('graph.port', 'PTB graph port must be an object.', path),
+      graphDiagnostic('graph.port', 'PTB graph port must be an object.', path),
     );
     return;
   }
@@ -788,7 +897,7 @@ function validatePort(
 
   if (typeof value.id !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.port.id',
         'PTB graph port id must be a string.',
         `${path}.id`,
@@ -796,7 +905,7 @@ function validatePort(
     );
   } else if (!PORT_ID_PATTERN.test(value.id)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.port.id',
         'PTB graph port id must start with an ASCII letter and contain only ASCII letters, digits, and underscores.',
         `${path}.id`,
@@ -806,7 +915,7 @@ function validatePort(
 
   if (!isOneOf(value.direction, PORT_DIRECTIONS)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.port.direction',
         'PTB graph port direction must be in or out.',
         `${path}.direction`,
@@ -816,7 +925,7 @@ function validatePort(
 
   if (!isOneOf(value.role, PORT_ROLES)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.port.role',
         'PTB graph port role must be flow or io.',
         `${path}.role`,
@@ -850,7 +959,7 @@ function validateEdge(
 ): void {
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic('graph.edge', 'PTB graph edge must be an object.', path),
+      graphDiagnostic('graph.edge', 'PTB graph edge must be an object.', path),
     );
     return;
   }
@@ -866,7 +975,7 @@ function validateEdge(
 
   if (typeof value.id !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.id',
         'PTB graph edge id must be a string.',
         `${path}.id`,
@@ -876,7 +985,7 @@ function validateEdge(
 
   if (!isOneOf(value.kind, EDGE_KINDS)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.kind',
         'PTB graph edge kind must be flow or io.',
         `${path}.kind`,
@@ -887,7 +996,7 @@ function validateEdge(
   ['source', 'sourceHandle', 'target', 'targetHandle'].forEach((key) => {
     if (typeof value[key] !== 'string') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.endpoint',
           `PTB graph edge ${key} must be a string.`,
           `${path}.${key}`,
@@ -928,7 +1037,7 @@ function validateFlowTopology(
 
   if (starts.length !== 1) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.flow.start',
         'PTB graph must contain exactly one Start node.',
         `${path}.nodes`,
@@ -937,7 +1046,7 @@ function validateFlowTopology(
   }
   if (ends.length !== 1) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.flow.end',
         'PTB graph must contain exactly one End node.',
         `${path}.nodes`,
@@ -972,7 +1081,7 @@ function validateFlowTopology(
     if (next === undefined || !nodeIds.has(next)) {
       stoppedBeforeEnd = true;
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.flow.path',
           'PTB graph flow must connect Start through commands to End.',
           starts[0].path,
@@ -985,7 +1094,7 @@ function validateFlowTopology(
 
   if (!stoppedBeforeEnd && current !== ends[0].id && visited.has(current)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.flow.cycle',
         'PTB graph flow must not contain a cycle.',
         starts[0].path,
@@ -996,7 +1105,7 @@ function validateFlowTopology(
   commands.forEach((command) => {
     if (visited.has(command.id)) return;
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.flow.disconnected',
         `Command node ${command.id} is not connected to the Start-to-End flow path.`,
         command.path,
@@ -1032,7 +1141,7 @@ function validateGraphReferences(
 
     if (seenNodeIds.has(node.id)) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.node.duplicate',
           `PTB graph node id ${node.id} is duplicated.`,
           `${path}.nodes[${index}].id`,
@@ -1050,7 +1159,7 @@ function validateGraphReferences(
     ) {
       if (seenInputNames.has(node.name)) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.variable.duplicateName',
             `PTB graph variable name ${node.name} is duplicated and would produce a duplicate TransactionIR input id.`,
             `${path}.nodes[${index}].name`,
@@ -1076,7 +1185,7 @@ function validateGraphReferences(
 
       if (seenPortIds.has(port.id)) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.port.duplicate',
             `PTB graph port id ${port.id} is duplicated on node ${node.id}.`,
             `${path}.nodes[${index}].ports[${portIndex}].id`,
@@ -1160,7 +1269,7 @@ function validateGraphReferences(
 
     if (seenEdgeIds.has(edge.id)) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.duplicate',
           `PTB graph edge id ${edge.id} is duplicated.`,
           `${path}.edges[${index}].id`,
@@ -1203,7 +1312,7 @@ function validateGraphReferences(
       }
       if (ioTargets.has(key)) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.edge.duplicateTarget',
             `PTB graph IO target ${key} has more than one incoming edge.`,
             `${path}.edges[${index}].targetHandle`,
@@ -1234,7 +1343,7 @@ function validateGraphReferences(
       const targetKey = edge.target;
       if (flowSources.has(sourceKey)) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.edge.duplicateFlowSource',
             `PTB graph flow source node ${sourceKey} has more than one outgoing edge.`,
             `${path}.edges[${index}].source`,
@@ -1243,7 +1352,7 @@ function validateGraphReferences(
       }
       if (flowTargets.has(targetKey)) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.edge.duplicateFlowTarget',
             `PTB graph flow target node ${targetKey} has more than one incoming edge.`,
             `${path}.edges[${index}].target`,
@@ -1403,7 +1512,7 @@ function validateRequiredCommandInputs(
 
   missing.forEach((handle) => {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.inputMissing',
         `PTB graph ${node.command} command ${node.id} requires an IO edge into ${handle}.`,
         node.path,
@@ -1452,7 +1561,7 @@ function validateDeclaredCommandOutputs(
     }
 
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.outputPort.invalid',
         `PTB graph ${node.command} command declares non-canonical IO output port ${port.id}. Use model output handles such as out_result or out_N only when the command produces those results.`,
         port.path,
@@ -1545,7 +1654,7 @@ function validateEdgeEndpoint(
   const node = nodesById.get(nodeId);
   if (!node) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.node',
         `PTB graph edge references missing node ${nodeId}.`,
         path,
@@ -1557,7 +1666,7 @@ function validateEdgeEndpoint(
   const port = node.ports.get(handleId);
   if (!port) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.handle',
         `PTB graph edge references missing handle ${handleId} on node ${nodeId}.`,
         path,
@@ -1569,7 +1678,7 @@ function validateEdgeEndpoint(
   const expectedDirection: PortDirection = endpoint === 'source' ? 'out' : 'in';
   if (port.direction !== expectedDirection) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.direction',
         `PTB graph edge ${endpoint} handle ${handleId} on node ${nodeId} must be an ${expectedDirection} port.`,
         path,
@@ -1593,7 +1702,7 @@ function validateEdgePortSemantics(
 
   if (source && source.port.role !== edge.kind) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.role',
         `PTB graph edge source handle must be a ${edge.kind} port.`,
         sourcePath,
@@ -1602,7 +1711,7 @@ function validateEdgePortSemantics(
   }
   if (target && target.port.role !== edge.kind) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.role',
         `PTB graph edge target handle must be a ${edge.kind} port.`,
         targetPath,
@@ -1617,7 +1726,7 @@ function validateEdgePortSemantics(
       source.node.kind !== 'Command'
     ) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.flow',
           'PTB graph flow edges must start at Start or Command nodes.',
           sourcePath,
@@ -1630,7 +1739,7 @@ function validateEdgePortSemantics(
       target.node.kind !== 'End'
     ) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.flow',
           'PTB graph flow edges must target Command or End nodes.',
           targetPath,
@@ -1646,7 +1755,7 @@ function validateEdgePortSemantics(
       source.node.kind !== 'Command'
     ) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.io',
           'PTB graph IO edges must start at Variable or Command nodes.',
           sourcePath,
@@ -1655,7 +1764,7 @@ function validateEdgePortSemantics(
     }
     if (target && target.node.kind !== 'Command') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.edge.io',
           'PTB graph IO edges must target Command nodes.',
           targetPath,
@@ -1685,7 +1794,7 @@ function validateOptionalPosition(
     }
   }
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.node.position',
       'PTB graph node position must contain finite numeric x and y when present.',
       path,
@@ -1702,7 +1811,7 @@ function validateCommandParams(
   if (value === undefined) {
     if (commandKind === 'unsupported') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.params.runtime.sourceKind',
           'PTB graph Unsupported command runtime sourceKind must be a string.',
           `${path}.runtime.sourceKind`,
@@ -1713,7 +1822,7 @@ function validateCommandParams(
   }
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.params',
         'PTB graph command params must be an object when present.',
         path,
@@ -1748,7 +1857,7 @@ function validateCommandRuntimeParams(
   if (value === undefined) {
     if (commandKind === 'unsupported') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.params.runtime.sourceKind',
           'PTB graph Unsupported command runtime sourceKind must be a string.',
           `${path}.sourceKind`,
@@ -1759,7 +1868,7 @@ function validateCommandRuntimeParams(
   }
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.params.runtime',
         'PTB graph command runtime params must be an object when present.',
         path,
@@ -1802,7 +1911,7 @@ function validateCommandRuntimeParams(
           parseMoveTypeTag(value.type) === undefined)
       ) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.command.params.runtime.type',
             'PTB graph MakeMoveVec runtime type must be a valid Move type tag or null when present.',
             `${path}.type`,
@@ -1852,7 +1961,7 @@ function validateCommandRuntimeParams(
     case 'unsupported':
       if (typeof value.sourceKind !== 'string') {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.command.params.runtime.sourceKind',
             'PTB graph Unsupported command runtime sourceKind must be a string.',
             `${path}.sourceKind`,
@@ -1886,7 +1995,7 @@ function validatePlainDataField(
   if (!issue) return;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.plainData',
       `${label} must contain only plain model-owned data. ${issue.message}`,
       issue.path,
@@ -1902,7 +2011,7 @@ function validateCommandUIParams(
   if (value === undefined) return;
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.params.ui',
         'PTB graph command UI params must be an object when present.',
         path,
@@ -1938,7 +2047,7 @@ function validateEdgeCast(
   if (value === undefined) return;
   if (!isPlainObject(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.cast',
         'PTB graph edge cast must contain a supported numeric width.',
         path,
@@ -1956,7 +2065,7 @@ function validateEdgeCast(
   );
   if (!isOneOf(value.to, NUMERIC_WIDTHS)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.edge.cast',
         'PTB graph edge cast must contain a supported numeric width.',
         `${path}.to`,
@@ -1968,18 +2077,18 @@ function validateEdgeCast(
 function validateOptionalStringField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined || typeof value === 'string') return;
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateOptionalMoveTypeTagArrayField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
@@ -1990,13 +2099,13 @@ function validateOptionalMoveTypeTagArrayField(
   ) {
     return;
   }
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateOptionalNonEmptyBase64ArrayField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
@@ -2010,13 +2119,13 @@ function validateOptionalNonEmptyBase64ArrayField(
   ) {
     return;
   }
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateOptionalObjectIdArrayField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
@@ -2029,19 +2138,19 @@ function validateOptionalObjectIdArrayField(
   ) {
     return;
   }
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateOptionalObjectIdField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined) return;
   if (typeof value === 'string' && parseObjectId(value) === value) return;
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateMoveCallTargetField(
@@ -2052,7 +2161,7 @@ function validateMoveCallTargetField(
   if (value === undefined) return;
   if (typeof value !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.params.runtime.field',
         'PTB graph MoveCall runtime target must be a string when present.',
         path,
@@ -2064,7 +2173,7 @@ function validateMoveCallTargetField(
   if (parseGraphMoveCallTarget(value).target !== undefined) return;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.params.runtime.target',
       'PTB graph MoveCall runtime target must be canonical package::module::function.',
       path,
@@ -2080,7 +2189,7 @@ function validateOptionalResultCountField(
   if (value === undefined) return;
   if (isNonNegativeSafeInteger(value) && value <= MAX_RESULT_COUNT) return;
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.params.runtime.resultCount',
       `PTB graph MoveCall runtime resultCount must be a non-negative safe integer no greater than ${MAX_RESULT_COUNT} when present.`,
       path,
@@ -2091,7 +2200,7 @@ function validateOptionalResultCountField(
 function validateOptionalNonNegativeIntegerField(
   value: unknown,
   path: string,
-  code: string,
+  code: GraphDiagnosticCode,
   message: string,
   diagnostics: TransactionDiagnostic[],
 ): void {
@@ -2099,13 +2208,13 @@ function validateOptionalNonNegativeIntegerField(
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
     return;
   }
-  diagnostics.push(errorDiagnostic(code, message, path));
+  diagnostics.push(graphDiagnostic(code, message, path));
 }
 
 function validateUnknownFields(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
-  code: string,
+  code: GraphDiagnosticCode,
   path: string,
   label: string,
   diagnostics: TransactionDiagnostic[],
@@ -2114,7 +2223,7 @@ function validateUnknownFields(
     .filter((key) => !allowedKeys.includes(key))
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           code,
           `${label} does not support field ${key}.`,
           `${path}.${key}`,
@@ -2132,7 +2241,7 @@ function validateVariableSemantic(
 
   if (!isPlainObject(value) || typeof value.kind !== 'string') {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.variable.semantic',
         'PTB graph variable semantic must be an object with a kind.',
         path,
@@ -2164,7 +2273,7 @@ function validateVariableSemantic(
     );
     if (typeof value.sourceKind !== 'string') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.variable.semantic.sourceKind',
           'UnsupportedInput semantic requires a sourceKind string.',
           `${path}.sourceKind`,
@@ -2175,7 +2284,7 @@ function validateVariableSemantic(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.variable.semantic.kind',
       `Unsupported variable semantic kind ${value.kind}.`,
       `${path}.kind`,

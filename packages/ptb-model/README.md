@@ -152,12 +152,13 @@ already removed:
 
 ```ts
 import {
+  analyzePTBGraph,
   graphToTransactionIR,
   isMovePackageSignatureEvidence,
   isTxContextOpenSignature,
+  parseExecutableGraph,
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
-  validatePTBGraph,
   validateTransactionIR,
   type MovePackageSignatureEvidence,
 } from '@zktx.io/ptb-model';
@@ -178,8 +179,9 @@ if (!isMovePackageSignatureEvidence(moveSignatures)) {
   throw new Error('Host evidence must match the model evidence shape.');
 }
 const irDiagnostics = validateTransactionIR(ir, { moveSignatures });
-const graphDiagnostics = validatePTBGraph(graph, { moveSignatures });
-const graphIR = graphToTransactionIR(graph, { moveSignatures });
+const graphDiagnostics = analyzePTBGraph(graph, { moveSignatures }).diagnostics;
+const executableGraph = parseExecutableGraph(graph, { moveSignatures });
+const graphIR = graphToTransactionIR(executableGraph);
 ```
 
 `isTxContextOpenSignature()` is a top-level parameter filter. The evidence
@@ -192,7 +194,8 @@ remain generic object types even when runtime type arguments are supplied. These
 helpers define the model evidence shape only. Evidence-aware `MoveCall` result
 arity and limited `MakeMoveVec` element type validation are available only when
 the host explicitly passes `moveSignatures` to `validateTransactionIR()`,
-`validatePTBGraph()`, or `graphToTransactionIR()`. Graph-to-IR conversion may
+`analyzePTBGraph()`, `parseExecutableGraph()`, or `graphToTransactionIR()`.
+Graph-to-IR conversion may
 materialize an evidence-derived MoveCall `resultCount` into the returned IR, and
 IR-to-graph conversion then preserves that count in `params.runtime.resultCount`.
 The model does not fetch package metadata, persist evidence in PTB documents, or
@@ -318,8 +321,9 @@ Current partial or unsupported areas are:
   that type. The consuming Move type is not inferred;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata by default. When a host passes verified
-  `moveSignatures` to `validateTransactionIR()`, `validatePTBGraph()`, or
-  `graphToTransactionIR()`, the model can use the matching function signature to
+  `moveSignatures` to `validateTransactionIR()`, `analyzePTBGraph()`,
+  `parseExecutableGraph()`, or `graphToTransactionIR()`, the model can use the
+  matching function signature to
   check `MoveCall` result arity, Result/NestedResult bounds, graph output ports,
   and comparable `MakeMoveVec` element types. Graph-to-IR conversion can fill a
   missing MoveCall `IRCommand.resultCount` from matching evidence; IR-to-graph
@@ -516,13 +520,13 @@ cannot also carry a typed graph `value`. Object and `FundsWithdrawal` rawInput
 may carry a graph `value` only when that value structurally equals the canonical
 raw payload.
 
-The scalar normalizers, SDK metadata guard, and diagnostic freezer are exported
+The scalar normalizers, SDK metadata guard, and diagnostic helpers are exported
 for host-side validation before creating raw or graph values:
 `parseJsonU64()`, `parseBase64Bytes()`, `parseObjectId()`,
 `parseObjectDigest()`, `parseMoveIdentifier()`, `parseMoveTypeTag()`,
 `parseMoveStructTypeTag()`, `parsePTBObjectTypeTagCandidate()`,
 `isRawInputArgumentType()`, `isRawMoveCallArgumentTypes()`, and
-`freezeDiagnostics()`.
+`errorDiagnostic()` / `freezeDiagnostics()`.
 
 ## Basic Usage
 
@@ -649,13 +653,40 @@ do not silently discard source payloads. `Input.index` values are derived for
 each graph-to-IR conversion from the referenced and preserved variables in graph
 order, so callers must not cache indexes across graph edits.
 
-Graph validation checks top-level graph fields, node ids, port ids, edge ids,
-handle existence, edge direction, edge role, duplicate incoming command input
-edges, required command input edges, and command output arity before conversion.
-Port ids must start with an ASCII letter and contain only ASCII letters, digits,
-and underscores. This keeps typed handle suffixes and UI aliases out of
-canonical `PTBGraph` data. Invalid graphs return diagnostics instead of
-partially converting through implicit fallbacks.
+`analyzePTBGraph()` reports graph diagnostics with explicit blocking surfaces.
+Diagnostics whose graph `blocks.document` flag is true make the graph invalid as
+canonical document data. Diagnostics whose graph `blocks.execution` flag is true
+make the graph invalid for execution-oriented conversion.
+
+Document validation is intentionally not the same as execution validation. A
+graph may be persistable while it is still missing command input edges, missing a
+complete Start-to-End flow path, or missing a MoveCall target; those are normal
+intermediate editor states. `parsePTBDocV4()` and `validatePTBDocV4()` reject
+malformed document data and graph diagnostics that block documents, but they do
+not require the graph to be executable.
+
+`parseExecutableGraph()` is the executable graph boundary. It rejects any graph
+diagnostic whose `blocks.execution` flag is true and returns a branded
+`ExecutablePTBGraph` for callers that want a checked fast path. `graphToTransactionIR()`
+accepts either an unchecked `PTBGraph` for inspection conversion or an
+`ExecutablePTBGraph` returned by `parseExecutableGraph()`. Document-blocking
+graphs return an empty IR with diagnostics; document-valid but execution-invalid
+graphs still produce inspection IR with diagnostics so renderers and editors can
+show the current graph state.
+
+The executable graph brand is tied to the object returned by
+`parseExecutableGraph()`. JSON serialization, `structuredClone()`, object spread,
+or rebuilding the graph produces an unchecked `PTBGraph`; validate that new graph
+again before using the executable fast path. Callers should pass the returned
+`ExecutablePTBGraph` directly to `graphToTransactionIR()` and should not reuse
+analysis facts after editing, cloning, or reloading graph data.
+
+`analyzePTBGraph()` still reports diagnostics for top-level graph fields, node
+ids, port ids, edge ids, handle existence, edge direction, edge role, duplicate
+incoming command input edges, command input completeness, and command output
+arity. Port ids must start with an ASCII letter and contain only ASCII letters,
+digits, and underscores. This keeps typed handle suffixes and UI aliases out of
+canonical `PTBGraph` data.
 It also validates optional public graph fields such as node positions, port
 labels and type strings, edge casts, variable semantics, PTB type hints, and
 command params. `PTBGraph` supports only `nodes` and `edges` at the graph
@@ -671,18 +702,20 @@ rejected instead of being preserved.
 Command input ports use canonical ids such as `in_arg_0`, `in_elem_0`,
 `in_amount_0`, `in_object_0`, `in_source_0`, `in_coin`, `in_destination`,
 `in_recipient`, and `in_upgradeCap`. Indexed input ports must be dense from zero
-within each command-specific group, and required command input ports must have
-incoming IO edges before graph-to-IR conversion. Commands with no results, such
-as `TransferObjects`, `MergeCoins`, and `Unsupported`, must not declare IO output
-ports. Commands with exactly one known result use `out_result`; the nested
-`out_0` form is accepted only when an actual outgoing edge preserves an existing
-`NestedResult(i, 0)` reference. Commands with multiple known results use dense
-nested result handles such as `out_0` and `out_1`; `out_result` is not canonical
-for multi-result commands, and `Result(i)` is valid only for a command with
-exactly one result, matching Sui execution arity checks. A `MoveCall` with no
-explicit `resultCount` has unknown arity, so the graph may declare `out_result`
-or u16-addressable nested `out_N` handles without the model guessing the real
-count. Separate `outputs` arrays are not transaction semantics.
+within each command-specific group. Required command input ports must have
+incoming IO edges for the graph to be executable, but inspection conversion can
+still preserve the current graph state with diagnostics. For executable graphs,
+commands with no results, such as `TransferObjects`, `MergeCoins`, and
+`Unsupported`, must not declare IO output ports. Commands with exactly one known
+result use `out_result`; the nested `out_0` form is accepted only when an actual
+outgoing edge preserves an existing `NestedResult(i, 0)` reference. Commands
+with multiple known results use dense nested result handles such as `out_0` and
+`out_1`; `out_result` is not valid for multi-result command execution, and
+`Result(i)` is valid only for a command with exactly one result, matching Sui
+execution arity checks. A `MoveCall` with no explicit `resultCount` has unknown
+arity, so the graph may declare `out_result` or u16-addressable nested `out_N`
+handles without the model guessing the real count. Separate `outputs` arrays
+are not transaction semantics.
 Builder-style aliases such as bare `amount_0`, `MakeMoveVec` `in_arg_0`,
 `out_coin_0`, and `out_ret_0` are not canonical model graph handles.
 
@@ -700,7 +733,7 @@ pure-type checks.
 
 ## Mermaid Rendering
 
-`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`.
+`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`. Unsupported renderer options fall back to the default rendering options and appear as diagnostics in the diagram.
 
 Mermaid rendering includes validation diagnostics in the diagram and is defensive for malformed manual IR so callers can inspect problems without a `TypeError`.
 
@@ -755,7 +788,8 @@ records or outside the PTBDocV4 object.
 Move signature evidence is not persisted in `PTBDocV4`. `parsePTBDocV4()` and
 `validatePTBDocV4()` validate the embedded graph without `moveSignatures`; hosts
 that need evidence-aware graph checks should parse the document first, then call
-`validatePTBGraph(doc.graph, { moveSignatures })` or
+`analyzePTBGraph(doc.graph, { moveSignatures })`,
+`parseExecutableGraph(doc.graph, { moveSignatures })`, or
 `graphToTransactionIR(doc.graph, { moveSignatures })` with separately validated
 evidence.
 When present, `sender` must be a canonical Sui address. `chain` is a host-owned
@@ -777,7 +811,11 @@ Converters return a `TransactionIR` with diagnostics. Diagnostics are part of th
 
 `transactionIRToRaw()`, `transactionIRToGraph()`, and `transactionIRToTsSdkCode()` reject IR values whose diagnostics make the requested output unsafe or misleading.
 
-Diagnostics have a closed runtime shape: `{ code, message, path? }`. Warning-level diagnostics are not part of the model.
+Diagnostics have a closed runtime shape:
+`{ code, category, message, path? }`. Graph diagnostics also carry
+`blocks: { document, execution }`. `category` describes the diagnostic for
+grouping and display; graph `blocks` decide which model boundary the diagnostic
+blocks. Warning-level diagnostics are not part of the model.
 
 Package-created diagnostics are frozen at runtime. `TransactionIR.diagnostics`
 is runtime-frozen when the IR is returned by package conversion functions or

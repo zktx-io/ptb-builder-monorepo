@@ -81,6 +81,16 @@ export function isMovePackageSignatureEvidence(
   );
 }
 
+export function normalizeMovePackageSignatureEvidenceOption(
+  value: unknown,
+): MovePackageSignatureEvidence | undefined {
+  if (value === undefined) return undefined;
+  if (isMovePackageSignatureEvidence(value)) return value;
+  throw new TypeError(
+    'moveSignatures must be Move package signature evidence.',
+  );
+}
+
 /**
  * Looks up a function signature by already-normalized MoveCall coordinates.
  * This helper does not normalize package, module, or function keys.

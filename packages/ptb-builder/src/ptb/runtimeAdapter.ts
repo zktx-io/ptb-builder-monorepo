@@ -2,6 +2,7 @@ import type { PureTypeName } from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
 import {
   assertTsSdkRenderableIR,
+  errorDiagnostic,
   hasErrors,
   NULL_VALUE,
   parseObjectId,
@@ -13,7 +14,6 @@ import type {
   IRCommand,
   IRInput,
   PTBType,
-  TransactionDiagnostic,
   TransactionIR,
 } from '@zktx.io/ptb-model';
 
@@ -277,9 +277,8 @@ function fromBase64(value: string): Uint8Array {
 }
 
 function throwRuntimeError(code: string, message: string, path: string): never {
-  const diagnostic: TransactionDiagnostic = { code, message, path };
   throw new PTBModelError(
     'TransactionIR cannot be built as a runtime Transaction.',
-    [diagnostic],
+    [errorDiagnostic(code, 'semantic', message, path)],
   );
 }

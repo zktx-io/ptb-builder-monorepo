@@ -96,6 +96,22 @@ describe('builder source guardrails', () => {
     expect(directCalls).toHaveLength(1);
   });
 
+  it('keeps editor validation on the inline/status surface, not the toast channel', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const start = text.indexOf('const editorValidationResult = useMemo');
+    const end = text.indexOf('const rfSnapshotRef = useRef', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('analyzePTBGraph');
+    expect(segment).toContain('buildEditorValidationState');
+    expect(segment).not.toContain('toast');
+    expect(text).toContain('nodes={displayedRfNodes}');
+    expect(text).toContain('edges={displayedRfEdges}');
+    expect(text).toContain('editorValidation={editorValidation}');
+  });
+
   it('keeps provider UI state focused on visible transaction and notice data', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'providerUiState.ts'),
@@ -188,6 +204,25 @@ describe('builder source guardrails', () => {
     ).toBeLessThan(segment.indexOf('createEmptyPTBDoc(chain)'));
     expect(segment).toContain('lifecycleRef.current.fail(load, error);');
     expect(segment).toContain('lifecycleRef.current.fail(load, message);');
+  });
+
+  it('keeps explicit document loads from succeeding after host document emit failures', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const loadFromDoc');
+    const end = text.indexOf('// ---- export doc', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment.match(/const delivery = deliverDocChange/g)).toHaveLength(2);
+    expect(segment).toContain('if (!delivery.ok)');
+    expect(segment).toContain(
+      'lifecycleRef.current.fail(load, delivery.error);',
+    );
+    expect(segment).toContain('return delivery;');
   });
 
   it('keeps object-id edits from debouncing rawInput invalidation', () => {
@@ -539,6 +574,32 @@ describe('builder source guardrails', () => {
     expect(provider).toContain(
       'if (!hadOnDocChange && hasOnDocChange && !readOnly)',
     );
+  });
+
+  it('keeps document autosave and emission failures out of the toast channel', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('// ---- PTBDoc: batch graph edits');
+    const end = text.indexOf('// ---- chain helpers', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('providerDocumentEmitError');
+    expect(segment).not.toContain('toastImpl(');
+  });
+
+  it('keeps code preview diagnostics on the model diagnostic factory', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'codePreview.ts'), 'utf8');
+    const start = text.indexOf("'preview.unexpected'");
+    const segment = text.slice(Math.max(0, start - 140), start + 220);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(segment).toContain('errorDiagnostic(');
+    expect(segment).not.toContain("code: 'preview.unexpected'");
+    expect(segment).not.toContain("category: 'semantic'");
   });
 
   it('keeps MakeMoveVec authoring exposed with a runtime type editor', () => {

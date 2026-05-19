@@ -22,6 +22,7 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{force:true,recursive:true})\"",
     "build": "npm run clean && rollup -c",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build --workspace @zktx.io/ptb-model",
     "test": "vitest run",
     "lint": "npm run lint --prefix ../..",

@@ -33,12 +33,22 @@ import type {
   NodeChange,
   Viewport,
 } from '@xyflow/react';
-import { graphToTransactionIR } from '@zktx.io/ptb-model';
+import {
+  analyzePTBGraph,
+  graphToTransactionIR,
+  parseExecutableGraph,
+} from '@zktx.io/ptb-model';
 
 import { CodePip } from './CodePip';
 import { renderCodePreview } from './codePreview';
 import { filterConflictingIOEdges, pruneExistingIOEdges } from './edgePruning';
 import { EdgeTypes } from './edges';
+import {
+  applyEditorValidationToEdges,
+  applyEditorValidationToNodes,
+  buildEditorValidationState,
+  emptyEditorValidationState,
+} from './editorValidationState';
 import { EMPTY_CODE } from './emptyCode';
 import { findPortFromStore } from './handles/handleUtils';
 import { ContextMenu } from './menu/ContextMenu';
@@ -47,6 +57,9 @@ import { NodeTypes } from './nodes';
 import { usePtb } from './PtbProvider';
 import { createReactFlowCommitController } from './reactFlowCommitController';
 import { StatusBar } from './StatusBar';
+import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
+import { createsFlowLoop, hasStartToEnd } from './utils/flowPath';
+import { makeObject } from '../ptb/factories';
 import { canConnectIO, inferCastTarget } from '../ptb/graph/typecheck';
 import {
   type CommandRuntimeParams,
@@ -57,27 +70,24 @@ import {
   type VariableNode,
 } from '../ptb/graph/types';
 import {
+  buildObjectRawInputForUsage,
+  defaultObjectRawUsage,
+} from '../ptb/objectAuthoring';
+import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
+import {
   ptbNodeToRF,
   ptbToRF,
   type RFEdgeData,
   type RFNodeData,
   rfToPTB,
 } from '../ptb/ptbAdapter';
-import { toColorMode } from '../types';
-import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
-import { createsFlowLoop, hasStartToEnd } from './utils/flowPath';
-import { makeObject } from '../ptb/factories';
-import {
-  buildObjectRawInputForUsage,
-  defaultObjectRawUsage,
-} from '../ptb/objectAuthoring';
-import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
 import {
   buildCommandPorts,
   patchCommandUIParams,
   sanitizeCommandUIParams,
 } from '../ptb/registry';
 import { buildTransactionFromIR } from '../ptb/runtimeAdapter';
+import { toColorMode } from '../types';
 
 // ===== pure helpers (file-scope) =============================================
 
@@ -269,7 +279,7 @@ export function PTBFlow() {
   const safeRfToPTB = useCallback(
     (
       snapshot: RFSnapshot,
-      opts?: { notify?: boolean },
+      opts?: { notify?: boolean; warn?: boolean },
     ):
       | { ok: true; graph: PTBGraph }
       | { ok: false; error: unknown; message: string } => {
@@ -285,7 +295,7 @@ export function PTBFlow() {
       } catch (error) {
         const message = formatModelErrorMessage(error, 'Unexpected error');
         if (opts?.notify !== false) reportGraphAdapterError(error);
-        else
+        else if (opts?.warn !== false)
           globalThis.console?.warn?.(
             '[ptb-builder] Graph adapter error:',
             message,
@@ -558,6 +568,46 @@ export function PTBFlow() {
   const flowActive = useMemo(
     () => hasStartToEnd(rfNodes, rfEdges),
     [rfNodes, rfEdges],
+  );
+  const editorValidationResult = useMemo(() => {
+    const converted = safeRfToPTB(
+      { rfNodes, rfEdges },
+      { notify: false, warn: false },
+    );
+    if (!converted.ok) {
+      return {
+        validation: emptyEditorValidationState(),
+        unavailable: `Graph diagnostics unavailable: ${converted.message}`,
+      };
+    }
+    try {
+      const analysis = analyzePTBGraph(converted.graph, { moveSignatures });
+      return {
+        validation: buildEditorValidationState(
+          converted.graph,
+          analysis.diagnostics,
+        ),
+        unavailable: undefined,
+      };
+    } catch (error) {
+      return {
+        validation: emptyEditorValidationState(),
+        unavailable: `Graph diagnostics unavailable: ${formatModelErrorMessage(
+          error,
+          'Unexpected error',
+        )}`,
+      };
+    }
+  }, [moveSignatures, rfEdges, rfNodes, safeRfToPTB]);
+  const editorValidation = editorValidationResult.validation;
+  const editorValidationUnavailable = editorValidationResult.unavailable;
+  const displayedRfNodes = useMemo(
+    () => applyEditorValidationToNodes(rfNodes, editorValidation),
+    [editorValidation, rfNodes],
+  );
+  const displayedRfEdges = useMemo(
+    () => applyEditorValidationToEdges(rfEdges, editorValidation),
+    [editorValidation, rfEdges],
   );
   const rfSnapshotRef = useRef({ rfNodes, rfEdges });
 
@@ -1015,7 +1065,8 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const ir = graphToTransactionIR(graph, { moveSignatures });
+      const executableGraph = parseExecutableGraph(graph, { moveSignatures });
+      const ir = graphToTransactionIR(executableGraph);
       const tx = buildTransactionFromIR(ir, execOpts);
       await dryRunTx?.(tx); // toast behavior is controlled in provider
     } catch (e: any) {
@@ -1044,7 +1095,8 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const ir = graphToTransactionIR(graph, { moveSignatures });
+      const executableGraph = parseExecutableGraph(graph, { moveSignatures });
+      const ir = graphToTransactionIR(executableGraph);
       const tx = buildTransactionFromIR(ir, execOpts);
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } catch (e: any) {
@@ -1281,8 +1333,8 @@ export function PTBFlow() {
     >
       <ReactFlow
         colorMode={toColorMode(theme)}
-        nodes={rfNodes}
-        edges={rfEdges}
+        nodes={displayedRfNodes}
+        edges={displayedRfEdges}
         /** Enable auto fit only after positions are laid out */
         fitView={layoutReady}
         /** block graph-position edits when read-only */
@@ -1362,11 +1414,16 @@ export function PTBFlow() {
         </Panel>
 
         <Panel position="top-left" style={{ pointerEvents: 'none' }}>
-          {(loadTxStatus || providerUiState.notice) && (
+          {(loadTxStatus ||
+            providerUiState.notice ||
+            editorValidation.totalCount > 0 ||
+            editorValidationUnavailable) && (
             <div style={{ pointerEvents: 'auto' }}>
               <StatusBar
                 transaction={loadTxStatus}
                 notice={providerUiState.notice}
+                editorValidation={editorValidation}
+                editorValidationUnavailable={editorValidationUnavailable}
                 onDismissNotice={clearProviderNotice}
               />
             </div>

@@ -12,6 +12,7 @@
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
+import type { TransactionDiagnostic } from '@zktx.io/ptb-model';
 import {
   indexedInputHandleIndex,
   nestedResultHandle,
@@ -46,12 +47,14 @@ type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
 export interface RFNodeData extends Record<string, unknown> {
   label?: string;
   ptbNode?: PTBNode;
+  editorDiagnostics?: readonly TransactionDiagnostic[];
 }
 
 /** UI edge payload: serialized type & cast metadata for badges/debug */
 export interface RFEdgeData extends Record<string, unknown> {
   dataType?: string;
   cast?: { to: NumericWidth };
+  editorDiagnostics?: readonly TransactionDiagnostic[];
 }
 
 /** Ensure a Variable node carries a concrete IO out port that reflects its varType. */

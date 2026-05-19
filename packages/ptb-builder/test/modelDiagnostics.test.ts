@@ -96,8 +96,9 @@ describe('model diagnostic presentation', () => {
       'vec detail',
     ]);
     const message = formatModelErrorMessage({ diagnostics }, 'fallback');
-    expect(message.match(/MoveCall result count/g)).toHaveLength(2);
-    expect(message).toContain('MakeMoveVec element type');
+    expect(message.match(/MoveCall result count/g)).toHaveLength(1);
+    expect(message).toContain('2 more diagnostics.');
+    expect(message).not.toContain('MakeMoveVec element type');
   });
 
   it('applies count-limited duplicate hiding to MoveCall type argument diagnostics', () => {

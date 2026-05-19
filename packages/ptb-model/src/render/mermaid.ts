@@ -1,5 +1,8 @@
-import { assertNoErrors, errorDiagnostic } from '../ir/diagnostics.js';
-import type { TransactionDiagnostic } from '../ir/diagnostics.js';
+import { errorDiagnostic as modelDiagnostic } from '../ir/diagnostics.js';
+import type {
+  DiagnosticCategory,
+  TransactionDiagnostic,
+} from '../ir/diagnostics.js';
 import { irCommandArgRefs } from '../ir/types.js';
 import type {
   IRArgRef,
@@ -11,6 +14,15 @@ import { validateTransactionIR } from '../ir/validate.js';
 import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
 import { isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
+
+function renderDiagnostic(
+  code: string,
+  category: DiagnosticCategory,
+  message: string,
+  path?: string,
+): TransactionDiagnostic {
+  return modelDiagnostic(code, category, message, path);
+}
 
 export type MermaidDirection = 'TD' | 'LR';
 
@@ -31,12 +43,6 @@ export function transactionIRToMermaid(
   options: TransactionIRToMermaidOptions = {},
 ): string {
   const optionDiagnostics = validateMermaidOptions(options);
-  if (optionDiagnostics.length > 0) {
-    assertNoErrors(
-      optionDiagnostics.map((diagnostic) => diagnostic.message).join(' '),
-      optionDiagnostics,
-    );
-  }
   const renderOptions = isRecord(options)
     ? (options as TransactionIRToMermaidOptions)
     : {};
@@ -50,14 +56,26 @@ export function transactionIRToMermaid(
     commands: isDenseArray(source.commands)
       ? (source.commands as IRCommand[])
       : [],
-    diagnostics: validateTransactionIR(ir, {
-      includeExistingDiagnostics: true,
-    }),
+    diagnostics: [
+      ...optionDiagnostics,
+      ...validateTransactionIR(ir, {
+        includeExistingDiagnostics: true,
+      }),
+    ],
   };
-  const direction = renderOptions.direction ?? 'TD';
-  const theme = renderOptions.theme ?? 'none';
+  const direction =
+    renderOptions.direction === 'TD' || renderOptions.direction === 'LR'
+      ? renderOptions.direction
+      : 'TD';
+  const theme =
+    renderOptions.theme === 'none' || renderOptions.theme === 'semantic'
+      ? renderOptions.theme
+      : 'none';
   const lines = [`flowchart ${direction}`];
-  const showArgumentValues = renderOptions.showArgumentValues ?? false;
+  const showArgumentValues =
+    typeof renderOptions.showArgumentValues === 'boolean'
+      ? renderOptions.showArgumentValues
+      : false;
   const hasGasCoin = renderIR.commands.some((command) =>
     irCommandArgRefs(command).some((arg) => arg.kind === 'GasCoin'),
   );
@@ -133,8 +151,9 @@ function validateMermaidOptions(
   if (options === undefined) return diagnostics;
   if (!isRecord(options)) {
     diagnostics.push(
-      errorDiagnostic(
+      renderDiagnostic(
         'mermaid.options',
+        'shape',
         'Mermaid options must be an object when provided.',
         '$.options',
       ),
@@ -147,8 +166,9 @@ function validateMermaidOptions(
     )
     .forEach((key) => {
       diagnostics.push(
-        errorDiagnostic(
+        renderDiagnostic(
           'mermaid.options.unknownField',
+          'shape',
           `Mermaid options do not support field ${key}.`,
           `$.options.${key}`,
         ),
@@ -160,8 +180,9 @@ function validateMermaidOptions(
     options.direction !== 'LR'
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      renderDiagnostic(
         'mermaid.direction',
+        'shape',
         'Mermaid direction must be TD or LR.',
         '$.options.direction',
       ),
@@ -173,8 +194,9 @@ function validateMermaidOptions(
     options.theme !== 'semantic'
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      renderDiagnostic(
         'mermaid.theme',
+        'shape',
         'Mermaid theme must be none or semantic.',
         '$.options.theme',
       ),
@@ -185,8 +207,9 @@ function validateMermaidOptions(
     typeof options.showArgumentValues !== 'boolean'
   ) {
     diagnostics.push(
-      errorDiagnostic(
+      renderDiagnostic(
         'mermaid.showArgumentValues',
+        'shape',
         'Mermaid showArgumentValues must be boolean.',
         '$.options.showArgumentValues',
       ),

@@ -1,3 +1,4 @@
+import { graphDiagnostic } from './diagnostics.js';
 import {
   indexedHandleSuffix,
   indexedInputHandle,
@@ -12,8 +13,6 @@ import {
   unknownResultOutputHandles,
 } from './handles.js';
 import {
-  GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
-  GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
   graphCommandRuntimeParams,
   type GraphMoveCallEvidenceState,
   parseGraphMoveCallTarget,
@@ -21,8 +20,13 @@ import {
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import {
-  validatePTBGraphDetailed,
-  type ValidatePTBGraphOptions,
+  analyzePTBGraph,
+  type AnalyzePTBGraphOptions,
+  type ExecutablePTBGraph,
+  executablePTBGraphFacts,
+  graphDocumentDiagnostics,
+  isExecutablePTBGraph,
+  type PTBGraphAnalysis,
 } from './types.js';
 import type {
   CommandNode,
@@ -36,7 +40,7 @@ import type {
 } from './types.js';
 import {
   assertNoErrors,
-  errorDiagnostic,
+  existingGraphDiagnostics,
   hasErrors,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
@@ -58,7 +62,7 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
-import { isMovePackageSignatureEvidence } from '../move/evidence.js';
+import { normalizeMovePackageSignatureEvidenceOption } from '../move/evidence.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -76,26 +80,14 @@ import {
 
 const GAS_NODE_ID = 'gas';
 const GAS_HANDLE_ID = 'out';
-const NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES = ['graph.rawInput'] as const;
-const NON_BLOCKING_GRAPH_COMMAND_DIAGNOSTIC_PREFIXES = [
-  'graph.command.params.runtime.target',
-  'graph.command.params.runtime.field',
-  'graph.command.params.runtime.typeArguments',
-  'graph.command.params.runtime.resultCount',
-  'graph.command.params.runtime.type',
-  'graph.command.params.runtime.modules',
-  'graph.command.params.runtime.dependencies',
-] as const;
-// These are exact diagnostic codes. The prefix lists above intentionally keep
-// broader command-param families non-blocking while preserving blocking behavior
-// for existing graph.command.moveCall.target/package/typeArguments diagnostics.
-const NON_BLOCKING_GRAPH_DIAGNOSTIC_CODES = [
-  GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
-  GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
-] as const;
 
 export interface GraphToTransactionIROptions
-  extends Pick<ValidatePTBGraphOptions, 'moveSignatures'> {}
+  extends Pick<AnalyzePTBGraphOptions, 'moveSignatures'> {}
+
+interface GraphConversionAnalysis {
+  analysis: PTBGraphAnalysis;
+  moveSignatures?: AnalyzePTBGraphOptions['moveSignatures'];
+}
 
 interface GraphArgRead {
   refs: IRArgRef[];
@@ -135,19 +127,21 @@ interface GraphInputConstraint {
 
 const EMPTY_INDEXED_GRAPH_EDGES: readonly IndexedGraphEdge[] = [];
 
+export function graphToTransactionIR(graph: ExecutablePTBGraph): TransactionIR;
+export function graphToTransactionIR(
+  graph: PTBGraph,
+  options?: GraphToTransactionIROptions,
+): TransactionIR;
 export function graphToTransactionIR(
   graph: PTBGraph,
   options: GraphToTransactionIROptions = {},
 ): TransactionIR {
-  const moveSignatures = isMovePackageSignatureEvidence(options.moveSignatures)
-    ? options.moveSignatures
-    : undefined;
-  const graphValidation = validatePTBGraphDetailed(graph, { moveSignatures });
-  const graphDiagnostics = graphValidation.diagnostics;
-  const blockingGraphDiagnostics = graphDiagnostics.filter(
-    isBlockingGraphDiagnostic,
+  const { analysis: graphValidation, moveSignatures } = graphConversionAnalysis(
+    graph,
+    options,
   );
-  if (hasErrors(blockingGraphDiagnostics)) {
+  const graphDiagnostics = graphValidation.diagnostics;
+  if (hasErrors(graphDocumentDiagnostics(graphDiagnostics))) {
     return createTransactionIR([], [], graphDiagnostics);
   }
 
@@ -296,19 +290,33 @@ function referencedOutputPortsForVariable(
     : outputPorts;
 }
 
-function isBlockingGraphDiagnostic(diagnostic: TransactionDiagnostic): boolean {
-  // Invalid rawInput and invalid command params can be represented as
-  // Unsupported IR values. Other graph errors can make ordering, endpoints,
-  // or flow semantics unreliable.
-  return (
-    !(NON_BLOCKING_GRAPH_DIAGNOSTIC_CODES as readonly string[]).includes(
-      diagnostic.code,
-    ) &&
-    ![
-      ...NON_BLOCKING_GRAPH_DIAGNOSTIC_PREFIXES,
-      ...NON_BLOCKING_GRAPH_COMMAND_DIAGNOSTIC_PREFIXES,
-    ].some((prefix) => diagnostic.code.startsWith(prefix))
+function graphConversionAnalysis(
+  graph: PTBGraph,
+  options: GraphToTransactionIROptions,
+): GraphConversionAnalysis {
+  if (isExecutablePTBGraph(graph)) {
+    if (options.moveSignatures !== undefined) {
+      throw new TypeError(
+        'graphToTransactionIR does not accept moveSignatures for an ExecutablePTBGraph.',
+      );
+    }
+    const facts = executablePTBGraphFacts(graph);
+    if (facts === undefined) {
+      throw new TypeError('ExecutablePTBGraph is missing analysis facts.');
+    }
+    return {
+      analysis: facts.analysis,
+      moveSignatures: facts.moveSignatures,
+    };
+  }
+
+  const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
+    options.moveSignatures,
   );
+  return {
+    analysis: analyzePTBGraph(graph, { moveSignatures }),
+    moveSignatures,
+  };
 }
 
 function buildGraphConversionIndex(graph: PTBGraph): GraphConversionIndex {
@@ -416,7 +424,7 @@ function applyGraphInputCast(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.edge.cast',
       `Edge cast on variable ${node.id} can only bind an abstract number input to a concrete Move integer width.`,
       constraint.path,
@@ -548,7 +556,7 @@ function variableNodeToInput(
   inputType: PTBType = node.varType,
 ): IRInput {
   const hasRawInput = node.rawInput !== undefined;
-  // validatePTBGraph checks rawInput diagnostics for document validation;
+  // analyzePTBGraph checks rawInput diagnostics for document validation;
   // conversion parses again here because it needs the normalized value.
   const rawInput = normalizeGraphRawInput(
     node.rawInput,
@@ -586,7 +594,7 @@ function variableNodeToInput(
     const objectKind = object?.kind;
     if (objectKind !== undefined && objectKind !== 'ImmOrOwnedObject') {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.input.object.invalidKind',
           `Object variable ${node.id} cannot use value.kind ${String(objectKind)} without rawInput; use rawInput for SharedObject, Receiving, or other raw PTB object inputs.`,
           `${nodePath}.value.kind`,
@@ -623,7 +631,7 @@ function variableNodeToInput(
     }
 
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.input.object.unresolved',
         `Object variable ${node.id} requires canonical objectId, canonical decimal JsonU64 version, and digest to become raw PTB.`,
         nodePath,
@@ -697,12 +705,15 @@ function inputSemantic(input: IRInput): VariableNode['semantic'] | undefined {
 }
 
 function assertGraphableTransactionIR(ir: TransactionIR): void {
-  const diagnostics = isStructuralTransactionIR(ir)
-    ? []
-    : validateTransactionIR(ir, {
-        includeExistingDiagnostics: false,
-        includeUnsupportedDiagnostics: false,
-      });
+  const diagnostics = [
+    ...existingGraphDiagnostics(ir),
+    ...(isStructuralTransactionIR(ir)
+      ? []
+      : validateTransactionIR(ir, {
+          includeExistingDiagnostics: false,
+          includeUnsupportedDiagnostics: false,
+        })),
+  ];
   assertNoErrors('TransactionIR cannot be converted to PTBGraph.', diagnostics);
 }
 
@@ -873,7 +884,7 @@ function commandNodeToIRCommand(
       }
       if (type === NULL_VALUE && elements.refs.length === 0) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.command.emptyInput',
             `MakeMoveVec ${node.id} elements must not be empty when type is null.`,
             nodePath,
@@ -892,14 +903,10 @@ function commandNodeToIRCommand(
     case 'moveCall': {
       const target = moveCallTarget(node);
       const parsedTarget = parseGraphMoveCallTarget(target);
-      if (
-        !target ||
-        parsedTarget.issue === 'missing' ||
-        parsedTarget.issue === 'format'
-      ) {
+      if (!target || parsedTarget.issue === 'missing') {
         diagnostics.push(
-          errorDiagnostic(
-            'graph.command.moveCall.target',
+          graphDiagnostic(
+            'graph.command.moveCall.targetMissing',
             `MoveCall ${node.id} requires package::module::function target.`,
             nodePath,
           ),
@@ -907,14 +914,9 @@ function commandNodeToIRCommand(
         return invalidGraphCommand(node, 'InvalidMoveCallTarget');
       }
       if (!parsedTarget.target) {
-        diagnostics.push(
-          errorDiagnostic(
-            'graph.command.moveCall.package',
-            `MoveCall ${node.id} requires a canonical package ID and Move module/function identifiers.`,
-            nodePath,
-          ),
+        throw new TypeError(
+          `MoveCall ${node.id} reached graph conversion with a non-canonical target.`,
         );
-        return invalidGraphCommand(node, 'InvalidMoveCallTarget');
       }
       const { packageId, moduleName, functionName } = parsedTarget.target;
       const moveArgs = args((handle) => isIndexedInputHandle(handle, 'arg'));
@@ -1008,7 +1010,7 @@ function requireNonEmptyGraphArgs(
 ): boolean {
   if (refs.length > 0) return true;
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.emptyInput',
       `Command ${node.id} requires at least one ${key} input.`,
       nodePath,
@@ -1065,7 +1067,7 @@ function readIncomingArgs(
       const commandIndex = commandIndexes.get(edge.source);
       if (commandIndex === undefined) {
         diagnostics.push(
-          errorDiagnostic(
+          graphDiagnostic(
             'graph.arg.source',
             `Edge ${edge.id} references a source that is not an input or previously ordered command.`,
             `$.edges[${edgeIndex}]`,
@@ -1422,7 +1424,7 @@ function moveCallTypeArguments(
   if (typeArguments !== undefined) return typeArguments;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.moveCall.typeArguments',
       `MoveCall ${node.id} runtime typeArguments must be a dense array of valid Move type tags when present.`,
       `${nodePath}.params.runtime.typeArguments`,
@@ -1442,7 +1444,7 @@ function objectIdParam(
   if (objectId) return objectId;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.objectIdParam',
       `Command ${node.id} requires canonical Sui object ID runtime param ${key}.`,
       `${nodePath}.params.runtime.${key}`,
@@ -1462,7 +1464,7 @@ function objectIdArrayParam(
   const path = `${nodePath}.params.runtime.${key}`;
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.objectIdArrayParam',
         `Command ${node.id} requires Sui object ID array runtime param ${key}.`,
         path,
@@ -1475,7 +1477,7 @@ function objectIdArrayParam(
     const objectId = canonicalObjectId(item);
     if (objectId === undefined) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.objectIdParam',
           `Command ${node.id} runtime param ${key} item ${index} must be a canonical Sui object ID.`,
           `${path}[${index}]`,
@@ -1501,7 +1503,7 @@ function base64BytesArrayParam(
   const path = `${nodePath}.params.runtime.${key}`;
   if (!isDenseArray(value)) {
     diagnostics.push(
-      errorDiagnostic(
+      graphDiagnostic(
         'graph.command.base64BytesParam',
         `Command ${node.id} requires a canonical base64-decodable base64 byte array runtime param ${key}.`,
         path,
@@ -1514,7 +1516,7 @@ function base64BytesArrayParam(
     const bytes = parseBase64Bytes(item);
     if (bytes === undefined || bytes !== item) {
       diagnostics.push(
-        errorDiagnostic(
+        graphDiagnostic(
           'graph.command.base64BytesParam',
           `Command ${node.id} runtime param ${key} item ${index} must be canonical base64-decodable base64 bytes.`,
           `${path}[${index}]`,
@@ -1541,7 +1543,7 @@ function nonEmptyBase64BytesArrayParam(
   if (items.length > 0) return items;
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.emptyInput',
       `Command ${node.id} runtime param ${key} must not be empty.`,
       `${nodePath}.params.runtime.${key}`,
@@ -1566,7 +1568,7 @@ function typeTagFromNode(
   }
 
   diagnostics.push(
-    errorDiagnostic(
+    graphDiagnostic(
       'graph.command.makeMoveVec.type',
       `MakeMoveVec ${node.id} runtime type must be a valid Move type tag or null when present.`,
       `${nodePath}.params.runtime.type`,
