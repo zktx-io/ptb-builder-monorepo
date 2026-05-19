@@ -79,6 +79,10 @@ other test runner is resolving workspace package exports. Use
 - Do not waste tokens on excuses, filler, or unsupported speculation.
 - State uncertainty plainly when evidence is incomplete.
 - Separate facts, assumptions, and recommendations.
+- When reporting mistakes, missed scope, incomplete work, regressions, false prior claims, or deleted behavior, state the concrete failure directly. Do not soften it with euphemisms such as "reduced," "partial," "scope adjustment," "rough edge," "tradeoff," or "follow-up" when the verified fact is that required work was not implemented, was removed, was narrowed, or was misrepresented as complete. These examples are non-exhaustive: any label used to soften, obscure, legitimize, or relabel a verified contraction is forbidden, including neutral-sounding labels such as "aligned," "normalized," "consolidated," "simplified," "tightened," "smaller," or "narrower" when they are used to avoid naming the contraction as a defect or deliberate removal.
+- Do not hide, minimize, or reframe defects to protect prior work, preserve momentum, avoid discomfort, or make the current implementation look closer to complete than it is. If work was not done, say it was not done. If a previous answer, plan, review, or commit claimed completion incorrectly, say the claim was incorrect.
+- Planned specifications require stricter honesty. If a planned requirement, user-approved behavior, or accepted review item is missing, incomplete, removed, replaced with a weaker behavior, or only satisfied by tests/docs instead of real implementation, call it a spec miss. Do not describe it as optional, deferred, simplified, or out of scope unless the user explicitly changed the specification. A claimed explicit user change must cite referenceable evidence, such as a specific conversation message, issue, commit, or decision document, and must state exactly which requirement changed; otherwise the original spec baseline remains in force.
+- Do not infer intent unless evidence proves intent. However, do not downgrade a verified product failure into intent-neutral wording that obscures its effect on users, reviewers, code behavior, planned specifications, or project status.
 - Do not substitute a long report for implementation when the user requested a fix or change.
 - Write repository-visible code comments, public documentation, tests, package descriptions, user-facing strings, and release-facing copy in English. Internal ignored planning notes may be in Korean when that helps the current task, but anything moved into exposed surfaces must be rewritten in English.
 
@@ -135,6 +139,10 @@ Before implementation, identify:
 - Why the chosen direction is better for the current goal.
 - What risks or scope traps should be avoided.
 
+Treat work as non-trivial when it touches more than one file, affects model/builder/CLI boundaries, changes public APIs, changes tests/docs/user flows, follows an accepted plan or review, revisits previously incomplete work, or responds to a failure of trust. If there is doubt, treat the work as non-trivial.
+
+For non-trivial work, establish a spec baseline before editing. The baseline is the user request plus any accepted plan, accepted review item, promised behavior, and required cleanup discovered during investigation. A review item is accepted when the user asks to evaluate it and local evidence confirms it is a real defect, missing requirement, or required cleanup; it does not need a separate ceremony to become part of the baseline. For each planned requirement, identify the implementation surface and verification point before claiming the plan is executable. Do not silently drop, merge, rename, or weaken a baseline requirement because it is cross-package, visually awkward, time-consuming, or inconvenient.
+
 Plans must be grounded in confirmed objective facts. Distinguish current implemented work from unimplemented expansion, and do not make unimplemented possibilities look like supported functionality.
 
 Do not introduce generalized abstractions for aesthetics, symmetry, or future possibilities before a concrete implementation proves that the verified boundary needs them.
@@ -177,6 +185,7 @@ The current direction is:
 
 Do not create a separate `ptb-sui` package or rename the model package unless a new explicit decision replaces this one.
 Do not keep builder-internal graph shapes, decoder fallbacks, or codegen shortcuts inside `@zktx.io/ptb-model` for compatibility. The builder package should adapt to the model boundary, not the other way around.
+Compatibility means any pattern whose purpose or effect is to preserve a prior consumer behavior, earlier API shape, saved fixture, or legacy authoring habit, regardless of whether the author labels it compatibility, alignment, cleanup, stabilization, or source-of-truth work.
 
 Use these local evidence inputs before changing the model boundary:
 
@@ -202,11 +211,12 @@ Package responsibilities during this refactor:
 - `@zktx.io/ptb-model` owns protocol-facing logical data structures and deterministic data transforms: canonical file/document shape, document validation, raw PTB conversion, `TransactionIR`, `PTBGraph`, graph-to-IR and IR-to-graph conversion, Mermaid text rendering, and TypeScript SDK code string rendering.
 - `@zktx.io/ptb-model` must stay UI-independent and runtime-execution-independent. It may use pinned SDK source, BCS schemas, fixtures, and compatibility tests as evidence, but it must not depend on React, React Flow, DOM, CSS, UI drawing/layout frameworks, wallet state, Sui clients, host callbacks, or runtime `Transaction` instances.
 - Treat `@zktx.io/ptb-model` as the source of truth. A builder defect, UI convenience, non-canonical document, example behavior, or test fixture must not bend the model boundary. If the model changes, it must be because the canonical PTB/document/IR/graph/renderer rule is wrong or incomplete after checking all model conversions and the pinned SDK/source evidence.
-- Optimize `@zktx.io/ptb-model` for the cleanest canonical model contract, not for downstream compatibility with builder, CLI, example, previous releases, saved fixtures, or legacy authoring habits. Backward compatibility is not a model-package design goal during this refactor because the model is the repository's PTB source-of-truth package consumed primarily by `@zktx.io/ptb-cli` and `@zktx.io/ptb-builder`, not a broad stable user-facing import API. When a consumer uses non-canonical graph handles, params, raw shapes, aliases, root exports, or repair assumptions, document the correct model usage and update that consumer; do not add aliases, fallbacks, repair paths, compatibility branches, deprecated duplicate fields, or public exports solely to preserve older usage unless a new explicit product decision changes the canonical contract.
+- Optimize `@zktx.io/ptb-model` for the cleanest canonical model contract, not for downstream compatibility with builder, CLI, example, previous releases, saved fixtures, or legacy authoring habits. Backward compatibility is not a model-package design goal during this refactor because the model is the repository's PTB source-of-truth package consumed primarily by `@zktx.io/ptb-cli` and `@zktx.io/ptb-builder`, not a broad stable user-facing import API. When a consumer uses non-canonical graph handles, params, raw shapes, aliases, root exports, or repair assumptions, document the correct model usage and update that consumer; do not add aliases, fallbacks, repair paths, compatibility branches, deprecated duplicate fields, or public exports solely to preserve older usage unless a new explicit product decision changes the canonical contract. Builder public-export compatibility is not evidence for narrowing, removing, or reshaping the model contract; if builder compatibility conflicts with the canonical model, builder must adapt through its own UI/runtime adapter boundary or an explicitly named migration utility.
 - Compatibility work belongs only to an explicitly named PTB flow compatibility utility or separate migration tool, not to the normal model parser, converter, validator, renderer, or graph APIs. The canonical model path must remain legacy-free and reject non-canonical shapes. A compatibility utility may translate older PTB flow or document shapes into the canonical model contract only when that utility is an explicit product decision and is not invoked silently by canonical model APIs.
-- Improve `@zktx.io/ptb-model` only when the change makes Sui PTB representation, validation, conversion, graph authoring, inspection rendering, or TypeScript SDK code-string rendering more correct against the pinned SDK or verified Sui source. Do not add non-PTB workflow behavior, UI behavior, or speculative support. When Sui PTB has a command, input, argument, metadata field, or execution semantic that the model cannot faithfully represent in raw, IR, graph, Mermaid, or SDK-code output, document it as unsupported in the model README before expanding support, and keep the supported/unsupported PTB surface list current with the implementation.
+- A claimed explicit product decision, compatibility exception, or contract change must cite referenceable evidence, such as an issue, commit, decision document, or specific conversation message, and must identify the exact model contract being changed.
+- Improve `@zktx.io/ptb-model` only when the change makes Sui PTB representation, validation, conversion, graph authoring, inspection rendering, or TypeScript SDK code-string rendering more correct against the pinned SDK or verified Sui source. Do not add non-PTB workflow behavior, UI behavior, or speculative support. Apply the same evidence gate to reductions and removals: do not remove, narrow, or make unsupported any model behavior, root export, graph/IR/raw shape, validation rule, renderer coverage, or SDK-code output unless pinned SDK/source evidence proves the prior behavior incorrect or unsupported, or an evidence-backed product decision changes the contract. When Sui PTB has a command, input, argument, metadata field, or execution semantic that the model cannot faithfully represent in raw, IR, graph, Mermaid, or SDK-code output, document it as unsupported in the model README before expanding or reducing support, and keep the supported/unsupported PTB surface list current with the implementation.
 - Changes to `@zktx.io/ptb-model` require a stricter review than builder-only changes. Before editing it, inspect the affected parser, validator, converter, renderer, public exports, README claims, model tests, builder call sites, and example call sites. After editing it, re-check every conversion direction it touches (`doc`, `raw`, `IR`, `graph`, Mermaid, TS SDK code) before moving back to builder code.
-- `@zktx.io/ptb-model` should be consumed through its root package export. Opening a new package subpath or adding a new root export is a source-of-truth decision: update the model README, public-surface tests, and downstream builder/example imports in the same change.
+- `@zktx.io/ptb-model` should be consumed through its root package export. Opening, removing, or narrowing a package subpath, and adding, removing, renaming, or narrowing a root export, is a source-of-truth decision: update the model README, public-surface tests, and downstream builder/example imports in the same change.
 - `@zktx.io/ptb-cli` owns command-line input/output around the model: local files, stdin, base64 transaction-kind or transaction-data bytes, read-only Sui Core/gRPC transaction fetch by digest, stdout/stderr output, process exit codes, and machine-readable JSON envelopes for agents and scripts.
 - `@zktx.io/ptb-cli` must call `@zktx.io/ptb-model` for PTB semantics, validation, and Mermaid rendering. It must not duplicate model conversion rules, parse legacy builder shapes, sign transactions, simulate transactions, execute transactions, connect wallets, or use JSON-RPC.
 - `@zktx.io/ptb-builder` owns the React product surface around the model: graph editing, drawing, node placement, React Flow screen state, user interactions, Sui Core reads needed for inspection, local metadata caches, builder-specific document requirements such as supported chain/view/module embeds/object embeds, pseudocode/code preview display, and host-owned runtime `Transaction` construction from a model `TransactionIR`.
@@ -254,7 +264,9 @@ Do not interpret a user request as the lowest-effort literal edit that could sat
 
 Think broadly before acting deliberately. The final implementation should be the quality-first complete change for the verified boundary. Optimize for correctness, maintainability, shared invariants, failure handling, docs, tests, and user-facing behavior. Prefer shorter or simpler code only when it preserves the same behavior, safety, and clarity. Do not optimize for the fewest edited lines, shallow reasoning, reduced investigation, or an incomplete fix. Before deciding the boundary is complete, inspect the related callers, callees, schemas, docs, tests, user flows, failure modes, and product claims that could be affected.
 
-When a request points to a specific file, line, review comment, or symptom, do not start by editing that spot. First inspect the adjacent callers, callees, schemas, docs, tests, user flows, failure modes, and shared invariants. Then collect the verified issues, decide the best improvement plan for the affected boundary, and edit according to that plan. If inspection shows the pointed-at spot is the only affected boundary, state that finding and keep the edit narrow.
+Do not reduce scope because the required work is long, spans multiple packages, requires UI work, requires tests, or reveals prerequisite cleanup. These examples are non-exhaustive: current-turn length, implementation fatigue, uncertainty, review complexity, cleanup framing, alignment framing, or reduced upstream behavior are not valid reasons to shrink the specification. If the complete boundary cannot be finished safely because of a concrete blocker, keep the planned specification intact, state the unfinished requirements directly, and do not present the smaller implemented subset as the completed task.
+
+When a request points to a specific file, line, review comment, or symptom, do not start by editing that spot. First inspect the adjacent callers, callees, schemas, docs, tests, user flows, failure modes, and shared invariants. Then collect the verified issues, decide the best improvement plan for the affected boundary, and edit according to that plan. If inspection shows the pointed-at spot is the only affected boundary, state that finding and keep the edit narrow. Keeping an edit narrow must never mean omitting a planned requirement, affected caller, affected user flow, required test, required documentation, or cleanup needed to preserve the verified boundary.
 
 Elegance is part of quality only when it makes product rules easier to verify and maintain. Prefer elegant structure after correctness, explicit boundaries, failure handling, numeric and unit safety, tests, and user-facing consistency are preserved. Do not choose abstraction, brevity, symmetry, or aesthetic neatness when it hides invariants, weakens evidence, obscures failure paths, or makes the product boundary less explicit.
 
@@ -269,6 +281,7 @@ For every task:
 0. Open and read `AGENTS.md` from disk before starting. Do not rely on memory, previous turns, or summaries as a substitute.
 1. Inspect the current repository state first.
 2. Identify affected files, modules, interfaces, user flows, docs, package exports, generated artifacts, and examples.
+   For non-trivial or previously planned work, map the current implementation against the spec baseline before editing: implemented, missing, weakened, removed, and unverified. This mapping is a work control, not a substitute for implementation.
 3. Check whether a source-of-truth implementation already exists before adding a function, type, script, adapter, renderer, registry entry, or conversion helper. In this repository, source of truth means an existing shared local module, `@zktx.io/ptb-model`, the pinned SDK/source API, or verified Sui source depending on the boundary.
 4. Reuse existing source-of-truth code when it exists. Do not create a parallel helper with similar responsibility unless the existing source is demonstrably wrong or too limited for the verified boundary.
 5. Add new code only when no suitable source exists or the existing source is demonstrably insufficient.
@@ -301,9 +314,35 @@ The goal of review is defect discovery, not praise or consensus. Do not defend a
 - Each finding cites a file and line as evidence.
 - Check actual code behavior instead of trusting comments.
 - Mark speculation clearly when evidence is incomplete.
+- Treat understatement of failures as a review defect. If an implementation narrows the requested behavior, deletes a user flow, normalizes an unimplemented path through docs or tests, or presents incomplete work as complete, call that out explicitly instead of describing it as a harmless tradeoff, simplification, cleanup, alignment, consolidation, stabilization, or future enhancement.
+- For planned specifications, review against the promised behavior, not the smaller behavior that happened to be implemented. A missing planned behavior is a defect even when the remaining implementation is internally consistent, tests pass, or the narrower behavior appears usable.
 - Do not defer with "can be done later." If a defect can be fixed safely now within the current affected boundary, classify it as fix-now.
 - Do not rely on existing tests passing as proof of correctness. Walk through every input, state, conversion, rendering, and error path the change touches.
 - When a defect is found, expand the search to callers, callees, and adjacent boundaries. Trace upstream until the shared rule, type, schema, or invariant the defect violates is identified. Do not stop because the related code is outside the current task scope or outside the diff under review.
+
+### Reduction Detection
+
+Reviewing only the current implementation against the current stated target can miss reductions that were silently accepted as the new baseline. When a change is framed as refactor, cleanup, alignment, simplification, or adding a feature that may have existed before, inspect history before accepting the framing.
+
+Search git history for removed identifiers, deleted exports, removed tests, contracted documentation, and deleted user flows when any of these signals appear:
+
+- The plan claims to add behavior that may have existed before.
+- A refactor, cleanup, or alignment commit touched the same boundary.
+- Current code lacks a feature without a documented design decision.
+- Tests or docs were changed in the same window as source contractions.
+- A public API, UI flow, package export, or model boundary became smaller.
+
+If history shows a prior implementation, name the work as restoration, replacement, or deliberate removal before reviewing it as a new feature. Do not accept "new feature" framing until the prior behavior has been accounted for. A prior implementation does not have to be restored unchanged, but it must not be erased from the review.
+
+A passing test is not proof that the tested behavior is intended. For each guardrail-style test, read the body, state both what it verifies and what prior behavior it would prevent from returning, and classify the test against current product intent before treating it as stale, redundant, or load-bearing.
+
+Documentation and code agreeing with each other is not proof of honesty. They can contract together. Diff source, tests, exports, examples, and documentation over the same history window before accepting that the current behavior is intended.
+
+When a plan or commit cites an external boundary, library limit, or upstream API to justify a smaller surface, verify the claim against the pinned dependency source or verified vendor source required by this repository. Do not accept unsupported boundary claims as a reason to reduce scope.
+
+Reductions cascade across packages. When inspecting a suspected reduction, walk through model, builder, CLI, examples, tests, public exports, and documentation for matching contractions.
+
+Review work performed by the plan's author with extra skepticism. Do not use the author's plan framing as evidence that a reduction is intended. Use history, source, tests, docs, and pinned dependencies as evidence.
 
 When findings reveal structural problems, also describe how the feature would be designed from scratch with no legacy constraints, optimizing for long-term maintainability and against code complexity and fragmentation. Include the prerequisite work that should have existed before implementation. Present the result as one connected design, starting from the type dependency graph and explicit separation of boundaries and responsibilities, not as a stage-by-stage list.
 
@@ -314,7 +353,7 @@ When findings reveal structural problems, also describe how the feature would be
 - Do not manipulate tests, fixtures, generated files, snapshots, package metadata, source files, or examples just to make checks pass.
 - Test doubles, fixtures, placeholders, and config constants are allowed only when their scope is explicit and they are not presented as product functionality.
 - Do not fake transactions, object refs, package IDs, digests, BCS bytes, Mermaid support, SDK helper support, wallet state, simulation support, signing readiness, or network support.
-- If technical debt remains, name it explicitly and explain why it is not being removed now.
+- If technical debt remains, name it explicitly and explain why it is not being removed now. The explanation must cite the concrete blocker, the source file, command output, issue, commit, decision document, or external source that establishes the blocker, and the next required action to remove the debt.
 - Prefer removing avoidable debt in the same change when it is safe and within the affected boundary.
 
 ## PTB, Numeric, And Protocol Honesty
@@ -373,5 +412,10 @@ Work is complete only when:
 - Relevant checks, tests, builds, pack dry-runs, or manual verification have been run when available.
 - Errors introduced by the change have been fixed.
 - Remaining limitations are explicitly documented.
+- If previous progress was overstated, the final answer corrects the record explicitly: what was claimed, what is actually implemented, what is missing, and which docs, tests, user flows, or package exports currently make the incorrect behavior look supported.
+- If any planned specification remains unimplemented, removed, narrowed, or only superficially represented, the work is not complete unless the user explicitly changed the specification with referenceable evidence. The final answer must name that spec miss directly.
+- For non-trivial work, completion requires a final spec-baseline comparison: each planned requirement is implemented and verified, or it is named as a spec miss. Passing tests, reduced scope, or internal consistency of a smaller implementation does not replace this comparison.
+- Documenting a limitation does not convert a missing planned requirement into completed work. A limitation can remain only when it is outside the spec baseline, explicitly accepted by the user with referenceable evidence, or blocked by concrete evidence.
+- "When available" and "relevant" cannot be used to avoid verification. If a check is skipped, name the exact command or verification, why it is unavailable, unsafe, or not applicable, and what risk remains.
 
 If implementation cannot be completed, the blocker must be concrete: cite the source checked, the failure path, the command or evidence observed, and the next required decision or dependency.
