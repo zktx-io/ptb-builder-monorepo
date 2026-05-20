@@ -107,6 +107,8 @@ function renderInput(input: IRInput, index: number): string {
             digest: object.digest,
           })});`;
       }
+      const _exhaustive: never = object;
+      void _exhaustive;
       throwTsSdkCodeError(
         'codegen.input.objectKind',
         `Object input ${input.id} has unsupported object kind ${String((object as { kind?: unknown }).kind)}.`,
@@ -118,12 +120,14 @@ function renderInput(input: IRInput, index: number): string {
         input.value,
       )});`;
     case 'Unsupported':
-      throwTsSdkCodeError(
+      return throwTsSdkCodeError(
         'codegen.input.unsupported',
         `Unsupported input ${input.id} cannot be rendered to TS SDK code.`,
         `$.inputs[${index}]`,
       );
   }
+  const _exhaustive: never = input;
+  return _exhaustive;
 }
 
 export function assertTsSdkRenderableIR(ir: TransactionIR): void {
@@ -243,12 +247,14 @@ function renderCommand(command: IRCommand, index: number): string[] {
         )}, ticket: ${renderArg(command.ticket)} });`,
       ];
     case 'Unsupported':
-      throwTsSdkCodeError(
+      return throwTsSdkCodeError(
         'codegen.command.unsupported',
         `Unsupported command ${command.id} cannot be rendered to TS SDK code.`,
         `$.commands[${index}]`,
       );
   }
+  const _exhaustive: never = command;
+  return _exhaustive;
 }
 
 function renderArg(arg: IRArgRef): string {
@@ -262,6 +268,8 @@ function renderArg(arg: IRArgRef): string {
     case 'NestedResult':
       return `${resultName(arg.commandIndex)}[${arg.resultIndex}]`;
   }
+  const _exhaustive: never = arg;
+  return _exhaustive;
 }
 
 function renderUnknownValue(value: unknown): string {

@@ -84,7 +84,13 @@ export default [
     },
   },
   {
-    files: ['packages/ptb-builder/src/**/*.{ts,tsx}'],
+    files: [
+      'packages/ptb-builder/src/**/*.{ts,tsx}',
+      'packages/ptb-builder/test/**/*.{ts,tsx}',
+      'packages/ptb-cli/src/**/*.{ts,tsx}',
+      'packages/ptb-cli/test/**/*.{ts,tsx}',
+      'packages/example/src/**/*.{ts,tsx}',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',

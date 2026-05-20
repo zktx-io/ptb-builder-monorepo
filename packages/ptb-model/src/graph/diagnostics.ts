@@ -3,7 +3,6 @@ import { GRAPH_DIAGNOSTIC_META } from '../diagnostics/metadata.js';
 import type { GraphDiagnostic } from '../ir/diagnostics.js';
 import { createDiagnostic } from '../ir/diagnostics.js';
 
-export { GRAPH_DIAGNOSTIC_META };
 export type { GraphDiagnosticCode };
 
 export function graphDiagnostic(

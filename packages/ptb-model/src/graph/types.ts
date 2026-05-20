@@ -35,7 +35,6 @@ import {
   normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
 import { NUMERIC_WIDTHS, validateGraphPTBTypeInto } from '../ptbType.js';
-import type { NumericWidth, PTBType } from '../ptbType.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -50,113 +49,33 @@ import {
   isPlainObject,
   NULL_VALUE,
 } from '../utils.js';
+import type {
+  CommandKind,
+  Port,
+  PortDirection,
+  PTBGraph,
+  PTBNode,
+} from './shapes.js';
 
 export type { NumericWidth, PTBScalar, PTBType } from '../ptbType.js';
-
-export type PortDirection = 'in' | 'out';
-export type PortRole = 'flow' | 'io' | 'type';
-
-export interface Port {
-  id: string;
-  direction: PortDirection;
-  role: PortRole;
-  dataType?: PTBType;
-  typeStr?: string;
-  label?: string;
-}
-
-export interface NodeBase {
-  id: string;
-  kind: 'Start' | 'End' | 'Command' | 'Variable' | 'TypeArgument';
-  label?: string;
-  ports: Port[];
-  position?: { x: number; y: number };
-}
-
-export type CommandKind =
-  | 'splitCoins'
-  | 'mergeCoins'
-  | 'transferObjects'
-  | 'moveCall'
-  | 'makeMoveVec'
-  | 'publish'
-  | 'upgrade'
-  | 'unsupported';
-
-export interface CommandUIParams {
-  amountsCount?: number;
-  sourcesCount?: number;
-  objectsCount?: number;
-  elemsCount?: number;
-}
-
-export interface CommandRuntimeParams {
-  target?: string;
-  resultCount?: number;
-  type?: string | typeof NULL_VALUE;
-  modules?: string[];
-  dependencies?: string[];
-  package?: string;
-  sourceKind?: string;
-  value?: unknown;
-}
-
-export interface StartNode extends NodeBase {
-  kind: 'Start';
-}
-
-export interface EndNode extends NodeBase {
-  kind: 'End';
-}
-
-export interface CommandNode extends NodeBase {
-  kind: 'Command';
-  command: CommandKind;
-  params?: {
-    runtime?: CommandRuntimeParams;
-    ui?: CommandUIParams;
-  };
-}
-
-export interface VariableNode extends NodeBase {
-  kind: 'Variable';
-  varType: PTBType;
-  name: string;
-  value?: unknown;
-  rawInput?: RawCallArg;
-  semantic?:
-    | { kind: 'GasCoin' }
-    | { kind: 'UnsupportedInput'; sourceKind: string };
-}
-
-export interface TypeArgumentNode extends NodeBase {
-  kind: 'TypeArgument';
-  value: string;
-}
-
-export type PTBNode =
-  | StartNode
-  | EndNode
-  | CommandNode
-  | VariableNode
-  | TypeArgumentNode;
-
-export type EdgeKind = 'flow' | 'io' | 'type';
-
-export interface PTBEdge {
-  id: string;
-  kind: EdgeKind;
-  source: string;
-  sourceHandle: string;
-  target: string;
-  targetHandle: string;
-  cast?: { to: NumericWidth };
-}
-
-export interface PTBGraph {
-  nodes: PTBNode[];
-  edges: PTBEdge[];
-}
+export type {
+  CommandKind,
+  CommandNode,
+  CommandRuntimeParams,
+  CommandUIParams,
+  EdgeKind,
+  EndNode,
+  NodeBase,
+  Port,
+  PortDirection,
+  PortRole,
+  PTBEdge,
+  PTBGraph,
+  PTBNode,
+  StartNode,
+  TypeArgumentNode,
+  VariableNode,
+} from './shapes.js';
 
 declare const EXECUTABLE_PTB_GRAPH_BRAND: unique symbol;
 

@@ -662,7 +662,7 @@ as omitted elements.
 
 `transactionIRToRaw()`, `transactionIRToGraph()`, and `transactionIRToTsSdkCode()` validate the IR shape instead of treating stored `diagnostics` as authoritative state. IR values that were structurally checked by this package can skip the repeated structural validation step, but projection-specific checks still run. `transactionIRToMermaid()` preserves diagnostics in the diagram because it is an inspection renderer and does not treat structural branding as a rendering precondition.
 
-When a graph is authored manually, `rawInput` is the canonical way to represent `SharedObject`, `Receiving`, and `FundsWithdrawal` inputs. A value-only object variable is interpreted only as an owned or immutable object when it has `objectId`, `version`, and `digest`.
+When a graph is authored manually, `rawInput` is the canonical way to represent resolved raw `Object` inputs (`ImmOrOwnedObject`, `SharedObject`, and `Receiving`) and `FundsWithdrawal` inputs. A value-only object variable represents only an unresolved SDK object id when it is a canonical object id string or an object containing only `objectId`; it is not raw-exportable until a resolved raw object reference is supplied through `rawInput`.
 
 Gas is semantic, not name-based. A graph variable becomes `GasCoin` only when `semantic.kind` is `GasCoin`; an id or name such as `gas` is not enough.
 Variable names are optional graph labels. Empty variable names are converted to
