@@ -5,13 +5,13 @@ import { ImageOff, Loader2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import { usePtb } from './PtbProvider';
-import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
+import type { ObjectMetadataInfo } from '../ptb/objectMetadata';
 
 export type OwnedItem = {
   objectId: string;
   typeTag: string;
   imageUrl?: string;
-  authoring?: ObjectAuthoringInfo;
+  metadata?: ObjectMetadataInfo;
 };
 
 const SAFE_DATA_IMAGE_MIME = new Set([
@@ -152,7 +152,7 @@ export function AssetsModal({
               ? {
                   objectId: id,
                   typeTag: type || '',
-                  authoring: r?.data?.authoring,
+                  metadata: r?.data?.metadata,
                   imageUrl: safeAssetImageUrl(imageUrl),
                 }
               : undefined;

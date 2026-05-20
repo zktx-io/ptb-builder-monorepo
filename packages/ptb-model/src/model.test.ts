@@ -21,6 +21,8 @@ import {
   indexedInputHandle,
   indexedInputHandleIndex,
   inputHandle,
+  irObjectId,
+  irResolvedObjectArg,
   isGraphDiagnostic,
   isIndexedInputHandle,
   isInputHandle,
@@ -77,6 +79,7 @@ import type {
   IRArgRef,
   IRCommand,
   IRInput,
+  IRObjectSource,
   MovePackageSignatureEvidence,
   Port,
   PTBGraph,
@@ -206,6 +209,17 @@ describe('public package surface', () => {
     expect(parseMoveStructTypeTag('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
     expect(parsePTBObjectTypeTagCandidate('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
     expect(parsePTBObjectTypeTagCandidate('0x2::object::UID')).toBeUndefined();
+    const objectSource: IRObjectSource = {
+      kind: 'Unresolved',
+      objectId: normalizedObjectId('1'),
+    };
+    const objectInput: Extract<IRInput, { kind: 'Object' }> = {
+      id: 'object',
+      kind: 'Object',
+      source: objectSource,
+    };
+    expect(irObjectId(objectInput)).toBe(normalizedObjectId('1'));
+    expect(irResolvedObjectArg(objectInput)).toBeUndefined();
     const typeArgumentNode: TypeArgumentNode = {
       id: 'type-0',
       kind: 'TypeArgument',
@@ -976,6 +990,10 @@ describe('MoveCall signature evidence validation', () => {
           {
             id: 'obj',
             kind: 'Object',
+            source: {
+              kind: 'Unresolved',
+              objectId: normalizedObjectId('1'),
+            },
             type: { kind: 'object', typeTag: '0x2::sui::SUI' },
           },
         ],
@@ -987,6 +1005,10 @@ describe('MoveCall signature evidence validation', () => {
           {
             id: 'obj',
             kind: 'Object',
+            source: {
+              kind: 'Unresolved',
+              objectId: normalizedObjectId('1'),
+            },
             type: { kind: 'object', typeTag: TEST_SUI_TYPE },
           },
         ],
@@ -1106,6 +1128,10 @@ describe('MoveCall signature evidence validation', () => {
           {
             id: 'obj',
             kind: 'Object',
+            source: {
+              kind: 'Unresolved',
+              objectId: normalizedObjectId('1'),
+            },
             type: { kind: 'object', typeTag: TEST_SUI_TYPE },
           },
         ],
@@ -1149,7 +1175,16 @@ describe('MoveCall signature evidence validation', () => {
     );
     const objectCodes = diagnosticCodes(
       irUsingMakeMoveVec(TEST_SUI_TYPE, [{ kind: 'Input', index: 0 }], {
-        inputs: [{ id: 'obj', kind: 'Object' }],
+        inputs: [
+          {
+            id: 'obj',
+            kind: 'Object',
+            source: {
+              kind: 'Unresolved',
+              objectId: normalizedObjectId('1'),
+            },
+          },
+        ],
       }),
     );
     const withdrawalCodes = diagnosticCodes(
@@ -2012,18 +2047,34 @@ describe('rawTransactionToIR', () => {
     expect(ir.diagnostics).toEqual([]);
     expect(ir.inputs[0]).toMatchObject({
       kind: 'Object',
-      object: {
-        objectId: normalizedObjectId('1'),
-        version: String(Number.MAX_SAFE_INTEGER),
+      source: {
+        kind: 'Resolved',
+        object: {
+          kind: 'ImmOrOwnedObject',
+          objectId: normalizedObjectId('1'),
+          version: String(Number.MAX_SAFE_INTEGER),
+        },
       },
     });
     expect(ir.inputs[1]).toMatchObject({
       kind: 'Object',
-      object: { initialSharedVersion: '16' },
+      source: {
+        kind: 'Resolved',
+        object: {
+          kind: 'SharedObject',
+          initialSharedVersion: '16',
+        },
+      },
     });
     expect(ir.inputs[2]).toMatchObject({
       kind: 'Object',
-      object: { version: '18446744073709551615' },
+      source: {
+        kind: 'Resolved',
+        object: {
+          kind: 'Receiving',
+          version: '18446744073709551615',
+        },
+      },
     });
     expect(ir.inputs[3]).toMatchObject({
       kind: 'FundsWithdrawal',
@@ -2452,7 +2503,7 @@ describe('rawTransactionToIR', () => {
     expect(ir.diagnostics).toEqual([]);
     expect(ir.inputs[0]).toMatchObject({
       kind: 'Object',
-      object: { kind: 'Receiving' },
+      source: { kind: 'Resolved', object: { kind: 'Receiving' } },
     });
     expect(transactionIRToRaw(ir)).toEqual(raw);
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
@@ -2540,21 +2591,27 @@ describe('rawTransactionToIR', () => {
         {
           id: 'rawObject',
           kind: 'Object',
-          object: {
-            kind: 'Receiving',
-            objectId: normalizedObjectId('8'),
-            version: '9',
-            digest: TEST_DIGEST_2,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'Receiving',
+              objectId: normalizedObjectId('8'),
+              version: '9',
+              digest: TEST_DIGEST_2,
+            },
           },
         },
         {
           id: 'typedObject',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: normalizedObjectId('9'),
-            version: '10',
-            digest: TEST_DIGEST_3,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('9'),
+              version: '10',
+              digest: TEST_DIGEST_3,
+            },
           },
           type: { kind: 'object', typeTag: TEST_COIN_SUI_TYPE },
         },
@@ -3270,6 +3327,28 @@ describe('TransactionIR renderers', () => {
     );
   });
 
+  it('renders unresolved object ids in Mermaid without inventing raw refs', () => {
+    const mermaid = transactionIRToMermaid(
+      {
+        version: 'transaction_ir_1',
+        diagnostics: [],
+        inputs: [
+          {
+            id: 'coin',
+            kind: 'Object',
+            source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          },
+        ],
+        commands: [],
+      },
+      { showArgumentValues: true },
+    );
+
+    expect(mermaid).toContain('Input 0: Object<br/>object 0x00000000...000001');
+    expect(mermaid).not.toContain('object unresolved');
+    expect(mermaid).not.toContain('objectRef');
+  });
+
   it('can render Mermaid left-to-right or top-down', () => {
     const ir = rawTransactionToIR(sampleRawTransaction());
 
@@ -3490,31 +3569,40 @@ describe('TransactionIR renderers', () => {
         {
           id: 'owned',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: normalizedObjectId('1'),
-            version: '1',
-            digest: TEST_DIGEST_1,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('1'),
+              version: '1',
+              digest: TEST_DIGEST_1,
+            },
           },
         },
         {
           id: 'shared',
           kind: 'Object',
-          object: {
-            kind: 'SharedObject',
-            objectId: normalizedObjectId('2'),
-            initialSharedVersion: '2',
-            mutable: false,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'SharedObject',
+              objectId: normalizedObjectId('2'),
+              initialSharedVersion: '2',
+              mutable: false,
+            },
           },
         },
         {
           id: 'receiving',
           kind: 'Object',
-          object: {
-            kind: 'Receiving',
-            objectId: normalizedObjectId('3'),
-            version: '3',
-            digest: TEST_DIGEST_2,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'Receiving',
+              objectId: normalizedObjectId('3'),
+              version: '3',
+              digest: TEST_DIGEST_2,
+            },
           },
         },
         {
@@ -3540,6 +3628,26 @@ describe('TransactionIR renderers', () => {
       `tx.receivingRef({"objectId":"${normalizedObjectId('3')}"`,
     );
     expect(code).toContain('tx.withdrawal({"amount":"4"');
+    expectValidTypeScriptSource(code);
+  });
+
+  it('renders unresolved object ids through the public SDK object helper', () => {
+    const code = transactionIRToTsSdkCode({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+        },
+      ],
+      commands: [],
+    });
+
+    expect(code).toContain(`tx.object("${normalizedObjectId('1')}")`);
+    expect(code).not.toContain('UnresolvedObject');
+    expect(code).not.toContain('tx.objectRef');
     expectValidTypeScriptSource(code);
   });
 
@@ -4444,7 +4552,10 @@ describe('TransactionIR renderers', () => {
         {
           id: 'object',
           kind: 'Object',
-          object: { kind: 'FutureObject', objectId: '0x1' },
+          source: {
+            kind: 'Resolved',
+            object: { kind: 'FutureObject', objectId: '0x1' },
+          },
         },
       ],
       commands: [],
@@ -4625,10 +4736,16 @@ describe('graph conversion', () => {
     ).toThrow(TypeError);
   });
 
-  it('keeps unresolved object inputs as objects through graph round-trip', () => {
+  it('keeps unresolved object ids as objects through graph round-trip', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
-      inputs: [{ id: 'object_0', kind: 'Object' }],
+      inputs: [
+        {
+          id: 'object_0',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+        },
+      ],
       commands: [],
       diagnostics: [],
     };
@@ -4642,17 +4759,13 @@ describe('graph conversion', () => {
     if (!roundTrippedInput) throw new Error('Expected round-tripped input');
 
     expect(variable?.varType).toEqual({ kind: 'object' });
+    expect(variable?.value).toBe(normalizedObjectId('1'));
     expect(roundTrippedInput).toMatchObject({
       id: 'object_0',
       kind: 'Object',
+      source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
     });
-    expect('object' in roundTrippedInput).toBe(false);
-    expect(roundTripped.diagnostics).toContainEqual(
-      expect.objectContaining({
-        code: 'graph.input.object.unresolved',
-        path: '$.nodes[2]',
-      }),
-    );
+    expect(roundTripped.diagnostics).toEqual([]);
   });
 
   it('omits graph variables that are not referenced by command inputs from executable IR', () => {
@@ -5462,7 +5575,14 @@ describe('graph conversion', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       diagnostics: [],
-      inputs: [{ id: 'elem', kind: 'Object', type: { kind: 'object' } }],
+      inputs: [
+        {
+          id: 'elem',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          type: { kind: 'object' },
+        },
+      ],
       commands: [
         {
           id: 'cmd-0',
@@ -5969,11 +6089,7 @@ describe('graph conversion', () => {
           kind: 'Variable',
           varType: { kind: 'object' },
           name: 'validObject',
-          value: {
-            objectId: normalizedObjectId('7'),
-            version: '7',
-            digest: TEST_DIGEST_1,
-          },
+          value: { objectId: normalizedObjectId('7') },
           ports: [{ id: 'out', direction: 'out', role: 'io' }],
         },
         {
@@ -6069,58 +6185,70 @@ describe('graph conversion', () => {
 
     expect(ir.inputs[0]).toMatchObject({
       kind: 'Object',
-      object: { kind: 'ImmOrOwnedObject', version: '7' },
+      source: { kind: 'Unresolved', objectId: normalizedObjectId('7') },
     });
     expect(ir.inputs[1]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'nonCanonicalObject',
+      sourceKind: 'InvalidObjectId',
     });
     expect('object' in ir.inputs[1]).toBe(false);
     expect(ir.inputs[2]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'invalidObject',
+      sourceKind: 'InvalidObjectId',
     });
     expect('object' in ir.inputs[2]).toBe(false);
     expect(ir.inputs[3]).toMatchObject({
-      kind: 'Object',
-      object: { kind: 'ImmOrOwnedObject', version: '8' },
+      kind: 'Unsupported',
+      sourceKind: 'InvalidObjectValue',
     });
     expect(ir.inputs[4]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'explicitOwnedInvalidObject',
+      sourceKind: 'InvalidObjectValue',
     });
     expect('object' in ir.inputs[4]).toBe(false);
     expect(ir.inputs[5]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'receivingValueObject',
+      sourceKind: 'InvalidObjectValue',
     });
     expect('object' in ir.inputs[5]).toBe(false);
     expect(ir.inputs[6]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'sharedValueObject',
+      sourceKind: 'InvalidObjectValue',
     });
     expect('object' in ir.inputs[6]).toBe(false);
     expect(ir.inputs[7]).toMatchObject({
-      kind: 'Object',
+      kind: 'Unsupported',
       id: 'bogusKindObject',
+      sourceKind: 'InvalidObjectValue',
     });
     expect('object' in ir.inputs[7]).toBe(false);
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'graph.input.object.unresolved',
-        path: '$.nodes[1]',
+        path: '$.nodes[1].value',
       }),
     );
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'graph.input.object.unresolved',
-        path: '$.nodes[2]',
+        path: '$.nodes[2].value',
       }),
     );
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
-        code: 'graph.input.object.unresolved',
-        path: '$.nodes[4]',
+        code: 'graph.input.object.invalidKind',
+        path: '$.nodes[3].value.kind',
+      }),
+    );
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.input.object.invalidKind',
+        path: '$.nodes[4].value.kind',
       }),
     );
     expect(ir.diagnostics).toContainEqual(
@@ -6245,8 +6373,16 @@ describe('graph conversion', () => {
       IRInput,
       { kind: 'Object' }
     >;
+    const resolvedSourceObject =
+      sourceObject.source.kind === 'Resolved'
+        ? sourceObject.source.object
+        : undefined;
 
-    expect(graphObject?.rawInput).not.toBe(sourceObject.object);
+    expect(
+      graphObject?.rawInput?.kind === 'Object'
+        ? graphObject.rawInput.object
+        : undefined,
+    ).not.toBe(resolvedSourceObject);
     expect(() => {
       if (
         graphObject?.rawInput?.kind === 'Object' &&
@@ -6258,7 +6394,10 @@ describe('graph conversion', () => {
 
     expect(source.inputs[1]).toMatchObject({
       kind: 'Object',
-      object: { objectId: normalizedObjectId('5') },
+      source: {
+        kind: 'Resolved',
+        object: { objectId: normalizedObjectId('5') },
+      },
     });
     expect(source.commands[0]).toMatchObject({
       kind: 'SplitCoins',
@@ -6985,11 +7124,14 @@ describe('graph conversion', () => {
         {
           id: 'ticket',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: normalizedObjectId('7'),
-            version: '1',
-            digest: TEST_DIGEST_1,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('7'),
+              version: '1',
+              digest: TEST_DIGEST_1,
+            },
           },
         },
       ],
@@ -7040,11 +7182,14 @@ describe('graph conversion', () => {
         {
           id: 'ticket',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: normalizedObjectId('7'),
-            version: '1',
-            digest: TEST_DIGEST_1,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('7'),
+              version: '1',
+              digest: TEST_DIGEST_1,
+            },
           },
         },
       ],
@@ -7749,6 +7894,27 @@ describe('validateTransactionIR', () => {
     expectModelErrorCodes(() => transactionIRToRaw(ir), ['raw.ir.pureBytes']);
   });
 
+  it('rejects unresolved object ids only at the raw export gate', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+        },
+      ],
+      diagnostics: [],
+      commands: [],
+    };
+
+    expect(validateTransactionIR(ir)).toEqual([]);
+    expectModelErrorCodes(() => transactionIRToRaw(ir), ['raw.ir.object']);
+    expect(transactionIRToTsSdkCode(ir)).toContain(
+      `tx.object("${normalizedObjectId('1')}")`,
+    );
+  });
+
   it('rejects pure inputs that combine raw bytes with a typed display value across conversion paths', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
@@ -7845,11 +8011,14 @@ describe('validateTransactionIR', () => {
         {
           id: 'input_0',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: normalizedObjectId('2'),
-            version: '1',
-            digest: TEST_DIGEST_1,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('2'),
+              version: '1',
+              digest: TEST_DIGEST_1,
+            },
           },
         },
       ],
@@ -8251,11 +8420,14 @@ describe('validateTransactionIR', () => {
         {
           id: 'object',
           kind: 'Object',
-          object: {
-            kind: 'ImmOrOwnedObject',
-            objectId: 'not-an-object-id',
-            version: '-1',
-            digest: TEST_DIGEST_1,
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: 'not-an-object-id',
+              version: '-1',
+              digest: TEST_DIGEST_1,
+            },
           },
         },
         {
@@ -9180,12 +9352,13 @@ describe('validateTransactionIR', () => {
     const objectInput = ir.inputs[1];
     if (
       objectInput.kind !== 'Object' ||
+      objectInput.source.kind !== 'Resolved' ||
       objectInput.canonicalRaw?.kind !== 'Object'
     ) {
       throw new Error('Expected object input with canonical raw origin');
     }
-    expect(objectInput.object).toBe(objectInput.canonicalRaw.object);
-    expect(Object.isFrozen(objectInput.object)).toBe(true);
+    expect(objectInput.source.object).toBe(objectInput.canonicalRaw.object);
+    expect(Object.isFrozen(objectInput.source.object)).toBe(true);
     expect(Object.isFrozen(objectInput.canonicalRaw)).toBe(true);
 
     const withdrawalInput = ir.inputs[2];
@@ -9271,11 +9444,15 @@ describe('validateTransactionIR', () => {
 
     expect(isStructuralTransactionIR(graphIR)).toBe(true);
     const input = graphIR.inputs[0];
-    if (input.kind !== 'Object' || input.canonicalRaw?.kind !== 'Object') {
+    if (
+      input.kind !== 'Object' ||
+      input.source.kind !== 'Resolved' ||
+      input.canonicalRaw?.kind !== 'Object'
+    ) {
       throw new Error('Expected graph rawInput object conversion');
     }
-    expect(input.object).toBe(input.canonicalRaw.object);
-    expect(Object.isFrozen(input.object)).toBe(true);
+    expect(input.source.object).toBe(input.canonicalRaw.object);
+    expect(Object.isFrozen(input.source.object)).toBe(true);
   });
 
   it('rejects canonicalRaw mismatch before structural branding', () => {
@@ -9295,10 +9472,10 @@ describe('validateTransactionIR', () => {
     });
     const tampered = JSON.parse(JSON.stringify(ir)) as TransactionIR;
     const input = tampered.inputs[0];
-    if (input.kind !== 'Object' || !input.object) {
+    if (input.kind !== 'Object' || input.source.kind !== 'Resolved') {
       throw new Error('Expected object input');
     }
-    input.object.objectId = normalizedObjectId('6');
+    input.source.object.objectId = normalizedObjectId('6');
 
     expect(() => parseStructuralTransactionIR(tampered)).toThrow(PTBModelError);
     expect(

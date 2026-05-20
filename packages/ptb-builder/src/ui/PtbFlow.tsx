@@ -74,11 +74,7 @@ import {
   type TypeArgumentNode,
   type VariableNode,
 } from '../ptb/graph/types';
-import {
-  buildObjectRawInputForUsage,
-  defaultObjectRawUsage,
-} from '../ptb/objectAuthoring';
-import type { ObjectAuthoringInfo } from '../ptb/objectAuthoring';
+import type { ObjectMetadataInfo } from '../ptb/objectMetadata';
 import {
   ptbNodeToRF,
   ptbToRF,
@@ -1392,45 +1388,21 @@ export function PTBFlow() {
     (obj: {
       objectId: string;
       typeTag: string;
-      authoring?: ObjectAuthoringInfo;
+      metadata?: ObjectMetadataInfo;
     }) => {
-      const usage = obj.authoring
-        ? defaultObjectRawUsage(obj.authoring)
-        : undefined;
-      const rawInput =
-        obj.authoring && usage
-          ? buildObjectRawInputForUsage(obj.authoring, usage)
-          : undefined;
-      if (rawInput && !rawInput.ok) {
-        toast({
-          message: rawInput.error,
-          variant: 'warning',
-        });
-      } else if (obj.authoring && !usage) {
-        toast({
-          message:
-            'This object needs an explicit raw input usage. Open the variable and load object metadata to choose one.',
-          variant: 'warning',
-        });
-      }
       const center = getViewportCenterFlow();
       const placeAndAdd = (node: PTBNode) => {
         node.position = { x: center.x, y: center.y };
         addNode(node);
       };
-      const nextRawInput = rawInput?.ok ? rawInput.rawInput : undefined;
       placeAndAdd(
         makeObject(obj.typeTag, {
           id: createUniqueId('var'),
-          value:
-            nextRawInput?.kind === 'Object'
-              ? nextRawInput.object
-              : obj.objectId,
-          rawInput: nextRawInput,
+          value: obj.objectId,
         }),
       );
     },
-    [addNode, createUniqueId, getViewportCenterFlow, toast],
+    [addNode, createUniqueId, getViewportCenterFlow],
   );
 
   // ----- Render ---------------------------------------------------------------

@@ -86,10 +86,15 @@ export type {
   IRArgRef,
   IRCommand,
   IRInput,
+  IRObjectSource,
   IRPureValue,
   TransactionIR,
 } from './ir/types.js';
-export { createTransactionIR } from './ir/types.js';
+export {
+  createTransactionIR,
+  irObjectId,
+  irResolvedObjectArg,
+} from './ir/types.js';
 export {
   isNonNegativeSafeInteger,
   isU16Index,

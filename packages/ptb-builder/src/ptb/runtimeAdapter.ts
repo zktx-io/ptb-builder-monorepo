@@ -1,13 +1,16 @@
 import type { PureTypeName } from '@mysten/sui/bcs';
 import { Transaction } from '@mysten/sui/transactions';
 import {
-  assertTsSdkRenderableIR,
   errorDiagnostic,
   hasErrors,
+  irObjectId,
+  irResolvedObjectArg,
+  isStructuralTransactionIR,
   NULL_VALUE,
   parseObjectId,
   PTBModelError,
   pureTypeName,
+  validateTransactionIR,
 } from '@zktx.io/ptb-model';
 import type {
   IRArgRef,
@@ -58,7 +61,18 @@ function assertRuntimeRenderableIR(ir: TransactionIR): void {
     );
   }
 
-  assertTsSdkRenderableIR(ir);
+  const diagnostics = isStructuralTransactionIR(ir)
+    ? []
+    : validateTransactionIR(ir, {
+        includeExistingDiagnostics: false,
+        includeUnsupportedDiagnostics: false,
+      });
+  if (hasErrors(diagnostics)) {
+    throw new PTBModelError(
+      'TransactionIR cannot be built as a runtime Transaction.',
+      diagnostics,
+    );
+  }
 }
 
 function buildInput(tx: Transaction, input: IRInput, index: number): TxArg {
@@ -68,39 +82,37 @@ function buildInput(tx: Transaction, input: IRInput, index: number): TxArg {
         return tx.pure(fromBase64(input.bytes));
       }
       return buildTypedPureInput(tx, input, index);
-    case 'Object':
-      if (!input.object) {
-        throwRuntimeError(
-          'runtime.input.object',
-          `Object input ${input.id} has no resolved object reference.`,
-          `$.inputs[${index}].object`,
-        );
+    case 'Object': {
+      const object = irResolvedObjectArg(input);
+      if (!object) {
+        return tx.object(irObjectId(input));
       }
-      switch (input.object.kind) {
+      switch (object.kind) {
         case 'ImmOrOwnedObject':
           return tx.objectRef({
-            objectId: input.object.objectId,
-            version: input.object.version,
-            digest: input.object.digest,
+            objectId: object.objectId,
+            version: object.version,
+            digest: object.digest,
           });
         case 'SharedObject':
           return tx.sharedObjectRef({
-            objectId: input.object.objectId,
-            initialSharedVersion: input.object.initialSharedVersion,
-            mutable: input.object.mutable,
+            objectId: object.objectId,
+            initialSharedVersion: object.initialSharedVersion,
+            mutable: object.mutable,
           });
         case 'Receiving':
           return tx.receivingRef({
-            objectId: input.object.objectId,
-            version: input.object.version,
-            digest: input.object.digest,
+            objectId: object.objectId,
+            version: object.version,
+            digest: object.digest,
           });
       }
       throwRuntimeError(
         'runtime.input.objectKind',
-        `Object input ${input.id} has unsupported object kind ${String((input.object as { kind?: unknown }).kind)}.`,
-        `$.inputs[${index}].object.kind`,
+        `Object input ${input.id} has unsupported object kind ${String((object as { kind?: unknown }).kind)}.`,
+        `$.inputs[${index}].source.object.kind`,
       );
+    }
     case 'FundsWithdrawal':
       if (input.value.withdrawFrom.kind !== 'Sender') {
         throwRuntimeError(

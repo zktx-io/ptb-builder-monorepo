@@ -63,10 +63,14 @@ const TRANSACTION_IR_KEYS = [
 ] as const;
 const IR_INPUT_KEYS_BY_KIND = {
   Pure: ['id', 'kind', 'bytes', 'value', 'type', 'canonicalRaw'],
-  Object: ['id', 'kind', 'object', 'type', 'canonicalRaw'],
+  Object: ['id', 'kind', 'source', 'type', 'canonicalRaw'],
   FundsWithdrawal: ['id', 'kind', 'value', 'canonicalRaw'],
   Unsupported: ['id', 'kind', 'sourceKind', 'value'],
 } as const satisfies Record<IRInput['kind'], readonly string[]>;
+const IR_OBJECT_SOURCE_KEYS_BY_KIND = {
+  Unresolved: ['kind', 'objectId'],
+  Resolved: ['kind', 'object'],
+} as const;
 const IR_COMMAND_KEYS_BY_KIND = {
   MoveCall: [
     'id',
@@ -437,6 +441,94 @@ function validateCanonicalRawField(
   return false;
 }
 
+function validateIRObjectSource(
+  value: Record<string, unknown>,
+  inputIndex: number,
+  diagnostics: TransactionDiagnostic[],
+): boolean {
+  const path = `$.inputs[${inputIndex}].source`;
+  const source = value.source;
+  if (!isRecord(source) || typeof source.kind !== 'string') {
+    diagnostics.push(
+      irDiagnostic(
+        'ir.input.objectSource',
+        `Object input ${inputIndex} requires an object source.`,
+        path,
+      ),
+    );
+    return false;
+  }
+
+  switch (source.kind) {
+    case 'Unresolved': {
+      validateUnknownFields(
+        source,
+        IR_OBJECT_SOURCE_KEYS_BY_KIND.Unresolved,
+        'ir.input.objectSource.unknownField',
+        path,
+        'TransactionIR object source',
+        diagnostics,
+      );
+      const objectId =
+        typeof source.objectId === 'string'
+          ? parseObjectId(source.objectId)
+          : undefined;
+      if (objectId === undefined || objectId !== source.objectId) {
+        diagnostics.push(
+          irDiagnostic(
+            'ir.input.objectId',
+            `Object input ${inputIndex} unresolved source requires a canonical object id.`,
+            `${path}.objectId`,
+          ),
+        );
+        return false;
+      }
+      return validateCanonicalRawField(
+        value,
+        undefined,
+        'input',
+        inputIndex,
+        diagnostics,
+      );
+    }
+    case 'Resolved':
+      validateUnknownFields(
+        source,
+        IR_OBJECT_SOURCE_KEYS_BY_KIND.Resolved,
+        'ir.input.objectSource.unknownField',
+        path,
+        'TransactionIR object source',
+        diagnostics,
+      );
+      if (isRawObjectArg(source.object)) {
+        return validateCanonicalRawField(
+          value,
+          { kind: 'Object', object: source.object },
+          'input',
+          inputIndex,
+          diagnostics,
+        );
+      }
+      diagnostics.push(
+        irDiagnostic(
+          'ir.input.object',
+          `Object input ${inputIndex} resolved source requires a valid object argument.`,
+          `${path}.object`,
+        ),
+      );
+      return false;
+    default:
+      diagnostics.push(
+        irDiagnostic(
+          'ir.input.objectSource',
+          `Object input ${inputIndex} has unsupported object source ${source.kind}.`,
+          `${path}.kind`,
+        ),
+      );
+      return false;
+  }
+}
+
 function transactionIRPlainDataDiagnostic(
   issue: PlainDataIssue,
 ): TransactionDiagnostic {
@@ -598,32 +690,7 @@ function isIRInputShape(
         );
         return false;
       }
-      if ('object' in value && value.object !== undefined) {
-        if (isRawObjectArg(value.object)) {
-          return validateCanonicalRawField(
-            value,
-            { kind: 'Object', object: value.object },
-            'input',
-            inputIndex,
-            diagnostics,
-          );
-        }
-        diagnostics.push(
-          irDiagnostic(
-            'ir.input.object',
-            `Object input ${inputIndex} has an invalid object argument.`,
-            `${path}.object`,
-          ),
-        );
-        return false;
-      }
-      return validateCanonicalRawField(
-        value,
-        undefined,
-        'input',
-        inputIndex,
-        diagnostics,
-      );
+      return validateIRObjectSource(value, inputIndex, diagnostics);
     case 'FundsWithdrawal':
       validateIRInputUnknownFields(value, 'FundsWithdrawal', path, diagnostics);
       if (isRawFundsWithdrawalArg(value.value)) {

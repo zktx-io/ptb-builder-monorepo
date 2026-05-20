@@ -631,26 +631,15 @@ describe('model-root PTB boundary', () => {
   });
 
   it('uses the model MergeCoins destination handle when creating registry ports', () => {
-    const destinationRef = {
-      kind: 'ImmOrOwnedObject' as const,
-      objectId: ADDRESS,
-      version: '1',
-      digest: TEST_DIGEST,
-    };
-    const sourceRef = {
-      kind: 'ImmOrOwnedObject' as const,
-      objectId:
-        '0x0000000000000000000000000000000000000000000000000000000000000002',
-      version: '2',
-      digest: TEST_DIGEST,
-    };
+    const sourceObjectId =
+      '0x0000000000000000000000000000000000000000000000000000000000000002';
     const destination = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
       id: 'destination',
-      value: destinationRef,
+      value: ADDRESS,
     });
     const source = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
       id: 'source',
-      value: sourceRef,
+      value: sourceObjectId,
     });
     const merge = makeCommandNode('mergeCoins', {
       id: 'merge',
@@ -1053,11 +1042,14 @@ describe('model-root PTB boundary', () => {
           {
             id: 'ticket',
             kind: 'Object',
-            object: {
-              kind: 'ImmOrOwnedObject',
-              objectId: ADDRESS,
-              version: '1',
-              digest: TEST_DIGEST,
+            source: {
+              kind: 'Resolved',
+              object: {
+                kind: 'ImmOrOwnedObject',
+                objectId: ADDRESS,
+                version: '1',
+                digest: TEST_DIGEST,
+              },
             },
           },
         ],
@@ -1095,11 +1087,14 @@ describe('model-root PTB boundary', () => {
           {
             id: 'coin',
             kind: 'Object',
-            object: {
-              kind: 'ImmOrOwnedObject',
-              objectId: ADDRESS,
-              version: '1',
-              digest: TEST_DIGEST,
+            source: {
+              kind: 'Resolved',
+              object: {
+                kind: 'ImmOrOwnedObject',
+                objectId: ADDRESS,
+                version: '1',
+                digest: TEST_DIGEST,
+              },
             },
           },
           {
@@ -1267,20 +1262,10 @@ describe('model-root PTB boundary', () => {
     expect(roundTrip.edges).toEqual(graph.edges);
   });
 
-  it('keeps builder-authored object rawInput value aligned with the model graph boundary', () => {
-    const objectRef = {
-      kind: 'ImmOrOwnedObject' as const,
-      objectId: ADDRESS,
-      version: '7',
-      digest: TEST_DIGEST,
-    };
+  it('keeps builder-authored object ids unresolved for SDK runtime resolution', () => {
     const objectNode = makeObject('0x2::coin::Coin<0x2::sui::SUI>', {
       id: 'coin-node',
-      value: objectRef,
-      rawInput: {
-        kind: 'Object',
-        object: objectRef,
-      },
+      value: ADDRESS,
     });
     objectNode.name = 'coin';
     const graph: PTBGraph = {
@@ -1295,9 +1280,40 @@ describe('model-root PTB boundary', () => {
     expect(ir.inputs[0]).toMatchObject({
       id: 'coin',
       kind: 'Object',
-      object: objectRef,
+      source: { kind: 'Unresolved', objectId: ADDRESS },
     });
     expect(() => buildTransactionFromIR(ir)).not.toThrow();
+  });
+
+  it('keeps sponsor FundsWithdrawal rejected at the runtime adapter boundary', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'withdrawal',
+          kind: 'FundsWithdrawal',
+          value: {
+            reservation: { kind: 'MaxAmountU64', amount: '1000' },
+            typeArg: { kind: 'Balance', type: SUI_TYPE },
+            withdrawFrom: { kind: 'Sponsor' },
+          },
+        },
+      ],
+      commands: [],
+      diagnostics: [],
+    };
+
+    expect(() => buildTransactionFromIR(ir)).toThrow(PTBModelError);
+    try {
+      buildTransactionFromIR(ir);
+    } catch (error) {
+      expect((error as PTBModelError).diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'runtime.input.fundsWithdrawalSponsor',
+          path: '$.inputs[0].value.withdrawFrom',
+        }),
+      );
+    }
   });
 
   it('builds runtime pure inputs for option<bool> values authored as booleans', () => {

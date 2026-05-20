@@ -18,6 +18,7 @@ import type {
   IRInput,
   TransactionIR,
 } from '../ir/types.js';
+import { irObjectId, irResolvedObjectArg } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
 import type { RawFundsWithdrawalArg } from '../raw/types.js';
 import { jsonStringifyWithBigInt } from '../utils.js';
@@ -81,39 +82,37 @@ function renderInput(input: IRInput, index: number): string {
         return `  const ${name} = tx.pure(fromBase64(${renderCodeString(input.bytes)}));`;
       }
       return renderTypedPureInput(name, input);
-    case 'Object':
-      if (!input.object) {
-        throwTsSdkCodeError(
-          'codegen.input.object',
-          `Object input ${input.id} has no resolved object reference.`,
-          `$.inputs[${index}].object`,
-        );
+    case 'Object': {
+      const object = irResolvedObjectArg(input);
+      if (!object) {
+        return `  const ${name} = tx.object(${renderCodeString(irObjectId(input))});`;
       }
-      switch (input.object.kind) {
+      switch (object.kind) {
         case 'ImmOrOwnedObject':
           return `  const ${name} = tx.objectRef(${renderCodeJson({
-            objectId: input.object.objectId,
-            version: input.object.version,
-            digest: input.object.digest,
+            objectId: object.objectId,
+            version: object.version,
+            digest: object.digest,
           })});`;
         case 'SharedObject':
           return `  const ${name} = tx.sharedObjectRef(${renderCodeJson({
-            objectId: input.object.objectId,
-            initialSharedVersion: input.object.initialSharedVersion,
-            mutable: input.object.mutable,
+            objectId: object.objectId,
+            initialSharedVersion: object.initialSharedVersion,
+            mutable: object.mutable,
           })});`;
         case 'Receiving':
           return `  const ${name} = tx.receivingRef(${renderCodeJson({
-            objectId: input.object.objectId,
-            version: input.object.version,
-            digest: input.object.digest,
+            objectId: object.objectId,
+            version: object.version,
+            digest: object.digest,
           })});`;
       }
       throwTsSdkCodeError(
         'codegen.input.objectKind',
-        `Object input ${input.id} has unsupported object kind ${String((input.object as { kind?: unknown }).kind)}.`,
-        `$.inputs[${index}].object.kind`,
+        `Object input ${input.id} has unsupported object kind ${String((object as { kind?: unknown }).kind)}.`,
+        `$.inputs[${index}].source.object.kind`,
       );
+    }
     case 'FundsWithdrawal':
       return `  const ${name} = tx.withdrawal(${renderFundsWithdrawal(
         input.value,
@@ -157,15 +156,6 @@ export function validateTsSdkRenderableIR(
       case 'Pure':
         return;
       case 'Object':
-        if (!input.object) {
-          diagnostics.push(
-            renderDiagnostic(
-              'codegen.input.object',
-              `Object input ${input.id} requires a resolved object reference for TS SDK code generation.`,
-              `$.inputs[${index}].object`,
-            ),
-          );
-        }
         return;
       case 'FundsWithdrawal':
         if (input.value.withdrawFrom.kind !== 'Sender') {

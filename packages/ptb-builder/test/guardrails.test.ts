@@ -298,10 +298,48 @@ describe('builder source guardrails', () => {
     );
 
     expect(text).not.toContain('debouncedPatchObjectId');
-    expect(text).toContain('objectAuthoringInputChanged(prev, s, seq)');
+    expect(text).toContain('objectMetadataInputChanged(prev, s, seq)');
     expect(text).toMatch(
       /patchVar\(\{\s*value:\s*s,\s*rawInput:\s*undefined,?\s*\}\);/s,
     );
+  });
+
+  it('keeps object metadata authoring out of raw reference synthesis', () => {
+    const forbidden = [
+      'ObjectRawUsage',
+      'buildObjectRawInputForUsage',
+      'defaultObjectRawUsage',
+      'lookupObjectForAuthoring',
+      'currentObjectUsage',
+      'canSelectObjectUsage',
+      'shared-readonly',
+      'shared-mutable',
+      'object-ref',
+      'No raw object input',
+    ];
+    const violations = sourceFiles.flatMap((file) => {
+      const text = readFileSync(file, 'utf8');
+      return forbidden
+        .filter((token) => text.includes(token))
+        .map((token) => `${file}: ${token}`);
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('keeps asset picks from synthesizing resolved object rawInput', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const start = text.indexOf('const onAssetPick = useCallback');
+    const end = text.indexOf('// ----- Render', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('makeObject(obj.typeTag');
+    expect(segment).toContain('value: obj.objectId');
+    expect(segment).not.toContain('rawInput');
+    expect(segment).not.toContain('version');
+    expect(segment).not.toContain('digest');
   });
 
   it('keeps option<bool> authoring on boolean values instead of text strings', () => {

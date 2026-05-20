@@ -57,8 +57,8 @@ shapes outside this package before calling builder/model APIs.
 ### 6. Use On‑Chain Assets as Objects
 
 - **Asset Browser**: Browse objects owned by the `address` prop when a host wallet/address is connected (coins, Move objects, modules, etc.).
-- **Object Ref Preservation**: Insert owned assets as **Object nodes** with SDK-reported object id, version, and digest when the Core API returns those fields.
-- **Explicit Shared Usage**: Shared-object inputs require an explicit read-only or mutable selection. PTB Builder does not infer shared mutability from owner labels, symbols, or convenience defaults.
+- **Object Metadata Loading**: Insert owned assets as **Object nodes** with object id and type metadata. Runtime construction uses the pinned SDK helper surface, such as `tx.object(id)`, for unresolved object ids.
+- **Resolved Ref Preservation**: When a decoded raw or on-chain PTB already contains resolved object references, PTB Builder preserves those references for inspection and round-trip fidelity instead of asking the user to recreate them.
 
 ### 7. Themes
 
@@ -95,8 +95,8 @@ Input authoring support:
 - **Scalars**: numbers, booleans, addresses, strings ✅
 - **Objects**: direct ownership/transfer supported ✅ (includes `Coin<T>`)
   - _Objects can be selected from your owned assets via the **Assets modal** when `address` is provided._
-  - _Manual object authoring should use the object node lookup before runtime building so the graph carries SDK-reported object id, version, digest, owner kind, and type tag._
-  - _Receiving and shared-object usage are explicit authoring choices. Consensus-owned or unknown-owner objects are not converted into raw PTB object inputs by default._
+  - _Manual object authoring should use the object node lookup before runtime building so the graph carries SDK-reported object id and type tag._
+  - _Object nodes do not expose raw usage choices. Move function signatures determine argument expectations, and unresolved object ids are handed to the SDK runtime with `tx.object(id)`._
 - **Vectors**: scalars only ✅ (❌ objects, including coins, are not supported in vectors)
 - **Options**: available for scalars ✅ (❌ not supported for objects)
 

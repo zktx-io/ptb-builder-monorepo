@@ -30,6 +30,7 @@ import React, {
 import type { Transaction } from '@mysten/sui/transactions';
 import {
   type IRInput,
+  irObjectId,
   type MovePackageSignatureEvidence,
   parseObjectId,
   rawTransactionToIR,
@@ -89,10 +90,10 @@ import {
 import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
 import { normalizeGraph } from '../ptb/normalizeGraph';
 import {
-  type ObjectAuthoringInfo,
-  objectAuthoringInfoFromCoreObject,
-  type ObjectAuthoringLookupResult,
-} from '../ptb/objectAuthoring';
+  objectMetadataFromCoreObject,
+  type ObjectMetadataInfo,
+  type ObjectMetadataLookupResult,
+} from '../ptb/objectMetadata';
 import {
   buildDoc,
   createEmptyPTBDoc,
@@ -147,7 +148,7 @@ type OwnedObjectsResponse = {
       version?: string;
       digest?: string;
       owner?: unknown;
-      authoring?: ObjectAuthoringInfo;
+      metadata?: ObjectMetadataInfo;
       content?: { dataType: 'moveObject'; type: string };
       display?: { data?: Record<string, unknown> | null };
     };
@@ -167,8 +168,8 @@ type MoveCallFunctionRef = {
 function objectIdsFromIRInputs(inputs: readonly IRInput[]): string[] {
   const ids = new Set<string>();
   for (const input of inputs) {
-    if (input.kind === 'Object' && input.object) {
-      ids.add(input.object.objectId);
+    if (input.kind === 'Object') {
+      ids.add(irObjectId(input));
     }
   }
   return [...ids];
@@ -232,10 +233,10 @@ export type PtbContextValue = {
 
   // Chain caches & helpers (PTB-only)
   objects: PTBObjectsEmbed;
-  lookupObjectForAuthoring: (
+  lookupObjectMetadata: (
     objectId: string,
     opts?: { clientOverride?: PtbCoreClient },
-  ) => Promise<ObjectAuthoringLookupResult>;
+  ) => Promise<ObjectMetadataLookupResult>;
 
   modules: PTBModulesEmbed;
   packageIndexes: Record<string, MovePackageFunctionIndex>;
@@ -768,8 +769,8 @@ export function PtbProvider({
     [],
   );
 
-  const lookupObjectForAuthoring = useCallback<
-    PtbContextValue['lookupObjectForAuthoring']
+  const lookupObjectMetadata = useCallback<
+    PtbContextValue['lookupObjectMetadata']
   >(
     async (objectId, opts) => {
       const rawId = objectId?.trim();
@@ -783,8 +784,8 @@ export function PtbProvider({
       const client = opts?.clientOverride ?? clientRef.current;
       if (!client) {
         const error =
-          'Object authoring lookup unavailable: no Sui client is active for the selected chain.';
-        reportClientUnavailable('Object authoring lookup');
+          'Object metadata lookup unavailable: no Sui client is active for the selected chain.';
+        reportClientUnavailable('Object metadata lookup');
         return { ok: false, error };
       }
 
@@ -793,7 +794,7 @@ export function PtbProvider({
           objectId: id,
           include: { content: true },
         });
-        const parsed = objectAuthoringInfoFromCoreObject(resp.object);
+        const parsed = objectMetadataFromCoreObject(resp.object);
         if (!parsed.ok) return parsed;
 
         const metadata: PTBObjectData = {
@@ -1024,7 +1025,7 @@ export function PtbProvider({
         });
         return {
           data: page.objects.map((object) => {
-            const authoring = objectAuthoringInfoFromCoreObject(object);
+            const metadata = objectMetadataFromCoreObject(object);
             return {
               data: {
                 objectId: object.objectId,
@@ -1032,7 +1033,7 @@ export function PtbProvider({
                 version: object.version,
                 digest: object.digest,
                 owner: object.owner,
-                authoring: authoring.ok ? authoring.object : undefined,
+                metadata: metadata.ok ? metadata.object : undefined,
                 content: { dataType: 'moveObject', type: object.type },
                 display: object.display
                   ? { data: object.display.output }
@@ -1529,7 +1530,7 @@ export function PtbProvider({
       showExportButton,
 
       objects,
-      lookupObjectForAuthoring,
+      lookupObjectMetadata,
 
       modules,
       packageIndexes,
@@ -1572,7 +1573,7 @@ export function PtbProvider({
       showThemeSelector,
       showExportButton,
       objects,
-      lookupObjectForAuthoring,
+      lookupObjectMetadata,
       modules,
       packageIndexes,
       moveSignatures,

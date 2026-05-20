@@ -67,9 +67,7 @@ import { normalizeMovePackageSignatureEvidenceOption } from '../move/evidence.js
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
-  parseJsonU64,
   parseMoveTypeTag,
-  parseObjectDigest,
   parseObjectId,
 } from '../raw/types.js';
 import {
@@ -688,40 +686,48 @@ function variableNodeToInput(
   if (inputType.kind === 'object') {
     const object = isPlainObject(node.value) ? node.value : undefined;
     const objectKind = object?.kind;
-    if (objectKind !== undefined && objectKind !== 'ImmOrOwnedObject') {
+    if (objectKind !== undefined) {
       diagnostics.push(
         graphDiagnostic(
           'graph.input.object.invalidKind',
-          `Object variable ${node.id} cannot use value.kind ${String(objectKind)} without rawInput; use rawInput for SharedObject, Receiving, or other raw PTB object inputs.`,
+          `Object variable ${node.id} cannot use value.kind ${String(objectKind)} without rawInput; use rawInput for resolved raw PTB object inputs.`,
           `${nodePath}.value.kind`,
         ),
       );
       return {
         id,
-        kind: 'Object',
-        type: inputType,
+        kind: 'Unsupported',
+        sourceKind: 'InvalidObjectValue',
+        value: cloneJsonLike(node.value),
+      };
+    }
+    if (
+      object !== undefined &&
+      Object.keys(object).some((key) => key !== 'objectId')
+    ) {
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.input.object.unresolved',
+          `Object variable ${node.id} value must be a canonical object id string or an object containing only objectId when rawInput is absent.`,
+          `${nodePath}.value`,
+        ),
+      );
+      return {
+        id,
+        kind: 'Unsupported',
+        sourceKind: 'InvalidObjectId',
+        value: cloneJsonLike(node.value),
       };
     }
 
-    const objectId = canonicalObjectId(object?.objectId);
-    const version = canonicalJsonU64(object?.version);
-    const digest = parseObjectDigest(object?.digest);
-    if (
-      object &&
-      objectId !== undefined &&
-      version !== undefined &&
-      digest !== undefined &&
-      digest === object.digest
-    ) {
+    const rawObjectId =
+      typeof node.value === 'string' ? node.value : object?.objectId;
+    const objectId = canonicalObjectId(rawObjectId);
+    if (objectId !== undefined) {
       return {
         id,
         kind: 'Object',
-        object: {
-          kind: 'ImmOrOwnedObject',
-          objectId,
-          version,
-          digest,
-        },
+        source: { kind: 'Unresolved', objectId },
         type: inputType,
       };
     }
@@ -729,14 +735,17 @@ function variableNodeToInput(
     diagnostics.push(
       graphDiagnostic(
         'graph.input.object.unresolved',
-        `Object variable ${node.id} requires canonical objectId, canonical decimal JsonU64 version, and digest to become raw PTB.`,
+        `Object variable ${node.id} requires a canonical object id.`,
         nodePath,
       ),
     );
     return {
       id,
-      kind: 'Object',
-      type: inputType,
+      kind: 'Unsupported',
+      sourceKind: 'InvalidObjectId',
+      ...(Object.prototype.hasOwnProperty.call(node, 'value')
+        ? { value: cloneJsonLike(node.value) }
+        : {}),
     };
   }
 
@@ -761,9 +770,9 @@ function graphInputValueParam(input: IRInput): { value: unknown } | {} {
         ? { value: cloneJsonLike(input.value) }
         : {};
     case 'Object':
-      return input.object !== undefined
-        ? { value: cloneJsonLike(input.object) }
-        : {};
+      return input.source.kind === 'Resolved'
+        ? { value: cloneJsonLike(input.source.object) }
+        : { value: input.source.objectId };
     case 'FundsWithdrawal':
       return { value: cloneJsonLike(input.value) };
     case 'Unsupported':
@@ -781,8 +790,8 @@ function rawInputFromIRInput(input: IRInput): RawCallArg | undefined {
         ? { kind: 'Pure', bytes: input.bytes }
         : undefined;
     case 'Object':
-      return input.object
-        ? { kind: 'Object', object: cloneJsonLike(input.object) }
+      return input.source.kind === 'Resolved'
+        ? { kind: 'Object', object: cloneJsonLike(input.source.object) }
         : undefined;
     case 'FundsWithdrawal':
       return { kind: 'FundsWithdrawal', value: cloneJsonLike(input.value) };
@@ -834,7 +843,7 @@ function rawInputToIRInput(
       return {
         id,
         kind: 'Object',
-        object: canonicalRaw.object,
+        source: { kind: 'Resolved', object: canonicalRaw.object },
         ...(type.kind === 'object' && type.typeTag === undefined
           ? {}
           : { type }),
@@ -860,11 +869,6 @@ function isGasVariable(node: VariableNode): boolean {
 function canonicalObjectId(value: unknown): string | undefined {
   const objectId = parseObjectId(value);
   return objectId !== undefined && objectId === value ? objectId : undefined;
-}
-
-function canonicalJsonU64(value: unknown): string | undefined {
-  const jsonU64 = parseJsonU64(value);
-  return jsonU64 !== undefined && jsonU64 === value ? jsonU64 : undefined;
 }
 
 function commandNodeToIRCommand(

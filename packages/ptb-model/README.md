@@ -267,9 +267,10 @@ dense arrays, plain objects, or primitives; class instances are rejected instead
 of being frozen by reference. It does not mean the IR can be rendered to every
 projection. Unsupported inputs or commands may still be present for inspection
 and graph round-trips. Use `validateTsSdkRenderableIR()` /
-`assertTsSdkRenderableIR()` before TS SDK code generation or runtime adapter
-construction, and use `validateRawConvertibleIR()` / `assertRawConvertibleIR()`
-before raw PTB conversion. `parseStructuralTransactionIR()` clones host-provided
+`assertTsSdkRenderableIR()` before TS SDK code string generation, and use
+`validateRawConvertibleIR()` / `assertRawConvertibleIR()` before raw PTB
+conversion. Runtime adapters must validate their own SDK construction boundary.
+`parseStructuralTransactionIR()` clones host-provided
 IR before freezing it; `createTransactionIR()` only creates a frame and freezes
 diagnostics, so it does not produce a structural fast-path value.
 Serialization or `structuredClone()` removes this package's structural brand.
@@ -300,6 +301,18 @@ Canonical object inputs:
 - `ImmOrOwnedObject`
 - `SharedObject`
 - `Receiving`
+
+`TransactionIR` represents object inputs with an explicit source:
+
+- `source: { kind: 'Resolved', object }` for raw PTB object references that
+  carry the required object reference fields.
+- `source: { kind: 'Unresolved', objectId }` for SDK-authorable object ids that
+  must be resolved by the SDK/runtime client through helpers such as
+  `tx.object(id)`.
+
+Raw PTB conversion accepts only resolved object references. Mermaid and TypeScript
+SDK code rendering preserve the source distinction instead of synthesizing
+resolved object reference fields from object metadata.
 
 Canonical commands:
 
@@ -511,13 +524,13 @@ MoveCall targets, package IDs, dependencies, module bytes, and MakeMoveVec
 explicit types are transaction inputs; UI params are never read as transaction
 semantics. MoveCall type arguments are `TypeArgument` nodes connected through
 `type` edges, not fields under `params.runtime`. Value-only object variables are
-a separate graph convenience. They are resolved only as owned or immutable
-objects when
-`value.kind` is absent or `ImmOrOwnedObject` and the value carries canonical
-`objectId`, decimal `JsonU64` `version`, and digest fields. Non-canonical
-fields emit `graph.input.object.unresolved`; `Receiving`, `SharedObject`, and
-unrecognized `value.kind` values emit `graph.input.object.invalidKind` because
-those raw PTB object inputs must use `rawInput`. Mermaid rendering shows
+a graph convenience for unresolved SDK object ids. They lower to
+`IRInput.Object` with `source.kind === 'Unresolved'` only when the value is a
+canonical object id string or an object carrying a canonical `objectId`.
+Non-canonical ids emit `graph.input.object.unresolved`; `Receiving`,
+`SharedObject`, and unrecognized `value.kind` values emit
+`graph.input.object.invalidKind` because those raw PTB object inputs must use
+`rawInput`. Mermaid rendering shows
 diagnostics for invalid references and omits edges whose source node does not
 exist.
 
@@ -575,12 +588,18 @@ const raw = transactionIRToRaw(ir);
 The generated source targets the public helper surface in `@mysten/sui@2.16.2`, including:
 
 - `Transaction`
+- `tx.object(...)`
 - `tx.objectRef(...)`
 - `tx.sharedObjectRef(...)`
 - `tx.receivingRef(...)`
 - `tx.withdrawal(...)`
 
-Code string rendering validates the `TransactionIR` shape and conversion requirements before rendering. Unsupported inputs, unresolved object data, and shapes that cannot be represented honestly with the public SDK helper surface throw instead of emitting incomplete or misleading code.
+Code string rendering validates the `TransactionIR` shape and conversion
+requirements before rendering. Unresolved object ids render through
+`tx.object(id)`; resolved object references render through the resolved SDK
+helpers. Unsupported inputs and shapes that cannot be represented honestly with
+the public SDK helper surface throw instead of emitting incomplete or misleading
+code.
 
 In particular, Sponsor `FundsWithdrawal` is preserved in raw/IR/graph/Mermaid conversion, but TS SDK code string rendering rejects it because the public `Transaction.withdrawal()` helper only exposes sender withdrawal behavior.
 

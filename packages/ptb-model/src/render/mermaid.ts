@@ -3,7 +3,11 @@ import type {
   DiagnosticCategory,
   TransactionDiagnostic,
 } from '../ir/diagnostics.js';
-import { irCommandArgRefs } from '../ir/types.js';
+import {
+  irCommandArgRefs,
+  irObjectId,
+  irResolvedObjectArg,
+} from '../ir/types.js';
 import type {
   IRArgRef,
   IRCommand,
@@ -11,7 +15,7 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
-import { isRawFundsWithdrawalArg, isRawObjectArg } from '../raw/types.js';
+import { isRawFundsWithdrawalArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
 import { isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
 
@@ -364,12 +368,16 @@ function inputValueLabel(input: unknown): string {
       return typeof input.bytes === 'string'
         ? `bytes ${shorten(input.bytes)}`
         : 'bytes unavailable';
-    case 'Object':
-      return isRawObjectArg(input.object)
-        ? objectValueLabel(input.object)
-        : input.object
-          ? 'invalid object'
-          : 'object unresolved';
+    case 'Object': {
+      if (!isRecord(input.source)) {
+        return 'invalid object';
+      }
+      const objectInput = input as Extract<IRInput, { kind: 'Object' }>;
+      const object = irResolvedObjectArg(objectInput);
+      return object
+        ? objectValueLabel(object)
+        : `object ${shortId(irObjectId(objectInput))}`;
+    }
     case 'FundsWithdrawal':
       if (!isRawFundsWithdrawalArg(input.value)) {
         return 'invalid funds withdrawal';

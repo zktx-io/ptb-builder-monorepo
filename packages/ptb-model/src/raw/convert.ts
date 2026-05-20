@@ -32,7 +32,7 @@ import {
   finalizeStructuralTransactionIR,
   isStructuralTransactionIR,
 } from '../ir/structural.js';
-import { createTransactionIR } from '../ir/types.js';
+import { createTransactionIR, irResolvedObjectArg } from '../ir/types.js';
 import type { IRCommand, IRInput, TransactionIR } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
 import {
@@ -161,15 +161,17 @@ export function transactionIRToRaw(
           }
           return { kind: 'Pure', bytes: input.bytes };
         }
-        case 'Object':
-          if (!input.object) {
+        case 'Object': {
+          const object = irResolvedObjectArg(input);
+          if (!object) {
             throwRawConversionError(
               'raw.ir.object',
               `Object input ${index} requires a resolved object argument for raw PTB conversion.`,
-              `$.inputs[${index}].object`,
+              `$.inputs[${index}].source`,
             );
           }
-          return { kind: 'Object', object: rawObjectArgFromIR(input.object) };
+          return { kind: 'Object', object: rawObjectArgFromIR(object) };
+        }
         case 'FundsWithdrawal':
           return { kind: 'FundsWithdrawal', value: cloneJsonLike(input.value) };
         case 'Unsupported':
@@ -225,12 +227,12 @@ export function validateRawConvertibleIR(
         }
         return;
       case 'Object':
-        if (!input.object) {
+        if (!irResolvedObjectArg(input)) {
           diagnostics.push(
             rawDiagnostic(
               'raw.ir.object',
               `Object input ${index} requires a resolved object argument for raw PTB conversion.`,
-              `$.inputs[${index}].object`,
+              `$.inputs[${index}].source`,
             ),
           );
         }
@@ -281,7 +283,7 @@ function rawCallArgToIRInput(raw: RawCallArg, index: number): IRInput {
       return {
         id,
         kind: 'Object',
-        object: canonicalRaw.object,
+        source: { kind: 'Resolved', object: canonicalRaw.object },
         canonicalRaw,
       };
     }

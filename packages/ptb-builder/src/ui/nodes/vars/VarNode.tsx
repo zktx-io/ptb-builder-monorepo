@@ -23,26 +23,19 @@ import {
 } from '../../../ptb/graph/typecheck';
 import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
 import {
-  buildObjectRawInputForUsage,
-  defaultObjectRawUsage,
-  type ObjectRawUsage,
-} from '../../../ptb/objectAuthoring';
-import {
   createDebouncedCallbackController,
   type DebouncedCallbackController,
 } from '../../debouncedCallback';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
 import {
-  activeObjectAuthoringInfo,
-  canSelectObjectRawUsage,
-  createObjectAuthoringState,
-  displayObjectAuthoringInfo,
-  objectAuthoringInputChanged,
-  objectAuthoringLookupFailed,
-  objectAuthoringLookupStarted,
-  objectAuthoringLookupSucceeded,
-  unsupportedObjectAuthoringReason,
-} from '../../objectAuthoringState';
+  activeObjectMetadataInfo,
+  createObjectMetadataState,
+  displayObjectMetadataInfo,
+  objectMetadataInputChanged,
+  objectMetadataLookupFailed,
+  objectMetadataLookupStarted,
+  objectMetadataLookupSucceeded,
+} from '../../objectMetadataState';
 import { usePtb } from '../../PtbProvider';
 import { iconOfVar } from '../icons';
 import { NODE_SIZES } from '../nodeLayout';
@@ -119,12 +112,6 @@ function defer(fn: () => void) {
   else Promise.resolve().then(fn);
 }
 
-function shortMiddle(value: string, left = 8, right = 6): string {
-  if (!value) return '';
-  if (value.length <= left + right + 3) return value;
-  return `${value.slice(0, left)}…${value.slice(-right)}`;
-}
-
 function parseBoolEditorValue(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value !== 'string') return undefined;
@@ -153,7 +140,7 @@ export const VarNode = memo(function VarNode({
   const variableValue = v?.value;
 
   const updateNodeInternals = useUpdateNodeInternals();
-  const { lookupObjectForAuthoring, readOnly, toast } = usePtb();
+  const { lookupObjectMetadata, readOnly, toast } = usePtb();
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -180,11 +167,11 @@ export const VarNode = memo(function VarNode({
   const [optSome, setOptSome] = useState<boolean>(false); // Option<T> toggle
   const reqSeqRef = useRef(0);
   const [objectDraft, setObjectDraft] = useState(() =>
-    createObjectAuthoringState(''),
+    createObjectMetadataState(''),
   );
   useEffect(() => {
     reqSeqRef.current += 1;
-    setObjectDraft(createObjectAuthoringState('', reqSeqRef.current));
+    setObjectDraft(createObjectMetadataState('', reqSeqRef.current));
   }, [nodeId]);
 
   // Patcher
@@ -309,27 +296,15 @@ export const VarNode = memo(function VarNode({
     debouncedPatchVector.cancel();
   }, [debouncedPatchScalar, debouncedPatchVector]);
 
-  const currentObjectUsage: ObjectRawUsage | '' =
-    rawObject?.kind === 'ImmOrOwnedObject'
-      ? 'object-ref'
-      : rawObject?.kind === 'Receiving'
-        ? 'receiving'
-        : rawObject?.kind === 'SharedObject'
-          ? rawObject.mutable
-            ? 'shared-mutable'
-            : 'shared-readonly'
-          : '';
-  const objectInfo = displayObjectAuthoringInfo(objectDraft);
-  const activeObjectInfo = activeObjectAuthoringInfo(objectDraft);
-  const canSelectObjectUsage = canSelectObjectRawUsage(objectDraft);
+  const objectInfo = displayObjectMetadataInfo(objectDraft);
+  const activeObjectInfo = activeObjectMetadataInfo(objectDraft);
   const objTypeLoading = objectDraft.status === 'loading';
   const objectInfoMatchesInput = !!activeObjectInfo;
   const showObjectLoadButton = !readOnly && !objectInfoMatchesInput;
-  const unsupportedOwnerMessage = unsupportedObjectAuthoringReason(objectInfo);
   const optionBoolValue = parseBoolEditorValue(variableValue ?? scalarBuf);
 
-  // Explicit object lookup: user input changes only edit the object id; raw
-  // ObjectRef data is attached only after a lookup result and usage choice.
+  // Object lookup loads authoring metadata only. Resolved raw references are
+  // preserved only when they came from decoded raw/on-chain PTB data.
   const handleObjectLookup = useCallback(async () => {
     if (!canEdit) return;
 
@@ -339,20 +314,20 @@ export const VarNode = memo(function VarNode({
 
     if (!id) {
       const seq = ++reqSeqRef.current;
-      setObjectDraft(createObjectAuthoringState('', seq));
+      setObjectDraft(createObjectMetadataState('', seq));
       patchVar({ varType: { kind: 'object' }, rawInput: undefined });
       return;
     }
 
     const seq = ++reqSeqRef.current;
-    setObjectDraft((prev) => objectAuthoringLookupStarted(prev, id, seq));
+    setObjectDraft((prev) => objectMetadataLookupStarted(prev, id, seq));
     try {
-      const resp = await lookupObjectForAuthoring(id);
+      const resp = await lookupObjectMetadata(id);
       if (seq !== reqSeqRef.current) return;
 
       if (!resp.ok) {
         setObjectDraft((prev) =>
-          objectAuthoringLookupFailed(prev, seq, resp.error),
+          objectMetadataLookupFailed(prev, seq, resp.error),
         );
         patchVar({ varType: { kind: 'object' }, rawInput: undefined });
         toast?.({
@@ -363,30 +338,18 @@ export const VarNode = memo(function VarNode({
       }
 
       setObjectDraft((prev) =>
-        objectAuthoringLookupSucceeded(prev, seq, resp.object),
+        objectMetadataLookupSucceeded(prev, seq, resp.object),
       );
       setScalarBuf(resp.object.objectId);
-
-      const usage = defaultObjectRawUsage(resp.object);
-      const rawInput = usage
-        ? buildObjectRawInputForUsage(resp.object, usage)
-        : undefined;
-      if (rawInput && !rawInput.ok) {
-        toast?.({ message: rawInput.error, variant: 'warning' });
-      }
-      const nextRawInput = rawInput?.ok ? rawInput.rawInput : undefined;
       patchVar({
-        value:
-          nextRawInput?.kind === 'Object'
-            ? nextRawInput.object
-            : resp.object.objectId,
+        value: resp.object.objectId,
         varType: { kind: 'object', typeTag: resp.object.typeTag },
-        rawInput: nextRawInput,
+        rawInput: undefined,
       });
     } catch (e: any) {
       if (seq !== reqSeqRef.current) return;
       const message = e?.message || 'Failed to load object metadata.';
-      setObjectDraft((prev) => objectAuthoringLookupFailed(prev, seq, message));
+      setObjectDraft((prev) => objectMetadataLookupFailed(prev, seq, message));
       patchVar({ varType: { kind: 'object' }, rawInput: undefined });
       toast?.({
         message,
@@ -396,48 +359,11 @@ export const VarNode = memo(function VarNode({
   }, [
     canEdit,
     cancelPendingPureValueDrafts,
-    lookupObjectForAuthoring,
+    lookupObjectMetadata,
     patchVar,
     scalarBuf,
     toast,
   ]);
-
-  const handleObjectUsageChange = useCallback(
-    (usage: ObjectRawUsage | '') => {
-      if (!canEdit) return;
-      cancelPendingPureValueDrafts();
-      const resolved = activeObjectAuthoringInfo(objectDraft);
-      if (!resolved) {
-        patchVar({ rawInput: undefined });
-        toast?.({
-          message: 'Load object metadata before choosing usage.',
-          variant: 'warning',
-        });
-        return;
-      }
-      if (!usage) {
-        patchVar({ value: resolved.objectId, rawInput: undefined });
-        return;
-      }
-      const rawInput = buildObjectRawInputForUsage(resolved, usage);
-      if (!rawInput.ok) {
-        patchVar({ rawInput: undefined });
-        toast?.({ message: rawInput.error, variant: 'warning' });
-        return;
-      }
-      const nextRawInput = rawInput.rawInput;
-      if (!nextRawInput || nextRawInput.kind !== 'Object') {
-        patchVar({ value: resolved.objectId, rawInput: undefined });
-        return;
-      }
-      patchVar({
-        value: nextRawInput.object,
-        varType: { kind: 'object', typeTag: resolved.typeTag },
-        rawInput: nextRawInput,
-      });
-    },
-    [canEdit, cancelPendingPureValueDrafts, objectDraft, patchVar, toast],
-  );
 
   // Port
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
@@ -673,7 +599,7 @@ export const VarNode = memo(function VarNode({
                         const seq = ++reqSeqRef.current;
                         cancelPendingPureValueDrafts();
                         setObjectDraft((prev) =>
-                          objectAuthoringInputChanged(prev, s, seq),
+                          objectMetadataInputChanged(prev, s, seq),
                         );
                         patchVar({
                           value: s,
@@ -705,93 +631,20 @@ export const VarNode = memo(function VarNode({
                 </div>
                 {varType?.kind === 'object' ? (
                   <div className="mt-1 space-y-1">
-                    <TextInput
-                      value={varType.typeTag || ''}
-                      placeholder={
-                        objTypeLoading ? 'Loading type…' : 'type (read-only)'
-                      }
-                      aria-label="Object type"
-                      readOnly
-                      aria-readonly="true"
-                      onChange={() => {}}
-                    />
-
                     {objectInfo ? (
-                      <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
-                        <div>
-                          Owner: {objectInfo.ownerKind}
-                          {objectInfo.ownerLabel
-                            ? ` (${objectInfo.ownerLabel})`
-                            : ''}
+                      !readOnly && !objectInfoMatchesInput ? (
+                        <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">
+                          Load object metadata to refresh this object.
                         </div>
-                        <div>Version: {objectInfo.version}</div>
-                        <div>Digest: {shortMiddle(objectInfo.digest)}</div>
-                        {!readOnly && !objectInfoMatchesInput && (
-                          <div className="text-amber-700 dark:text-amber-300">
-                            Load object metadata to refresh this object.
-                          </div>
-                        )}
-                        {unsupportedOwnerMessage && (
-                          <div className="text-amber-700 dark:text-amber-300">
-                            {unsupportedOwnerMessage}
-                          </div>
-                        )}
-                        <select
-                          className="mt-1 w-full px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100"
-                          value={currentObjectUsage}
-                          disabled={!canEdit || !canSelectObjectUsage}
-                          onChange={(e) =>
-                            handleObjectUsageChange(
-                              e.target.value as ObjectRawUsage | '',
-                            )
-                          }
-                        >
-                          <option value="">No raw object input</option>
-                          <option
-                            value="object-ref"
-                            disabled={
-                              objectInfo.ownerKind === 'Shared' ||
-                              objectInfo.ownerKind ===
-                                'ConsensusAddressOwner' ||
-                              objectInfo.ownerKind === 'Unknown'
-                            }
-                          >
-                            Use as object ref
-                          </option>
-                          <option
-                            value="receiving"
-                            disabled={
-                              objectInfo.ownerKind === 'Shared' ||
-                              objectInfo.ownerKind ===
-                                'ConsensusAddressOwner' ||
-                              objectInfo.ownerKind === 'Unknown'
-                            }
-                          >
-                            Use as receiving
-                          </option>
-                          <option
-                            value="shared-readonly"
-                            disabled={objectInfo.ownerKind !== 'Shared'}
-                          >
-                            Use as shared read-only
-                          </option>
-                          <option
-                            value="shared-mutable"
-                            disabled={objectInfo.ownerKind !== 'Shared'}
-                          >
-                            Use as shared mutable
-                          </option>
-                        </select>
-                      </div>
+                      ) : undefined
                     ) : !readOnly && objectDraft.status === 'error' ? (
                       <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">
                         {objectDraft.error || 'Object metadata load failed.'}
                       </div>
-                    ) : currentObjectUsage ? (
+                    ) : rawObject ? (
                       <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
-                        {readOnly
-                          ? `Raw input: ${currentObjectUsage}.`
-                          : `Raw input: ${currentObjectUsage}. Load object metadata to refresh it.`}
+                        Resolved object reference preserved from decoded PTB
+                        data.
                       </div>
                     ) : !readOnly ? (
                       <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-500">

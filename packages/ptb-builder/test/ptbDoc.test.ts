@@ -17,6 +17,9 @@ const graph: PTBGraph = {
   edges: [],
 };
 const emptyOpenSignatures = { parameters: [], returns: [] };
+const OBJECT_ID =
+  '0x0000000000000000000000000000000000000000000000000000000000000001';
+const TEST_DIGEST = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
 
 describe('PTB document boundary', () => {
   it('builds and parses only current ptb_4 documents', () => {
@@ -228,6 +231,94 @@ describe('PTB document boundary', () => {
     expect(reloaded.graph).toEqual(editedGraph);
     expect(reloaded.modules).toEqual({});
     expect(reloaded.objects).toEqual({});
+  });
+
+  it('does not invent rawInput for builder-authored object nodes', () => {
+    const objectGraph: PTBGraph = {
+      nodes: [
+        {
+          id: 'coin',
+          kind: 'Variable',
+          label: 'Coin',
+          name: 'coin',
+          varType: {
+            kind: 'object',
+            typeTag: '0x2::coin::Coin<0x2::sui::SUI>',
+          },
+          value: OBJECT_ID,
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const reloaded = prepareLoadedDoc(
+      buildDoc({
+        chain: 'sui:mainnet',
+        graph: objectGraph,
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {},
+        objects: {},
+      }),
+    );
+    const objectNode = reloaded.graph.nodes[0];
+
+    expect(objectNode).toMatchObject({
+      kind: 'Variable',
+      value: OBJECT_ID,
+      varType: {
+        kind: 'object',
+        typeTag: '0x2::coin::Coin<0x2::sui::SUI>',
+      },
+    });
+    expect(Object.prototype.hasOwnProperty.call(objectNode, 'rawInput')).toBe(
+      false,
+    );
+  });
+
+  it('preserves decoded resolved object rawInput through document reload', () => {
+    const rawInput = {
+      kind: 'Object' as const,
+      object: {
+        kind: 'ImmOrOwnedObject' as const,
+        objectId: OBJECT_ID,
+        version: '7',
+        digest: TEST_DIGEST,
+      },
+    };
+    const objectGraph: PTBGraph = {
+      nodes: [
+        {
+          id: 'coin',
+          kind: 'Variable',
+          label: 'Coin',
+          name: 'coin',
+          varType: {
+            kind: 'object',
+            typeTag: '0x2::coin::Coin<0x2::sui::SUI>',
+          },
+          value: rawInput.object,
+          rawInput,
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const reloaded = prepareLoadedDoc(
+      buildDoc({
+        chain: 'sui:mainnet',
+        graph: objectGraph,
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {},
+        objects: {},
+      }),
+    );
+
+    expect(reloaded.graph.nodes[0]).toMatchObject({
+      kind: 'Variable',
+      rawInput,
+    });
   });
 
   it('creates stable document signatures independent of object key order', () => {

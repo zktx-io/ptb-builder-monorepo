@@ -26,6 +26,10 @@ export type IRArgRef =
   | { kind: 'Result'; commandIndex: number }
   | { kind: 'NestedResult'; commandIndex: number; resultIndex: number };
 
+export type IRObjectSource =
+  | { kind: 'Unresolved'; objectId: string }
+  | { kind: 'Resolved'; object: RawObjectArg };
+
 export type IRInput =
   | {
       id: string;
@@ -38,7 +42,7 @@ export type IRInput =
   | {
       id: string;
       kind: 'Object';
-      object?: RawObjectArg;
+      source: IRObjectSource;
       type?: PTBType;
       canonicalRaw?: RawCallArg;
     }
@@ -131,6 +135,20 @@ export interface TransactionIR {
   inputs: IRInput[];
   commands: IRCommand[];
   diagnostics: readonly TransactionDiagnostic[];
+}
+
+export function irObjectId(
+  input: Extract<IRInput, { kind: 'Object' }>,
+): string {
+  return input.source.kind === 'Resolved'
+    ? input.source.object.objectId
+    : input.source.objectId;
+}
+
+export function irResolvedObjectArg(
+  input: Extract<IRInput, { kind: 'Object' }>,
+): RawObjectArg | undefined {
+  return input.source.kind === 'Resolved' ? input.source.object : undefined;
 }
 
 export function createTransactionIR(
