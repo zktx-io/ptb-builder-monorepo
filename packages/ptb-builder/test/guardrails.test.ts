@@ -305,6 +305,10 @@ describe('builder source guardrails', () => {
   });
 
   it('keeps object metadata authoring out of raw reference synthesis', () => {
+    const varNode = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
+      'utf8',
+    );
     const forbidden = [
       'ObjectRawUsage',
       'buildObjectRawInputForUsage',
@@ -325,6 +329,8 @@ describe('builder source guardrails', () => {
     });
 
     expect(violations).toEqual([]);
+    expect(varNode).toContain('aria-label="Object type"');
+    expect(varNode).toContain('value={varType.typeTag ||');
   });
 
   it('keeps asset picks from synthesizing resolved object rawInput', () => {

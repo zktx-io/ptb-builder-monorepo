@@ -36,6 +36,7 @@ import type {
 import {
   analyzePTBGraph,
   graphToTransactionIR,
+  inferGraphInputTypes,
   parseExecutableGraph,
 } from '@zktx.io/ptb-model';
 
@@ -52,6 +53,7 @@ import {
   emptyEditorValidationState,
 } from './editorValidationState';
 import { EMPTY_CODE } from './emptyCode';
+import { applyInferredVariableTypesToRFNodes } from './graphSemanticReconcile';
 import { ContextMenu } from './menu/ContextMenu';
 import { formatModelErrorMessage } from './modelDiagnostics';
 import { refreshMoveCallPortsFromSignatures } from './moveCallSignaturePorts';
@@ -319,6 +321,30 @@ export function PTBFlow() {
     ],
   );
 
+  const reconcileRFSnapshot = useCallback(
+    (snapshot: RFSnapshot): RFSnapshot => {
+      const converted = safeRfToPTB(snapshot, {
+        notify: false,
+        warn: false,
+      });
+      const semanticNodes = converted.ok
+        ? applyInferredVariableTypesToRFNodes(
+            snapshot.rfNodes,
+            inferGraphInputTypes(converted.graph, { moveSignatures }).graph,
+          )
+        : snapshot.rfNodes;
+      const nextNodes =
+        semanticNodes === snapshot.rfNodes
+          ? snapshot.rfNodes
+          : withCallbacks(semanticNodes);
+      return {
+        rfNodes: nextNodes,
+        rfEdges: projectEdgesForCurrentPorts(nextNodes, snapshot.rfEdges),
+      };
+    },
+    [moveSignatures, safeRfToPTB, withCallbacks],
+  );
+
   // ----- Node-level patchers (deferred to avoid setState in render) -----------
 
   /** Patch Command node UI params and keep ports consistent with UI. */
@@ -360,13 +386,15 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          const pruned = projectEdgesForCurrentPorts(injected, freshRFEdges);
 
-          return { rfNodes: injected, rfEdges: pruned };
+          return reconcileRFSnapshot({
+            rfNodes: injected,
+            rfEdges: freshRFEdges,
+          });
         });
       });
     },
-    [safeRfToPTB, withCallbacks],
+    [reconcileRFSnapshot, safeRfToPTB, withCallbacks],
   );
 
   /** Patch model command params and ports in one graph update. */
@@ -423,13 +451,15 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          const pruned = projectEdgesForCurrentPorts(injected, freshRFEdges);
 
-          return { rfNodes: injected, rfEdges: pruned };
+          return reconcileRFSnapshot({
+            rfNodes: injected,
+            rfEdges: freshRFEdges,
+          });
         });
       });
     },
-    [safeRfToPTB, withCallbacks],
+    [reconcileRFSnapshot, safeRfToPTB, withCallbacks],
   );
 
   /** Patch a Variable node (value and/or varType). */
@@ -498,13 +528,15 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          const pruned = projectEdgesForCurrentPorts(injected, freshRFEdges);
 
-          return { rfNodes: injected, rfEdges: pruned };
+          return reconcileRFSnapshot({
+            rfNodes: injected,
+            rfEdges: freshRFEdges,
+          });
         });
       });
     },
-    [safeRfToPTB, withCallbacks],
+    [reconcileRFSnapshot, safeRfToPTB, withCallbacks],
   );
 
   const onPatchTypeArgument = useCallback(
@@ -544,12 +576,15 @@ export function PTBFlow() {
           });
 
           return changed
-            ? { ...prev, rfNodes: withCallbacks(nextNodes) }
+            ? reconcileRFSnapshot({
+                rfNodes: withCallbacks(nextNodes),
+                rfEdges: prev.rfEdges,
+              })
             : prev;
         });
       });
     },
-    [withCallbacks],
+    [reconcileRFSnapshot, withCallbacks],
   );
 
   // Keep refs pointing to latest patchers/loaders
@@ -572,8 +607,7 @@ export function PTBFlow() {
   }>(() => {
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
-    const pruned = projectEdgesForCurrentPorts(injected, edges);
-    return { rfNodes: injected, rfEdges: pruned };
+    return reconcileRFSnapshot({ rfNodes: injected, rfEdges: edges });
   });
   const flowActive = useMemo(
     () => hasStartToEnd(rfNodes, rfEdges),
@@ -635,16 +669,19 @@ export function PTBFlow() {
         moveSignatures,
       );
       const nextNodes = refreshed ? withCallbacks(refreshed) : prev.rfNodes;
-      const nextEdges = projectEdgesForCurrentPorts(nextNodes, prev.rfEdges);
+      const reconciled = reconcileRFSnapshot({
+        rfNodes: nextNodes,
+        rfEdges: prev.rfEdges,
+      });
       if (
-        nextNodes === prev.rfNodes &&
-        edgesSig(nextEdges) === edgesSig(prev.rfEdges)
+        reconciled.rfNodes === prev.rfNodes &&
+        edgesSig(reconciled.rfEdges) === edgesSig(prev.rfEdges)
       ) {
         return prev;
       }
-      return { rfNodes: nextNodes, rfEdges: nextEdges };
+      return reconciled;
     });
-  }, [moveSignatures, rfEdges, rfNodes, withCallbacks]);
+  }, [moveSignatures, reconcileRFSnapshot, rfEdges, rfNodes, withCallbacks]);
 
   // ----- Rehydrate from provider on epoch bump --------------------------------
 
@@ -662,12 +699,15 @@ export function PTBFlow() {
     lastSuccessfulCodeRef.current = undefined;
     setCodePreviewStatus('current');
     rehydratingRef.current = true;
+    baseGraphRef.current = graph;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
-    const pruned = projectEdgesForCurrentPorts(injected, edges);
+    const reconciled = reconcileRFSnapshot({
+      rfNodes: injected,
+      rfEdges: edges,
+    });
 
-    setRF({ rfNodes: injected, rfEdges: pruned });
-    baseGraphRef.current = graph;
+    setRF(reconciled);
 
     // Disable fit until layout finishes (prevents initial flicker).
     setLayoutReady(false);
@@ -677,7 +717,7 @@ export function PTBFlow() {
       if (session !== flowSessionRef.current) return;
       rehydratingRef.current = false;
     });
-  }, [graphEpoch, graph, withCallbacks]);
+  }, [graphEpoch, graph, reconcileRFSnapshot, withCallbacks]);
 
   // ----- Safety net: re-project edges whenever nodes change ------------------
 
@@ -804,11 +844,10 @@ export function PTBFlow() {
       const rfNode = ptbNodeToRF(node);
       setRF((prev) => {
         const nodes = withCallbacks([...prev.rfNodes, rfNode]);
-        const edges = projectEdgesForCurrentPorts(nodes, prev.rfEdges);
-        return { rfNodes: nodes, rfEdges: edges };
+        return reconcileRFSnapshot({ rfNodes: nodes, rfEdges: prev.rfEdges });
       });
     },
-    [withCallbacks],
+    [reconcileRFSnapshot, withCallbacks],
   );
 
   const deleteNode = useCallback((id: string) => {
@@ -977,15 +1016,20 @@ export function PTBFlow() {
           targetHandle: conn.targetHandle ?? undefined,
           data: decision.data,
         };
-        const nextEdges = projectEdgesForCurrentPorts(prev.rfNodes, [
-          ...decision.filteredEdges,
-          newEdge,
-        ]);
-        if (edgesSig(nextEdges) === edgesSig(prev.rfEdges)) return prev;
-        return { ...prev, rfEdges: nextEdges };
+        const reconciled = reconcileRFSnapshot({
+          rfNodes: prev.rfNodes,
+          rfEdges: [...decision.filteredEdges, newEdge],
+        });
+        if (
+          reconciled.rfNodes === prev.rfNodes &&
+          edgesSig(reconciled.rfEdges) === edgesSig(prev.rfEdges)
+        ) {
+          return prev;
+        }
+        return reconciled;
       });
     },
-    [readOnly, createUniqueId],
+    [readOnly, createUniqueId, reconcileRFSnapshot],
   );
 
   const onCopyMermaid = useCallback(async () => {

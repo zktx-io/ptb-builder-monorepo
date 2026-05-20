@@ -631,6 +631,19 @@ export const VarNode = memo(function VarNode({
                 </div>
                 {varType?.kind === 'object' ? (
                   <div className="mt-1 space-y-1">
+                    {varType.typeTag || objTypeLoading ? (
+                      <TextInput
+                        value={varType.typeTag || ''}
+                        placeholder={
+                          objTypeLoading ? 'Loading type...' : 'object type'
+                        }
+                        aria-label="Object type"
+                        readOnly
+                        aria-readonly="true"
+                        onChange={() => {}}
+                      />
+                    ) : undefined}
+
                     {objectInfo ? (
                       !readOnly && !objectInfoMatchesInput ? (
                         <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">

@@ -19,6 +19,7 @@ import {
   indexedHandleSuffix,
   indexedInputHandle,
   indexedInputHandleIndex,
+  inferGraphInputTypes,
   inputHandle,
   irObjectId,
   irResolvedObjectArg,
@@ -200,6 +201,7 @@ describe('public package surface', () => {
       prefix: 'in_arg',
       index: 10,
     });
+    expect(typeof inferGraphInputTypes).toBe('function');
     expect(RAW_ARGUMENT_INDEX_MAX).toBe(65_535);
     expect(MAX_RESULT_COUNT).toBe(65_536);
     expect(isNonNegativeSafeInteger(65_536)).toBe(true);
@@ -3381,12 +3383,8 @@ describe('TransactionIR renderers', () => {
     const mermaid = transactionIRToMermaid(ir);
     const shortened = transactionIRToMermaid(ir, { shortenLabels: true });
 
-    expect(mermaid).toContain(
-      `Input 0: Object<br/>${normalizedObjectId('1')}`,
-    );
-    expect(shortened).toContain(
-      'Input 0: Object<br/>0x00000000...000001',
-    );
+    expect(mermaid).toContain(`Input 0: Object<br/>${normalizedObjectId('1')}`);
+    expect(shortened).toContain('Input 0: Object<br/>0x00000000...000001');
     expect(mermaid).not.toContain('object unresolved');
     expect(mermaid).not.toContain('objectRef');
   });
@@ -6483,6 +6481,283 @@ describe('graph conversion', () => {
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
     expect(roundTripped.diagnostics).toEqual([]);
     expect(transactionIRToRaw(roundTripped)).toEqual(sampleRawTransaction());
+  });
+
+  it('infers unknown graph input types from concrete consumer command handles', () => {
+    const recipientBytes = pureBytes('address', normalizedObjectId('9'));
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'recipient',
+          kind: 'Variable',
+          name: 'recipient',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: recipientBytes },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'recipient-edge',
+          kind: 'io',
+          source: 'recipient',
+          sourceHandle: 'out',
+          target: 'transfer',
+          targetHandle: 'in_recipient',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph);
+    const inferredInput = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'recipient',
+    );
+    const ir = graphToTransactionIR(graph);
+
+    expect(inferred.inferences).toEqual([
+      {
+        nodeId: 'recipient',
+        from: { kind: 'unknown', debugInfo: 'Pure' },
+        to: { kind: 'scalar', name: 'address' },
+      },
+    ]);
+    expect(inferredInput?.varType).toEqual({ kind: 'scalar', name: 'address' });
+    expect(inferredInput?.rawInput).toEqual({
+      kind: 'Pure',
+      bytes: recipientBytes,
+    });
+    expect(ir.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'scalar', name: 'address' },
+    });
+  });
+
+  it('does not infer a Pure rawInput into an object variable type', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: pureBytes('u64', 7) },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_object_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'transfer',
+          targetHandle: 'in_object_0',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph);
+    const amount = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'amount',
+    );
+
+    expect(inferred.inferences).toEqual([]);
+    expect(inferred.graph).toBe(graph);
+    expect(amount?.varType).toEqual({ kind: 'unknown', debugInfo: 'Pure' });
+    expect(
+      collectGraphDiagnostics(inferred.graph).map((d) => d.code),
+    ).not.toContain('graph.variable.rawInputType');
+  });
+
+  it('does not infer FundsWithdrawal rawInput into a pure variable type', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'withdrawal',
+          kind: 'Variable',
+          name: 'withdrawal',
+          varType: { kind: 'unknown', debugInfo: 'FundsWithdrawal' },
+          rawInput: {
+            kind: 'FundsWithdrawal',
+            value: {
+              reservation: { kind: 'MaxAmountU64', amount: '1' },
+              typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
+              withdrawFrom: { kind: 'Sender' },
+            },
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'withdrawal-edge',
+          kind: 'io',
+          source: 'withdrawal',
+          sourceHandle: 'out',
+          target: 'transfer',
+          targetHandle: 'in_recipient',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph);
+    const withdrawal = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'withdrawal',
+    );
+
+    expect(inferred.inferences).toEqual([]);
+    expect(inferred.graph).toBe(graph);
+    expect(withdrawal?.varType).toEqual({
+      kind: 'unknown',
+      debugInfo: 'FundsWithdrawal',
+    });
+    expect(
+      collectGraphDiagnostics(inferred.graph).map((d) => d.code),
+    ).not.toContain('graph.variable.rawInputType');
+  });
+
+  it('infers decoded MoveCall Pure inputs from preserved argument metadata', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          bytes: pureBytes('address', normalizedObjectId('9')),
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'demo',
+          function: 'accept_address',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [rawSignature({ $kind: 'address' })],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const input = graph.nodes.find(
+      (node): node is VariableNode => node.id === 'var-0',
+    );
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.id === 'cmd-0',
+    );
+
+    expect(input?.varType).toEqual({ kind: 'scalar', name: 'address' });
+    expect(input?.rawInput).toEqual({
+      kind: 'Pure',
+      bytes: pureBytes('address', normalizedObjectId('9')),
+    });
+    expect(command?.ports.find((port) => port.id === 'in_arg_0')).toMatchObject(
+      {
+        dataType: { kind: 'scalar', name: 'address' },
+      },
+    );
+  });
+
+  it('infers concrete MoveCall arguments without unrelated type arguments', () => {
+    const packageId = normalizedObjectId('2');
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        demo: {
+          generic_accept: {
+            typeParameterCount: 1,
+            parameters: [
+              rawSignature({ $kind: 'address' }),
+              rawSignature({ $kind: 'typeParameter', index: 0 }),
+            ],
+            returns: [],
+          },
+        },
+      },
+    };
+    const recipientBytes = pureBytes('address', normalizedObjectId('9'));
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'recipient',
+          kind: 'Variable',
+          name: 'recipient',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: recipientBytes },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: { target: `${packageId}::demo::generic_accept` },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'recipient-edge',
+          kind: 'io',
+          source: 'recipient',
+          sourceHandle: 'out',
+          target: 'call',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph, { moveSignatures });
+    const recipient = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'recipient',
+    );
+
+    expect(inferred.inferences).toEqual([
+      {
+        nodeId: 'recipient',
+        from: { kind: 'unknown', debugInfo: 'Pure' },
+        to: { kind: 'scalar', name: 'address' },
+      },
+    ]);
+    expect(recipient?.varType).toEqual({ kind: 'scalar', name: 'address' });
   });
 
   it('keeps FundsWithdrawal graph variables out of the object type category', () => {

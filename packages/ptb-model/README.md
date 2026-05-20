@@ -62,6 +62,7 @@ The root entrypoint exposes:
 - canonical data types for documents, raw PTB data, `TransactionIR`, and `PTBGraph`;
 - validation and diagnostic helpers;
 - raw/IR/graph conversion functions;
+- graph input type inference for consumer-side command type evidence;
 - Mermaid and TypeScript SDK code string renderers;
 - structural IR parsing helpers and projection-specific IR validators;
 - the pure type-name helper used by SDK-facing adapters;
@@ -143,6 +144,14 @@ primitives, vectors, and model-known non-object structs such as
 Validators report these as object type-tag diagnostics when they are supplied
 as `PTBType.object.typeTag`; signature helpers represent unsupported known
 non-object structs as `unknown` PTB types.
+
+Use `inferGraphInputTypes()` when a graph was decoded from transaction data and
+an input node still has `unknown` type metadata, but its consuming command has a
+concrete argument type. The helper returns a new `PTBGraph` with inferred
+variable `varType` and output port `dataType` values only. It does not
+synthesize input values, raw input payloads, command ports, edges, or UI state.
+`graphToTransactionIR()` applies the same inference before conversion, so
+rendering and code generation use the same model-owned rule.
 
 Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The

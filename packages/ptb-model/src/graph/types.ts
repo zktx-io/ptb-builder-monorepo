@@ -857,7 +857,9 @@ function validateVariableSourceCompatibility(
   }
 }
 
-function isPureGraphType(type: Record<string, unknown> | undefined): boolean {
+export function isPureGraphType(
+  type: Record<string, unknown> | undefined,
+): boolean {
   if (!type || typeof type.kind !== 'string') return false;
   switch (type.kind) {
     case 'unknown':

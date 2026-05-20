@@ -46,6 +46,12 @@ export type {
   ParseExecutableGraphOptions,
   PTBGraphAnalysis,
 } from './graph/types.js';
+export { inferGraphInputTypes } from './graph/inputInference.js';
+export type {
+  GraphInputTypeInference,
+  GraphInputTypeInferenceOptions,
+  GraphInputTypeInferenceResult,
+} from './graph/inputInference.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export {
   isPTBType,

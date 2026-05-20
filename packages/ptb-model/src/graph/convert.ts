@@ -13,6 +13,7 @@ import {
   singleResultOutputHandles,
   unknownResultOutputHandles,
 } from './handles.js';
+import { inferGraphInputTypes } from './inputInference.js';
 import {
   graphCommandRuntimeParams,
   type GraphMoveCallEvidenceState,
@@ -64,6 +65,7 @@ import type {
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
 import { normalizeMovePackageSignatureEvidenceOption } from '../move/evidence.js';
+import { toPTBTypeFromOpenSignature } from '../move/signature.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -147,11 +149,14 @@ export function graphToTransactionIR(
   }
 
   const diagnostics: TransactionDiagnostic[] = [...graphDiagnostics];
-  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const nodeIndexesById = new Map(
-    graph.nodes.map((node, index) => [node.id, index]),
+  const conversionGraph = inferGraphInputTypes(graph, { moveSignatures }).graph;
+  const nodesById = new Map(
+    conversionGraph.nodes.map((node) => [node.id, node]),
   );
-  const graphIndex = buildGraphConversionIndex(graph);
+  const nodeIndexesById = new Map(
+    conversionGraph.nodes.map((node, index) => [node.id, index]),
+  );
+  const graphIndex = buildGraphConversionIndex(conversionGraph);
   const inputConstraints = collectGraphInputConstraints(
     graphIndex.incomingIoEdgesByTarget,
     nodesById,
@@ -160,14 +165,16 @@ export function graphToTransactionIR(
     graphIndex.incomingTypeEdgesByTarget,
     nodesById,
   );
-  const hasCommandNodes = graph.nodes.some((node) => node.kind === 'Command');
+  const hasCommandNodes = conversionGraph.nodes.some(
+    (node) => node.kind === 'Command',
+  );
   const referencedInputKeys = hasCommandNodes
     ? referencedGraphInputKeys(graphIndex.incomingIoEdgesByTarget, nodesById)
     : new Set<string>();
   const inputRefs = new Map<string, IRArgRef>();
   const inputs: IRInput[] = [];
   const { plans: inputPlans, reservedInputIds } = collectGraphInputPlans(
-    graph,
+    conversionGraph,
     hasCommandNodes,
     referencedInputKeys,
   );
@@ -213,7 +220,7 @@ export function graphToTransactionIR(
   });
 
   const commandNodes = orderCommandNodes(
-    graph,
+    conversionGraph,
     nodesById,
     graphIndex.flowEdgeBySource,
   );
@@ -603,7 +610,8 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     targetHandle: 'in',
   });
 
-  return freezePTBGraph({ nodes, edges });
+  const inferred = inferGraphInputTypes({ nodes, edges });
+  return freezePTBGraph(inferred.graph);
 }
 
 function getOrCreateTypeArgumentNode(
@@ -1266,8 +1274,14 @@ function commandPorts(
       });
     });
   }
-  commandArgEntries(command).forEach(({ handle }) => {
-    ports.push({ id: handle, direction: 'in', role: 'io' });
+  commandArgEntries(command).forEach(({ handle }, index) => {
+    const dataType = commandArgumentPortType(command, index);
+    ports.push({
+      id: handle,
+      direction: 'in',
+      role: 'io',
+      ...(dataType ? { dataType } : {}),
+    });
   });
 
   commandOutputHandles(command, referencedNestedResultIndexes).forEach(
@@ -1277,6 +1291,18 @@ function commandPorts(
   );
 
   return ports;
+}
+
+function commandArgumentPortType(
+  command: IRCommand,
+  argumentIndex: number,
+): PTBType | undefined {
+  if (command.kind !== 'MoveCall') return undefined;
+  if (!Array.isArray(command._argumentTypes)) return undefined;
+  const signature = command._argumentTypes[argumentIndex];
+  return signature
+    ? toPTBTypeFromOpenSignature(signature, command.typeArguments)
+    : undefined;
 }
 
 function commandOutputHandles(
