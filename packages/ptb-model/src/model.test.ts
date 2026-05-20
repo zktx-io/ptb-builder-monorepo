@@ -2464,6 +2464,29 @@ describe('rawTransactionToIR', () => {
     expect(code).toContain('tx.receivingRef');
   });
 
+  it('omits absent command params from transactionIRToGraph output', () => {
+    const ir = rawTransactionToIR({
+      inputs: [{ kind: 'Pure', bytes: 'AQID' }],
+      commands: [
+        {
+          kind: 'TransferObjects',
+          objects: [{ kind: 'GasCoin' }],
+          address: { kind: 'Input', index: 0 },
+        },
+      ],
+    });
+
+    const graph = transactionIRToGraph(ir);
+    const command = graph.nodes.find(
+      (node): node is CommandNode =>
+        node.kind === 'Command' && node.command === 'transferObjects',
+    );
+
+    expect(command).toBeDefined();
+    expect(command).not.toHaveProperty('params');
+    expect(() => parsePTBDocV4({ version: 'ptb_4', graph })).not.toThrow();
+  });
+
   it('returns frozen graph data from transactionIRToGraph', () => {
     const ir = rawTransactionToIR({
       inputs: [{ kind: 'Pure', bytes: 'AQID' }],
@@ -4994,6 +5017,109 @@ describe('graph conversion', () => {
     });
   });
 
+  it('allows one graph TypeArgument node to feed multiple MoveCalls', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'start',
+          kind: 'Start',
+          ports: [{ id: 'out', direction: 'out', role: 'flow' }],
+        },
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: TEST_SUI_TYPE,
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
+        {
+          id: 'cmd-a',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::module::a`,
+            },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_type_0', direction: 'in', role: 'type' },
+          ],
+        },
+        {
+          id: 'cmd-b',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::module::b`,
+            },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_type_0', direction: 'in', role: 'type' },
+          ],
+        },
+        {
+          id: 'end',
+          kind: 'End',
+          ports: [{ id: 'in', direction: 'in', role: 'flow' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-a',
+          kind: 'flow',
+          source: 'start',
+          sourceHandle: 'out',
+          target: 'cmd-a',
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-a-b',
+          kind: 'flow',
+          source: 'cmd-a',
+          sourceHandle: 'out',
+          target: 'cmd-b',
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-b-end',
+          kind: 'flow',
+          source: 'cmd-b',
+          sourceHandle: 'out',
+          target: 'end',
+          targetHandle: 'in',
+        },
+        {
+          id: 'type-a',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'cmd-a',
+          targetHandle: 'in_type_0',
+        },
+        {
+          id: 'type-b',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'cmd-b',
+          targetHandle: 'in_type_0',
+        },
+      ],
+    };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands).toMatchObject([
+      { kind: 'MoveCall', typeArguments: [TEST_SUI_TYPE] },
+      { kind: 'MoveCall', typeArguments: [TEST_SUI_TYPE] },
+    ]);
+  });
+
   it('lowers missing MoveCall type edges to Unsupported with diagnostics', () => {
     const graph: PTBGraph = {
       nodes: [
@@ -7037,6 +7163,66 @@ describe('graph conversion', () => {
         target: `${normalizedObjectId('2')}::coin::value`,
       },
     });
+  });
+
+  it('materializes MoveCall type input ports before value input ports', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [{ id: 'value', kind: 'Pure', bytes: 'AA==' }],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'coin',
+          function: 'value',
+          typeArguments: [TEST_SUI_TYPE],
+          arguments: [{ kind: 'Input', index: 0 }],
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+
+    expect(command?.ports.map((port) => port.id)).toEqual([
+      'in',
+      'out',
+      'in_type_0',
+      'in_arg_0',
+      'out_result',
+    ]);
+  });
+
+  it('does not overlap materialized TypeArgument nodes with GasCoin', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'coin',
+          function: 'value',
+          typeArguments: [TEST_SUI_TYPE],
+          arguments: [{ kind: 'GasCoin' }],
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const gas = graph.nodes.find((node) => node.id === 'gas');
+    const typeArgument = graph.nodes.find(
+      (node) => node.kind === 'TypeArgument',
+    );
+
+    expect(typeArgument?.position).not.toEqual(gas?.position);
+    expect(typeArgument?.position).toMatchObject({ x: -560, y: 120 });
   });
 
   it('materializes shared TypeArgument nodes for repeated IR MoveCall type arguments', () => {

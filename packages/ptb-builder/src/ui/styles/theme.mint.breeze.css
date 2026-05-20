@@ -153,7 +153,7 @@
   --ptb-code-boolean: #b46161; /* coral */
 
   /* ===== Modal ===== */
-  --ptb-modal-overlay: rgba(0, 0, 0, 0.4);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.16);
   --ptb-modal-panel-bg: #f5fbf7;
   --ptb-modal-panel-fg: #1f2a24;
   --ptb-modal-panel-border: rgba(0, 0, 0, 0.1);

@@ -1461,6 +1461,8 @@ export function PTBFlow() {
         /** block creating/updating edges when read-only */
         nodesConnectable={!readOnly}
         edgesReconnectable={false}
+        elevateEdgesOnSelect={false}
+        zIndexMode="manual"
         deleteKeyCode={[]}
         onPaneContextMenu={(e) => openMenu(e, 'canvas')}
         onNodeContextMenu={(e, node) => openMenu(e, 'node', node.id)}

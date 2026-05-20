@@ -118,6 +118,31 @@ describe('builder source guardrails', () => {
     );
   });
 
+  it('keeps graph edges behind graph nodes in React Flow', () => {
+    const flowText = readFileSync(
+      join(sourceRoot, 'ui', 'PtbFlow.tsx'),
+      'utf8',
+    );
+    const adapterText = readFileSync(
+      join(sourceRoot, 'ptb', 'ptbAdapter.ts'),
+      'utf8',
+    );
+    const commonCss = readFileSync(
+      join(sourceRoot, 'ui', 'styles', 'common.css'),
+      'utf8',
+    );
+
+    expect(flowText).toContain('elevateEdgesOnSelect={false}');
+    expect(flowText).toContain('zIndexMode="manual"');
+    expect(adapterText).toContain('const RF_NODE_Z_INDEX = 10');
+    expect(adapterText).toContain('const RF_EDGE_Z_INDEX = 0');
+    expect(adapterText).toContain('zIndex: RF_NODE_Z_INDEX');
+    expect(adapterText).toContain('zIndex: RF_EDGE_Z_INDEX');
+    expect(commonCss).toContain(
+      'backdrop-filter: var(--ptb-node-backdrop-filter, none)',
+    );
+  });
+
   it('keeps editor validation summary dismissible and warning-colored', () => {
     const text = readFileSync(join(sourceRoot, 'ui', 'StatusBar.tsx'), 'utf8');
     const start = text.indexOf('{validationSummary &&');

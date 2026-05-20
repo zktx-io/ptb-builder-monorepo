@@ -658,44 +658,35 @@ export const VarNode = memo(function VarNode({
             ) : (
               // ===== Scalar & Object (top-level only) =====
               <>
-                <TextInput
-                  value={scalarBuf}
-                  placeholder={placeholderFor(varType)}
-                  aria-label="Variable value"
-                  onChange={(e) => {
-                    const s = e.target.value;
-                    setScalarBuf(s);
-                    if (!canEdit) return;
+                <div className="flex gap-1">
+                  <TextInput
+                    className="min-w-0 flex-1"
+                    value={scalarBuf}
+                    placeholder={placeholderFor(varType)}
+                    aria-label="Variable value"
+                    onChange={(e) => {
+                      const s = e.target.value;
+                      setScalarBuf(s);
+                      if (!canEdit) return;
 
-                    if (varType?.kind === 'object') {
-                      const seq = ++reqSeqRef.current;
-                      cancelPendingPureValueDrafts();
-                      setObjectDraft((prev) =>
-                        objectAuthoringInputChanged(prev, s, seq),
-                      );
-                      patchVar({
-                        value: s,
-                        rawInput: undefined,
-                      });
-                    } else {
-                      debouncedPatchScalar.schedule(s);
-                    }
-                  }}
-                  disabled={!canEdit}
-                />
-                {varType?.kind === 'object' ? (
-                  <div className="mt-1 space-y-1">
-                    <div className="flex gap-1">
-                      <TextInput
-                        value={varType.typeTag || ''}
-                        placeholder={
-                          objTypeLoading ? 'Loading type…' : 'type (read-only)'
-                        }
-                        aria-label="Object type"
-                        readOnly
-                        aria-readonly="true"
-                        onChange={() => {}}
-                      />
+                      if (varType?.kind === 'object') {
+                        const seq = ++reqSeqRef.current;
+                        cancelPendingPureValueDrafts();
+                        setObjectDraft((prev) =>
+                          objectAuthoringInputChanged(prev, s, seq),
+                        );
+                        patchVar({
+                          value: s,
+                          rawInput: undefined,
+                        });
+                      } else {
+                        debouncedPatchScalar.schedule(s);
+                      }
+                    }}
+                    disabled={!canEdit}
+                  />
+                  {varType?.kind === 'object' ? (
+                    <>
                       {showObjectLoadButton && (
                         <button
                           type="button"
@@ -709,7 +700,21 @@ export const VarNode = memo(function VarNode({
                           Load
                         </button>
                       )}
-                    </div>
+                    </>
+                  ) : undefined}
+                </div>
+                {varType?.kind === 'object' ? (
+                  <div className="mt-1 space-y-1">
+                    <TextInput
+                      value={varType.typeTag || ''}
+                      placeholder={
+                        objTypeLoading ? 'Loading type…' : 'type (read-only)'
+                      }
+                      aria-label="Object type"
+                      readOnly
+                      aria-readonly="true"
+                      onChange={() => {}}
+                    />
 
                     {objectInfo ? (
                       <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">

@@ -41,6 +41,7 @@
   --ptb-io-unknown-stroke-active: #bfd0dc;
 
   /* Node surfaces */
+  --ptb-node-backdrop-filter: saturate(125%) blur(6px);
   --ptb-node-command-border: #4aa8ff;
   --ptb-node-command-bg: rgba(74, 168, 255, 0.12);
   --ptb-node-command-border-hover: #7bc2ff;
@@ -140,7 +141,7 @@
   --ptb-code-boolean: #ff628c;
 
   /* Modal */
-  --ptb-modal-overlay: rgba(0, 0, 0, 0.45);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.2);
   --ptb-modal-panel-bg: #122738;
   --ptb-modal-panel-fg: #e6f3ff;
   --ptb-modal-panel-border: rgba(255, 255, 255, 0.18);

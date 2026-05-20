@@ -155,7 +155,7 @@
   --ptb-code-boolean: #b91c1c; /* red-700 */
 
   /* Modal */
-  --ptb-modal-overlay: rgba(0, 0, 0, 0.45);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.16);
   --ptb-modal-panel-bg: #f8fafc;
   --ptb-modal-panel-fg: #0b0f14;
   --ptb-modal-panel-border: rgba(0, 0, 0, 0.12);

@@ -246,6 +246,26 @@ function isMoveCallValuePort(port: Port): boolean {
   return false;
 }
 
+function moveCallPortLabel(port: Port): string | undefined {
+  if (port.role === 'type' && port.direction === 'in') {
+    const index = indexedInputHandleIndex(port.id, 'type');
+    return index === undefined ? port.label : (port.label ?? `T${index}`);
+  }
+  if (port.role === 'io' && port.direction === 'in') {
+    const index = indexedInputHandleIndex(port.id, 'arg');
+    return index === undefined ? port.label : (port.label ?? `arg${index}`);
+  }
+  if (port.role === 'io' && port.direction === 'out') {
+    return port.label ?? port.id;
+  }
+  return port.label;
+}
+
+function materializeMoveCallPort(port: Port): Port {
+  const label = moveCallPortLabel(port);
+  return label === undefined ? { ...port } : { ...port, label };
+}
+
 // -----------------------------------------------------------------------------
 // Runtime-param commands.
 // -----------------------------------------------------------------------------
@@ -310,7 +330,7 @@ export function buildCommandPorts(
   const flow = PORTS.commandBase();
   if (kind === 'moveCall' && existingPorts?.length) {
     const io = existingPorts.filter(isMoveCallValuePort);
-    return [...flow, ...io.map((port) => ({ ...port }))];
+    return [...flow, ...io.map(materializeMoveCallPort)];
   }
   const io = REGISTRY[kind]?.buildIO(ui, runtime) ?? [];
   return [...flow, ...io];

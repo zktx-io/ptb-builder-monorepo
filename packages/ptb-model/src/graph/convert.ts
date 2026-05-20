@@ -507,7 +507,10 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
   const nestedResultHandles = nestedResultHandlesByCommand(ir.commands);
   const typeArgumentNodeIds = new Map<string, string>();
 
-  if (ir.commands.some((command) => irCommandArgRefs(command).some(isGasArg))) {
+  const hasGasCoin = ir.commands.some((command) =>
+    irCommandArgRefs(command).some(isGasArg),
+  );
+  if (hasGasCoin) {
     nodes.push({
       id: GAS_NODE_ID,
       kind: 'Variable',
@@ -558,6 +561,7 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
           typeArgument,
           typeArgumentNodeIds,
           nodes,
+          hasGasCoin,
         );
         edges.push({
           id: `type-${typeNodeId}-${node.id}-${typeArgumentIndex}`,
@@ -608,6 +612,7 @@ function getOrCreateTypeArgumentNode(
   typeArgument: string,
   typeArgumentNodeIds: Map<string, string>,
   nodes: PTBNode[],
+  hasGasCoin: boolean,
 ): string {
   const existing = typeArgumentNodeIds.get(typeArgument);
   if (existing !== undefined) return existing;
@@ -621,7 +626,7 @@ function getOrCreateTypeArgumentNode(
     label: typeArgument,
     value: typeArgument,
     ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
-    position: { x: -560, y: 120 * index },
+    position: { x: -560, y: 120 * (index + (hasGasCoin ? 1 : 0)) },
   });
   return nodeId;
 }
@@ -1227,12 +1232,13 @@ function irCommandToGraphCommand(
   index: number,
   referencedNestedResultIndexes: readonly number[] = [],
 ): CommandNode {
+  const params = graphCommandParams(command);
   return {
     id: `cmd-${index}`,
     kind: 'Command',
     label: command.kind,
     command: graphCommandKind(command),
-    params: graphCommandParams(command),
+    ...(params !== undefined ? { params } : {}),
     ports: commandPorts(command, referencedNestedResultIndexes),
     position: { x: 0, y: 120 * index },
   };
@@ -1247,9 +1253,6 @@ function commandPorts(
     { id: 'out', direction: 'out', role: 'flow' },
   ];
 
-  commandArgEntries(command).forEach(({ handle }) => {
-    ports.push({ id: handle, direction: 'in', role: 'io' });
-  });
   if (command.kind === 'MoveCall') {
     command.typeArguments.forEach((_typeArgument, index) => {
       ports.push({
@@ -1259,6 +1262,9 @@ function commandPorts(
       });
     });
   }
+  commandArgEntries(command).forEach(({ handle }) => {
+    ports.push({ id: handle, direction: 'in', role: 'io' });
+  });
 
   commandOutputHandles(command, referencedNestedResultIndexes).forEach(
     (handle) => {
@@ -1365,6 +1371,10 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
           type: command.type,
         },
       };
+    case 'TransferObjects':
+    case 'SplitCoins':
+    case 'MergeCoins':
+      return undefined;
     case 'Unsupported': {
       const hasValue =
         Object.prototype.hasOwnProperty.call(command, 'value') &&
@@ -1376,9 +1386,9 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
         },
       };
     }
-    default:
-      return undefined;
   }
+  const _exhaustive: never = command;
+  return _exhaustive;
 }
 
 function graphCommandKind(command: IRCommand): CommandNode['command'] {

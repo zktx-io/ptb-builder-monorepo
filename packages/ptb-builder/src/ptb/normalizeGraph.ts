@@ -1,6 +1,8 @@
 import type { PTBGraph } from './graph/types';
 import { KNOWN_IDS, type WellKnownId } from './seedGraph';
 
+export type GraphNodePositions = Record<string, { x: number; y: number }>;
+
 /** Idempotent graph normalization that never mutates the input graph. */
 export function normalizeGraph(g: PTBGraph): PTBGraph {
   const nodes = (g.nodes || []).map((node) => ({ ...node }));
@@ -66,4 +68,33 @@ export function normalizeGraph(g: PTBGraph): PTBGraph {
   });
 
   return { nodes, edges };
+}
+
+export function applyGraphNodePositions(
+  graph: PTBGraph,
+  positions: GraphNodePositions,
+): PTBGraph {
+  let changed = false;
+  const nodes = graph.nodes.map((node) => {
+    const position = positions[node.id];
+    if (!isGraphNodePosition(position)) return node;
+    if (node.position?.x === position.x && node.position.y === position.y) {
+      return node;
+    }
+    changed = true;
+    return {
+      ...node,
+      position: { x: position.x, y: position.y },
+    };
+  });
+
+  return changed ? { ...graph, nodes } : graph;
+}
+
+function isGraphNodePosition(
+  value: { x: number; y: number } | undefined,
+): value is { x: number; y: number } {
+  return (
+    value !== undefined && Number.isFinite(value.x) && Number.isFinite(value.y)
+  );
 }

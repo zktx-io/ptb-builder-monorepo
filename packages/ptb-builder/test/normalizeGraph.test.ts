@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PTBGraph } from '../src/ptb/graph/types';
-import { normalizeGraph } from '../src/ptb/normalizeGraph';
+import {
+  applyGraphNodePositions,
+  normalizeGraph,
+} from '../src/ptb/normalizeGraph';
 import { KNOWN_IDS } from '../src/ptb/seedGraph';
 
 describe('normalizeGraph', () => {
@@ -75,5 +78,89 @@ describe('normalizeGraph', () => {
         targetHandle: 'in',
       },
     ]);
+  });
+
+  it('applies layout positions without changing graph semantics', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'start',
+          kind: 'Start',
+          ports: [{ id: 'out', role: 'flow', direction: 'out' }],
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'cmd',
+          kind: 'Command',
+          command: 'transferObjects',
+          params: { runtime: { resultCount: 0 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+          ],
+          position: { x: 1, y: 2 },
+        },
+        {
+          id: 'end',
+          kind: 'End',
+          ports: [{ id: 'in', role: 'flow', direction: 'in' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-cmd',
+          kind: 'flow',
+          source: 'start',
+          sourceHandle: 'out',
+          target: 'cmd',
+          targetHandle: 'in',
+        },
+      ],
+    };
+    const before = JSON.parse(JSON.stringify(graph));
+
+    const next = applyGraphNodePositions(graph, {
+      cmd: { x: 10, y: 20 },
+      missing: { x: 99, y: 99 },
+      end: { x: Number.NaN, y: 30 },
+    });
+
+    expect(graph).toEqual(before);
+    expect(next).not.toBe(graph);
+    expect(next.edges).toBe(graph.edges);
+    expect(next.nodes[0]).toBe(graph.nodes[0]);
+    expect(next.nodes[2]).toBe(graph.nodes[2]);
+    expect(next.nodes[1]).toEqual({
+      ...graph.nodes[1],
+      position: { x: 10, y: 20 },
+    });
+    expect(
+      next.nodes.find((node) => node.id === 'cmd' && node.kind === 'Command')
+        ?.params,
+    ).toBe(
+      graph.nodes.find((node) => node.id === 'cmd' && node.kind === 'Command')
+        ?.params,
+    );
+  });
+
+  it('returns the same graph when layout positions do not change nodes', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'start',
+          kind: 'Start',
+          ports: [{ id: 'out', role: 'flow', direction: 'out' }],
+          position: { x: 1, y: 2 },
+        },
+      ],
+      edges: [],
+    };
+
+    expect(
+      applyGraphNodePositions(graph, {
+        start: { x: 1, y: 2 },
+        missing: { x: 3, y: 4 },
+      }),
+    ).toBe(graph);
   });
 });

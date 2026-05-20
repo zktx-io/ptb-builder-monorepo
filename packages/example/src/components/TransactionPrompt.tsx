@@ -81,7 +81,7 @@ export function TransactionPrompt({
           PTB Viewer
         </h1>
         <p style={{ fontSize: 16, opacity: 0.9, marginTop: 4 }}>
-          Pick a network and paste a transaction digest, then load the graph.
+          Pick a network and paste a Sui transaction hash, then load the graph.
         </p>
         <div
           style={{
@@ -115,11 +115,23 @@ export function TransactionPrompt({
               </option>
             ))}
           </select>
+          <label
+            htmlFor="viewer-transaction-hash"
+            style={{
+              alignSelf: 'flex-start',
+              fontSize: 13,
+              fontWeight: 600,
+              opacity: 0.82,
+            }}
+          >
+            Transaction hash
+          </label>
           <input
+            id="viewer-transaction-hash"
             value={txValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="0x1234…"
+            placeholder="vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh"
             style={{
               padding: '12px 14px',
               borderRadius: 10,
@@ -133,6 +145,18 @@ export function TransactionPrompt({
               boxSizing: 'border-box',
             }}
           />
+          <div
+            style={{
+              alignSelf: 'flex-start',
+              color: 'rgba(255,255,255,0.72)',
+              fontSize: 12,
+              lineHeight: 1.45,
+              textAlign: 'left',
+              wordBreak: 'break-all',
+            }}
+          >
+            Example base58 digest: vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh
+          </div>
           <button
             disabled={!canLoad}
             onClick={onLoad}

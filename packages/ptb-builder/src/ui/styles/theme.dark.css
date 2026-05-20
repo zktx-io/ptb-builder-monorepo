@@ -43,6 +43,7 @@
   /* =======================
      Node surfaces (border/bg)
      ======================= */
+  --ptb-node-backdrop-filter: saturate(125%) blur(6px);
 
   /* Command (neutral) */
   --ptb-node-command-border: #444c56;
@@ -155,7 +156,7 @@
   --ptb-code-boolean: #f87171; /* red-400 */
 
   /* Modal */
-  --ptb-modal-overlay: rgba(0, 0, 0, 0.45);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.2);
   --ptb-modal-panel-bg: #22272e;
   --ptb-modal-panel-fg: #adbac7;
   --ptb-modal-panel-border: rgba(205, 217, 229, 0.12);

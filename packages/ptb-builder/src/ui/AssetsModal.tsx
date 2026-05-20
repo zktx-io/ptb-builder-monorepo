@@ -288,10 +288,10 @@ export function AssetsModal({
             <button
               type="button"
               onClick={handleClose}
-              className="p-1 rounded hover:opacity-80"
+              className="ptb-modal__close"
               aria-label="Close"
             >
-              <X />
+              <X size={16} strokeWidth={2.25} />
             </button>
           </div>
         </div>

@@ -158,6 +158,40 @@ describe('ptbToRF command port materialization', () => {
     });
   });
 
+  it('labels loaded MoveCall positional ports before signature hydration', () => {
+    const ports = commandPorts(
+      {
+        inputs: [
+          { $kind: 'Pure', Pure: { bytes: 'CgAAAAAAAAA=' } },
+          { $kind: 'Pure', Pure: { bytes: 'FAAAAAAAAAA=' } },
+        ],
+        commands: [
+          {
+            $kind: 'MoveCall',
+            MoveCall: {
+              package:
+                '0x0000000000000000000000000000000000000000000000000000000000000002',
+              module: 'coin',
+              function: 'value',
+              typeArguments: [
+                '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI',
+              ],
+              arguments: [
+                { $kind: 'Input', Input: 0 },
+                { $kind: 'Input', Input: 1 },
+              ],
+            },
+          },
+        ],
+      },
+      'moveCall',
+    );
+
+    expect(ports.find((port) => port.id === 'in_type_0')?.label).toBe('T0');
+    expect(ports.find((port) => port.id === 'in_arg_0')?.label).toBe('arg0');
+    expect(ports.find((port) => port.id === 'in_arg_1')?.label).toBe('arg1');
+  });
+
   it('preserves loaded typed zero-element MakeMoveVec ports', () => {
     const ports = commandPorts(
       {

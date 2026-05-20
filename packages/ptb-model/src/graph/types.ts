@@ -394,12 +394,6 @@ export function graphDocumentDiagnostics(
   return graphDiagnostics(diagnostics).filter(blocksDocument);
 }
 
-export function graphExecutionDiagnostics(
-  diagnostics: readonly TransactionDiagnostic[],
-): readonly GraphDiagnostic[] {
-  return graphDiagnostics(diagnostics).filter(blocksExecution);
-}
-
 function graphDiagnostics(
   diagnostics: readonly TransactionDiagnostic[],
 ): GraphDiagnostic[] {

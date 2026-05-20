@@ -299,6 +299,16 @@ describe('model-root PTB boundary', () => {
     expect(ir.commands[0]).toMatchObject({ kind: 'SplitCoins' });
   });
 
+  it('projects React Flow edges behind graph nodes', () => {
+    const rf = ptbToRF(splitGasGraph());
+    const nodeZIndex = rf.nodes.map((node) => node.zIndex ?? 0);
+    const edgeZIndex = rf.edges.map((edge) => edge.zIndex ?? 0);
+
+    expect(nodeZIndex.length).toBeGreaterThan(0);
+    expect(edgeZIndex.length).toBeGreaterThan(0);
+    expect(Math.min(...nodeZIndex)).toBeGreaterThan(Math.max(...edgeZIndex));
+  });
+
   it('round-trips TypeArgument nodes and type edges through React Flow', () => {
     const graph: PTBGraph = {
       nodes: [

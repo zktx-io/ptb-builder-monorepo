@@ -23,7 +23,7 @@
   --ptb-assets-list-h: 58vh;
 
   /* Mode */
-  --ptb-node-backdrop-filter: none;
+  --ptb-node-backdrop-filter: saturate(120%) blur(5px);
 
   /* Fallbacks - Prism code tokens (themes may override) */
   --ptb-code-fg: #111827;
@@ -236,6 +236,9 @@
   position: relative;
   border-width: 2px;
   z-index: 0;
+  background-clip: padding-box;
+  backdrop-filter: var(--ptb-node-backdrop-filter, none);
+  -webkit-backdrop-filter: var(--ptb-node-backdrop-filter, none);
   transition:
     border-color 0.15s ease,
     background-color 0.15s ease;
@@ -875,6 +878,8 @@
   align-items: center;
   justify-content: center;
   background: var(--ptb-modal-overlay);
+  backdrop-filter: saturate(115%) blur(6px);
+  -webkit-backdrop-filter: saturate(115%) blur(6px);
 }
 
 .ptb-modal__panel {
@@ -904,6 +909,30 @@
   font-size: 12px;
   opacity: 0.7;
 }
+.ptb-modal__close {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  padding: 0;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.ptb-modal__close:hover,
+.ptb-modal__close:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+.ptb-modal__close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
 /* Body */
 .ptb-modal__body {
   padding: 12px;
@@ -911,6 +940,12 @@
 .ptb-modal__list {
   height: var(--ptb-assets-list-h);
   overflow: auto;
+}
+.ptb-modal__list ul,
+.ptb-modal__list li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .ptb-modal__list-empty,
 .ptb-modal__list-loading {

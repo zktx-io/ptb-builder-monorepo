@@ -42,6 +42,9 @@ type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
   targetHandleId?: string;
 };
 
+const RF_NODE_Z_INDEX = 10;
+const RF_EDGE_Z_INDEX = 0;
+
 /** UI node payload: only label and the SSOT PTB node */
 export interface RFNodeData extends Record<string, unknown> {
   label?: string;
@@ -366,6 +369,7 @@ export function ptbToRF(graph: PTBGraph): {
     id: n.id,
     type: mapPTBNodeToRFType(n),
     position: n.position ?? { x: 0, y: 0 },
+    zIndex: RF_NODE_Z_INDEX,
     data: { label: n.label, ptbNode: n },
   }));
 
@@ -396,6 +400,7 @@ export function ptbToRF(graph: PTBGraph): {
       sourceHandleId: sh,
       targetHandleId: th,
       type: mapPTBEdgeToRFType(e),
+      zIndex: RF_EDGE_Z_INDEX,
       data: {
         dataType: srcTypeStr,
         cast: e.cast,

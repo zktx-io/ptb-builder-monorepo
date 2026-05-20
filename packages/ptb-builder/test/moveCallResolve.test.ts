@@ -8,6 +8,7 @@ import {
   toPTBModuleData,
 } from '../src/ptb/move/toPTBModuleData';
 import type { RFEdgeData, RFNodeData } from '../src/ptb/ptbAdapter';
+import { buildDoc } from '../src/ptb/ptbDoc';
 import { refreshMoveCallPortsFromSignatures } from '../src/ui/moveCallSignaturePorts';
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
 
@@ -209,6 +210,44 @@ describe('MoveCall resolve state', () => {
         },
       },
     });
+  });
+
+  it('stores SDK signature metadata as plain PTB document data', () => {
+    class SdkOpenSignatureBody {
+      $kind = 'u64' as const;
+    }
+    class SdkOpenSignature {
+      reference = NULL_VALUE;
+      body = new SdkOpenSignatureBody();
+    }
+
+    const entry = toPTBFunctionDataEntry({
+      typeParameters: [],
+      parameters: [new SdkOpenSignature() as RawOpenSignature],
+      returns: [],
+    });
+
+    expect(Object.getPrototypeOf(entry.openSignatures.parameters[0])).toBe(
+      Object.prototype,
+    );
+    expect(
+      Object.getPrototypeOf(entry.openSignatures.parameters[0]?.body),
+    ).toBe(Object.prototype);
+    expect(() =>
+      buildDoc({
+        chain: 'sui:mainnet',
+        graph: { nodes: [], edges: [] },
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {
+          [PACKAGE_ID]: {
+            coin: {
+              value: entry,
+            },
+          },
+        },
+        objects: {},
+      }),
+    ).not.toThrow();
   });
 
   it('commits target and ports even before generic type arguments are complete', () => {

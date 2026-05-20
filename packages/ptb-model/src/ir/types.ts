@@ -173,9 +173,10 @@ export function irCommandArgRefs(command: IRCommand): IRArgRef[] {
     case 'Upgrade':
       return optionalArgRef(command.ticket);
     case 'Unsupported':
-    default:
       return [];
   }
+  const _exhaustive: never = command;
+  return _exhaustive;
 }
 
 function argRefArray(value: unknown): IRArgRef[] {

@@ -97,7 +97,7 @@
   --ptb-node-option-bg-active: rgba(187, 154, 247, 0.48);
 
   /* Node backdrop blur (optional, subtle) */
-  --ptb-node-backdrop-filter: saturate(110%) blur(3px);
+  --ptb-node-backdrop-filter: saturate(125%) blur(6px);
 
   /* CodePip */
   --ptb-codepip-header-bg: #1f2335;
@@ -135,7 +135,7 @@
   --ptb-code-boolean: #ff9e64;
 
   /* Modal */
-  --ptb-modal-overlay: rgba(0, 0, 0, 0.6);
+  --ptb-modal-overlay: rgba(0, 0, 0, 0.2);
   --ptb-modal-panel-bg: #1f2335;
   --ptb-modal-panel-fg: #c0caf5;
   --ptb-modal-panel-border: rgba(86, 95, 137, 0.45);

@@ -607,6 +607,7 @@ export function PtbProvider({
       return;
     }
     lastGraphSigRef.current = nextSig;
+    docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
     setGraphState(norm);
     setWellKnown(computeWellKnownPresence(norm));
     idNonceRef.current = Math.max(idNonceRef.current, seedNonceFromGraph(norm));
@@ -615,6 +616,7 @@ export function PtbProvider({
   const replaceGraphImmediate = useCallback((g: PTBGraph) => {
     const norm = normalizeGraph(g);
     lastGraphSigRef.current = stableGraphSig(norm);
+    docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
     setGraphState(norm);
     setWellKnown(computeWellKnownPresence(norm));
     idNonceRef.current = seedNonceFromGraph(norm);
