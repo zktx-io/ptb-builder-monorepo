@@ -195,6 +195,24 @@
   stroke: var(--xy-edge-stroke-hover, var(--xy-edge-stroke-selected));
 }
 
+.ptb-type-edge {
+  stroke: color-mix(in srgb, var(--ptb-node-command-border) 78%, #7c3aed);
+  stroke-width: 2.25;
+  stroke-dasharray: 2 3;
+  stroke-linecap: round;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.react-flow__edge:hover .react-flow__edge-path.ptb-type-edge,
+.react-flow__edge .react-flow__edge-path.ptb-type-edge.is-selected {
+  stroke: color-mix(
+    in srgb,
+    var(--ptb-node-command-border-active) 70%,
+    #7c3aed
+  );
+}
+
 /* Keep pointer affordance and hit-test behavior */
 .react-flow__edge,
 .react-flow__edge-path {
@@ -307,6 +325,33 @@
   border-color: var(--ptb-node-option-border);
   background: var(--ptb-node-option-bg);
 }
+.ptb-node--typearg .ptb-node-shell {
+  border-color: color-mix(
+    in srgb,
+    var(--ptb-node-command-border) 72%,
+    #7c3aed
+  );
+  background: color-mix(
+    in srgb,
+    var(--ptb-node-command-bg) 84%,
+    #7c3aed 16%
+  );
+}
+.ptb-typearg-icon {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  flex: 0 0 auto;
+}
+.ptb-typearg-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Hover (brighter) */
 .react-flow__node:has(.ptb-node--command):hover .ptb-node-shell {
   border-color: var(--ptb-node-command-border-hover);
@@ -344,6 +389,13 @@
   border-color: var(--ptb-node-option-border-hover);
   background: var(--ptb-node-option-bg-hover);
 }
+.react-flow__node:has(.ptb-node--typearg):hover .ptb-node-shell {
+  border-color: color-mix(
+    in srgb,
+    var(--ptb-node-command-border-hover) 72%,
+    #7c3aed
+  );
+}
 /* Selected/Active (brightest) */
 .react-flow__node.selected:has(.ptb-node--command) .ptb-node-shell {
   border-color: var(--ptb-node-command-border-active);
@@ -380,6 +432,13 @@
 .react-flow__node.selected:has(.ptb-node--option) .ptb-node-shell {
   border-color: var(--ptb-node-option-border-active);
   background: var(--ptb-node-option-bg-active);
+}
+.react-flow__node.selected:has(.ptb-node--typearg) .ptb-node-shell {
+  border-color: color-mix(
+    in srgb,
+    var(--ptb-node-command-border-active) 72%,
+    #7c3aed
+  );
 }
 /* Subtle appear animation */
 @keyframes ptb-fade-in {
@@ -479,6 +538,12 @@
 /* IO handle color = node border color */
 .ptb-handle--io {
   color: inherit !important;
+}
+
+.ptb-handle--type {
+  border-radius: 9999px;
+  color: color-mix(in srgb, var(--ptb-node-command-border) 62%, #7c3aed);
+  background: currentColor;
 }
 
 .ptb-handle-label {
@@ -631,6 +696,9 @@
 }
 .ptb-marker--id {
   color: var(--ptb-io-id-stroke);
+}
+.ptb-marker--type {
+  color: color-mix(in srgb, var(--ptb-node-command-border) 55%, #7c3aed);
 }
 /* ============================================================
    CodePip

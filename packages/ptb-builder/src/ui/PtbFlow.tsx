@@ -41,7 +41,12 @@ import {
 
 import { CodePip } from './CodePip';
 import { renderCodePreview } from './codePreview';
-import { filterConflictingIOEdges, pruneExistingIOEdges } from './edgePruning';
+import {
+  filterConflictingIOEdges,
+  filterConflictingTypeEdges,
+  pruneExistingIOEdges,
+  pruneExistingTypeEdges,
+} from './edgePruning';
 import { EdgeTypes } from './edges';
 import {
   buildEditorValidationState,
@@ -51,6 +56,7 @@ import { EMPTY_CODE } from './emptyCode';
 import { findPortFromStore } from './handles/handleUtils';
 import { ContextMenu } from './menu/ContextMenu';
 import { formatModelErrorMessage } from './modelDiagnostics';
+import { refreshMoveCallPortsFromSignatures } from './moveCallSignaturePorts';
 import { NodeTypes } from './nodes';
 import { usePtb } from './PtbProvider';
 import { createReactFlowCommitController } from './reactFlowCommitController';
@@ -65,6 +71,7 @@ import {
   type Port,
   type PTBGraph,
   type PTBNode,
+  type TypeArgumentNode,
   type VariableNode,
 } from '../ptb/graph/types';
 import {
@@ -152,6 +159,16 @@ function pruneDanglingEdges(
     const tId = parseHandleTypeSuffix(e.targetHandle ?? undefined).baseId;
     return Boolean(sId && tId && srcSet.has(sId) && tgtSet.has(tId));
   });
+}
+
+function pruneInvalidEdges(
+  nodes: RFNode<RFNodeData>[],
+  edges: RFEdge<RFEdgeData>[],
+): RFEdge<RFEdgeData>[] {
+  let pruned = pruneDanglingEdges(nodes, edges);
+  pruned = pruneExistingIOEdges(nodes, pruned);
+  pruned = pruneExistingTypeEdges(nodes, pruned);
+  return pruned;
 }
 
 /** Build a compact signature for edges to avoid redundant setRF. */
@@ -260,6 +277,9 @@ export function PTBFlow() {
   const patchVarRef = useRef<
     (id: string, patch: Partial<VariableNode>) => void
   >(() => {});
+  const patchTypeArgumentRef = useRef<
+    (id: string, patch: Partial<TypeArgumentNode>) => void
+  >(() => {});
 
   const reportGraphAdapterError = useCallback(
     (error: unknown) => {
@@ -325,6 +345,11 @@ export function PTBFlow() {
       patchVarRef.current(id, patch),
     [],
   );
+  const nodeDataOnPatchTypeArgument = useCallback(
+    (id: string, patch: Partial<TypeArgumentNode>) =>
+      patchTypeArgumentRef.current(id, patch),
+    [],
+  );
 
   /** Inject stable callbacks into RF node data payloads only when missing. */
   const withCallbacks = useCallback(
@@ -334,7 +359,8 @@ export function PTBFlow() {
         if (
           data.onPatchUI === nodeDataOnPatchUI &&
           data.onPatchCommand === nodeDataOnPatchCommand &&
-          data.onPatchVar === nodeDataOnPatchVar
+          data.onPatchVar === nodeDataOnPatchVar &&
+          data.onPatchTypeArgument === nodeDataOnPatchTypeArgument
         ) {
           return n;
         }
@@ -345,10 +371,16 @@ export function PTBFlow() {
             onPatchUI: nodeDataOnPatchUI,
             onPatchCommand: nodeDataOnPatchCommand,
             onPatchVar: nodeDataOnPatchVar,
+            onPatchTypeArgument: nodeDataOnPatchTypeArgument,
           },
         };
       }),
-    [nodeDataOnPatchCommand, nodeDataOnPatchUI, nodeDataOnPatchVar],
+    [
+      nodeDataOnPatchCommand,
+      nodeDataOnPatchTypeArgument,
+      nodeDataOnPatchUI,
+      nodeDataOnPatchVar,
+    ],
   );
 
   // ----- Node-level patchers (deferred to avoid setState in render) -----------
@@ -392,8 +424,7 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneExistingIOEdges(injected, pruned);
+          const pruned = pruneInvalidEdges(injected, freshRFEdges);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
@@ -456,8 +487,7 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneExistingIOEdges(injected, pruned);
+          const pruned = pruneInvalidEdges(injected, freshRFEdges);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
@@ -532,14 +562,58 @@ export function PTBFlow() {
           const { nodes: freshRFNodes, edges: freshRFEdges } =
             ptbToRF(currentPTB);
           const injected = withCallbacks(freshRFNodes);
-          let pruned = pruneDanglingEdges(injected, freshRFEdges);
-          pruned = pruneExistingIOEdges(injected, pruned);
+          const pruned = pruneInvalidEdges(injected, freshRFEdges);
 
           return { rfNodes: injected, rfEdges: pruned };
         });
       });
     },
     [safeRfToPTB, withCallbacks],
+  );
+
+  const onPatchTypeArgument = useCallback(
+    (nodeId: string, patch: Partial<TypeArgumentNode>) => {
+      const session = flowSessionRef.current;
+      deferSetState(() => {
+        if (session !== flowSessionRef.current) return;
+        setRF((prev) => {
+          let changed = false;
+          const nextNodes = prev.rfNodes.map((rfNode) => {
+            if (rfNode.id !== nodeId) return rfNode;
+            const node = rfNode.data?.ptbNode;
+            if (!node || node.kind !== 'TypeArgument') return rfNode;
+
+            const nextNode: TypeArgumentNode = {
+              ...node,
+              position: rfNode.position,
+            };
+            if ('value' in patch && typeof patch.value === 'string') {
+              nextNode.value = patch.value;
+              nextNode.label = patch.value || 'type';
+            }
+            if ('label' in patch) {
+              if (patch.label === undefined) delete nextNode.label;
+              else nextNode.label = patch.label;
+            }
+
+            changed = true;
+            return {
+              ...rfNode,
+              data: {
+                ...rfNode.data,
+                label: nextNode.label,
+                ptbNode: nextNode,
+              },
+            };
+          });
+
+          return changed
+            ? { ...prev, rfNodes: withCallbacks(nextNodes) }
+            : prev;
+        });
+      });
+    },
+    [withCallbacks],
   );
 
   // Keep refs pointing to latest patchers/loaders
@@ -550,6 +624,9 @@ export function PTBFlow() {
   useEffect(() => {
     patchVarRef.current = onPatchVar;
   }, [onPatchVar]);
+  useEffect(() => {
+    patchTypeArgumentRef.current = onPatchTypeArgument;
+  }, [onPatchTypeArgument]);
 
   // ----- RF state (authoritative while editing) -------------------------------
 
@@ -559,8 +636,7 @@ export function PTBFlow() {
   }>(() => {
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
-    let pruned = pruneDanglingEdges(injected, edges);
-    pruned = pruneExistingIOEdges(injected, pruned);
+    const pruned = pruneInvalidEdges(injected, edges);
     return { rfNodes: injected, rfEdges: pruned };
   });
   const flowActive = useMemo(
@@ -615,6 +691,26 @@ export function PTBFlow() {
     rfSnapshotRef.current = { rfNodes, rfEdges };
   }, [rfNodes, rfEdges]);
 
+  useEffect(() => {
+    setRF((prev) => {
+      const refreshed = refreshMoveCallPortsFromSignatures(
+        prev.rfNodes,
+        prev.rfEdges,
+        moveSignatures,
+      );
+      if (!refreshed) return prev;
+      const injected = withCallbacks(refreshed);
+      const nextEdges = pruneInvalidEdges(injected, prev.rfEdges);
+      if (
+        injected === prev.rfNodes &&
+        edgesSig(nextEdges) === edgesSig(prev.rfEdges)
+      ) {
+        return prev;
+      }
+      return { rfNodes: injected, rfEdges: nextEdges };
+    });
+  }, [moveSignatures, rfEdges, rfNodes, withCallbacks]);
+
   // ----- Rehydrate from provider on epoch bump --------------------------------
 
   useEffect(() => {
@@ -633,8 +729,7 @@ export function PTBFlow() {
     rehydratingRef.current = true;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
-    let pruned = pruneDanglingEdges(injected, edges);
-    pruned = pruneExistingIOEdges(injected, pruned);
+    const pruned = pruneInvalidEdges(injected, edges);
 
     setRF({ rfNodes: injected, rfEdges: pruned });
     baseGraphRef.current = graph;
@@ -654,8 +749,7 @@ export function PTBFlow() {
   useEffect(() => {
     if (readOnly) return;
     setRF((prev) => {
-      let pruned = pruneDanglingEdges(prev.rfNodes, prev.rfEdges);
-      pruned = pruneExistingIOEdges(prev.rfNodes, pruned);
+      const pruned = pruneInvalidEdges(prev.rfNodes, prev.rfEdges);
       if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
       return { ...prev, rfEdges: pruned };
     });
@@ -775,7 +869,7 @@ export function PTBFlow() {
       const rfNode = ptbNodeToRF(node);
       setRF((prev) => {
         const nodes = withCallbacks([...prev.rfNodes, rfNode]);
-        const edges = pruneDanglingEdges(nodes, prev.rfEdges);
+        const edges = pruneInvalidEdges(nodes, prev.rfEdges);
         return { rfNodes: nodes, rfEdges: edges };
       });
     },
@@ -856,8 +950,7 @@ export function PTBFlow() {
             ? prev
             : { ...prev, rfNodes: nextNodes };
         }
-        let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-        nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
+        const nextEdges = pruneInvalidEdges(nextNodes, prev.rfEdges);
 
         // Avoid redundant updates
         if (
@@ -904,7 +997,7 @@ export function PTBFlow() {
             ? prev
             : { ...prev, rfEdges: nextEdges };
         }
-        const pruned = pruneDanglingEdges(prev.rfNodes, nextEdges);
+        const pruned = pruneInvalidEdges(prev.rfNodes, nextEdges);
         if (edgesSig(pruned) === edgesSig(prev.rfEdges)) return prev; // no-op
         return { ...prev, rfEdges: pruned };
       });
@@ -950,7 +1043,35 @@ export function PTBFlow() {
             targetHandle: conn.targetHandle ?? undefined,
           };
 
-          const nextEdges = pruneDanglingEdges(prev.rfNodes, [
+          const nextEdges = pruneInvalidEdges(prev.rfNodes, [
+            ...filtered,
+            newEdge,
+          ]);
+          if (edgesSig(nextEdges) === edgesSig(prev.rfEdges)) return prev;
+          return { ...prev, rfEdges: nextEdges };
+        }
+
+        // TYPE ARGUMENT EDGE
+        if (sp.role === 'type' || tp.role === 'type') {
+          if (
+            sp.role !== 'type' ||
+            tp.role !== 'type' ||
+            sp.direction !== 'out' ||
+            tp.direction !== 'in'
+          ) {
+            return prev;
+          }
+          const filtered = filterConflictingTypeEdges(prev.rfEdges, conn);
+          if (!filtered) return prev;
+          const newEdge: RFEdge<RFEdgeData> = {
+            id: createUniqueId('edge'),
+            type: 'ptb-type',
+            source: conn.source!,
+            target: conn.target!,
+            sourceHandle: conn.sourceHandle ?? undefined,
+            targetHandle: conn.targetHandle ?? undefined,
+          };
+          const nextEdges = pruneInvalidEdges(prev.rfNodes, [
             ...filtered,
             newEdge,
           ]);
@@ -976,7 +1097,7 @@ export function PTBFlow() {
           data: cast ? { cast } : undefined,
         };
 
-        const nextEdges = pruneDanglingEdges(prev.rfNodes, [
+        const nextEdges = pruneInvalidEdges(prev.rfNodes, [
           ...filtered,
           newEdge,
         ]);
@@ -1194,8 +1315,7 @@ export function PTBFlow() {
                 }
               : n,
           );
-          let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-          nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
+          const nextEdges = pruneInvalidEdges(nextNodes, prev.rfEdges);
           return { rfNodes: nextNodes, rfEdges: nextEdges };
         });
         requestAnimationFrame(() => {
@@ -1224,8 +1344,7 @@ export function PTBFlow() {
             }
           : n,
       );
-      let nextEdges = pruneDanglingEdges(nextNodes, prev.rfEdges);
-      nextEdges = pruneExistingIOEdges(nextNodes, nextEdges);
+      const nextEdges = pruneInvalidEdges(nextNodes, prev.rfEdges);
       return { rfNodes: nextNodes, rfEdges: nextEdges };
     });
 
@@ -1290,7 +1409,7 @@ export function PTBFlow() {
       } else if (obj.authoring && !usage) {
         toast({
           message:
-            'This object needs an explicit raw input usage. Open the variable and run Lookup to choose one.',
+            'This object needs an explicit raw input usage. Open the variable and load object metadata to choose one.',
           variant: 'warning',
         });
       }

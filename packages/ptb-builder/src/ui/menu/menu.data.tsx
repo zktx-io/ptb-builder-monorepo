@@ -35,6 +35,11 @@ export const CanvasCmd = [
  * ----------------------------------------------------------------- */
 export const CanvasScalarQuick = [
   {
+    name: 'type argument',
+    action: 'type/argument',
+    icon: <span className="ptb-marker ptb-marker--type" />,
+  },
+  {
     name: 'address',
     action: 'var/scalar/address',
     icon: <span className="ptb-marker ptb-marker--address" />,

@@ -262,12 +262,21 @@ function commandLabel(command: unknown, index: number): string[] {
   }
 
   switch (command.kind) {
-    case 'MoveCall':
+    case 'MoveCall': {
+      const typeArguments = Array.isArray(command.typeArguments)
+        ? command.typeArguments.filter(
+            (typeArgument): typeArgument is string =>
+              typeof typeArgument === 'string',
+          )
+        : [];
+      const typeArgumentLabel =
+        typeArguments.length > 0 ? `<${typeArguments.join(', ')}>` : '';
       return [
         `${index}: MoveCall ${labelValue(command.package)}::${labelValue(
           command.module,
-        )}::${labelValue(command.function)}`,
+        )}::${labelValue(command.function)}${typeArgumentLabel}`,
       ];
+    }
     case 'TransferObjects':
       return [`${index}: TransferObjects`];
     case 'SplitCoins':

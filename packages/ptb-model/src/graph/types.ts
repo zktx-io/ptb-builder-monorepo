@@ -54,7 +54,7 @@ import {
 export type { NumericWidth, PTBScalar, PTBType } from '../ptbType.js';
 
 export type PortDirection = 'in' | 'out';
-export type PortRole = 'flow' | 'io';
+export type PortRole = 'flow' | 'io' | 'type';
 
 export interface Port {
   id: string;
@@ -67,7 +67,7 @@ export interface Port {
 
 export interface NodeBase {
   id: string;
-  kind: 'Start' | 'End' | 'Command' | 'Variable';
+  kind: 'Start' | 'End' | 'Command' | 'Variable' | 'TypeArgument';
   label?: string;
   ports: Port[];
   position?: { x: number; y: number };
@@ -92,7 +92,6 @@ export interface CommandUIParams {
 
 export interface CommandRuntimeParams {
   target?: string;
-  typeArguments?: string[];
   resultCount?: number;
   type?: string | typeof NULL_VALUE;
   modules?: string[];
@@ -130,9 +129,19 @@ export interface VariableNode extends NodeBase {
     | { kind: 'UnsupportedInput'; sourceKind: string };
 }
 
-export type PTBNode = StartNode | EndNode | CommandNode | VariableNode;
+export interface TypeArgumentNode extends NodeBase {
+  kind: 'TypeArgument';
+  value: string;
+}
 
-export type EdgeKind = 'flow' | 'io';
+export type PTBNode =
+  | StartNode
+  | EndNode
+  | CommandNode
+  | VariableNode
+  | TypeArgumentNode;
+
+export type EdgeKind = 'flow' | 'io' | 'type';
 
 export interface PTBEdge {
   id: string;
@@ -158,7 +167,13 @@ export type ExecutablePTBGraph = PTBGraph & {
 const executableGraphs = new WeakSet<object>();
 const executableGraphFacts = new WeakMap<object, ExecutablePTBGraphFacts>();
 
-const NODE_KINDS = ['Start', 'End', 'Command', 'Variable'] as const;
+const NODE_KINDS = [
+  'Start',
+  'End',
+  'Command',
+  'Variable',
+  'TypeArgument',
+] as const;
 const COMMAND_KINDS = [
   'splitCoins',
   'mergeCoins',
@@ -169,9 +184,9 @@ const COMMAND_KINDS = [
   'upgrade',
   'unsupported',
 ] as const;
-const EDGE_KINDS = ['flow', 'io'] as const;
+const EDGE_KINDS = ['flow', 'io', 'type'] as const;
 const PORT_DIRECTIONS = ['in', 'out'] as const;
-const PORT_ROLES = ['flow', 'io'] as const;
+const PORT_ROLES = ['flow', 'io', 'type'] as const;
 const GRAPH_KEYS = ['nodes', 'edges'] as const;
 const NODE_BASE_KEYS = ['id', 'kind', 'label', 'ports', 'position'] as const;
 const START_NODE_KEYS = NODE_BASE_KEYS;
@@ -185,6 +200,7 @@ const VARIABLE_NODE_KEYS = [
   'rawInput',
   'semantic',
 ] as const;
+const TYPE_ARGUMENT_NODE_KEYS = [...NODE_BASE_KEYS, 'value'] as const;
 const PORT_KEYS = [
   'id',
   'direction',
@@ -212,7 +228,7 @@ const COMMAND_RUNTIME_KEYS_BY_KIND = {
   splitCoins: [],
   mergeCoins: [],
   transferObjects: [],
-  moveCall: ['target', 'typeArguments', 'resultCount'],
+  moveCall: ['target', 'resultCount'],
   makeMoveVec: ['type'],
   publish: ['modules', 'dependencies'],
   upgrade: ['modules', 'dependencies', 'package'],
@@ -230,10 +246,12 @@ interface GraphNodeIndex {
   kind: PTBNode['kind'];
   ports: Map<string, Port>;
   ioInputPortIds: Set<string>;
+  typeInputPortIds: Set<string>;
   ioOutputPorts: Array<{ id: string; path: string }>;
   path: string;
   command?: CommandKind;
   runtime?: Record<string, unknown>;
+  typeArgumentValue?: string;
   moveCallEvidence?: GraphMoveCallEvidenceState;
 }
 
@@ -496,6 +514,10 @@ function validateNode(
   if (value.kind === 'Variable') {
     validateVariableNode(value, path, diagnostics);
   }
+
+  if (value.kind === 'TypeArgument') {
+    validateTypeArgumentNode(value, path, diagnostics);
+  }
 }
 
 function validateCommandNode(
@@ -546,18 +568,21 @@ function validateCommandInputPorts(
     if (
       !isPlainObject(port) ||
       port.direction !== 'in' ||
-      port.role !== 'io' ||
       typeof port.id !== 'string'
     ) {
       return;
     }
 
-    const match = commandInputPortMatch(commandKind, port.id);
+    if (port.role !== 'io' && port.role !== 'type') return;
+    const match =
+      port.role === 'io'
+        ? commandInputPortMatch(commandKind, port.id)
+        : commandTypeInputPortMatch(commandKind, port.id);
     if (match === undefined) {
       diagnostics.push(
         graphDiagnostic(
           'graph.command.inputPort.invalid',
-          `PTB graph ${commandKind} command declares non-canonical IO input port ${port.id}. Use the command-specific model input handles only.`,
+          `PTB graph ${commandKind} command declares non-canonical ${port.role} input port ${port.id}. Use the command-specific model input handles only.`,
           `${path}.ports[${portIndex}].id`,
         ),
       );
@@ -585,7 +610,7 @@ function validateCommandInputPorts(
       diagnostics.push(
         graphDiagnostic(
           'graph.command.inputPort.invalid',
-          `PTB graph ${commandKind} command declares sparse IO input port ${port.portId}. Indexed model input handles must be dense from zero.`,
+          `PTB graph ${commandKind} command declares sparse input port ${port.portId}. Indexed model input handles must be dense from zero.`,
           `${path}.ports[${port.portIndex}].id`,
         ),
       );
@@ -624,6 +649,15 @@ function commandInputPortMatch(
     case 'unsupported':
       return undefined;
   }
+}
+
+function commandTypeInputPortMatch(
+  commandKind: CommandKind,
+  portId: string,
+): CommandInputPortMatch | undefined {
+  return commandKind === 'moveCall'
+    ? indexedInputPortMatch(portId, 'type')
+    : undefined;
 }
 
 function singleInputPortMatch(
@@ -688,6 +722,56 @@ function validateVariableNode(
   );
   validateVariableRawInputValue(rawInput, value, path, diagnostics);
   validateVariableSourceCompatibility(rawInput, value, path, diagnostics);
+}
+
+function validateTypeArgumentNode(
+  value: Record<string, unknown>,
+  path: string,
+  diagnostics: TransactionDiagnostic[],
+): void {
+  if (typeof value.value !== 'string') {
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.typeArgument.value',
+        'PTB graph TypeArgument value must be a canonical Move type tag string.',
+        `${path}.value`,
+      ),
+    );
+  } else if (value.value.length === 0) {
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.typeArgument.valueMissing',
+        'PTB graph TypeArgument value is required before execution.',
+        `${path}.value`,
+      ),
+    );
+  } else if (parseMoveTypeTag(value.value) !== value.value) {
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.typeArgument.value',
+        'PTB graph TypeArgument value must be a canonical Move type tag string.',
+        `${path}.value`,
+      ),
+    );
+  }
+
+  if (!isDenseArray(value.ports)) return;
+  const typeOutputs = value.ports.filter(
+    (port) =>
+      isPlainObject(port) &&
+      port.id === 'out_type' &&
+      port.role === 'type' &&
+      port.direction === 'out',
+  );
+  if (typeOutputs.length !== 1 || value.ports.length !== 1) {
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.typeArgument.port',
+        'PTB graph TypeArgument nodes must declare exactly one out_type type output port.',
+        `${path}.ports`,
+      ),
+    );
+  }
 }
 
 function validateVariableRawInputValue(
@@ -932,7 +1016,7 @@ function validatePort(
     diagnostics.push(
       graphDiagnostic(
         'graph.port.role',
-        'PTB graph port role must be flow or io.',
+        'PTB graph port role must be flow, io, or type.',
         `${path}.role`,
       ),
     );
@@ -992,7 +1076,7 @@ function validateEdge(
     diagnostics.push(
       graphDiagnostic(
         'graph.edge.kind',
-        'PTB graph edge kind must be flow or io.',
+        'PTB graph edge kind must be flow, io, or type.',
         `${path}.kind`,
       ),
     );
@@ -1176,6 +1260,7 @@ function validateGraphReferences(
 
     const ports = new Map<string, Port>();
     const ioInputPortIds = new Set<string>();
+    const typeInputPortIds = new Set<string>();
     const ioOutputPorts: Array<{ id: string; path: string }> = [];
     const seenPortIds = new Set<string>();
     node.ports.forEach((port, portIndex) => {
@@ -1207,6 +1292,9 @@ function validateGraphReferences(
       if (port.role === 'io' && port.direction === 'in') {
         ioInputPortIds.add(port.id);
       }
+      if (port.role === 'type' && port.direction === 'in') {
+        typeInputPortIds.add(port.id);
+      }
       if (port.role === 'io' && port.direction === 'out') {
         ioOutputPorts.push({
           id: port.id,
@@ -1222,30 +1310,21 @@ function validateGraphReferences(
     const runtime =
       command === undefined ? undefined : graphCommandRuntimeParams(node);
     const nodePath = `${path}.nodes[${index}]`;
-    const moveCallEvidence =
-      command === 'moveCall'
-        ? graphMoveCallEvidenceState(
-            runtime,
-            moveSignatures,
-            nodePath,
-            diagnostics,
-          )
-        : undefined;
-    if (moveCallEvidence !== undefined) {
-      moveCallEvidenceByNodeId.set(node.id, moveCallEvidence);
-    }
     nodesById.set(node.id, {
       id: node.id,
       kind: node.kind,
       ports,
       ioInputPortIds,
+      typeInputPortIds,
       ioOutputPorts,
       path: nodePath,
+      ...(node.kind === 'TypeArgument' && typeof node.value === 'string'
+        ? { typeArgumentValue: node.value }
+        : {}),
       ...(command !== undefined
         ? {
             command,
             runtime,
-            ...(command === 'moveCall' ? { moveCallEvidence } : {}),
           }
         : {}),
     });
@@ -1253,10 +1332,15 @@ function validateGraphReferences(
 
   const seenEdgeIds = new Set<string>();
   const ioTargets = new Set<string>();
+  const typeTargets = new Set<string>();
   const flowSources = new Set<string>();
   const flowTargets = new Set<string>();
   const validIoIncomingHandlesByCommand = new Map<string, Set<string>>();
   const validIoOutgoingHandlesByCommand = new Map<string, Set<string>>();
+  const incomingTypeArgumentsByCommand = new Map<
+    string,
+    Map<string, string | undefined>
+  >();
   const invalidInputCommands = new Set<string>();
   const invalidOutputCommands = new Set<string>();
 
@@ -1343,6 +1427,34 @@ function validateGraphReferences(
       ioTargets.add(key);
     }
 
+    if (edge.kind === 'type') {
+      const key = `${edge.target}:${edge.targetHandle}`;
+      const targetCommand = nodesById.get(edge.target)?.command;
+      const sourceValid = isValidTypeSourceEndpoint(source);
+      const targetValid = isValidTypeTargetEndpoint(target);
+      if (typeTargets.has(key)) {
+        diagnostics.push(
+          graphDiagnostic(
+            'graph.edge.duplicateTarget',
+            `PTB graph type target ${key} has more than one incoming edge.`,
+            `${path}.edges[${index}].targetHandle`,
+          ),
+        );
+      } else if (sourceValid && targetValid) {
+        const typeArgument = parseMoveTypeTag(
+          source?.node.typeArgumentValue ?? '',
+        );
+        if (targetCommand === 'moveCall') {
+          const handles =
+            incomingTypeArgumentsByCommand.get(edge.target) ??
+            new Map<string, string | undefined>();
+          handles.set(edge.targetHandle, typeArgument);
+          incomingTypeArgumentsByCommand.set(edge.target, handles);
+        }
+      }
+      typeTargets.add(key);
+    }
+
     if (edge.kind === 'flow') {
       const sourceKey = edge.source;
       const targetKey = edge.target;
@@ -1367,6 +1479,35 @@ function validateGraphReferences(
       flowSources.add(sourceKey);
       flowTargets.add(targetKey);
     }
+  });
+
+  nodesById.forEach((node) => {
+    if (node.kind !== 'Command' || node.command !== 'moveCall') return;
+    if (
+      node.runtime !== undefined &&
+      commandRuntimeHasUnknownFields(node.runtime, node.command)
+    ) {
+      return;
+    }
+
+    const typeArguments = moveCallTypeArgumentsForNode(
+      node,
+      incomingTypeArgumentsByCommand.get(node.id),
+      diagnostics,
+    );
+    if (typeArguments === undefined) return;
+
+    const moveCallEvidence = graphMoveCallEvidenceState(
+      node.runtime,
+      moveSignatures,
+      typeArguments,
+      node.path,
+      diagnostics,
+    );
+    if (moveCallEvidence === undefined) return;
+
+    node.moveCallEvidence = moveCallEvidence;
+    moveCallEvidenceByNodeId.set(node.id, moveCallEvidence);
   });
 
   validateCommandSemanticEdges(
@@ -1414,6 +1555,75 @@ function isValidIoTargetEndpoint(
   );
 }
 
+function isValidTypeSourceEndpoint(
+  endpoint: { node: GraphNodeIndex; port: Port } | undefined,
+): boolean {
+  return (
+    endpoint !== undefined &&
+    endpoint.port.direction === 'out' &&
+    endpoint.port.role === 'type' &&
+    endpoint.node.kind === 'TypeArgument'
+  );
+}
+
+function isValidTypeTargetEndpoint(
+  endpoint: { node: GraphNodeIndex; port: Port } | undefined,
+): boolean {
+  return (
+    endpoint !== undefined &&
+    endpoint.port.direction === 'in' &&
+    endpoint.port.role === 'type' &&
+    endpoint.node.kind === 'Command' &&
+    endpoint.node.command === 'moveCall'
+  );
+}
+
+function moveCallTypeArgumentsForNode(
+  node: GraphNodeIndex,
+  incomingTypeArguments: Map<string, string | undefined> | undefined,
+  diagnostics: TransactionDiagnostic[],
+): string[] | undefined {
+  const handles = [...node.typeInputPortIds]
+    .map((handle) => ({
+      handle,
+      index: indexedInputHandleIndex(handle, 'type'),
+    }))
+    .filter(
+      (entry): entry is { handle: string; index: number } =>
+        entry.index !== undefined,
+    )
+    .sort((left, right) => left.index - right.index);
+
+  const typeArguments: string[] = [];
+  for (const { handle } of handles) {
+    if (!incomingTypeArguments?.has(handle)) {
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.command.moveCall.typeArgumentMissing',
+          `PTB graph MoveCall command ${node.id} requires a type edge into ${handle}.`,
+          node.path,
+        ),
+      );
+      return undefined;
+    }
+    const typeArgument = incomingTypeArguments.get(handle);
+    if (typeArgument === undefined) return undefined;
+    typeArguments.push(typeArgument);
+  }
+
+  return typeArguments;
+}
+
+function commandRuntimeHasUnknownFields(
+  runtime: Record<string, unknown>,
+  commandKind: CommandKind,
+): boolean {
+  const allowedKeys = COMMAND_RUNTIME_KEYS_BY_KIND[
+    commandKind
+  ] as readonly string[];
+  return Object.keys(runtime).some((key) => !allowedKeys.includes(key));
+}
+
 function validateCommandSemanticEdges(
   nodesById: Map<string, GraphNodeIndex>,
   incomingHandlesByCommand: Map<string, Set<string>>,
@@ -1457,6 +1667,11 @@ function commandInputPortShapeIssue(node: GraphNodeIndex): boolean {
 
   for (const portId of node.ioInputPortIds) {
     if (commandInputPortMatch(node.command, portId) === undefined) return true;
+  }
+  for (const portId of node.typeInputPortIds) {
+    if (commandTypeInputPortMatch(node.command, portId) === undefined) {
+      return true;
+    }
   }
   return false;
 }
@@ -1777,6 +1992,30 @@ function validateEdgePortSemantics(
       );
     }
   }
+
+  if (edge.kind === 'type') {
+    if (source && source.node.kind !== 'TypeArgument') {
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.edge.type',
+          'PTB graph type edges must start at TypeArgument nodes.',
+          sourcePath,
+        ),
+      );
+    }
+    if (
+      target &&
+      (target.node.kind !== 'Command' || target.node.command !== 'moveCall')
+    ) {
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.edge.type',
+          'PTB graph type edges must target MoveCall command nodes.',
+          targetPath,
+        ),
+      );
+    }
+  }
 }
 
 function validateOptionalPosition(
@@ -1895,13 +2134,6 @@ function validateCommandRuntimeParams(
   switch (commandKind) {
     case 'moveCall':
       validateMoveCallTargetField(value.target, `${path}.target`, diagnostics);
-      validateOptionalMoveTypeTagArrayField(
-        value.typeArguments,
-        `${path}.typeArguments`,
-        'graph.command.params.runtime.typeArguments',
-        'PTB graph MoveCall runtime typeArguments must be a dense array of valid Move type tags when present.',
-        diagnostics,
-      );
       validateOptionalResultCountField(
         value.resultCount,
         `${path}.resultCount`,
@@ -2087,23 +2319,6 @@ function validateOptionalStringField(
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (value === undefined || typeof value === 'string') return;
-  diagnostics.push(graphDiagnostic(code, message, path));
-}
-
-function validateOptionalMoveTypeTagArrayField(
-  value: unknown,
-  path: string,
-  code: GraphDiagnosticCode,
-  message: string,
-  diagnostics: TransactionDiagnostic[],
-): void {
-  if (value === undefined) return;
-  if (
-    isDenseArray(value) &&
-    value.every((item) => parseMoveTypeTag(item) !== undefined)
-  ) {
-    return;
-  }
   diagnostics.push(graphDiagnostic(code, message, path));
 }
 
@@ -2307,6 +2522,8 @@ function nodeKeysForKind(kind: PTBNode['kind']): readonly string[] {
       return COMMAND_NODE_KEYS;
     case 'Variable':
       return VARIABLE_NODE_KEYS;
+    case 'TypeArgument':
+      return TYPE_ARGUMENT_NODE_KEYS;
   }
 }
 

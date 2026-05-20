@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
 import { Position } from '@xyflow/react';
+import { parseObjectId } from '@zktx.io/ptb-model';
 
 import type {
   CommandNode,
@@ -10,8 +11,10 @@ import type {
   Port,
   PTBNode,
 } from '../../../../ptb/graph/types';
+import type { PTBFunctionData } from '../../../../ptb/ptbDoc';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
+import { PTBHandleType } from '../../../handles/PTBHandleType';
 import { usePtb } from '../../../PtbProvider';
 import { iconOfCommand } from '../../icons';
 import {
@@ -25,9 +28,11 @@ import {
 import { TextInput } from '../../vars/inputs/TextInput';
 import { labelOf, useCommandPorts } from '../commandLayout';
 import {
-  buildResolvedMoveCallState,
-  padTypeArguments,
-} from './resolveMoveCall';
+  moveCallFunctionNames,
+  moveCallModuleNames,
+  selectTargetAfterPackageLoad,
+} from './packageSelection';
+import { buildResolvedMoveCallState } from './resolveMoveCall';
 
 /** Compute min-height including the fixed controls offset so the shell never clips. */
 function minHeightWithOffset(inCount: number, outCount: number) {
@@ -57,6 +62,9 @@ export type MoveCallData = {
 
 export type MoveCallRFNode = Node<MoveCallData, 'ptb-mvc'>;
 
+const moveCallSelectClassName =
+  'h-6 w-full px-2 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-60';
+
 function splitMoveCallTarget(
   target: unknown,
 ): { pkgId: string; moduleName: string; functionName: string } | undefined {
@@ -66,12 +74,6 @@ function splitMoveCallTarget(
     return undefined;
   }
   return { pkgId, moduleName, functionName };
-}
-
-function readTypeArguments(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
 }
 
 export const MoveCallCommand = memo(function MoveCallCommand({
@@ -84,34 +86,44 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   const moduleValue = target?.moduleName ?? '';
   const functionValue = target?.functionName ?? '';
 
-  const { getMoveFunction, toast, readOnly } = usePtb();
+  const {
+    ensureMoveFunctionSignature,
+    getMovePackage,
+    modules,
+    packageIndexes,
+    toast,
+    readOnly,
+  } = usePtb();
 
   // Local buffers avoid graph writes while typing an unresolved target.
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(pkgIdValue);
   const [moduleBuf, setModuleBuf] = useState<string>(moduleValue);
   const [funcBuf, setFuncBuf] = useState<string>(functionValue);
-  const runtimeTypeArguments = readTypeArguments(runtime.typeArguments);
-  const [pendingTypeArgumentCount, setPendingTypeArgumentCount] =
-    useState<number>(runtimeTypeArguments.length);
-  const typeArgumentCount = Math.max(
-    pendingTypeArgumentCount,
-    runtimeTypeArguments.length,
-  );
-  const [typeArgBufs, setTypeArgBufs] = useState<string[]>(
-    padTypeArguments(runtimeTypeArguments, typeArgumentCount),
-  );
   const [loading, setLoading] = useState(false);
   const lookupSeqRef = useRef(0);
+  const packageId = parseObjectId((pkgIdBuf || '').trim());
+  const packageIndex = packageId ? packageIndexes[packageId] : undefined;
+  const loadedSignatureModules = packageId ? modules[packageId] : undefined;
+  const packageLocked = Boolean(packageId && packageIndex);
+  const moduleIndex = packageIndex ?? loadedSignatureModules;
+  const moduleNames = moveCallModuleNames(moduleIndex);
+  const functionNames =
+    moduleBuf && moduleIndex?.[moduleBuf]
+      ? moveCallFunctionNames(moduleIndex[moduleBuf])
+      : [];
 
   // Ports (already materialized by registry; we only render them).
-  const { inIO, outIO } = useCommandPorts(node);
+  const { inIO, outIO, inType } = useCommandPorts(node);
+  const typeArgumentCount = inType.length;
 
   // Min-height accounts for IO rows plus the fixed controls offset.
   const minHeight = minHeightWithOffset(
     inIO.length + typeArgumentCount,
     outIO.length,
   );
-  const ioOffset = (4 + typeArgumentCount) * ROW_SPACING + 24;
+  const controlOffset = 4 * ROW_SPACING + 24;
+  const inputOffset = controlOffset + typeArgumentCount * ROW_SPACING;
+  const outputOffset = typeArgumentCount > 0 ? inputOffset : controlOffset;
 
   const patchCommand = useCallback(
     (patch: Parameters<NonNullable<MoveCallData['onPatchCommand']>>[1]) => {
@@ -128,86 +140,168 @@ export const MoveCallCommand = memo(function MoveCallCommand({
     setFuncBuf(functionValue);
   }, [functionValue, moduleValue, pkgIdValue]);
 
-  const runtimeTypeArgumentsKey = runtimeTypeArguments.join('\u0000');
-  useEffect(() => {
-    const nextCount = runtimeTypeArguments.length;
-    setPendingTypeArgumentCount(nextCount);
-    setTypeArgBufs(padTypeArguments(runtimeTypeArguments, nextCount));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimeTypeArguments.length, runtimeTypeArgumentsKey]);
-
   const markDraftChanged = useCallback(() => {
     lookupSeqRef.current += 1;
     setLoading(false);
   }, []);
 
-  const resolveFunction = useCallback(async () => {
+  const commitFunction = useCallback(
+    (
+      pkg: string,
+      mod: string,
+      fn: string,
+      signature: PTBFunctionData[string],
+    ) => {
+      const resolved = buildResolvedMoveCallState({
+        packageId: pkg,
+        moduleName: mod,
+        functionName: fn,
+        signature,
+        openSignatures: signature.openSignatures,
+      });
+
+      patchCommand(resolved.patch);
+      setPkgIdBuf(pkg);
+      setModuleBuf(mod);
+      setFuncBuf(fn);
+      if (resolved.typeArgumentCount > 0) {
+        toast?.({
+          message:
+            'Move function selected. Connect TypeArgument nodes to bind generic arguments.',
+          variant: 'warning',
+        });
+      }
+    },
+    [patchCommand, toast],
+  );
+
+  const loadPackage = useCallback(async () => {
     const pkg = (pkgIdBuf || '').trim();
-    const mod = (moduleBuf || '').trim();
-    const fn = (funcBuf || '').trim();
-    if (!pkg || !mod || !fn || !node?.id) return;
+    if (!pkg || !node?.id) return;
     const requestId = (lookupSeqRef.current += 1);
 
     try {
       setLoading(true);
-      const result = await getMoveFunction(pkg, mod, fn);
+      const result = await getMovePackage(pkg, { forceRefresh: true });
       if (!result) return;
       if (requestId !== lookupSeqRef.current) return;
 
-      const sig = result.signature;
-      const resolved = buildResolvedMoveCallState({
-        packageId: result.packageId,
-        moduleName: result.moduleName,
-        functionName: result.functionName,
-        signature: sig,
-        openSignatures: result.signature.openSignatures,
-        typeArgumentBuffers: typeArgBufs,
-      });
-
-      setPendingTypeArgumentCount(resolved.typeArgumentCount);
-      setTypeArgBufs(resolved.typeArgumentBuffers);
-
-      if (resolved.typeArgumentError) {
-        toast?.({
-          message: resolved.typeArgumentError,
-          variant: 'warning',
-        });
-        return;
-      }
-
-      patchCommand(resolved.patch);
-
       setPkgIdBuf(result.packageId);
-      setModuleBuf(result.moduleName);
-      setFuncBuf(result.functionName);
-      if (resolved.needsConcreteTypeArguments) {
+      const nextTarget = selectTargetAfterPackageLoad(result.modules, {
+        moduleName: moduleBuf,
+        functionName: funcBuf,
+      });
+      const loadedModuleNames = moveCallModuleNames(result.modules);
+      setModuleBuf(nextTarget.moduleName);
+      setFuncBuf(nextTarget.functionName);
+
+      if (!nextTarget.moduleName || !nextTarget.functionName) {
         toast?.({
           message:
-            'Move function resolved. Enter concrete type arguments, then use it again to apply them.',
-          variant: 'warning',
+            loadedModuleNames.length === 0
+              ? 'Move package loaded, but no callable functions were found.'
+              : 'Move package loaded. Choose a module and function.',
+          variant: loadedModuleNames.length === 0 ? 'warning' : 'success',
         });
         return;
       }
-      toast?.({ message: 'Move function resolved', variant: 'success' });
+
+      const resolved = await ensureMoveFunctionSignature(
+        result.packageId,
+        nextTarget.moduleName,
+        nextTarget.functionName,
+      );
+      if (requestId !== lookupSeqRef.current) return;
+      if (!resolved) return;
+
+      commitFunction(
+        resolved.packageId,
+        resolved.moduleName,
+        resolved.functionName,
+        resolved.signature,
+      );
+      toast?.({ message: 'Move package loaded', variant: 'success' });
     } catch (e: any) {
       if (requestId !== lookupSeqRef.current) return;
       toast?.({
-        message: e?.message || 'Move function lookup failed',
+        message: e?.message || 'Move package lookup failed',
         variant: 'error',
       });
     } finally {
       if (requestId === lookupSeqRef.current) setLoading(false);
     }
   }, [
+    commitFunction,
+    ensureMoveFunctionSignature,
+    getMovePackage,
     funcBuf,
-    getMoveFunction,
     moduleBuf,
     node?.id,
-    patchCommand,
     pkgIdBuf,
-    typeArgBufs,
     toast,
   ]);
+
+  const onChangeModule = useCallback(
+    async (mod: string) => {
+      if (!packageId || !moduleIndex) return;
+      const requestId = (lookupSeqRef.current += 1);
+      const functions = moveCallFunctionNames(moduleIndex[mod]);
+      const nextFunction = functions[0];
+      setModuleBuf(mod);
+      if (!nextFunction) {
+        setFuncBuf('');
+        return;
+      }
+      setFuncBuf(nextFunction);
+      setLoading(true);
+      try {
+        const resolved = await ensureMoveFunctionSignature(
+          packageId,
+          mod,
+          nextFunction,
+        );
+        if (requestId !== lookupSeqRef.current || !resolved) return;
+        commitFunction(
+          resolved.packageId,
+          resolved.moduleName,
+          resolved.functionName,
+          resolved.signature,
+        );
+      } finally {
+        if (requestId === lookupSeqRef.current) setLoading(false);
+      }
+    },
+    [commitFunction, ensureMoveFunctionSignature, moduleIndex, packageId],
+  );
+
+  const onChangeFunction = useCallback(
+    async (fn: string) => {
+      if (!packageId || !moduleBuf || !fn) {
+        setFuncBuf(fn);
+        return;
+      }
+      const requestId = (lookupSeqRef.current += 1);
+      setFuncBuf(fn);
+      setLoading(true);
+      try {
+        const resolved = await ensureMoveFunctionSignature(
+          packageId,
+          moduleBuf,
+          fn,
+        );
+        if (requestId !== lookupSeqRef.current || !resolved) return;
+        commitFunction(
+          resolved.packageId,
+          resolved.moduleName,
+          resolved.functionName,
+          resolved.signature,
+        );
+      } finally {
+        if (requestId === lookupSeqRef.current) setLoading(false);
+      }
+    },
+    [commitFunction, ensureMoveFunctionSignature, moduleBuf, packageId],
+  );
 
   // Render
   return (
@@ -239,88 +333,98 @@ export const MoveCallCommand = memo(function MoveCallCommand({
               onChange={(e) => {
                 markDraftChanged();
                 setPkgIdBuf(e.target.value);
+                setModuleBuf('');
+                setFuncBuf('');
               }}
-              readOnly={readOnly}
+              readOnly={readOnly || packageLocked}
             />
-          </div>
-
-          {/* Module input */}
-          <TextInput
-            placeholder="module"
-            aria-label="Move module"
-            value={moduleBuf}
-            onChange={(e) => {
-              markDraftChanged();
-              setModuleBuf(e.target.value);
-            }}
-            readOnly={readOnly}
-          />
-
-          {/* Function input */}
-          <div className="flex items-center gap-1">
-            <TextInput
-              placeholder="function"
-              aria-label="Move function"
-              value={funcBuf}
-              onChange={(e) => {
-                markDraftChanged();
-                setFuncBuf(e.target.value);
-              }}
-              readOnly={readOnly}
-            />
-            {!readOnly && (
+            {!readOnly && !packageLocked && (
               <button
                 type="button"
                 className="h-6 min-w-[42px] px-2 text-[11px] border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={resolveFunction}
-                disabled={
-                  loading ||
-                  !pkgIdBuf.trim() ||
-                  !moduleBuf.trim() ||
-                  !funcBuf.trim()
-                }
-                title="Resolve function signature"
+                onClick={loadPackage}
+                disabled={loading || !pkgIdBuf.trim()}
+                title="Load package metadata"
               >
-                {loading ? '...' : 'Use'}
+                {loading ? '...' : 'Load'}
               </button>
             )}
           </div>
-          {typeArgumentCount > 0
-            ? Array.from({ length: typeArgumentCount }, (_value, index) => (
-                <TextInput
-                  key={`type-arg-${index}`}
-                  placeholder={`type argument T${index}`}
-                  aria-label={`Move type argument T${index}`}
-                  value={typeArgBufs[index] ?? ''}
-                  onChange={(e) => {
-                    const next = padTypeArguments(
-                      typeArgBufs,
-                      typeArgumentCount,
-                    );
-                    next[index] = e.target.value;
-                    markDraftChanged();
-                    setTypeArgBufs(next);
-                  }}
-                  readOnly={readOnly}
-                />
-              ))
-            : undefined}
-          {!readOnly && (
-            <div className="px-1 text-[10px] text-gray-500 dark:text-gray-400">
-              Resolve a function to materialize IO ports. Generic functions need
-              concrete type arguments before runtime build.
-            </div>
-          )}
+
+          {/* Module select */}
+          <select
+            aria-label="Move module"
+            className={moveCallSelectClassName}
+            value={moduleBuf}
+            disabled={
+              readOnly || !packageLocked || moduleNames.length === 0 || loading
+            }
+            onChange={(e) => onChangeModule(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {moduleNames.length === 0 ? (
+              <option value="">no modules</option>
+            ) : (
+              <>
+                <option value="">choose module</option>
+                {moduleNames.map((moduleName) => (
+                  <option key={moduleName} value={moduleName}>
+                    {moduleName}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+
+          {/* Function select */}
+          <select
+            aria-label="Move function"
+            className={moveCallSelectClassName}
+            value={funcBuf}
+            disabled={
+              readOnly ||
+              !packageLocked ||
+              functionNames.length === 0 ||
+              loading
+            }
+            onChange={(e) => onChangeFunction(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {functionNames.length === 0 ? (
+              <option value="">no functions</option>
+            ) : (
+              <>
+                <option value="">choose function</option>
+                {functionNames.map((functionName) => (
+                  <option key={functionName} value={functionName}>
+                    {functionName}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
         </div>
 
         {/* IO handles */}
+        {inType.map((port, idx) => (
+          <PTBHandleType
+            key={port.id}
+            id={port.id}
+            direction="in"
+            position={Position.Left}
+            style={{ top: ioTopForIndex(idx, controlOffset) }}
+            label={labelOf(port)}
+          />
+        ))}
         {inIO.map((port, idx) => (
           <PTBHandleIO
             key={port.id}
             port={port}
             position={Position.Left}
-            style={{ top: ioTopForIndex(idx, ioOffset) }}
+            style={{ top: ioTopForIndex(idx, inputOffset) }}
             label={labelOf(port)}
           />
         ))}
@@ -329,7 +433,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
             key={port.id}
             port={port}
             position={Position.Right}
-            style={{ top: ioTopForIndex(idx, ioOffset) }}
+            style={{ top: ioTopForIndex(idx, outputOffset) }}
             label={labelOf(port)}
           />
         ))}

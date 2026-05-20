@@ -36,6 +36,7 @@ export type {
   PTBGraph,
   PTBNode,
   StartNode,
+  TypeArgumentNode,
   VariableNode,
 } from './graph/types.js';
 export { analyzePTBGraph, parseExecutableGraph } from './graph/types.js';

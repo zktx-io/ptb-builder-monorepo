@@ -5,15 +5,9 @@ import {
   lookupMoveSignatureEvidence,
   type MovePackageSignatureEvidence,
 } from '../move/evidence.js';
-import {
-  parseMoveIdentifier,
-  parseMoveTypeTag,
-  parseObjectId,
-} from '../raw/types.js';
-import { isDenseArray, isPlainObject } from '../utils.js';
+import { parseMoveIdentifier, parseObjectId } from '../raw/types.js';
+import { isPlainObject } from '../utils.js';
 
-export const GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC =
-  'graph.command.moveCall.typeArgumentsCount';
 export const GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC =
   'graph.command.moveCall.resultCountMismatch';
 
@@ -72,24 +66,10 @@ export function parseGraphMoveCallTarget(
   };
 }
 
-export function parseGraphMoveCallTypeArguments(
-  value: unknown,
-): string[] | undefined {
-  if (value === undefined) return [];
-  if (!isDenseArray(value)) return undefined;
-
-  const parsedTypeArguments: string[] = [];
-  for (const item of value) {
-    const parsed = parseMoveTypeTag(item);
-    if (parsed === undefined) return undefined;
-    parsedTypeArguments.push(parsed);
-  }
-  return parsedTypeArguments;
-}
-
 export function graphMoveCallEvidenceState(
   runtime: Record<string, unknown> | undefined,
   moveSignatures: MovePackageSignatureEvidence | undefined,
+  typeArguments: readonly string[],
   nodePath?: string,
   diagnostics?: TransactionDiagnostic[],
 ): GraphMoveCallEvidenceState | undefined {
@@ -97,9 +77,6 @@ export function graphMoveCallEvidenceState(
 
   const target = parseGraphMoveCallTarget(runtime.target).target;
   if (target === undefined) return undefined;
-
-  const typeArguments = parseGraphMoveCallTypeArguments(runtime.typeArguments);
-  if (typeArguments === undefined) return undefined;
 
   const hasExplicitResultCount =
     Object.prototype.hasOwnProperty.call(runtime, 'resultCount') &&
@@ -127,9 +104,9 @@ export function graphMoveCallEvidenceState(
     if (diagnostics !== undefined && nodePath !== undefined) {
       diagnostics.push(
         graphDiagnostic(
-          GRAPH_MOVE_CALL_TYPE_ARGUMENTS_COUNT_DIAGNOSTIC,
+          'graph.command.moveCall.typeArgumentsCount',
           `PTB graph MoveCall typeArguments length must match signature typeParameterCount ${signature.typeParameterCount}.`,
-          `${nodePath}.params.runtime.typeArguments`,
+          nodePath,
         ),
       );
     }

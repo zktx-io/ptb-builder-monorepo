@@ -23,6 +23,7 @@ import type {
   CommandUIParams,
   Port,
   PTBType,
+  TypeArgumentNode,
   VariableNode,
 } from './graph/types';
 import { VAR_OUT } from './portTemplates';
@@ -142,6 +143,23 @@ export function makeVariableNode(
   }
   if (opts?.rawInput !== undefined) node.rawInput = opts.rawInput;
   return node;
+}
+
+export function makeTypeArgumentNode(opts?: {
+  label?: string;
+  id?: string;
+  value?: string;
+  position?: { x: number; y: number };
+}): TypeArgumentNode {
+  const value = opts?.value ?? '';
+  return {
+    id: opts?.id ?? createUniqueId('type-arg'),
+    kind: 'TypeArgument',
+    label: opts?.label ?? 'type',
+    value,
+    ports: [{ id: 'out_type', role: 'type', direction: 'out' }],
+    position: opts?.position ?? { x: 0, y: 0 },
+  };
 }
 
 type VariableFactoryOpts = Omit<

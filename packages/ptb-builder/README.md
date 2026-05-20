@@ -74,9 +74,12 @@ The following command nodes are available from the builder context menu:
 - **TransferObjects** — transfer owned objects to a recipient.
 - **MakeMoveVec** — build a Move vector from typed elements. Set the Move type
   on the node before connecting element inputs.
-- **MoveCall** — call a Move function by entering its package, module, and
-  function names explicitly; the builder verifies the selected function
-  signature through the SDK Core API.
+- **MoveCall** — call a Move function by loading the package module/function
+  index from the configured SDK Core client, then choosing a module and
+  function from the discovered package. The builder fetches the selected
+  function signature when it is needed to materialize value and type handles.
+  Generic Move type arguments are authored with dedicated Type Argument nodes
+  connected to the MoveCall type handles.
 
 Loaded PTBs may also render **Publish** and **Upgrade** command nodes for
 inspection. PTB Builder does not expose context-menu authoring for those
@@ -341,10 +344,12 @@ PTB Builder persists graphs as `PTBDoc` objects containing:
 
 - **version** — documents use `ptb_4`
 - **graph** — nodes and edges of the PTB
-- **modules** — embedded Move function signature metadata for already-resolved
-  MoveCall targets. Function entries retain both the resolved PTB port types and
-  the SDK Core open signatures needed to recompute generic MoveCall ports after
-  reload.
+- **modules** — embedded Move function signature metadata for MoveCall
+  functions whose signatures were fetched while authoring or inspecting.
+  Function entries retain both the resolved PTB port types and the SDK Core
+  open signatures needed to recompute generic MoveCall ports after reload.
+  Package module/function indexes are runtime discovery data and are not stored
+  in the document.
 - **objects** — embedded object metadata for display and type lookup. Runtime object arguments must come from graph raw input data such as SDK-reported object id, version, and digest; metadata embeds are not a source of signing authority.
 - **chain** — target Sui network (e.g., `sui:testnet`)
 - **view** — saved editor viewport `{ x, y, zoom }`

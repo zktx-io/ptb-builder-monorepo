@@ -15,6 +15,16 @@ import {
 
 import type { PTBFunctionData, PTBFunctionOpenSignatures } from '../ptbDoc';
 
+export type PTBMoveFunctionMetadata = {
+  typeParameters?: unknown[];
+  parameters?: RawOpenSignature[];
+  returns?: RawOpenSignature[];
+};
+
+export type PTBMoveModuleMetadata = Record<string, PTBMoveFunctionMetadata>;
+
+export type PTBMovePackageMetadata = Record<string, PTBMoveModuleMetadata>;
+
 export function toPTBFunctionOpenSignatures(data: {
   parameters?: RawOpenSignature[];
   returns?: RawOpenSignature[];
@@ -48,4 +58,26 @@ export function toPTBFunctionDataEntry(data: {
     ),
     openSignatures: open,
   };
+}
+
+export function toPTBModuleData(
+  data: PTBMovePackageMetadata,
+): Record<string, PTBFunctionData> {
+  const modules: Record<string, PTBFunctionData> = {};
+
+  for (const [moduleName, functions] of Object.entries(data)) {
+    const moduleFunctions: PTBFunctionData = {};
+    for (const [functionName, functionData] of Object.entries(functions).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      moduleFunctions[functionName] = toPTBFunctionDataEntry(functionData);
+    }
+    modules[moduleName] = moduleFunctions;
+  }
+
+  return Object.fromEntries(
+    Object.entries(modules).sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
+  );
 }

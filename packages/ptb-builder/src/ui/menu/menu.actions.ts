@@ -11,6 +11,7 @@ import {
   makeString,
   makeId,
   makeObject,
+  makeTypeArgumentNode,
   // vectors
   makeAddressVector,
   makeBoolVector,
@@ -54,11 +55,18 @@ export function handleMenuAction(
     createNodeId ? { id: createNodeId('var') } : undefined;
   const nextCommandOpts = (kind: CommandKind) =>
     createNodeId ? { id: createNodeId(`cmd-${kind}`) } : undefined;
+  const nextTypeArgumentOpts = () =>
+    createNodeId ? { id: createNodeId('type-arg') } : undefined;
 
   // ---- Commands ----
   if (action.startsWith('cmd/')) {
     const kind = action.slice(4) as CommandKind;
     placeAndAdd(makeCommandNode(kind, nextCommandOpts(kind)));
+    return void onClose?.();
+  }
+
+  if (action === 'type/argument') {
+    placeAndAdd(makeTypeArgumentNode(nextTypeArgumentOpts()));
     return void onClose?.();
   }
 

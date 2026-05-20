@@ -81,6 +81,12 @@ function materializeVarOutPort(n: PTBNode): PTBNode {
 function materializeStructuralPorts(n: PTBNode): PTBNode {
   if (n.kind === 'Start') return { ...n, ports: PORTS.start() };
   if (n.kind === 'End') return { ...n, ports: PORTS.end() };
+  if (n.kind === 'TypeArgument') {
+    return {
+      ...n,
+      ports: [{ id: 'out_type', role: 'type', direction: 'out' }],
+    };
+  }
   return n;
 }
 
@@ -218,9 +224,17 @@ function materializeCommandPorts(n: PTBNode): PTBNode {
   const inputPorts = materialized
     .filter((port) => port.role === 'io' && port.direction === 'in')
     .map((port) => ({ ...port }));
+  const typeInputPorts = materialized
+    .filter((port) => port.role === 'type' && port.direction === 'in')
+    .map((port) => ({ ...port }));
   const outputPorts = mergeOutputPorts(command.ports ?? [], materialized);
   const seen = new Set<string>();
-  const ports = [...flowPorts, ...inputPorts, ...outputPorts].filter((port) => {
+  const ports = [
+    ...flowPorts,
+    ...typeInputPorts,
+    ...inputPorts,
+    ...outputPorts,
+  ].filter((port) => {
     const key = keyedPort(port);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -426,7 +440,9 @@ export function rfToPTB(
           ? PORTS.end()
           : kind === 'Variable'
             ? [] // Variable: no flow ports
-            : PORTS.commandBase();
+            : kind === 'TypeArgument'
+              ? [{ id: 'out_type', role: 'type', direction: 'out' }]
+              : PORTS.commandBase();
 
     return projectNodeForPTB({
       ...(chosen ?? ({} as PTBNode)),
@@ -485,6 +501,8 @@ function mapPTBNodeToRFType(n: PTBNode): string {
       return 'ptb-end';
     case 'Variable':
       return 'ptb-var';
+    case 'TypeArgument':
+      return 'ptb-typearg';
     case 'Command': {
       return n.command === 'moveCall' ? 'ptb-mvc' : 'ptb-cmd';
     }
@@ -497,14 +515,26 @@ function mapRFTypeToPTBKind(rfType: string): PTBNode['kind'] {
   if (rfType === 'ptb-start') return 'Start';
   if (rfType === 'ptb-end') return 'End';
   if (rfType === 'ptb-var') return 'Variable';
+  if (rfType === 'ptb-typearg') return 'TypeArgument';
   if (rfType === 'ptb-mvc') return 'Command';
-  return 'Command';
+  if (rfType === 'ptb-cmd') return 'Command';
+  throw new Error(`Unsupported React Flow node type ${rfType}.`);
 }
 
 function mapPTBEdgeToRFType(e: PTBEdge): string {
-  return e.kind === 'flow' ? 'ptb-flow' : 'ptb-io';
+  switch (e.kind) {
+    case 'flow':
+      return 'ptb-flow';
+    case 'io':
+      return 'ptb-io';
+    case 'type':
+      return 'ptb-type';
+  }
 }
 
 function mapRFTypeToPTBEdgeKind(rfType?: string): PTBEdge['kind'] {
-  return rfType === 'ptb-flow' ? 'flow' : 'io';
+  if (rfType === 'ptb-flow') return 'flow';
+  if (rfType === 'ptb-io') return 'io';
+  if (rfType === 'ptb-type') return 'type';
+  throw new Error(`Unsupported React Flow edge type ${rfType ?? '<missing>'}.`);
 }

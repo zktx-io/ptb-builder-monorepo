@@ -9,6 +9,7 @@ import type {
 } from '@zktx.io/ptb-model';
 
 import type { Chain } from '../types';
+import type { MovePackageFunctionIndex } from './movePackageIndex';
 import type {
   PTBFunctionData,
   PTBModulesEmbed,
@@ -19,6 +20,9 @@ import type {
 export type PTBMetadataCache = {
   objectsByChain: Partial<Record<Chain, PTBObjectsEmbed>>;
   modulesByChain: Partial<Record<Chain, PTBModulesEmbed>>;
+  packageIndexesByChain: Partial<
+    Record<Chain, Record<string, MovePackageFunctionIndex>>
+  >;
 };
 
 export type CachedMoveFunction = {
@@ -28,10 +32,18 @@ export type CachedMoveFunction = {
   signature: PTBFunctionData[string];
 };
 
+export type { MovePackageFunctionIndex } from './movePackageIndex';
+
+export type CachedMovePackageIndex = {
+  packageId: string;
+  modules: MovePackageFunctionIndex;
+};
+
 export function createPTBMetadataCache(): PTBMetadataCache {
   return {
     objectsByChain: {},
     modulesByChain: {},
+    packageIndexesByChain: {},
   };
 }
 
@@ -47,6 +59,13 @@ function getCachedModules(
   chain: Chain,
 ): PTBModulesEmbed {
   return cache.modulesByChain[chain] ?? {};
+}
+
+function getCachedPackageIndexes(
+  cache: PTBMetadataCache,
+  chain: Chain,
+): Record<string, MovePackageFunctionIndex> {
+  return cache.packageIndexesByChain[chain] ?? {};
 }
 
 function replaceCachedObjects(
@@ -132,6 +151,19 @@ export function getCachedMoveFunction(
   };
 }
 
+export function getCachedMovePackageIndex(
+  cache: PTBMetadataCache,
+  chain: Chain,
+  packageId: string,
+): CachedMovePackageIndex | undefined {
+  const modules = getCachedPackageIndexes(cache, chain)[packageId];
+  if (!modules) return undefined;
+  return {
+    packageId,
+    modules,
+  };
+}
+
 export function moveSignatureEvidenceFromCache(
   cache: PTBMetadataCache,
   chain: Chain,
@@ -194,5 +226,31 @@ export function upsertCachedMoveFunction(
   return {
     cache: replaceCachedModules(cache, chain, nextModules),
     modules: nextModules,
+  };
+}
+
+export function upsertCachedMovePackageIndex(
+  cache: PTBMetadataCache,
+  chain: Chain,
+  entry: CachedMovePackageIndex,
+): {
+  cache: PTBMetadataCache;
+  packageIndexes: Record<string, MovePackageFunctionIndex>;
+} {
+  const packageIndexes = getCachedPackageIndexes(cache, chain);
+  const nextPackageIndexes = {
+    ...packageIndexes,
+    [entry.packageId]: entry.modules,
+  };
+
+  return {
+    cache: {
+      ...cache,
+      packageIndexesByChain: {
+        ...cache.packageIndexesByChain,
+        [chain]: nextPackageIndexes,
+      },
+    },
+    packageIndexes: nextPackageIndexes,
   };
 }

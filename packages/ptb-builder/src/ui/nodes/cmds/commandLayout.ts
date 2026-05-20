@@ -14,11 +14,12 @@ export function labelOf(p: Port): string {
   return p.label ?? p.id ?? '';
 }
 
-/** Split all ports into IO buckets (left=in, right=out). */
-function splitIO(ports: Port[]) {
+/** Split ports into renderer buckets. */
+function splitPorts(ports: Port[]) {
   const inIO = ports.filter((p) => p.role === 'io' && p.direction === 'in');
   const outIO = ports.filter((p) => p.role === 'io' && p.direction === 'out');
-  return { inIO, outIO };
+  const inType = ports.filter((p) => p.role === 'type' && p.direction === 'in');
+  return { inIO, outIO, inType };
 }
 
 /** Hook: extract & bucket a node's ports for command renderers. */
@@ -28,6 +29,6 @@ export function useCommandPorts(node?: PTBNode) {
     return Array.isArray(raw) ? raw : [];
   }, [node]);
 
-  const { inIO, outIO } = useMemo(() => splitIO(ports), [ports]);
-  return { inIO, outIO };
+  const { inIO, outIO, inType } = useMemo(() => splitPorts(ports), [ports]);
+  return { inIO, outIO, inType };
 }

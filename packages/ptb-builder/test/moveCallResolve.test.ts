@@ -1,15 +1,18 @@
+import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import { NULL_VALUE, type RawOpenSignature } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import {
   toPTBFunctionDataEntry,
   toPTBFunctionOpenSignatures,
+  toPTBModuleData,
 } from '../src/ptb/move/toPTBModuleData';
+import type { RFEdgeData, RFNodeData } from '../src/ptb/ptbAdapter';
+import { refreshMoveCallPortsFromSignatures } from '../src/ui/moveCallSignaturePorts';
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
 
 const PACKAGE_ID =
   '0x0000000000000000000000000000000000000000000000000000000000000002';
-const SUI_TYPE = `${PACKAGE_ID}::sui::SUI`;
 
 const signature = {
   tparamCount: 1,
@@ -35,6 +38,77 @@ const genericOpenSignatures: {
     },
   ],
 };
+
+function typeArgumentNode(value: string): RFNode<RFNodeData> {
+  return {
+    id: 'type-0',
+    type: 'ptb-typearg',
+    position: { x: 0, y: 0 },
+    data: {
+      ptbNode: {
+        id: 'type-0',
+        kind: 'TypeArgument',
+        value,
+        ports: [{ id: 'out_type', role: 'type', direction: 'out' }],
+      },
+    },
+  };
+}
+
+function moveCallNode(): RFNode<RFNodeData> {
+  return {
+    id: 'call',
+    type: 'ptb-mvc',
+    position: { x: 200, y: 0 },
+    data: {
+      ptbNode: {
+        id: 'call',
+        kind: 'Command',
+        command: 'moveCall',
+        params: {
+          runtime: { target: `${PACKAGE_ID}::generic::echo` },
+        },
+        ports: [
+          { id: 'prev', role: 'flow', direction: 'in' },
+          { id: 'next', role: 'flow', direction: 'out' },
+          { id: 'in_type_0', role: 'type', direction: 'in' },
+          {
+            id: 'in_arg_0',
+            role: 'io',
+            direction: 'in',
+            dataType: {
+              kind: 'unknown',
+              debugInfo: 'generic TypeParameter 0',
+            },
+          },
+          {
+            id: 'out_result',
+            role: 'io',
+            direction: 'out',
+            dataType: {
+              kind: 'vector',
+              elem: {
+                kind: 'unknown',
+                debugInfo: 'generic TypeParameter 0',
+              },
+            },
+          },
+        ],
+      },
+    },
+  };
+}
+
+function typeEdge(): RFEdge<RFEdgeData> {
+  return {
+    id: 'type-edge',
+    type: 'ptb-type',
+    source: 'type-0',
+    sourceHandle: 'out_type',
+    target: 'call',
+    targetHandle: 'in_type_0',
+  };
+}
 
 describe('MoveCall resolve state', () => {
   it('filters TxContext and maps open signatures through the model parser', () => {
@@ -85,74 +159,115 @@ describe('MoveCall resolve state', () => {
     });
   });
 
+  it('normalizes package-wide Move function metadata by module and function', () => {
+    const modules = toPTBModuleData({
+      zcoin: {
+        value: {
+          typeParameters: [{}],
+          parameters: genericOpenSignatures.parameters,
+          returns: genericOpenSignatures.returns,
+        },
+      },
+      acoin: {
+        z_last: {
+          typeParameters: [],
+          parameters: [],
+          returns: [],
+        },
+        a_first: {
+          typeParameters: [],
+          parameters: [],
+          returns: [],
+        },
+      },
+    });
+
+    expect(Object.keys(modules)).toEqual(['acoin', 'zcoin']);
+    expect(Object.keys(modules.acoin)).toEqual(['a_first', 'z_last']);
+    expect(
+      toPTBModuleData({
+        coin: {
+          value: {
+            typeParameters: [{}],
+            parameters: genericOpenSignatures.parameters,
+            returns: genericOpenSignatures.returns,
+          },
+        },
+      }),
+    ).toEqual({
+      coin: {
+        value: {
+          tparamCount: 1,
+          ins: [{ kind: 'unknown', debugInfo: 'generic TypeParameter 0' }],
+          outs: [
+            {
+              kind: 'vector',
+              elem: { kind: 'unknown', debugInfo: 'generic TypeParameter 0' },
+            },
+          ],
+          openSignatures: genericOpenSignatures,
+        },
+      },
+    });
+  });
+
   it('commits target and ports even before generic type arguments are complete', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',
       moduleName: 'coin',
       functionName: 'value',
       signature,
-      typeArgumentBuffers: [''],
     });
 
-    expect(resolved.needsConcreteTypeArguments).toBe(true);
+    expect(resolved.typeArgumentCount).toBe(1);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
     });
-    expect(resolved.patch.ports.length).toBeGreaterThan(0);
+    expect(resolved.patch.ports.map((port) => port.id)).toContain('in_type_0');
+    expect(resolved.patch.ports.map((port) => port.id)).toContain('in_arg_0');
   });
 
-  it('adds concrete type arguments when all generic slots are filled', () => {
+  it('does not write concrete type arguments into runtime params', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',
       moduleName: 'coin',
       functionName: 'value',
       signature,
-      typeArgumentBuffers: [' 0x2::sui::SUI '],
     });
 
-    expect(resolved.needsConcreteTypeArguments).toBe(false);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
-      typeArguments: [SUI_TYPE],
     });
   });
 
-  it('drops stale extra type arguments when the resolved signature shrinks', () => {
+  it('drops stale concrete type argument state from resolved MoveCall runtime', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',
       moduleName: 'balance',
       functionName: 'value',
       signature,
-      typeArgumentBuffers: ['0x2::sui::SUI', '0x2::coin::COIN'],
     });
 
     expect(resolved.typeArgumentCount).toBe(1);
-    expect(resolved.typeArgumentBuffers).toEqual([SUI_TYPE]);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::balance::value`,
-      typeArguments: [SUI_TYPE],
     });
   });
 
-  it('rejects invalid type arguments instead of writing them into runtime params', () => {
+  it('does not validate TypeArgument node values while resolving the function target', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',
       moduleName: 'coin',
       functionName: 'value',
       signature,
-      typeArgumentBuffers: ['signer'],
     });
 
-    expect(resolved.needsConcreteTypeArguments).toBe(true);
-    expect(resolved.typeArgumentError).toContain(
-      'not a supported Move type tag',
-    );
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
     });
   });
 
-  it('substitutes concrete generic type arguments into resolved value ports', () => {
+  it('materializes generic type ports and unresolved open signature value ports', () => {
     const resolved = buildResolvedMoveCallState({
       packageId: '0x2',
       moduleName: 'generic',
@@ -174,21 +289,97 @@ describe('MoveCall resolve state', () => {
         openSignatures: genericOpenSignatures,
       },
       openSignatures: genericOpenSignatures,
-      typeArgumentBuffers: ['u64'],
     });
 
-    expect(resolved.needsConcreteTypeArguments).toBe(false);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::generic::echo`,
-      typeArguments: ['u64'],
     });
-    expect(resolved.patch.ports[0]?.dataType).toEqual({
+    expect(resolved.patch.ports.map((port) => port.id)).toEqual([
+      'in_type_0',
+      'in_arg_0',
+      'out_result',
+    ]);
+    expect(resolved.patch.ports[1]?.dataType).toEqual({
+      kind: 'unknown',
+      debugInfo: 'generic TypeParameter 0',
+    });
+    expect(resolved.patch.ports[2]?.dataType).toEqual({
+      kind: 'vector',
+      elem: { kind: 'unknown', debugInfo: 'generic TypeParameter 0' },
+    });
+  });
+
+  it('refreshes MoveCall value ports from connected TypeArgument nodes', () => {
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode('u64'), moveCallNode()],
+      [typeEdge()],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
+      ?.ports;
+
+    expect(ports?.map((port) => port.id)).toEqual([
+      'prev',
+      'next',
+      'in_type_0',
+      'in_arg_0',
+      'out_result',
+    ]);
+    expect(ports?.find((port) => port.id === 'in_arg_0')?.dataType).toEqual({
       kind: 'move_numeric',
       width: 'u64',
     });
-    expect(resolved.patch.ports[1]?.dataType).toEqual({
+    expect(ports?.find((port) => port.id === 'out_result')?.dataType).toEqual({
       kind: 'vector',
       elem: { kind: 'move_numeric', width: 'u64' },
+    });
+  });
+
+  it('keeps generic value ports unresolved while connected TypeArgument nodes are incomplete', () => {
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode(''), moveCallNode()],
+      [typeEdge()],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
+      ?.ports;
+
+    expect(ports?.map((port) => port.id)).toEqual([
+      'prev',
+      'next',
+      'in_type_0',
+      'in_arg_0',
+      'out_result',
+    ]);
+    expect(ports?.find((port) => port.id === 'in_arg_0')?.dataType).toEqual({
+      kind: 'unknown',
+      debugInfo: 'generic TypeParameter 0',
+    });
+    expect(ports?.find((port) => port.id === 'out_result')?.dataType).toEqual({
+      kind: 'vector',
+      elem: { kind: 'unknown', debugInfo: 'generic TypeParameter 0' },
     });
   });
 });

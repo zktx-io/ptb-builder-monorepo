@@ -85,6 +85,7 @@ import type {
   RawOpenSignature,
   RawProgrammableTransaction,
   TransactionIR,
+  TypeArgumentNode,
   VariableNode,
 } from './index.js';
 import { STRUCTURAL_IGNORED_RAW_SOURCE_DIAGNOSTIC_CODES } from './ir/structural.js';
@@ -205,6 +206,13 @@ describe('public package surface', () => {
     expect(parseMoveStructTypeTag('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
     expect(parsePTBObjectTypeTagCandidate('0x2::sui::SUI')).toBe(TEST_SUI_TYPE);
     expect(parsePTBObjectTypeTagCandidate('0x2::object::UID')).toBeUndefined();
+    const typeArgumentNode: TypeArgumentNode = {
+      id: 'type-0',
+      kind: 'TypeArgument',
+      value: TEST_SUI_TYPE,
+      ports: [{ id: 'out_type', role: 'type', direction: 'out' }],
+    };
+    expect(typeArgumentNode.kind).toBe('TypeArgument');
     expect(typeof analyzePTBGraph).toBe('function');
     expect(typeof errorDiagnostic).toBe('function');
     expect(typeof isGraphDiagnostic).toBe('function');
@@ -3218,6 +3226,27 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).toContain('SplitCoins');
   });
 
+  it('renders MoveCall type arguments in Mermaid labels', () => {
+    const mermaid = transactionIRToMermaid({
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [],
+      commands: [
+        {
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'coin',
+          function: 'value',
+          typeArguments: [TEST_SUI_TYPE],
+        },
+      ],
+    });
+
+    expect(mermaid).toContain(
+      `MoveCall ${normalizedObjectId('2')}::coin::value&lt;${TEST_SUI_TYPE}&gt;`,
+    );
+  });
+
   it('can render Mermaid left-to-right or top-down', () => {
     const ir = rawTransactionToIR(sampleRawTransaction());
 
@@ -4920,9 +4949,15 @@ describe('graph conversion', () => {
     expect(graphToTransactionIR(graph).inputs).toHaveLength(0);
   });
 
-  it('uses graph runtime params as the only MoveCall transaction source', () => {
+  it('uses graph runtime target and TypeArgument nodes as the MoveCall transaction source', () => {
     const graph: PTBGraph = {
       nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: TEST_COIN_TYPE,
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
         {
           id: 'cmd-0',
           kind: 'Command',
@@ -4930,13 +4965,21 @@ describe('graph conversion', () => {
           params: {
             runtime: {
               target: `${normalizedObjectId('2')}::module::call`,
-              typeArguments: ['0x2::coin::Coin'],
             },
           },
-          ports: [],
+          ports: [{ id: 'in_type_0', direction: 'in', role: 'type' }],
         },
       ],
-      edges: [],
+      edges: [
+        {
+          id: 'edge-type',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'cmd-0',
+          targetHandle: 'in_type_0',
+        },
+      ],
     };
 
     const ir = graphToTransactionIR(graph);
@@ -4949,6 +4992,134 @@ describe('graph conversion', () => {
       function: 'call',
       typeArguments: [TEST_COIN_TYPE],
     });
+  });
+
+  it('lowers missing MoveCall type edges to Unsupported with diagnostics', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::module::call`,
+            },
+          },
+          ports: [{ id: 'in_type_0', direction: 'in', role: 'type' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const ir = graphToTransactionIR(graph);
+
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.moveCall.typeArgumentMissing',
+        blocks: { document: false, execution: true },
+      }),
+    );
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidMoveCallTypeArguments',
+    });
+    expect(() => parseExecutableGraph(graph)).toThrow(PTBModelError);
+  });
+
+  it('keeps blank TypeArgument nodes saveable but not executable', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: '',
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
+      ],
+      edges: [],
+    };
+    const diagnostics = analyzePTBGraph(graph).diagnostics;
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.typeArgument.valueMissing',
+        blocks: { document: false, execution: true },
+      }),
+    );
+    expect(validatePTBDocV4({ version: 'ptb_4', graph })).toEqual([]);
+    expect(() => parseExecutableGraph(graph)).toThrow(PTBModelError);
+  });
+
+  it('does not report missing type edges when connected TypeArgument values are incomplete', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: '',
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::module::call`,
+            },
+          },
+          ports: [{ id: 'in_type_0', direction: 'in', role: 'type' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-type',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'cmd-0',
+          targetHandle: 'in_type_0',
+        },
+      ],
+    };
+    const diagnostics = analyzePTBGraph(graph).diagnostics;
+    const ir = graphToTransactionIR(graph);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.typeArgument.valueMissing',
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'graph.command.moveCall.typeArgumentMissing',
+    );
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'graph.command.moveCall.typeArgumentMissing',
+    );
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'InvalidMoveCallTypeArguments',
+    });
+  });
+
+  it('rejects malformed non-empty TypeArgument values as document shape errors', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: 'not-a-type',
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
+      ],
+      edges: [],
+    };
+
+    expect(validatePTBDocV4({ version: 'ptb_4', graph })).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.typeArgument.value',
+        blocks: { document: true, execution: true },
+      }),
+    );
   });
 
   it('rejects builder-shaped MoveCall and UI transaction params in the model graph', () => {
@@ -4983,7 +5154,7 @@ describe('graph conversion', () => {
     expect(codes).toContain('graph.command.params.unknownField');
   });
 
-  it('rejects malformed runtime MoveCall type arguments instead of dropping them', () => {
+  it('rejects legacy runtime MoveCall type arguments instead of dropping them', () => {
     const graph: PTBGraph = {
       nodes: [
         {
@@ -5007,7 +5178,7 @@ describe('graph conversion', () => {
     expect(ir.commands).toEqual([]);
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({
-        code: 'graph.command.params.runtime.typeArguments',
+        code: 'graph.command.params.runtime.unknownField',
         path: '$.nodes[0].params.runtime.typeArguments',
       }),
     );
@@ -5970,10 +6141,16 @@ describe('graph conversion', () => {
   });
 
   it('returns graph-to-IR command arrays without aliasing source graph params', () => {
-    const typeArgs = ['0x2::sui::SUI'];
+    const typeArgs = [TEST_SUI_TYPE];
     const dependencies = [normalizedObjectId('1')];
     const graph: PTBGraph = {
       nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          value: typeArgs[0]!,
+          ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+        },
         {
           id: 'move',
           kind: 'Command',
@@ -5981,10 +6158,9 @@ describe('graph conversion', () => {
           params: {
             runtime: {
               target: `${normalizedObjectId('2')}::coin::value`,
-              typeArguments: typeArgs,
             },
           },
-          ports: [],
+          ports: [{ id: 'in_type_0', direction: 'in', role: 'type' }],
         },
         {
           id: 'publish',
@@ -5999,7 +6175,16 @@ describe('graph conversion', () => {
           ports: [],
         },
       ],
-      edges: [],
+      edges: [
+        {
+          id: 'edge-type',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'move',
+          targetHandle: 'in_type_0',
+        },
+      ],
     };
 
     const ir = graphToTransactionIR(graph);
@@ -6063,7 +6248,6 @@ describe('graph conversion', () => {
           params: {
             runtime: {
               target: `${normalizedObjectId('2')}::m::f`,
-              typeArguments: [],
             },
           },
           ports: [
@@ -6108,7 +6292,6 @@ describe('graph conversion', () => {
           params: {
             runtime: {
               target: `${normalizedObjectId('2')}::m::f`,
-              typeArguments: [],
             },
           },
           ports: [
@@ -6852,9 +7035,54 @@ describe('graph conversion', () => {
     expect(command?.params).toEqual({
       runtime: {
         target: `${normalizedObjectId('2')}::coin::value`,
-        typeArguments: [],
       },
     });
+  });
+
+  it('materializes shared TypeArgument nodes for repeated IR MoveCall type arguments', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call-a',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'coin',
+          function: 'value',
+          typeArguments: [TEST_SUI_TYPE],
+          arguments: [],
+        },
+        {
+          id: 'call-b',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'balance',
+          function: 'value',
+          typeArguments: [TEST_SUI_TYPE],
+          arguments: [],
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const typeArgumentNodes = graph.nodes.filter(
+      (node) => node.kind === 'TypeArgument',
+    );
+    const typeEdges = graph.edges.filter((edge) => edge.kind === 'type');
+    const roundTripped = graphToTransactionIR(graph);
+
+    expect(typeArgumentNodes).toHaveLength(1);
+    expect(typeEdges).toHaveLength(2);
+    expect(typeEdges.map((edge) => edge.source)).toEqual([
+      typeArgumentNodes[0]?.id,
+      typeArgumentNodes[0]?.id,
+    ]);
+    expect(roundTripped.commands).toMatchObject([
+      { kind: 'MoveCall', typeArguments: [TEST_SUI_TYPE] },
+      { kind: 'MoveCall', typeArguments: [TEST_SUI_TYPE] },
+    ]);
   });
 
   it('preserves unsupported commands through graph conversion', () => {
@@ -8155,14 +8383,12 @@ describe('validateTransactionIR', () => {
       'graph.command.params.runtime.sourceKind',
       'graph.command.params.runtime.target',
       'graph.command.params.runtime.type',
-      'graph.command.params.runtime.typeArguments',
       'graph.command.params.runtime.unknownField',
       'graph.command.params.ui',
       'graph.command.params.ui.count',
       'graph.command.params.ui.unknownField',
       'graph.command.params.unknownField',
       'graph.command.makeMoveVec.type',
-      'graph.command.moveCall.typeArguments',
       'graph.command.base64BytesParam',
       'graph.command.objectIdArrayParam',
       'graph.command.objectIdParam',
@@ -8200,6 +8426,8 @@ describe('validateTransactionIR', () => {
       'graph.type.object',
       'graph.type.unknown',
       'graph.type.unknownField',
+      'graph.typeArgument.port',
+      'graph.typeArgument.value',
       'graph.variable.name',
       'graph.variable.optionValue',
       'graph.variable.rawInputType',
@@ -8222,11 +8450,13 @@ describe('validateTransactionIR', () => {
       'graph.edge.io',
       'graph.edge.node',
       'graph.edge.role',
+      'graph.edge.type',
       'graph.node.duplicate',
       'graph.port.duplicate',
     ] as const;
     const expectedSemanticExecutionCodes = [
       'graph.command.inputMissing',
+      'graph.command.moveCall.typeArgumentMissing',
       'graph.command.moveCall.targetMissing',
       'graph.command.outputPort.invalid',
       'graph.flow.cycle',
@@ -8234,6 +8464,7 @@ describe('validateTransactionIR', () => {
       'graph.flow.end',
       'graph.flow.path',
       'graph.flow.start',
+      'graph.typeArgument.valueMissing',
       'graph.variable.duplicateName',
     ] as const;
     const expectedEvidenceExecutionCodes = [
@@ -9381,7 +9612,6 @@ describe('model graph command argument semantics', () => {
     expect(command?.params).toEqual({
       runtime: {
         target: `${normalizedObjectId('2')}::m::f`,
-        typeArguments: [],
         resultCount: 2,
       },
     });
@@ -9420,7 +9650,6 @@ describe('model graph command argument semantics', () => {
     expect(command?.params).toEqual({
       runtime: {
         target: `${normalizedObjectId('2')}::m::f`,
-        typeArguments: [],
       },
     });
     expect(roundTripped.commands[0]).not.toHaveProperty('resultCount');
@@ -9619,7 +9848,7 @@ describe('model graph command argument semantics', () => {
     ).map((diagnostic) => diagnostic.code);
 
     expect(typeArgumentCodes).toContain(
-      'graph.command.params.runtime.typeArguments',
+      'graph.command.params.runtime.unknownField',
     );
     expect(typeArgumentCodes).not.toContain(
       'graph.command.moveCall.typeArgumentsCount',
@@ -9673,7 +9902,6 @@ describe('model graph command argument semantics', () => {
     expect(command?.params).toEqual({
       runtime: {
         target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
-        typeArguments: [],
         resultCount: 2,
       },
     });

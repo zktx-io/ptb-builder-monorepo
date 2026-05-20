@@ -75,11 +75,15 @@ import {
 import type { PTBGraph } from '../ptb/graph/types';
 import {
   type CachedMoveFunction,
+  type CachedMovePackageIndex,
   createPTBMetadataCache,
   getCachedMoveFunction,
+  getCachedMovePackageIndex,
+  type MovePackageFunctionIndex,
   moveSignatureEvidenceFromCache,
   replaceCachedChainData,
   upsertCachedMoveFunction,
+  upsertCachedMovePackageIndex,
   upsertCachedObjectData,
 } from '../ptb/metadataCache';
 import { toPTBFunctionDataEntry } from '../ptb/move/toPTBModuleData';
@@ -106,6 +110,7 @@ import { KNOWN_IDS, type WellKnownId } from '../ptb/seedGraph';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClient,
+  listMovePackageFunctionIndex,
   PTB_TRANSACTION_LOAD_INCLUDE,
   type PtbCoreClient,
   selectCoreTransactionResult,
@@ -119,6 +124,10 @@ const DOC_CHANGE_MAX_WAIT_MS = 1000;
 const OBJECT_METADATA_FETCH_CONCURRENCY = 8;
 const EMPTY_OBJECTS = Object.freeze({}) as PTBObjectsEmbed;
 const EMPTY_MODULES = Object.freeze({}) as PTBModulesEmbed;
+const EMPTY_PACKAGE_INDEXES = Object.freeze({}) as Record<
+  string,
+  MovePackageFunctionIndex
+>;
 
 // ===== Context shape ==========================================================
 
@@ -149,7 +158,11 @@ type OwnedObjectsResponse = {
 
 type HostTxResult = HostExecutionResult;
 
-type MoveFunctionSignature = CachedMoveFunction;
+type MoveCallFunctionRef = {
+  packageId: string;
+  moduleName: string;
+  functionName: string;
+};
 
 function objectIdsFromIRInputs(inputs: readonly IRInput[]): string[] {
   const ids = new Set<string>();
@@ -159,6 +172,48 @@ function objectIdsFromIRInputs(inputs: readonly IRInput[]): string[] {
     }
   }
   return [...ids];
+}
+
+function moveCallPackageIdsFromIRCommands(
+  commands: readonly unknown[],
+): string[] {
+  const ids = new Set<string>();
+  for (const command of commands) {
+    if (!command || typeof command !== 'object') continue;
+    const item = command as Record<string, unknown>;
+    if (item.kind !== 'MoveCall') continue;
+    if (typeof item.package !== 'string') continue;
+    const packageId = parseObjectId(item.package);
+    if (packageId !== undefined) ids.add(packageId);
+  }
+  return [...ids];
+}
+
+function moveCallFunctionRefsFromIRCommands(
+  commands: readonly unknown[],
+): MoveCallFunctionRef[] {
+  const refs = new Map<string, MoveCallFunctionRef>();
+  for (const command of commands) {
+    if (!command || typeof command !== 'object') continue;
+    const item = command as Record<string, unknown>;
+    if (item.kind !== 'MoveCall') continue;
+    if (
+      typeof item.package !== 'string' ||
+      typeof item.module !== 'string' ||
+      typeof item.function !== 'string'
+    ) {
+      continue;
+    }
+    const packageId = parseObjectId(item.package);
+    if (packageId === undefined) continue;
+    const key = `${packageId}::${item.module}::${item.function}`;
+    refs.set(key, {
+      packageId,
+      moduleName: item.module,
+      functionName: item.function,
+    });
+  }
+  return [...refs.values()];
 }
 
 export type PtbContextValue = {
@@ -183,13 +238,18 @@ export type PtbContextValue = {
   ) => Promise<ObjectAuthoringLookupResult>;
 
   modules: PTBModulesEmbed;
+  packageIndexes: Record<string, MovePackageFunctionIndex>;
   moveSignatures?: MovePackageSignatureEvidence;
-  getMoveFunction: (
+  getMovePackage: (
+    packageId: string,
+    opts?: { forceRefresh?: boolean },
+  ) => Promise<CachedMovePackageIndex | undefined>;
+  ensureMoveFunctionSignature: (
     packageId: string,
     moduleName: string,
     functionName: string,
     opts?: { forceRefresh?: boolean },
-  ) => Promise<MoveFunctionSignature | undefined>;
+  ) => Promise<CachedMoveFunction | undefined>;
 
   getOwnedObjects: (
     params: OwnedObjectsParams,
@@ -412,6 +472,9 @@ export function PtbProvider({
   // Chain caches
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
   const [modules, setModules] = useState<PTBModulesEmbed>(() => EMPTY_MODULES);
+  const [packageIndexes, setPackageIndexes] = useState<
+    Record<string, MovePackageFunctionIndex>
+  >(() => EMPTY_PACKAGE_INDEXES);
   const [metadataRevision, setMetadataRevision] = useState(0);
   const metadataCacheRef = useRef(createPTBMetadataCache());
   const moveSignatures = useMemo(() => {
@@ -421,8 +484,11 @@ export function PtbProvider({
       ? undefined
       : moveSignatureEvidenceFromCache(metadataCacheRef.current, activeChain);
   }, [activeChain, metadataRevision]);
+  const movePackageInflightRef = useRef<
+    Map<string, Promise<CachedMovePackageIndex | undefined>>
+  >(new Map());
   const moveFunctionInflightRef = useRef<
-    Map<string, Promise<MoveFunctionSignature | undefined>>
+    Map<string, Promise<CachedMoveFunction | undefined>>
   >(new Map());
   const docSlicesRef = useRef({ graph, modules, objects });
   docSlicesRef.current = { graph, modules, objects };
@@ -442,6 +508,7 @@ export function PtbProvider({
     setActiveChain(undefined);
     setObjects(EMPTY_OBJECTS);
     setModules(EMPTY_MODULES);
+    setPackageIndexes(EMPTY_PACKAGE_INDEXES);
     setView(undefined);
     setCodePipOpenTick(0);
   };
@@ -754,19 +821,102 @@ export function PtbProvider({
     [reportClientUnavailable],
   );
 
-  const getMoveFunction = useCallback<PtbContextValue['getMoveFunction']>(
-    async (packageId, moduleName, functionName, opts) => {
+  const fetchMovePackageIndex = useCallback(
+    async (
+      client: PtbCoreClient,
+      packageId: string,
+    ): Promise<CachedMovePackageIndex> => {
+      const index = await listMovePackageFunctionIndex(client, packageId);
+      const resolvedPackageId = parseObjectId(index.packageId) ?? packageId;
+
+      return {
+        packageId: resolvedPackageId,
+        modules: index.modules,
+      };
+    },
+    [],
+  );
+
+  const getMovePackage = useCallback<PtbContextValue['getMovePackage']>(
+    async (packageId, opts) => {
       const rawPackageId = packageId?.trim();
       const id = rawPackageId ? parseObjectId(rawPackageId) : undefined;
-      const module = moduleName?.trim();
-      const name = functionName?.trim();
       if (!id) {
         toastImpl({ message: 'Invalid package id', variant: 'warning' });
         return undefined;
       }
-      if (!module || !name) {
+
+      const chain = activeChainRef.current;
+      if (!chain) return undefined;
+
+      if (!opts?.forceRefresh) {
+        const cached = getCachedMovePackageIndex(
+          metadataCacheRef.current,
+          chain,
+          id,
+        );
+        if (cached) return cached;
+      }
+
+      const client = clientRef.current;
+      if (!client) {
+        reportClientUnavailable('Move package lookup');
+        return undefined;
+      }
+
+      const inflightKey = `${chain}:${id}`;
+      if (!opts?.forceRefresh) {
+        const inflight = movePackageInflightRef.current.get(inflightKey);
+        if (inflight) return inflight;
+      }
+
+      const fetchMovePackage = async (): Promise<CachedMovePackageIndex> => {
+        const movePackage = await fetchMovePackageIndex(client, id);
+        const next = upsertCachedMovePackageIndex(
+          metadataCacheRef.current,
+          chain,
+          movePackage,
+        );
+        metadataCacheRef.current = next.cache;
+        setMetadataRevision((revision) => revision + 1);
+        if (activeChainRef.current === chain) {
+          setPackageIndexes(next.packageIndexes);
+        }
+        return movePackage;
+      };
+
+      try {
+        if (opts?.forceRefresh) {
+          return await fetchMovePackage();
+        }
+        const promise = fetchMovePackage().finally(() => {
+          movePackageInflightRef.current.delete(inflightKey);
+        });
+        movePackageInflightRef.current.set(inflightKey, promise);
+        return await promise;
+      } catch (error) {
         toastImpl({
-          message: 'Enter package, module, and function',
+          message: formatModelErrorMessage(
+            error,
+            `Move package lookup failed for ${id}.`,
+          ),
+          variant: 'error',
+        });
+        return undefined;
+      }
+    },
+    [fetchMovePackageIndex, reportClientUnavailable, toastImpl],
+  );
+
+  const ensureMoveFunctionSignature = useCallback<
+    PtbContextValue['ensureMoveFunctionSignature']
+  >(
+    async (packageId, moduleName, functionName, opts) => {
+      const rawPackageId = packageId?.trim();
+      const id = rawPackageId ? parseObjectId(rawPackageId) : undefined;
+      if (!id || !moduleName || !functionName) {
+        toastImpl({
+          message: 'Invalid Move function target',
           variant: 'warning',
         });
         return undefined;
@@ -780,55 +930,51 @@ export function PtbProvider({
           metadataCacheRef.current,
           chain,
           id,
-          module,
-          name,
+          moduleName,
+          functionName,
         );
         if (cached) return cached;
       }
 
       const client = clientRef.current;
       if (!client) {
-        reportClientUnavailable('Move function lookup');
+        reportClientUnavailable('Move function signature lookup');
         return undefined;
       }
 
-      const inflightKey = `${chain}:${id}::${module}::${name}`;
+      const inflightKey = `${chain}:${id}:${moduleName}:${functionName}`;
       if (!opts?.forceRefresh) {
         const inflight = moveFunctionInflightRef.current.get(inflightKey);
         if (inflight) return inflight;
       }
 
       const fetchMoveFunction = async (): Promise<
-        MoveFunctionSignature | undefined
+        CachedMoveFunction | undefined
       > => {
         const response = await client.core.getMoveFunction({
           packageId: id,
-          moduleName: module,
-          name,
+          moduleName,
+          name: functionName,
         });
-        const signature = toPTBFunctionDataEntry(response.function);
-        const resolvedPackageId = response.function.packageId || id;
-        const resolvedModuleName = response.function.moduleName || module;
-        const resolvedFunctionName = response.function.name || name;
-
-        const moveFunction: MoveFunctionSignature = {
+        const resolvedPackageId =
+          parseObjectId(response.function.packageId) ?? id;
+        const entry: CachedMoveFunction = {
           packageId: resolvedPackageId,
-          moduleName: resolvedModuleName,
-          functionName: resolvedFunctionName,
-          signature,
+          moduleName: response.function.moduleName || moduleName,
+          functionName: response.function.name || functionName,
+          signature: toPTBFunctionDataEntry(response.function),
         };
         const next = upsertCachedMoveFunction(
           metadataCacheRef.current,
           chain,
-          moveFunction,
+          entry,
         );
         metadataCacheRef.current = next.cache;
         setMetadataRevision((revision) => revision + 1);
         if (activeChainRef.current === chain) {
           setModules(next.modules);
         }
-
-        return moveFunction;
+        return entry;
       };
 
       try {
@@ -840,9 +986,12 @@ export function PtbProvider({
         });
         moveFunctionInflightRef.current.set(inflightKey, promise);
         return await promise;
-      } catch (error: any) {
+      } catch (error) {
         toastImpl({
-          message: error?.message || 'Move function lookup failed',
+          message: formatModelErrorMessage(
+            error,
+            `Move function signature lookup failed for ${id}::${moduleName}::${functionName}.`,
+          ),
           variant: 'error',
         });
         return undefined;
@@ -1011,6 +1160,8 @@ export function PtbProvider({
           if (o) objectsEmbed[o.objectId] = o;
         }
 
+        const moveCallRefs = moveCallFunctionRefsFromIRCommands(ir.commands);
+
         // 3) Surface model diagnostics and build an editable graph.
         ir.diagnostics.forEach((diagnostic) => {
           toastImpl({
@@ -1020,7 +1171,8 @@ export function PtbProvider({
         });
         const decoded = transactionIRToGraph(ir);
 
-        // 4) Fix chain and prime caches (overwrite, no carry-over).
+        // 4) Fix chain and prime object cache. Move package metadata hydrates
+        // after the graph is visible so package discovery never blocks viewing.
         cancelPendingDocChange();
         resetBeforeLoad();
         metadataCacheRef.current = replaceCachedChainData(
@@ -1031,6 +1183,10 @@ export function PtbProvider({
         setMetadataRevision((revision) => revision + 1);
         setActiveChain(chain);
         setModules(EMPTY_MODULES);
+        setPackageIndexes(
+          metadataCacheRef.current.packageIndexesByChain[chain] ??
+            EMPTY_PACKAGE_INDEXES,
+        );
         setObjects(objectsEmbed);
         const nextView = { ...DEFAULT_PTB_VIEW };
         setView(nextView);
@@ -1046,6 +1202,77 @@ export function PtbProvider({
         lifecycleRef.current.afterAnimationFrames(load, () => {
           flowActionsRef.current.fitToContent?.();
         });
+
+        void (async () => {
+          const packageIds = moveCallPackageIdsFromIRCommands(ir.commands);
+          for (const packageId of packageIds) {
+            if (!lifecycleRef.current.isCurrent(load)) return;
+            try {
+              const movePackage = await fetchMovePackageIndex(
+                localClient,
+                packageId,
+              );
+              const next = upsertCachedMovePackageIndex(
+                metadataCacheRef.current,
+                chain,
+                movePackage,
+              );
+              metadataCacheRef.current = next.cache;
+              if (activeChainRef.current === chain) {
+                setPackageIndexes(next.packageIndexes);
+              }
+            } catch (error) {
+              if (lifecycleRef.current.isCurrent(load)) {
+                toastImpl({
+                  message: formatModelErrorMessage(
+                    error,
+                    `Failed to fetch Move package index for ${packageId}.`,
+                  ),
+                  variant: 'warning',
+                });
+              }
+            }
+          }
+
+          for (const ref of moveCallRefs) {
+            if (!lifecycleRef.current.isCurrent(load)) return;
+            try {
+              const response = await localClient.core.getMoveFunction({
+                packageId: ref.packageId,
+                moduleName: ref.moduleName,
+                name: ref.functionName,
+              });
+              const entry: CachedMoveFunction = {
+                packageId:
+                  parseObjectId(response.function.packageId) ?? ref.packageId,
+                moduleName: response.function.moduleName || ref.moduleName,
+                functionName: response.function.name || ref.functionName,
+                signature: toPTBFunctionDataEntry(response.function),
+              };
+              const next = upsertCachedMoveFunction(
+                metadataCacheRef.current,
+                chain,
+                entry,
+              );
+              metadataCacheRef.current = next.cache;
+              setMetadataRevision((revision) => revision + 1);
+              if (activeChainRef.current === chain) {
+                setModules(next.modules);
+              }
+            } catch (error) {
+              if (lifecycleRef.current.isCurrent(load)) {
+                toastImpl({
+                  message: formatModelErrorMessage(
+                    error,
+                    `Failed to fetch Move function signature for ${ref.packageId}::${ref.moduleName}::${ref.functionName}.`,
+                  ),
+                  variant: 'warning',
+                });
+              }
+            }
+          }
+        })();
+
         return PTB_ACTION_OK;
       } catch (e: any) {
         if (!lifecycleRef.current.isCurrent(load)) {
@@ -1065,6 +1292,7 @@ export function PtbProvider({
       toastImpl,
       replaceGraphImmediate,
       fetchObjectData,
+      fetchMovePackageIndex,
       createCoreClient,
       cancelPendingDocChange,
     ],
@@ -1106,6 +1334,10 @@ export function PtbProvider({
         setView(nextView);
         setActiveChain(doc.chain);
         setModules(doc.modules);
+        setPackageIndexes(
+          metadataCacheRef.current.packageIndexesByChain[doc.chain] ??
+            EMPTY_PACKAGE_INDEXES,
+        );
         setObjects(doc.objects);
         replaceGraphImmediate(doc.graph);
         setReadOnly(false);
@@ -1149,6 +1381,12 @@ export function PtbProvider({
         setMetadataRevision((revision) => revision + 1);
         setView(nextView);
         setActiveChain(chain);
+        setModules(EMPTY_MODULES);
+        setPackageIndexes(
+          metadataCacheRef.current.packageIndexesByChain[chain] ??
+            EMPTY_PACKAGE_INDEXES,
+        );
+        setObjects(EMPTY_OBJECTS);
         replaceGraphImmediate(nextGraph);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
@@ -1292,8 +1530,10 @@ export function PtbProvider({
       lookupObjectForAuthoring,
 
       modules,
+      packageIndexes,
       moveSignatures,
-      getMoveFunction,
+      getMovePackage,
+      ensureMoveFunctionSignature,
 
       getOwnedObjects,
 
@@ -1332,8 +1572,10 @@ export function PtbProvider({
       objects,
       lookupObjectForAuthoring,
       modules,
+      packageIndexes,
       moveSignatures,
-      getMoveFunction,
+      getMovePackage,
+      ensureMoveFunctionSignature,
       getOwnedObjects,
       providerUiState,
       clearProviderNotice,

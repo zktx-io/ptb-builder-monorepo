@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   coreTransactionResultToRawProgrammableTransactionInput,
   createPtbCoreClientForNetwork,
+  isMovePackageFunctionCallable,
   selectCoreTransactionResult,
   supportedNetworksForTransport,
   supportsNetworkForTransport,
@@ -130,5 +131,38 @@ describe('SDK Core transaction bridge', () => {
     ]);
     expect(supportsNetworkForTransport('devnet', 'graphql')).toBe(false);
     expect(supportsNetworkForTransport('devnet', 'grpc')).toBe(true);
+  });
+});
+
+describe('Sui client package discovery helpers', () => {
+  it('matches the MoveCall callable function rule from the pinned SDK', () => {
+    expect(
+      isMovePackageFunctionCallable({
+        visibility: 'public',
+        isEntry: false,
+        hasReferenceReturn: false,
+      }),
+    ).toBe(true);
+    expect(
+      isMovePackageFunctionCallable({
+        visibility: 'private',
+        isEntry: true,
+        hasReferenceReturn: false,
+      }),
+    ).toBe(true);
+    expect(
+      isMovePackageFunctionCallable({
+        visibility: 'friend',
+        isEntry: false,
+        hasReferenceReturn: false,
+      }),
+    ).toBe(false);
+    expect(
+      isMovePackageFunctionCallable({
+        visibility: 'public',
+        isEntry: false,
+        hasReferenceReturn: true,
+      }),
+    ).toBe(false);
   });
 });

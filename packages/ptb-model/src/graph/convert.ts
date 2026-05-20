@@ -2,6 +2,7 @@ import { graphDiagnostic } from './diagnostics.js';
 import {
   indexedHandleSuffix,
   indexedInputHandle,
+  indexedInputHandleIndex,
   inputHandle,
   isIndexedInputHandle,
   isInputHandle,
@@ -16,7 +17,6 @@ import {
   graphCommandRuntimeParams,
   type GraphMoveCallEvidenceState,
   parseGraphMoveCallTarget,
-  parseGraphMoveCallTypeArguments,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
 import {
@@ -108,6 +108,7 @@ interface IndexedGraphEdge {
 interface GraphConversionIndex {
   flowEdgeBySource: Map<string, PTBEdge>;
   incomingIoEdgesByTarget: Map<string, IndexedGraphEdge[]>;
+  incomingTypeEdgesByTarget: Map<string, IndexedGraphEdge[]>;
 }
 
 interface GraphInputPlan {
@@ -127,6 +128,7 @@ interface GraphInputConstraint {
 }
 
 const EMPTY_INDEXED_GRAPH_EDGES: readonly IndexedGraphEdge[] = [];
+const EMPTY_TYPE_ARGUMENTS = new Map<number, string | undefined>();
 
 export function graphToTransactionIR(graph: ExecutablePTBGraph): TransactionIR;
 export function graphToTransactionIR(
@@ -154,6 +156,10 @@ export function graphToTransactionIR(
   const graphIndex = buildGraphConversionIndex(graph);
   const inputConstraints = collectGraphInputConstraints(
     graphIndex.incomingIoEdgesByTarget,
+    nodesById,
+  );
+  const typeArgumentsByCommand = collectGraphTypeArguments(
+    graphIndex.incomingTypeEdgesByTarget,
     nodesById,
   );
   const hasCommandNodes = graph.nodes.some((node) => node.kind === 'Command');
@@ -225,6 +231,7 @@ export function graphToTransactionIR(
       nodePath,
       graphIndex.incomingIoEdgesByTarget.get(node.id) ??
         EMPTY_INDEXED_GRAPH_EDGES,
+      typeArgumentsByCommand.get(node.id) ?? EMPTY_TYPE_ARGUMENTS,
       inputRefs,
       commandIndexes,
       graphValidation.moveCallEvidenceByNodeId.get(node.id),
@@ -323,6 +330,7 @@ function graphConversionAnalysis(
 function buildGraphConversionIndex(graph: PTBGraph): GraphConversionIndex {
   const flowEdgeBySource = new Map<string, PTBEdge>();
   const incomingIoEdgesByTarget = new Map<string, IndexedGraphEdge[]>();
+  const incomingTypeEdgesByTarget = new Map<string, IndexedGraphEdge[]>();
 
   graph.edges.forEach((edge, edgeIndex) => {
     if (edge.kind === 'flow') {
@@ -333,15 +341,29 @@ function buildGraphConversionIndex(graph: PTBGraph): GraphConversionIndex {
     }
 
     const indexedEdge = { edge, edgeIndex };
-    const incomingEdges = incomingIoEdgesByTarget.get(edge.target);
+    if (edge.kind === 'io') {
+      const incomingEdges = incomingIoEdgesByTarget.get(edge.target);
+      if (incomingEdges) {
+        incomingEdges.push(indexedEdge);
+      } else {
+        incomingIoEdgesByTarget.set(edge.target, [indexedEdge]);
+      }
+      return;
+    }
+
+    const incomingEdges = incomingTypeEdgesByTarget.get(edge.target);
     if (incomingEdges) {
       incomingEdges.push(indexedEdge);
     } else {
-      incomingIoEdgesByTarget.set(edge.target, [indexedEdge]);
+      incomingTypeEdgesByTarget.set(edge.target, [indexedEdge]);
     }
   });
 
-  return { flowEdgeBySource, incomingIoEdgesByTarget };
+  return {
+    flowEdgeBySource,
+    incomingIoEdgesByTarget,
+    incomingTypeEdgesByTarget,
+  };
 }
 
 function referencedGraphInputKeys(
@@ -383,6 +405,34 @@ function collectGraphInputConstraints(
         path: `$.edges[${edgeIndex}]`,
       });
       result.set(key, constraints);
+    });
+  });
+
+  return result;
+}
+
+function collectGraphTypeArguments(
+  incomingTypeEdgesByTarget: Map<string, IndexedGraphEdge[]>,
+  nodesById: Map<string, PTBNode>,
+): Map<string, Map<number, string | undefined>> {
+  const result = new Map<string, Map<number, string | undefined>>();
+
+  incomingTypeEdgesByTarget.forEach((incomingEdges, targetId) => {
+    const target = nodesById.get(targetId);
+    if (target?.kind !== 'Command' || target.command !== 'moveCall') return;
+
+    incomingEdges.forEach(({ edge }) => {
+      const source = nodesById.get(edge.source);
+      if (source?.kind !== 'TypeArgument') return;
+
+      const index = indexedInputHandleIndex(edge.targetHandle, 'type');
+      const typeArgument = parseMoveTypeTag(source.value);
+      if (index === undefined) return;
+
+      const typeArguments =
+        result.get(targetId) ?? new Map<number, string | undefined>();
+      typeArguments.set(index, typeArgument);
+      result.set(targetId, typeArguments);
     });
   });
 
@@ -455,6 +505,7 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
   ];
   const edges: PTBEdge[] = [];
   const nestedResultHandles = nestedResultHandlesByCommand(ir.commands);
+  const typeArgumentNodeIds = new Map<string, string>();
 
   if (ir.commands.some((command) => irCommandArgRefs(command).some(isGasArg))) {
     nodes.push({
@@ -501,6 +552,23 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
       nestedResultHandles.get(index) ?? [],
     );
     nodes.push(node);
+    if (command.kind === 'MoveCall') {
+      command.typeArguments.forEach((typeArgument, typeArgumentIndex) => {
+        const typeNodeId = getOrCreateTypeArgumentNode(
+          typeArgument,
+          typeArgumentNodeIds,
+          nodes,
+        );
+        edges.push({
+          id: `type-${typeNodeId}-${node.id}-${typeArgumentIndex}`,
+          kind: 'type',
+          source: typeNodeId,
+          sourceHandle: 'out_type',
+          target: node.id,
+          targetHandle: indexedInputHandle('type', typeArgumentIndex),
+        });
+      });
+    }
     edges.push({
       id: `flow-${previous}-${node.id}`,
       kind: 'flow',
@@ -534,6 +602,28 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
   });
 
   return freezePTBGraph({ nodes, edges });
+}
+
+function getOrCreateTypeArgumentNode(
+  typeArgument: string,
+  typeArgumentNodeIds: Map<string, string>,
+  nodes: PTBNode[],
+): string {
+  const existing = typeArgumentNodeIds.get(typeArgument);
+  if (existing !== undefined) return existing;
+
+  const index = typeArgumentNodeIds.size;
+  const nodeId = `type-arg-${index}`;
+  typeArgumentNodeIds.set(typeArgument, nodeId);
+  nodes.push({
+    id: nodeId,
+    kind: 'TypeArgument',
+    label: typeArgument,
+    value: typeArgument,
+    ports: [{ id: 'out_type', direction: 'out', role: 'type' }],
+    position: { x: -560, y: 120 * index },
+  });
+  return nodeId;
 }
 
 function inputType(input: IRInput) {
@@ -776,6 +866,7 @@ function commandNodeToIRCommand(
   node: CommandNode,
   nodePath: string,
   incomingEdges: readonly IndexedGraphEdge[],
+  typeArgumentsByIndex: ReadonlyMap<number, string | undefined>,
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
   moveCallEvidence: GraphMoveCallEvidenceState | undefined,
@@ -924,7 +1015,12 @@ function commandNodeToIRCommand(
       if (moveArgs.invalid) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
-      const typeArguments = moveCallTypeArguments(node, nodePath, diagnostics);
+      const typeArguments = moveCallTypeArguments(
+        node,
+        typeArgumentsByIndex,
+        nodePath,
+        diagnostics,
+      );
       if (!typeArguments) {
         return invalidGraphCommand(node, 'InvalidMoveCallTypeArguments');
       }
@@ -1154,6 +1250,15 @@ function commandPorts(
   commandArgEntries(command).forEach(({ handle }) => {
     ports.push({ id: handle, direction: 'in', role: 'io' });
   });
+  if (command.kind === 'MoveCall') {
+    command.typeArguments.forEach((_typeArgument, index) => {
+      ports.push({
+        id: indexedInputHandle('type', index),
+        direction: 'in',
+        role: 'type',
+      });
+    });
+  }
 
   commandOutputHandles(command, referencedNestedResultIndexes).forEach(
     (handle) => {
@@ -1234,7 +1339,6 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
       return {
         runtime: {
           target: `${command.package}::${command.module}::${command.function}`,
-          typeArguments: [...command.typeArguments],
           ...(command.resultCount !== undefined
             ? { resultCount: command.resultCount }
             : {}),
@@ -1417,21 +1521,41 @@ function moveCallResultCountParam(
 
 function moveCallTypeArguments(
   node: CommandNode,
+  typeArgumentsByIndex: ReadonlyMap<number, string | undefined>,
   nodePath: string,
   diagnostics: TransactionDiagnostic[],
 ): string[] | undefined {
-  const runtime = graphCommandRuntimeParams(node);
-  const typeArguments = parseGraphMoveCallTypeArguments(runtime?.typeArguments);
-  if (typeArguments !== undefined) return typeArguments;
+  const slots = node.ports
+    .map((port) => ({
+      id: port.id,
+      index:
+        port.role === 'type' && port.direction === 'in'
+          ? indexedInputHandleIndex(port.id, 'type')
+          : undefined,
+    }))
+    .filter(
+      (slot): slot is { id: string; index: number } => slot.index !== undefined,
+    )
+    .sort((left, right) => left.index - right.index);
 
-  diagnostics.push(
-    graphDiagnostic(
-      'graph.command.moveCall.typeArguments',
-      `MoveCall ${node.id} runtime typeArguments must be a dense array of valid Move type tags when present.`,
-      `${nodePath}.params.runtime.typeArguments`,
-    ),
-  );
-  return undefined;
+  const typeArguments: string[] = [];
+  for (const slot of slots) {
+    if (!typeArgumentsByIndex.has(slot.index)) {
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.command.moveCall.typeArgumentMissing',
+          `MoveCall ${node.id} requires a type edge into ${slot.id}.`,
+          nodePath,
+        ),
+      );
+      return undefined;
+    }
+    const typeArgument = typeArgumentsByIndex.get(slot.index);
+    if (typeArgument === undefined) return undefined;
+    typeArguments.push(typeArgument);
+  }
+
+  return typeArguments;
 }
 
 function objectIdParam(

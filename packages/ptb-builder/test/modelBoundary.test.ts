@@ -31,6 +31,9 @@ import { stableGraphSig } from '../src/ui/graphSignature';
 
 const ADDRESS =
   '0x0000000000000000000000000000000000000000000000000000000000000001';
+const SUI_PACKAGE =
+  '0x0000000000000000000000000000000000000000000000000000000000000002';
+const SUI_TYPE = `${SUI_PACKAGE}::sui::SUI`;
 const TEST_DIGEST = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
 
 function splitGasGraph(): PTBGraph {
@@ -292,8 +295,57 @@ describe('model-root PTB boundary', () => {
     const roundTripGraph = rfToPTB(rf.nodes, rf.edges, graph);
     const ir = graphToTransactionIR(roundTripGraph);
 
-    expect(hasErrors(ir.diagnostics)).toBe(false);
+    expect(ir.diagnostics).toEqual([]);
     expect(ir.commands[0]).toMatchObject({ kind: 'SplitCoins' });
+  });
+
+  it('round-trips TypeArgument nodes and type edges through React Flow', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'type-0',
+          kind: 'TypeArgument',
+          label: 'SUI',
+          value: SUI_TYPE,
+          ports: [{ id: 'out_type', role: 'type', direction: 'out' }],
+        },
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: { runtime: { target: `${SUI_PACKAGE}::coin::value` } },
+          ports: [{ id: 'in_type_0', role: 'type', direction: 'in' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'type-edge',
+          kind: 'type',
+          source: 'type-0',
+          sourceHandle: 'out_type',
+          target: 'call',
+          targetHandle: 'in_type_0',
+        },
+      ],
+    };
+
+    const rf = ptbToRF(graph);
+    expect(rf.nodes.find((node) => node.id === 'type-0')?.type).toBe(
+      'ptb-typearg',
+    );
+    expect(rf.edges.find((edge) => edge.id === 'type-edge')?.type).toBe(
+      'ptb-type',
+    );
+
+    const roundTripGraph = rfToPTB(rf.nodes, rf.edges, graph);
+    const ir = graphToTransactionIR(roundTripGraph);
+
+    expect(roundTripGraph.edges[0]).toMatchObject({ kind: 'type' });
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      typeArguments: [SUI_TYPE],
+    });
   });
 
   it('rejects malformed React Flow edges before persisting a PTB graph', () => {
@@ -1328,9 +1380,11 @@ describe('model-root PTB boundary', () => {
     const materializedPorts = buildMoveCallPorts(
       [{ kind: 'object' }, { kind: 'scalar', name: 'address' }],
       [{ kind: 'vector', elem: { kind: 'move_numeric', width: 'u64' } }],
+      1,
     );
 
     expect(materializedPorts.map((port) => port.id)).toEqual([
+      'in_type_0',
       'in_arg_0',
       'in_arg_1',
       'out_result',
@@ -1347,22 +1401,14 @@ describe('model-root PTB boundary', () => {
       undefined,
       {
         target: '0x2::coin::transfer',
-        typeArguments: ['0x2::sui::SUI'],
       },
-      [
-        ...materializedPorts,
-        {
-          id: 'in_type_0',
-          role: 'io',
-          direction: 'in',
-          dataType: { kind: 'scalar', name: 'string' },
-        },
-      ],
+      materializedPorts,
     );
 
     expect(resolvedNodePorts.map((port) => port.id)).toEqual([
       'prev',
       'next',
+      'in_type_0',
       'in_arg_0',
       'in_arg_1',
       'out_result',

@@ -52,14 +52,14 @@ const SHAPE_DOCUMENT_CODES = [
   'graph.command.params.runtime.sourceKind',
   'graph.command.params.runtime.target',
   'graph.command.params.runtime.type',
-  'graph.command.params.runtime.typeArguments',
   'graph.command.params.runtime.unknownField',
   'graph.command.params.ui',
   'graph.command.params.ui.count',
   'graph.command.params.ui.unknownField',
   'graph.command.params.unknownField',
   'graph.command.makeMoveVec.type',
-  'graph.command.moveCall.typeArguments',
+  'graph.typeArgument.port',
+  'graph.typeArgument.value',
   'graph.command.base64BytesParam',
   'graph.command.objectIdArrayParam',
   'graph.command.objectIdParam',
@@ -120,12 +120,14 @@ const REFERENCE_DOCUMENT_CODES = [
   'graph.edge.io',
   'graph.edge.node',
   'graph.edge.role',
+  'graph.edge.type',
   'graph.node.duplicate',
   'graph.port.duplicate',
 ] as const;
 
 const SEMANTIC_EXECUTION_CODES = [
   'graph.command.inputMissing',
+  'graph.command.moveCall.typeArgumentMissing',
   'graph.command.moveCall.targetMissing',
   'graph.command.outputPort.invalid',
   'graph.flow.cycle',
@@ -133,6 +135,7 @@ const SEMANTIC_EXECUTION_CODES = [
   'graph.flow.end',
   'graph.flow.path',
   'graph.flow.start',
+  'graph.typeArgument.valueMissing',
   'graph.variable.duplicateName',
 ] as const;
 

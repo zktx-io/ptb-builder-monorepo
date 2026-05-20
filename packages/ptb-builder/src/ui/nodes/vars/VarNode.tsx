@@ -324,6 +324,7 @@ export const VarNode = memo(function VarNode({
   const canSelectObjectUsage = canSelectObjectRawUsage(objectDraft);
   const objTypeLoading = objectDraft.status === 'loading';
   const objectInfoMatchesInput = !!activeObjectInfo;
+  const showObjectLoadButton = !readOnly && !objectInfoMatchesInput;
   const unsupportedOwnerMessage = unsupportedObjectAuthoringReason(objectInfo);
   const optionBoolValue = parseBoolEditorValue(variableValue ?? scalarBuf);
 
@@ -384,7 +385,7 @@ export const VarNode = memo(function VarNode({
       });
     } catch (e: any) {
       if (seq !== reqSeqRef.current) return;
-      const message = e?.message || 'Failed to look up object metadata.';
+      const message = e?.message || 'Failed to load object metadata.';
       setObjectDraft((prev) => objectAuthoringLookupFailed(prev, seq, message));
       patchVar({ varType: { kind: 'object' }, rawInput: undefined });
       toast?.({
@@ -409,8 +410,7 @@ export const VarNode = memo(function VarNode({
       if (!resolved) {
         patchVar({ rawInput: undefined });
         toast?.({
-          message:
-            'Run Lookup to refresh object metadata before choosing usage.',
+          message: 'Load object metadata before choosing usage.',
           variant: 'warning',
         });
         return;
@@ -696,16 +696,17 @@ export const VarNode = memo(function VarNode({
                         aria-readonly="true"
                         onChange={() => {}}
                       />
-                      {!readOnly && (
+                      {showObjectLoadButton && (
                         <button
                           type="button"
-                          className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 disabled:opacity-50"
+                          className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
                           disabled={
                             !canEdit || objTypeLoading || !scalarBuf.trim()
                           }
                           onClick={handleObjectLookup}
+                          aria-busy={objTypeLoading}
                         >
-                          {objTypeLoading ? 'Lookup…' : 'Lookup'}
+                          Load
                         </button>
                       )}
                     </div>
@@ -722,7 +723,7 @@ export const VarNode = memo(function VarNode({
                         <div>Digest: {shortMiddle(objectInfo.digest)}</div>
                         {!readOnly && !objectInfoMatchesInput && (
                           <div className="text-amber-700 dark:text-amber-300">
-                            Run Lookup to refresh object metadata.
+                            Load object metadata to refresh this object.
                           </div>
                         )}
                         {unsupportedOwnerMessage && (
@@ -779,17 +780,17 @@ export const VarNode = memo(function VarNode({
                       </div>
                     ) : !readOnly && objectDraft.status === 'error' ? (
                       <div className="text-[10px] leading-tight text-amber-700 dark:text-amber-300">
-                        {objectDraft.error || 'Object lookup failed.'}
+                        {objectDraft.error || 'Object metadata load failed.'}
                       </div>
                     ) : currentObjectUsage ? (
                       <div className="text-[10px] leading-tight text-gray-600 dark:text-gray-400">
                         {readOnly
                           ? `Raw input: ${currentObjectUsage}.`
-                          : `Raw input: ${currentObjectUsage}. Run Lookup to refresh object metadata.`}
+                          : `Raw input: ${currentObjectUsage}. Load object metadata to refresh it.`}
                       </div>
                     ) : !readOnly ? (
                       <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-500">
-                        Run Lookup before executing object inputs.
+                        Load object metadata before executing object inputs.
                       </div>
                     ) : undefined}
                   </div>

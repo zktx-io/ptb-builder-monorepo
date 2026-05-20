@@ -97,6 +97,7 @@ import {
 
 const coin = inputHandle('coin'); // "in_coin"
 const firstAmount = indexedInputHandle('amount', 0); // "in_amount_0"
+const firstMoveType = indexedInputHandle('type', 0); // "in_type_0"
 const singleResult = RESULT_HANDLE_ID; // "out_result"
 const firstNestedResult = nestedResultHandle(0); // "out_0"
 ```
@@ -166,13 +167,13 @@ import {
 const filteredParameters = openSignatures.filter(
   (signature) => !isTxContextOpenSignature(signature),
 );
-const runtimeTypeArgument = '0x2::sui::SUI';
-const runtimeType = toPTBTypeFromConcreteTypeArgument(runtimeTypeArgument);
+const concreteTypeArgument = '0x2::sui::SUI';
+const runtimeType = toPTBTypeFromConcreteTypeArgument(concreteTypeArgument);
 const [firstParameter] = filteredParameters;
 const parameterType =
   firstParameter === undefined
     ? { kind: 'unknown' }
-    : toPTBTypeFromOpenSignature(firstParameter, [runtimeTypeArgument]);
+    : toPTBTypeFromOpenSignature(firstParameter, [concreteTypeArgument]);
 
 const moveSignatures: MovePackageSignatureEvidence = buildHostEvidence();
 if (!isMovePackageSignatureEvidence(moveSignatures)) {
@@ -187,10 +188,10 @@ const graphIR = graphToTransactionIR(executableGraph);
 `isTxContextOpenSignature()` is a top-level parameter filter. The evidence
 guards still reject any remaining `TxContext` type nested anywhere in parameter
 or return signature trees. The signature-to-`PTBType` helpers normalize concrete
-runtime type arguments with the installed SDK type-tag parser and map
-OpenSignature generic structs to generic object types. Concrete runtime type
-argument strings preserve their full object `typeTag`; open generic signatures
-remain generic object types even when runtime type arguments are supplied. These
+Move type argument strings with the installed SDK type-tag parser and map
+OpenSignature generic structs to generic object types. Concrete type argument
+strings preserve their full object `typeTag`; open generic signatures remain
+generic object types even when concrete type arguments are supplied. These
 helpers define the model evidence shape only. Evidence-aware `MoveCall` result
 arity and limited `MakeMoveVec` element type validation are available only when
 the host explicitly passes `moveSignatures` to `validateTransactionIR()`,
@@ -200,16 +201,19 @@ materialize an evidence-derived MoveCall `resultCount` into the returned IR, and
 IR-to-graph conversion then preserves that count in `params.runtime.resultCount`.
 The model does not fetch package metadata, persist evidence in PTB documents, or
 infer result arity from metadata fields that happen to be present on raw PTB
-data. Malformed `moveSignatures` options are treated as absent evidence; validate
-host evidence with `isMovePackageSignatureEvidence()` before passing it. Mermaid
-rendering can surface evidence diagnostics already stored on the IR. Raw
+data. Malformed `moveSignatures` options are rejected; validate host evidence
+with `isMovePackageSignatureEvidence()` before passing it. Mermaid rendering can
+surface evidence diagnostics already stored on the IR. Raw
 conversion and TS SDK renderability validators do not accept Move signature
 evidence and recompute their own evidence-free checks.
 
-Do not store transaction semantics in `params.ui`. MoveCall targets and type
-arguments, MoveCall `resultCount`, MakeMoveVec explicit type, Publish modules and
-dependencies, and Upgrade package/modules/dependencies belong in
-`params.runtime`.
+Do not store transaction semantics in `params.ui`. MoveCall targets and
+`resultCount`, MakeMoveVec explicit type, Publish modules and dependencies, and
+Upgrade package/modules/dependencies belong in `params.runtime`. Concrete
+MoveCall type arguments are graph entities: store them as `TypeArgument` nodes
+and connect each `out_type` port to the MoveCall command's `in_type_N` port with
+a `type` edge. `TransactionIR`, raw PTB conversion, and TS SDK code rendering
+still use `IRCommand.MoveCall.typeArguments` arrays after graph-to-IR lowering.
 
 When updating a downstream builder, CLI, example, fixture, or template, first
 convert its data to the canonical model contract. Remove local duplicates of
@@ -503,10 +507,12 @@ means the value already equals the corresponding parser result: object and
 package IDs are normalized 32-byte `0x`-prefixed lowercase hex, `JsonU64` values
 are decimal strings, object digests are SDK-valid base58 32-byte digests, and
 base64 bytes contain no ASCII whitespace. Graph command runtime params for
-MoveCall targets and type arguments, package IDs, dependencies, module bytes,
-and MakeMoveVec explicit types are transaction inputs; UI params are never read
-as transaction semantics. Value-only object variables are a separate graph
-convenience. They are resolved only as owned or immutable objects when
+MoveCall targets, package IDs, dependencies, module bytes, and MakeMoveVec
+explicit types are transaction inputs; UI params are never read as transaction
+semantics. MoveCall type arguments are `TypeArgument` nodes connected through
+`type` edges, not fields under `params.runtime`. Value-only object variables are
+a separate graph convenience. They are resolved only as owned or immutable
+objects when
 `value.kind` is absent or `ImmOrOwnedObject` and the value carries canonical
 `objectId`, decimal `JsonU64` `version`, and digest fields. Non-canonical
 fields emit `graph.input.object.unresolved`; `Receiving`, `SharedObject`, and
@@ -660,10 +666,11 @@ make the graph invalid for execution-oriented conversion.
 
 Document validation is intentionally not the same as execution validation. A
 graph may be persistable while it is still missing command input edges, missing a
-complete Start-to-End flow path, or missing a MoveCall target; those are normal
-intermediate editor states. `parsePTBDocV4()` and `validatePTBDocV4()` reject
-malformed document data and graph diagnostics that block documents, but they do
-not require the graph to be executable.
+complete Start-to-End flow path, missing a MoveCall target, or carrying a blank
+`TypeArgument` node; those are normal intermediate editor states.
+`parsePTBDocV4()` and `validatePTBDocV4()` reject malformed document data and
+graph diagnostics that block documents, but they do not require the graph to be
+executable.
 
 `parseExecutableGraph()` is the executable graph boundary. It rejects any graph
 diagnostic whose `blocks.execution` flag is true and returns a branded

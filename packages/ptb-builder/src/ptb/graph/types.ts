@@ -18,6 +18,7 @@ export type {
   PTBScalar,
   PTBType,
   StartNode,
+  TypeArgumentNode,
   VariableNode,
 } from '@zktx.io/ptb-model';
 

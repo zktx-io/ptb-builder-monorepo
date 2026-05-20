@@ -347,13 +347,13 @@ export function CodePip({
         {/* Body (code) */}
         {!collapsed && (
           <div
-            className="ptb-codepip__body"
-            style={{ maxHeight, overflow: 'hidden' }}
+            className="ptb-codepip__body nowheel nopan"
+            style={{ maxHeight, overflow: 'auto' }}
           >
             <pre
               ref={setPreEl}
               className="line-numbers m-0 p-[10px] px-[12px] text-[12px] whitespace-pre
-               overflow-x-auto overflow-y-auto bg-[var(--ptb-code-bg)]"
+               bg-[var(--ptb-code-bg)]"
             >
               <code
                 ref={setCodeEl}

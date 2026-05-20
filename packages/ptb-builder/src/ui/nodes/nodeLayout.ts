@@ -15,6 +15,7 @@ export const NODE_SIZES = {
   End: { width: 180, height: 40 },
   Command: { width: 180 },
   Variable: { width: 180 },
+  TypeArgument: { width: 180, height: 74 },
   Helper: { width: 180 },
 } as const;
 

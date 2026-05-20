@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createPTBMetadataCache,
   getCachedMoveFunction,
+  getCachedMovePackageIndex,
   moveSignatureEvidenceFromCache,
   replaceCachedChainData,
   upsertCachedMoveFunction,
+  upsertCachedMovePackageIndex,
   upsertCachedObjectData,
 } from '../src/ptb/metadataCache';
 import type { PTBFunctionData, PTBObjectData } from '../src/ptb/ptbDoc';
@@ -142,6 +144,63 @@ describe('PTB metadata cache', () => {
 
     expect(
       getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'm', 'f')?.signature,
+    ).toEqual(signature);
+  });
+
+  it('stores package discovery indexes separately from persisted signatures', () => {
+    let cache = createPTBMetadataCache();
+    const next = upsertCachedMovePackageIndex(cache, 'sui:testnet', {
+      packageId: '0xpkg',
+      modules: {
+        coin: [
+          { name: 'burn', visibility: 'public', isEntry: false },
+          { name: 'mint', visibility: 'public', isEntry: true },
+        ],
+      },
+    });
+    cache = next.cache;
+
+    expect(
+      getCachedMovePackageIndex(cache, 'sui:testnet', '0xpkg')?.modules,
+    ).toEqual({
+      coin: [
+        { name: 'burn', visibility: 'public', isEntry: false },
+        { name: 'mint', visibility: 'public', isEntry: true },
+      ],
+    });
+    expect(
+      getCachedMoveFunction(cache, 'sui:testnet', '0xpkg', 'coin', 'mint'),
+    ).toBeUndefined();
+    expect(cache.modulesByChain['sui:testnet']).toBeUndefined();
+  });
+
+  it('keeps package indexes when document-backed modules are replaced', () => {
+    let cache = createPTBMetadataCache();
+    cache = upsertCachedMovePackageIndex(cache, 'sui:testnet', {
+      packageId: '0xpkg',
+      modules: {
+        coin: [{ name: 'value', visibility: 'public', isEntry: false }],
+      },
+    }).cache;
+
+    cache = replaceCachedChainData(cache, 'sui:testnet', {
+      objects: {},
+      modules: {
+        '0xdoc': {
+          m: {
+            f: signature,
+          },
+        },
+      },
+    });
+
+    expect(
+      getCachedMovePackageIndex(cache, 'sui:testnet', '0xpkg')?.modules,
+    ).toEqual({
+      coin: [{ name: 'value', visibility: 'public', isEntry: false }],
+    });
+    expect(
+      getCachedMoveFunction(cache, 'sui:testnet', '0xdoc', 'm', 'f')?.signature,
     ).toEqual(signature);
   });
 

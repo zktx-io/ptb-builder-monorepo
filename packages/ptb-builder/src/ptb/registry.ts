@@ -8,9 +8,8 @@
 // - No "expanded" toggle flag; multiplicity is controlled solely by count steppers.
 // - MakeMoveVec: runtime.type is the persisted model value. UI count controls
 //   only the number of element handles.
-// - MoveCall signatures materialize only value arguments and return values as
-//   ports. Resolved package, module, function, and type arguments live in
-//   params.runtime.
+// - MoveCall signatures materialize value arguments, return values, and type
+//   argument input ports. Concrete type arguments live in TypeArgument nodes.
 // -----------------------------------------------------------------------------
 
 import {
@@ -194,8 +193,18 @@ const moveCallSpec: CommandSpec = {
 export function buildMoveCallPorts(
   inputs: readonly PTBType[],
   outputs: readonly PTBType[],
+  typeParameterCount = 0,
 ): Port[] {
   const ports: Port[] = [];
+  for (let index = 0; index < typeParameterCount; index++) {
+    const id = indexedInputHandle('type', index);
+    ports.push({
+      id,
+      role: 'type',
+      direction: 'in',
+      label: `T${index}`,
+    });
+  }
   inputs.forEach((t, index) => {
     const id = indexedInputHandle('arg', index);
     ports.push({
@@ -223,6 +232,12 @@ export function buildMoveCallPorts(
 }
 
 function isMoveCallValuePort(port: Port): boolean {
+  if (port.role === 'type') {
+    return (
+      port.direction === 'in' &&
+      indexedInputHandleIndex(port.id, 'type') !== undefined
+    );
+  }
   if (port.role !== 'io') return false;
   if (port.direction === 'in')
     return indexedInputHandleIndex(port.id, 'arg') !== undefined;

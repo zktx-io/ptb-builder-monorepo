@@ -551,6 +551,20 @@ describe('builder source guardrails', () => {
     expect(text).not.toContain("owner={execOpts.sender || ''}");
   });
 
+  it('keeps the code preview body scrollable inside the React Flow panel', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'CodePip.tsx'), 'utf8');
+    const start = text.indexOf('className="ptb-codepip__body');
+    const end = text.indexOf('<pre', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('nowheel');
+    expect(segment).toContain('nopan');
+    expect(segment).toContain("overflow: 'auto'");
+    expect(segment).not.toContain("overflow: 'hidden'");
+  });
+
   it('keeps AssetsModal pagination side effects out of React state updaters', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'AssetsModal.tsx'),
@@ -642,11 +656,20 @@ describe('builder source guardrails', () => {
       'const showInspectionNote = inspectionOnly && !readOnly;',
     );
     expect(baseCommand).toContain('{!readOnly && countKey ?');
-    expect(moveCall).toContain('{!readOnly && (');
-    expect(moveCall).toContain('Resolve a function to materialize IO ports.');
+    expect(moveCall).toContain('{!readOnly && !packageLocked && (');
+    expect(moveCall).toContain('readOnly || !packageLocked');
     expect(varNode).toContain('const showAuthoringControls = !readOnly;');
-    expect(varNode).toContain('{!readOnly && (');
-    expect(varNode).toContain('!readOnly && !objectInfoMatchesInput');
+    expect(varNode).toContain(
+      'const showObjectLoadButton = !readOnly && !objectInfoMatchesInput;',
+    );
+    expect(varNode).toContain('{showObjectLoadButton && (');
+    expect(varNode).toContain(
+      'className="px-2 py-1 text-xxs border rounded bg-white dark:bg-stone-900 border-gray-300 dark:border-stone-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"',
+    );
+    expect(varNode).toMatch(/>\s*Load\s*<\/button>/);
+    expect(varNode).toContain('aria-busy={objTypeLoading}');
+    expect(varNode).not.toContain("{objTypeLoading ? 'Lookup…' : 'Lookup'}");
+    expect(varNode).not.toContain('Run Lookup');
   });
 
   it('keeps document autosave and emission failures out of the toast channel', () => {
@@ -730,8 +753,8 @@ describe('builder source guardrails', () => {
     expect(text).not.toContain('setIdGenerator');
   });
 
-  it('does not force refresh Move function metadata on normal Use clicks', () => {
-    const text = readFileSync(
+  it('loads package indexes before lazily fetching selected Move function signatures', () => {
+    const moveCall = readFileSync(
       join(
         sourceRoot,
         'ui',
@@ -742,26 +765,31 @@ describe('builder source guardrails', () => {
       ),
       'utf8',
     );
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
 
-    expect(text).not.toContain('forceRefresh: true');
-    expect(text).toContain('lookupSeqRef');
+    expect(moveCall).toContain('getMovePackage');
+    expect(moveCall).toContain('ensureMoveFunctionSignature');
+    expect(moveCall).toContain('forceRefresh: true');
+    expect(moveCall).not.toContain('getMoveFunction');
+    expect(moveCall).not.toContain('Use');
+    expect(provider).toContain('listMovePackageFunctionIndex');
+    expect(provider).toContain('getMovePackage');
+    expect(provider).toContain('ensureMoveFunctionSignature');
+    expect(provider).not.toContain('movePackageFunctionRefs');
+    expect(provider).not.toContain('MOVE_PACKAGE_METADATA_FETCH_CONCURRENCY');
+    expect(provider).not.toContain('toPTBModuleData(');
+    expect(provider).not.toContain('PTBMovePackageMetadata');
+    expect(provider).not.toContain('getMoveFunction: (');
+    expect(provider).not.toContain('const getMoveFunction =');
   });
 
   it('keeps unsupported source folders absent', () => {
     expect(existsSync(join(sourceRoot, 'codegen'))).toBe(false);
     expect(existsSync(join(sourceRoot, 'legacy'))).toBe(false);
     expect(existsSync(join(sourceRoot, 'ptb', 'decodeTx'))).toBe(false);
-    expect(
-      existsSync(
-        join(sourceRoot, 'ui', 'nodes', 'vars', 'inputs', 'SmallSelect.tsx'),
-      ),
-    ).toBe(false);
-    expect(
-      readFileSync(
-        join(sourceRoot, 'ptb', 'move', 'toPTBModuleData.ts'),
-        'utf8',
-      ),
-    ).not.toContain('export function toPTBModuleData');
     expect(
       readFileSync(join(sourceRoot, 'ptb', 'portTemplates.ts'), 'utf8'),
     ).not.toContain('export const UNKNOWN');

@@ -109,9 +109,16 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     return base;
   }
 
+  if (p.kind === 'TypeArgument') {
+    return getNodeSize('TypeArgument').height ?? 74;
+  }
+
   // Commands (ports-only: title + paddings + rows + group gaps)
   if (p.kind === 'Command') {
     const inPorts = inputIoPorts(p);
+    const typePorts = (p.ports ?? []).filter(
+      (q) => q.role === 'type' && q.direction === 'in',
+    );
     const outResult = outPortsWithPrefix(p, RESULT_HANDLE_ID);
     const allOut = (p.ports ?? []).filter(
       (q) => q.role === 'io' && q.direction === 'out',
@@ -126,15 +133,8 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
     // BaseCommand: right offset only for splitCoins
     const rightOffsetRows = p?.command === 'splitCoins' ? 1 : 0;
 
-    const moveCallTypeArgumentCount =
-      p?.command === 'moveCall' &&
-      Array.isArray(p?.params?.runtime?.typeArguments)
-        ? p.params.runtime.typeArguments.length
-        : 0;
     const controlsOffset =
-      p?.command === 'moveCall'
-        ? (4 + moveCallTypeArgumentCount) * ROW_SPACING + 24
-        : 0;
+      p?.command === 'moveCall' ? (4 + typePorts.length) * ROW_SPACING + 24 : 0;
     const makeMoveVecOffset = p?.command === 'makeMoveVec' ? 28 : 0;
     const inspectionOffset =
       p?.command === 'publish' || p?.command === 'upgrade' ? 18 : 0;
@@ -305,38 +305,42 @@ function layoutSingleRowPositions(
   // --- local helpers --------------------------------------------------------
   const kindOf = (n: RFNode<RFNodeData>) =>
     n.data?.ptbNode?.kind as string | undefined;
-  const isIo = (e: RFEdge<RFEdgeData>) => e.type === 'ptb-io';
 
   /** Strip optional serialized type suffix, keep only the raw handle id. */
   const baseHandle = (h?: string | null) =>
     h ? (parseHandleTypeSuffix(String(h)).baseId ?? '') : '';
 
-  /**
-   * Parse input handle into a stable (group, index) key:
-   * - group: 'arg' (value args) or 'other'
-   * - index: trailing number if present; 'in_*' without index → 0; else +∞
-   */
-  const parseInKey = (
-    h?: string | null,
-  ): { group: 'arg' | 'other'; idx: number } => {
+  const fallbackInputPortOrder = (h?: string | null): number => {
     const s = baseHandle(h).toLowerCase();
-    if (!s) return { group: 'other', idx: Number.POSITIVE_INFINITY };
+    if (!s) return Number.POSITIVE_INFINITY;
 
-    let group: 'arg' | 'other' = 'other';
+    const typeIndex = indexedInputHandleIndex(s, 'type');
+    if (typeIndex !== undefined) return typeIndex;
     const argIndex = indexedInputHandleIndex(s, 'arg');
-    if (argIndex !== undefined) return { group: 'arg', idx: argIndex };
-    if (s.startsWith('in_')) group = 'other';
+    if (argIndex !== undefined) return 1_000 + argIndex;
 
     const indexed = indexedHandleSuffix(s);
-    if (indexed) return { group, idx: indexed.index };
+    if (indexed) return 2_000 + indexed.index;
     // Single, non-indexed input (e.g., "in_coin") → treat as index 0
-    if (s.startsWith('in_')) return { group, idx: 0 };
+    if (s.startsWith('in_')) return 2_000;
 
-    return { group: 'other', idx: Number.POSITIVE_INFINITY };
+    return Number.POSITIVE_INFINITY;
   };
 
-  /** Group rank: keep value inputs ahead of other command inputs. */
-  const groupRank = (g: 'arg' | 'other') => (g === 'arg' ? 0 : 1);
+  const commandInputPortOrder = (
+    command: RFNode<RFNodeData>,
+    handle?: string | null,
+  ): number => {
+    const base = baseHandle(handle);
+    if (!base) return Number.POSITIVE_INFINITY;
+    const ports = command.data?.ptbNode?.ports ?? [];
+    const inputPorts = ports.filter(
+      (port) =>
+        (port.role === 'type' || port.role === 'io') && port.direction === 'in',
+    );
+    const index = inputPorts.findIndex((port) => port.id === base);
+    return index >= 0 ? index : fallbackInputPortOrder(base);
+  };
 
   const hOf = nodeHeight;
 
@@ -345,6 +349,7 @@ function layoutSingleRowPositions(
     .map((id) => nodes.find((n) => n.id === id)!)
     .filter(Boolean);
   const vars = nodes.filter((n) => kindOf(n) === 'Variable');
+  const typeArgs = nodes.filter((n) => kindOf(n) === 'TypeArgument');
   const nodeIndex = new Map<string, number>();
   nodes.forEach((n, i) => nodeIndex.set(n.id, i));
 
@@ -387,43 +392,44 @@ function layoutSingleRowPositions(
   }
   colAnchorY.set(endCol, anchorYFor(end));
 
-  // --- bucket variables by column + compute sort keys -----------------------
+  // --- bucket value/type argument nodes by column + compute sort keys --------
   type VItem = {
     node: RFNode<RFNodeData>;
     colIdx: number;
     k0_cmdIdx: number; // earliest command index among 'commands'
-    k1_grpRank: number; // group priority: arg < other
-    k2_argIdx: number; // port index within that group
+    k1_portOrder: number; // vertical input port order on the target command
     k3_orig: number; // original order tiebreaker
     k4_id: string; // id tiebreaker
   };
   const buckets = new Map<number, VItem[]>();
 
-  for (const v of vars) {
+  const bucketExternalNode = (
+    v: RFNode<RFNodeData>,
+    edgeType: 'ptb-io' | 'ptb-type',
+  ) => {
     let firstCmdIdx = Number.POSITIVE_INFINITY;
-    let firstGrpRank = Number.POSITIVE_INFINITY;
-    let firstArgIdx = Number.POSITIVE_INFINITY;
+    let firstPortOrder = Number.POSITIVE_INFINITY;
 
-    // Scan Variable → Command edges for earliest (command, group, index)
+    // Scan external-node → Command edges for earliest (command, input port order)
     for (const e of edges) {
-      if (!isIo(e)) continue;
+      if (e.type !== edgeType) continue;
       if (e.source !== v.id) continue;
 
       const ci = commands.findIndex((c) => c.id === e.target);
       if (ci < 0) continue;
 
-      const { group, idx } = parseInKey(e.targetHandle ?? undefined);
-      const gr = groupRank(group);
+      const portOrder = commandInputPortOrder(
+        commands[ci]!,
+        e.targetHandle ?? undefined,
+      );
 
-      // lexicographic min: cmdIdx → groupRank → argIdx
+      // lexicographic min: cmdIdx → target command input port order
       if (
         ci < firstCmdIdx ||
-        (ci === firstCmdIdx && gr < firstGrpRank) ||
-        (ci === firstCmdIdx && gr === firstGrpRank && idx < firstArgIdx)
+        (ci === firstCmdIdx && portOrder < firstPortOrder)
       ) {
         firstCmdIdx = ci;
-        firstGrpRank = gr;
-        firstArgIdx = idx;
+        firstPortOrder = portOrder;
       }
     }
 
@@ -441,21 +447,28 @@ function layoutSingleRowPositions(
       node: v,
       colIdx,
       k0_cmdIdx: firstCmdIdx,
-      k1_grpRank: firstGrpRank,
-      k2_argIdx: firstArgIdx,
+      k1_portOrder: firstPortOrder,
       k3_orig: nodeIndex.get(v.id) ?? Number.POSITIVE_INFINITY,
       k4_id: v.id,
     });
     buckets.set(colIdx, list);
+  };
+
+  for (const v of typeArgs) {
+    bucketExternalNode(v, 'ptb-type');
+  }
+
+  for (const v of vars) {
+    bucketExternalNode(v, 'ptb-io');
   }
 
   // Sort inside each column by:
-  //   firstCmdIdx → groupRank(arg < other) → argIdx → original → id
+  //   firstCmdIdx → target command input port order → original → id
   for (const arr of buckets.values()) {
     arr.sort((a, b) => {
       if (a.k0_cmdIdx !== b.k0_cmdIdx) return a.k0_cmdIdx - b.k0_cmdIdx;
-      if (a.k1_grpRank !== b.k1_grpRank) return a.k1_grpRank - b.k1_grpRank;
-      if (a.k2_argIdx !== b.k2_argIdx) return a.k2_argIdx - b.k2_argIdx;
+      if (a.k1_portOrder !== b.k1_portOrder)
+        return a.k1_portOrder - b.k1_portOrder;
       if (a.k3_orig !== b.k3_orig) return a.k3_orig - b.k3_orig;
       return a.k4_id.localeCompare(b.k4_id);
     });
