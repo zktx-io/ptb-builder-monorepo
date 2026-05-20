@@ -30,6 +30,26 @@ export async function sampleTransactionDataHex(): Promise<string> {
   return toHex(bytes);
 }
 
+export async function sampleMoveCallTransactionDataHex(): Promise<string> {
+  const tx = new Transaction();
+  tx.setSender('0x1');
+  tx.setGasBudget(1000);
+  tx.setGasPrice(1);
+  tx.setGasPayment([
+    {
+      digest: TEST_DIGEST,
+      objectId: '0x2',
+      version: '1',
+    },
+  ]);
+  tx.moveCall({
+    target: '0x2::coin::zero',
+    typeArguments: ['0x2::sui::SUI'],
+  });
+  const bytes = await tx.build();
+  return toHex(bytes);
+}
+
 export function memoryRuntime() {
   let stdout = '';
   let stderr = '';

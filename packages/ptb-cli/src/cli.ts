@@ -35,6 +35,7 @@ interface MermaidCliOptions {
     timeoutMs: number;
     transport?: PtbCliTransport;
   };
+  shortenLabels: boolean;
 }
 
 type ParsedCliOptions = HelpCliOptions | MermaidCliOptions;
@@ -89,6 +90,7 @@ Options:
   --transport <grpc|graphql> Read-only digest lookup transport. Default: grpc.
   --grpc-url <url>          Override the network gRPC endpoint.
   --graphql-url <url>       Override the network GraphQL endpoint.
+  --shorten-labels          Shorten long Mermaid node labels.
   --timeout-ms <ms>         Network digest lookup timeout. Default: 30000.
   --help                    Show this help.
 `;
@@ -160,6 +162,7 @@ function parseCliArgs(args: string[]): ParsedCliOptions {
 
   let grpcUrl: string | undefined;
   let graphqlUrl: string | undefined;
+  let shortenLabels = false;
   let timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS;
   let transport: PtbCliTransport | undefined;
   const positional: string[] = [];
@@ -186,6 +189,9 @@ function parseCliArgs(args: string[]): ParsedCliOptions {
           'usage.graphqlUrl',
         );
         i += 1;
+        break;
+      case '--shorten-labels':
+        shortenLabels = true;
         break;
       case '--timeout-ms':
         timeoutMs = parseTimeoutMs(requireValue(args, i, arg));
@@ -283,6 +289,7 @@ function parseCliArgs(args: string[]): ParsedCliOptions {
     input,
     json,
     network: { grpcUrl, graphqlUrl, timeoutMs, transport },
+    shortenLabels,
   };
 }
 
@@ -502,6 +509,7 @@ export async function runCli(
     const ir = rawTransactionToIR(await rawForOptions(options));
     const mermaid = transactionIRToMermaid(ir, {
       direction: 'LR',
+      shortenLabels: options.shortenLabels,
       theme: 'semantic',
     });
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   memoryRuntime,
+  sampleMoveCallTransactionDataHex,
   sampleTransactionDataHex,
   sampleTransactionKindHex,
   withTempFile,
@@ -85,6 +86,7 @@ describe('ptb cli mermaid', () => {
 
     expect(textCode).toBe(0);
     expect(textIo.stdout()).toContain('ptb mermaid <transaction-data-hex>');
+    expect(textIo.stdout()).toContain('--shorten-labels');
     expect(textIo.stdout()).not.toContain('--stdin');
     expect(textIo.stderr()).toBe('');
 
@@ -98,6 +100,32 @@ describe('ptb cli mermaid', () => {
     const output = JSON.parse(jsonIo.stdout());
     expect(output).toMatchObject({ ok: true, command: 'help' });
     expect(output.usage).toContain('Usage:');
+  });
+
+  it('lets local Mermaid rendering opt into shortened labels', async () => {
+    const hex = await sampleMoveCallTransactionDataHex();
+    const fullIo = memoryRuntime();
+
+    const fullCode = await runCli(['mermaid', hex, '--json'], fullIo.runtime);
+
+    expect(fullCode).toBe(0);
+    const full = JSON.parse(fullIo.stdout());
+    expect(full.mermaid).toContain(
+      'MoveCall 0x0000000000000000000000000000000000000000000000000000000000000002::coin::zero',
+    );
+    expect(full.mermaid).not.toContain('MoveCall 0x00000000...000002');
+
+    const shortenedIo = memoryRuntime();
+    const shortenedCode = await runCli(
+      ['mermaid', hex, '--shorten-labels', '--json'],
+      shortenedIo.runtime,
+    );
+
+    expect(shortenedCode).toBe(0);
+    const shortened = JSON.parse(shortenedIo.stdout());
+    expect(shortened.mermaid).toContain(
+      'MoveCall 0x00000000...000002::coin::zero',
+    );
   });
 
   it('keeps package root imports free of CLI side effects', async () => {

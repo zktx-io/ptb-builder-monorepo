@@ -8,13 +8,21 @@ import React, {
 } from 'react';
 
 import { parseObjectId } from '@zktx.io/ptb-model';
-import { Copy, FlaskConical, PackageSearch, Play, Save } from 'lucide-react';
+import {
+  Copy,
+  FlaskConical,
+  PackageSearch,
+  Play,
+  Save,
+  Workflow,
+} from 'lucide-react';
 import { Resizable } from 're-resizable';
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css';
 
 import { AssetsModal, type OwnedItem } from './AssetsModal';
 import { usePtb } from './PtbProvider';
 import { type Theme, THEMES } from '../types';
+import { copyTextToClipboard } from './utils/clipboard';
 import { loadPrism } from './utils/prismLoader';
 
 export { EMPTY_CODE } from './emptyCode';
@@ -43,6 +51,7 @@ type CodePipProps = {
   onExecute?: () => Promise<void> | void;
 
   onCopy?: (text: string) => Promise<void> | void;
+  onCopyMermaid?: () => Promise<void> | void;
   onAssetPick?: (obj: OwnedItem) => void;
 
   /** Toggle MiniMap from header */
@@ -90,6 +99,7 @@ export function CodePip({
   onExecute,
 
   onCopy,
+  onCopyMermaid,
   onAssetPick,
 
   showMiniMap,
@@ -179,25 +189,27 @@ export function CodePip({
 
       if (onCopy) {
         await onCopy(text);
-      } else if (
-        typeof navigator !== 'undefined' &&
-        navigator?.clipboard?.writeText
-      ) {
-        await navigator.clipboard.writeText(text);
-      } else if (typeof document !== 'undefined') {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
+      } else {
+        await copyTextToClipboard(text);
       }
 
       show('Copied');
     } catch (e: any) {
       show(e?.message ? `Copy failed: ${e.message}` : 'Copy failed');
+    }
+  };
+
+  const handleCopyMermaid = async () => {
+    if (!onCopyMermaid) return;
+    try {
+      await onCopyMermaid();
+      show('Copied');
+    } catch (e: any) {
+      show(
+        e?.message
+          ? `Mermaid copy failed: ${e.message}`
+          : 'Mermaid copy failed',
+      );
     }
   };
 
@@ -379,6 +391,18 @@ export function CodePip({
             >
               <Copy size={16} />
             </button>
+
+            {onCopyMermaid && (
+              <button
+                type="button"
+                onClick={handleCopyMermaid}
+                className="ptb-codepip__btn ptb-codepip__btn--neutral"
+                title="Copy Mermaid to clipboard"
+                aria-label="Copy Mermaid to clipboard"
+              >
+                <Workflow size={16} />
+              </button>
+            )}
 
             {/* Save */}
             {showExportButton && (

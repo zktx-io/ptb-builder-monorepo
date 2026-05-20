@@ -32,13 +32,17 @@ export type MermaidDirection = 'TD' | 'LR';
 
 export interface TransactionIRToMermaidOptions {
   direction?: MermaidDirection;
+  showInputValues?: boolean;
   showArgumentValues?: boolean;
+  shortenLabels?: boolean;
   theme?: 'none' | 'semantic';
 }
 
 const MERMAID_OPTION_FIELDS = [
   'direction',
+  'showInputValues',
   'showArgumentValues',
+  'shortenLabels',
   'theme',
 ] as const;
 
@@ -80,6 +84,14 @@ export function transactionIRToMermaid(
     typeof renderOptions.showArgumentValues === 'boolean'
       ? renderOptions.showArgumentValues
       : false;
+  const showInputValues =
+    typeof renderOptions.showInputValues === 'boolean'
+      ? renderOptions.showInputValues
+      : true;
+  const shortenLabels =
+    typeof renderOptions.shortenLabels === 'boolean'
+      ? renderOptions.shortenLabels
+      : false;
   const hasGasCoin = renderIR.commands.some((command) =>
     irCommandArgRefs(command).some((arg) => arg.kind === 'GasCoin'),
   );
@@ -91,7 +103,7 @@ export function transactionIRToMermaid(
   renderIR.inputs.forEach((input, index) => {
     lines.push(
       `  input${index}["${mermaidNodeLabel(
-        inputNodeLabel(input, index, showArgumentValues),
+        inputNodeLabel(input, index, showInputValues, shortenLabels),
       )}"]`,
     );
   });
@@ -102,17 +114,36 @@ export function transactionIRToMermaid(
 
   renderIR.commands.forEach((command, index) => {
     lines.push(
-      `  command${index}["${mermaidNodeLabel(commandLabel(command, index))}"]`,
+      `  command${index}["${mermaidNodeLabel(
+        commandLabel(command, index, shortenLabels),
+      )}"]`,
     );
+  });
+
+  for (let index = 0; index < renderIR.commands.length - 1; index += 1) {
+    lines.push(`  command${index} -. then .-> command${index + 1}`);
+  }
+
+  renderIR.commands.forEach((command, index) => {
     irCommandArgRefs(command).forEach((arg) => {
       const sourceNode = argSourceNodeId(renderIR, arg, hasGasCoin);
       if (!sourceNode) return;
       const edge = showArgumentValues
-        ? ` -- "${escapeMermaid(argValueLabel(renderIR, arg))}" --> `
+        ? ` -- "${escapeMermaid(argValueLabel(renderIR, arg, shortenLabels))}" --> `
         : ' --> ';
       lines.push(`  ${sourceNode}${edge}command${index}`);
     });
   });
+
+  const commandNodeIds = renderIR.commands.map(
+    (_command, index) => `command${index}`,
+  );
+  if (commandNodeIds.length > 0) {
+    lines.push(
+      '  classDef commandOutline stroke-width:3px',
+      `  class ${commandNodeIds.join(',')} commandOutline`,
+    );
+  }
 
   if (theme === 'semantic') {
     lines.push(
@@ -219,6 +250,32 @@ function validateMermaidOptions(
       ),
     );
   }
+  if (
+    options.showInputValues !== undefined &&
+    typeof options.showInputValues !== 'boolean'
+  ) {
+    diagnostics.push(
+      renderDiagnostic(
+        'mermaid.showInputValues',
+        'shape',
+        'Mermaid showInputValues must be boolean.',
+        '$.options.showInputValues',
+      ),
+    );
+  }
+  if (
+    options.shortenLabels !== undefined &&
+    typeof options.shortenLabels !== 'boolean'
+  ) {
+    diagnostics.push(
+      renderDiagnostic(
+        'mermaid.shortenLabels',
+        'shape',
+        'Mermaid shortenLabels must be boolean.',
+        '$.options.shortenLabels',
+      ),
+    );
+  }
   return diagnostics;
 }
 
@@ -249,36 +306,45 @@ function isExistingIndex(value: number, length: number): boolean {
 function inputNodeLabel(
   input: unknown,
   index: number,
-  showArgumentValues: boolean,
+  showInputValues: boolean,
+  shortenLabels: boolean,
 ): string[] {
-  const kind =
-    isRecord(input) && typeof input.kind === 'string' ? input.kind : 'Invalid';
+  const kind = inputKindLabel(input);
   const lines = [`Input ${index}: ${kind}`];
-  if (showArgumentValues) {
-    lines.push(inputValueLabel(input));
+  if (showInputValues) {
+    lines.push(inputNodeValueLabel(input, shortenLabels));
   }
   return lines;
 }
 
-function commandLabel(command: unknown, index: number): string[] {
+function inputKindLabel(input: unknown): string {
+  if (!isRecord(input) || typeof input.kind !== 'string') {
+    return 'Invalid';
+  }
+  if (input.kind !== 'Object' || !isRecord(input.source)) {
+    return input.kind;
+  }
+  const object = irResolvedObjectArg(
+    input as Extract<IRInput, { kind: 'Object' }>,
+  );
+  return object ? `Object (${objectKindLabel(object)})` : 'Object';
+}
+
+function commandLabel(
+  command: unknown,
+  index: number,
+  shortenLabels: boolean,
+): string[] {
   if (!isRecord(command) || typeof command.kind !== 'string') {
     return [`${index}: InvalidCommand`];
   }
 
   switch (command.kind) {
     case 'MoveCall': {
-      const typeArguments = Array.isArray(command.typeArguments)
-        ? command.typeArguments.filter(
-            (typeArgument): typeArgument is string =>
-              typeof typeArgument === 'string',
-          )
-        : [];
-      const typeArgumentLabel =
-        typeArguments.length > 0 ? `<${typeArguments.join(', ')}>` : '';
       return [
-        `${index}: MoveCall ${labelValue(command.package)}::${labelValue(
-          command.module,
-        )}::${labelValue(command.function)}${typeArgumentLabel}`,
+        `${index}: MoveCall ${labelValue(command.package, {
+          shortenLabels,
+        })}::${labelValue(command.module)}::${labelValue(command.function)}`,
       ];
     }
     case 'TransferObjects':
@@ -292,7 +358,9 @@ function commandLabel(command: unknown, index: number): string[] {
     case 'MakeMoveVec':
       return [`${index}: MakeMoveVec`];
     case 'Upgrade':
-      return [`${index}: Upgrade ${labelValue(command.package)}`];
+      return [
+        `${index}: Upgrade ${labelValue(command.package, { shortenLabels })}`,
+      ];
     case 'Unsupported':
       return [`${index}: Unsupported ${labelValue(command.sourceKind)}`];
     default:
@@ -338,14 +406,18 @@ function commandClass(command: unknown): string {
   }
 }
 
-function argValueLabel(ir: TransactionIR, arg: IRArgRef): string {
+function argValueLabel(
+  ir: TransactionIR,
+  arg: IRArgRef,
+  shortenLabels: boolean,
+): string {
   switch (arg.kind) {
     case 'GasCoin':
       return 'GasCoin';
     case 'Input': {
       const input = ir.inputs[arg.index];
       return input
-        ? `input ${arg.index}: ${inputValueLabel(input)}`
+        ? `input ${arg.index}: ${inputValueLabel(input, shortenLabels)}`
         : `missing input ${arg.index}`;
     }
     case 'Result':
@@ -355,7 +427,7 @@ function argValueLabel(ir: TransactionIR, arg: IRArgRef): string {
   }
 }
 
-function inputValueLabel(input: unknown): string {
+function inputValueLabel(input: unknown, shortenLabels: boolean): string {
   if (!isRecord(input) || typeof input.kind !== 'string') {
     return 'invalid input';
   }
@@ -363,10 +435,13 @@ function inputValueLabel(input: unknown): string {
   switch (input.kind) {
     case 'Pure':
       if (Object.prototype.hasOwnProperty.call(input, 'value')) {
-        return `value ${shorten(renderMermaidValue(input.value))}`;
+        return `value ${formatLongLabel(
+          renderMermaidValue(input.value),
+          shortenLabels,
+        )}`;
       }
       return typeof input.bytes === 'string'
-        ? `bytes ${shorten(input.bytes)}`
+        ? `bytes ${formatLongLabel(input.bytes, shortenLabels)}`
         : 'bytes unavailable';
     case 'Object': {
       if (!isRecord(input.source)) {
@@ -375,21 +450,36 @@ function inputValueLabel(input: unknown): string {
       const objectInput = input as Extract<IRInput, { kind: 'Object' }>;
       const object = irResolvedObjectArg(objectInput);
       return object
-        ? objectValueLabel(object)
-        : `object ${shortId(irObjectId(objectInput))}`;
+        ? objectValueLabel(object, shortenLabels)
+        : `Object ${formatObjectIdLabel(irObjectId(objectInput), shortenLabels)}`;
     }
     case 'FundsWithdrawal':
       if (!isRawFundsWithdrawalArg(input.value)) {
         return 'invalid funds withdrawal';
       }
-      return `withdraw ${input.value.reservation.amount} ${shorten(
+      return `withdraw ${input.value.reservation.amount} ${formatLongLabel(
         input.value.typeArg.type,
+        shortenLabels,
       )} from ${input.value.withdrawFrom.kind}`;
     case 'Unsupported':
       return `unsupported ${input.sourceKind}`;
     default:
       return `unsupported ${input.kind}`;
   }
+}
+
+function inputNodeValueLabel(input: unknown, shortenLabels: boolean): string {
+  if (!isRecord(input) || input.kind !== 'Object') {
+    return inputValueLabel(input, shortenLabels);
+  }
+  if (!isRecord(input.source)) {
+    return 'invalid object';
+  }
+  const objectInput = input as Extract<IRInput, { kind: 'Object' }>;
+  const object = irResolvedObjectArg(objectInput);
+  return object
+    ? objectNodeValueLabel(object, shortenLabels)
+    : formatObjectIdLabel(irObjectId(objectInput), shortenLabels);
 }
 
 function renderMermaidValue(value: unknown): string {
@@ -412,21 +502,50 @@ function renderMermaidValue(value: unknown): string {
   }
 }
 
-function objectValueLabel(object: RawObjectArg): string {
+function objectValueLabel(
+  object: RawObjectArg,
+  shortenLabels: boolean,
+): string {
+  return `Object (${objectKindLabel(object)}) ${objectNodeValueLabel(
+    object,
+    shortenLabels,
+  )}`;
+}
+
+function objectKindLabel(
+  object: RawObjectArg,
+): 'Owned' | 'Shared' | 'Receiving' {
   switch (object.kind) {
     case 'ImmOrOwnedObject':
-      return `owned ${shortId(object.objectId)} v${object.version} ${shorten(
-        object.digest,
-      )}`;
+      return 'Owned';
     case 'SharedObject':
-      return `shared ${shortId(object.objectId)} v${object.initialSharedVersion} ${
+      return 'Shared';
+    case 'Receiving':
+      return 'Receiving';
+  }
+}
+
+function objectNodeValueLabel(
+  object: RawObjectArg,
+  shortenLabels: boolean,
+): string {
+  switch (object.kind) {
+    case 'ImmOrOwnedObject':
+    case 'Receiving':
+      return formatObjectIdLabel(object.objectId, shortenLabels);
+    case 'SharedObject':
+      return `${formatObjectIdLabel(object.objectId, shortenLabels)} ${
         object.mutable ? 'mutable' : 'immutable'
       }`;
-    case 'Receiving':
-      return `receiving ${shortId(object.objectId)} v${object.version} ${shorten(
-        object.digest,
-      )}`;
   }
+}
+
+function formatObjectIdLabel(value: string, shortenLabels: boolean): string {
+  return shortenLabels ? shortId(value) : value;
+}
+
+function formatLongLabel(value: string, shortenLabels: boolean): string {
+  return shortenLabels ? shorten(value) : value;
 }
 
 function shortId(value: string): string {
@@ -444,8 +563,12 @@ function mermaidNodeLabel(lines: string[]): string {
   return lines.map((line) => escapeMermaid(line)).join('<br/>');
 }
 
-function labelValue(value: unknown): string {
-  return typeof value === 'string' ? value : 'unknown';
+function labelValue(
+  value: unknown,
+  options: { shortenLabels?: boolean } = {},
+): string {
+  if (typeof value !== 'string') return 'unknown';
+  return options.shortenLabels ? formatObjectIdLabel(value, true) : value;
 }
 
 function escapeMermaid(value: string): string {

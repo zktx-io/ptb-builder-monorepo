@@ -2496,7 +2496,10 @@ describe('rawTransactionToIR', () => {
     const ir = rawTransactionToIR(raw);
     const graph = transactionIRToGraph(ir);
     const roundTripped = graphToTransactionIR(graph);
-    const mermaid = transactionIRToMermaid(ir, { showArgumentValues: true });
+    const mermaid = transactionIRToMermaid(ir, {
+      showArgumentValues: true,
+      shortenLabels: true,
+    });
     const code = transactionIRToTsSdkCode(ir);
 
     expect(ir.diagnostics).toEqual([]);
@@ -2509,8 +2512,10 @@ describe('rawTransactionToIR', () => {
     expect(roundTripped.diagnostics).toEqual([]);
     expect(transactionIRToRaw(roundTripped)).toEqual(raw);
     expect(mermaid).toContain(
-      'receiving 0x00000000...000008 v9 7msXn7aieHy73WkRxh3Xdqh9PEoPY...',
+      'Input 0: Object (Receiving)<br/>0x00000000...000008',
     );
+    expect(mermaid).not.toContain('v9');
+    expect(mermaid).not.toContain('7msXn7aieHy73WkRxh3Xdqh9PEoPY');
     expect(code).toContain('tx.receivingRef');
   });
 
@@ -3299,13 +3304,24 @@ describe('TransactionIR renderers', () => {
     );
 
     expect(mermaid).toContain('flowchart TD');
-    expect(mermaid).toContain('Input 0: Pure');
+    expect(mermaid).toContain('Input 0: Pure<br/>bytes AQID');
+    expect(mermaid).not.toContain(
+      'input0 -- "input 0: bytes AQID" --> command0',
+    );
+    expect(mermaid).toContain('command0 -. then .-> command1');
+    expect(mermaid).toContain('command4 -. then .-> command5');
+    expect(mermaid).toContain('command5 -. then .-> command6');
+    expect(mermaid).not.toContain('command6 -. then .-> command7');
     expect(mermaid).toContain('gas["GasCoin"]');
     expect(mermaid).toContain('gas --> command0');
     expect(mermaid).toContain('SplitCoins');
+    expect(mermaid).toContain('classDef commandOutline stroke-width:3px');
+    expect(mermaid).toContain(
+      'class command0,command1,command2,command3,command4,command5,command6 commandOutline',
+    );
   });
 
-  it('renders MoveCall type arguments in Mermaid labels', () => {
+  it('omits MoveCall type arguments from Mermaid labels', () => {
     const mermaid = transactionIRToMermaid({
       version: 'transaction_ir_1',
       diagnostics: [],
@@ -3322,30 +3338,140 @@ describe('TransactionIR renderers', () => {
     });
 
     expect(mermaid).toContain(
-      `MoveCall ${normalizedObjectId('2')}::coin::value&lt;${TEST_SUI_TYPE}&gt;`,
+      `MoveCall ${normalizedObjectId('2')}::coin::value`,
     );
-  });
+    expect(mermaid).not.toContain(TEST_SUI_TYPE);
+    expect(mermaid).not.toContain('&lt;');
 
-  it('renders unresolved object ids in Mermaid without inventing raw refs', () => {
-    const mermaid = transactionIRToMermaid(
+    const shortened = transactionIRToMermaid(
       {
         version: 'transaction_ir_1',
         diagnostics: [],
-        inputs: [
+        inputs: [],
+        commands: [
           {
-            id: 'coin',
-            kind: 'Object',
-            source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+            kind: 'MoveCall',
+            package: normalizedObjectId('2'),
+            module: 'coin',
+            function: 'value',
+            typeArguments: [TEST_SUI_TYPE],
           },
         ],
-        commands: [],
       },
-      { showArgumentValues: true },
+      { shortenLabels: true },
     );
 
-    expect(mermaid).toContain('Input 0: Object<br/>object 0x00000000...000001');
+    expect(shortened).toContain('MoveCall 0x00000000...000002::coin::value');
+    expect(shortened).not.toContain(TEST_SUI_TYPE);
+  });
+
+  it('renders unresolved object ids in Mermaid without inventing raw refs', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+        },
+      ],
+      commands: [],
+    };
+    const mermaid = transactionIRToMermaid(ir);
+    const shortened = transactionIRToMermaid(ir, { shortenLabels: true });
+
+    expect(mermaid).toContain(
+      `Input 0: Object<br/>${normalizedObjectId('1')}`,
+    );
+    expect(shortened).toContain(
+      'Input 0: Object<br/>0x00000000...000001',
+    );
     expect(mermaid).not.toContain('object unresolved');
     expect(mermaid).not.toContain('objectRef');
+  });
+
+  it('summarizes resolved object refs in Mermaid without raw version and digest fields', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'owned',
+          kind: 'Object',
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'ImmOrOwnedObject',
+              objectId: normalizedObjectId('11'),
+              version: '123456789',
+              digest: TEST_DIGEST_1,
+            },
+          },
+        },
+        {
+          id: 'shared',
+          kind: 'Object',
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'SharedObject',
+              objectId: normalizedObjectId('12'),
+              initialSharedVersion: '987654321',
+              mutable: true,
+            },
+          },
+        },
+        {
+          id: 'immutableShared',
+          kind: 'Object',
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'SharedObject',
+              objectId: normalizedObjectId('13'),
+              initialSharedVersion: '777777777',
+              mutable: false,
+            },
+          },
+        },
+        {
+          id: 'receiving',
+          kind: 'Object',
+          source: {
+            kind: 'Resolved',
+            object: {
+              kind: 'Receiving',
+              objectId: normalizedObjectId('14'),
+              version: '246813579',
+              digest: TEST_DIGEST_2,
+            },
+          },
+        },
+      ],
+      commands: [],
+    };
+
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(mermaid).toContain(
+      `Input 0: Object (Owned)<br/>${normalizedObjectId('11')}`,
+    );
+    expect(mermaid).toContain(
+      `Input 1: Object (Shared)<br/>${normalizedObjectId('12')} mutable`,
+    );
+    expect(mermaid).toContain(
+      `Input 2: Object (Shared)<br/>${normalizedObjectId('13')} immutable`,
+    );
+    expect(mermaid).toContain(
+      `Input 3: Object (Receiving)<br/>${normalizedObjectId('14')}`,
+    );
+    expect(mermaid).not.toContain('123456789');
+    expect(mermaid).not.toContain('987654321');
+    expect(mermaid).not.toContain('777777777');
+    expect(mermaid).not.toContain('246813579');
+    expect(mermaid).not.toContain(TEST_DIGEST_1);
+    expect(mermaid).not.toContain(TEST_DIGEST_2);
   });
 
   it('can render Mermaid left-to-right or top-down', () => {
@@ -3370,6 +3496,18 @@ describe('TransactionIR renderers', () => {
     expect(invalidShowArgumentValues).toMatch(/^flowchart TD/);
     expect(invalidShowArgumentValues).toContain('mermaid.showArgumentValues');
 
+    const invalidShowInputValues = transactionIRToMermaid(ir, {
+      showInputValues: 'yes' as never,
+    });
+    expect(invalidShowInputValues).toMatch(/^flowchart TD/);
+    expect(invalidShowInputValues).toContain('mermaid.showInputValues');
+
+    const invalidShortenLabels = transactionIRToMermaid(ir, {
+      shortenLabels: 'yes' as never,
+    });
+    expect(invalidShortenLabels).toMatch(/^flowchart TD/);
+    expect(invalidShortenLabels).toContain('mermaid.shortenLabels');
+
     const unknownOption = transactionIRToMermaid(ir, {
       showArgsValues: true,
     } as never);
@@ -3379,6 +3517,21 @@ describe('TransactionIR renderers', () => {
     const invalidOptions = transactionIRToMermaid(ir, NULL_VALUE as never);
     expect(invalidOptions).toMatch(/^flowchart TD/);
     expect(invalidOptions).toContain('mermaid.options');
+  });
+
+  it('can hide Mermaid input value summaries without enabling edge labels', () => {
+    const mermaid = transactionIRToMermaid(
+      rawTransactionToIR(sampleRawTransaction()),
+      {
+        showInputValues: false,
+      },
+    );
+
+    expect(mermaid).toContain('Input 0: Pure');
+    expect(mermaid).not.toContain('Input 0: Pure<br/>bytes AQID');
+    expect(mermaid).not.toContain(
+      'input0 -- "input 0: bytes AQID" --> command0',
+    );
   });
 
   it('renders validation diagnostics in Mermaid for invalid manual IR', () => {
@@ -3457,6 +3610,7 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).toContain('Input 2: FundsWithdrawal<br/>withdraw 1000');
     expect(mermaid).toContain('input0 -- "input 0: bytes AQID" --> command0');
     expect(mermaid).toContain('command0 -- "result command 0[0]" --> command1');
+    expect(mermaid).toContain('classDef commandOutline stroke-width:3px');
     expect(mermaid).toContain('classDef input fill:#eff6ff');
     expect(mermaid).toContain('class command0,command1 coin');
   });

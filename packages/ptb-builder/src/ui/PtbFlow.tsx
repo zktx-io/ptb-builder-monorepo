@@ -40,7 +40,7 @@ import {
 } from '@zktx.io/ptb-model';
 
 import { CodePip } from './CodePip';
-import { renderCodePreview } from './codePreview';
+import { renderCodePreview, renderMermaidCopyText } from './codePreview';
 import {
   decideConnection,
   deleteEdgeById,
@@ -64,6 +64,7 @@ import {
 } from './rfGraphProjection';
 import { StatusBar } from './StatusBar';
 import { autoLayoutFlow, type LayoutPositions } from './utils/autoLayout';
+import { copyTextToClipboard } from './utils/clipboard';
 import { hasStartToEnd } from './utils/flowPath';
 import { makeObject } from '../ptb/factories';
 import {
@@ -987,6 +988,28 @@ export function PTBFlow() {
     [readOnly, createUniqueId],
   );
 
+  const onCopyMermaid = useCallback(async () => {
+    const converted = safeRfToPTB(
+      { rfNodes, rfEdges },
+      { notify: false, warn: false },
+    );
+    if (!converted.ok) {
+      throw new Error(`Mermaid unavailable: ${converted.message}`);
+    }
+
+    let mermaid: string;
+    try {
+      mermaid = renderMermaidCopyText(converted.graph, {
+        direction: 'LR',
+        moveSignatures,
+      });
+    } catch (error) {
+      throw new Error(formatModelErrorMessage(error, 'Mermaid unavailable.'));
+    }
+
+    await copyTextToClipboard(mermaid);
+  }, [rfEdges, rfNodes, moveSignatures, safeRfToPTB]);
+
   // ----- Code preview generation ---------------------------------------------
 
   useEffect(() => {
@@ -1386,6 +1409,7 @@ export function PTBFlow() {
               onDryRun={dryRunTx ? onDryRun : undefined}
               onExecute={runTx ? onExecute : undefined}
               onAssetPick={onAssetPick}
+              onCopyMermaid={onCopyMermaid}
               showMiniMap={showMiniMap}
               onToggleMiniMap={setShowMiniMap}
             />

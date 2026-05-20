@@ -3,10 +3,12 @@ import {
   graphToTransactionIR,
   hasErrors,
   PTBModelError,
+  transactionIRToMermaid,
   transactionIRToTsSdkCode,
 } from '@zktx.io/ptb-model';
 import type {
   GraphToTransactionIROptions,
+  MermaidDirection,
   PTBGraph,
   TransactionDiagnostic,
 } from '@zktx.io/ptb-model';
@@ -90,6 +92,27 @@ export function renderCodePreview(
       opts.previousModelCode,
     );
   }
+}
+
+export function renderMermaidCopyText(
+  graph: PTBGraph,
+  opts: {
+    direction: MermaidDirection;
+    moveSignatures?: GraphToTransactionIROptions['moveSignatures'];
+  },
+): string {
+  const ir = graphToTransactionIR(graph, {
+    moveSignatures: opts.moveSignatures,
+  });
+  if (hasErrors(ir.diagnostics)) {
+    throw new PTBModelError('PTB graph cannot be rendered to Mermaid.', [
+      ...ir.diagnostics,
+    ]);
+  }
+  return transactionIRToMermaid(ir, {
+    direction: opts.direction,
+    shortenLabels: true,
+  });
 }
 
 function diagnosticPreview(

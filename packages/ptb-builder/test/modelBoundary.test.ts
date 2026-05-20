@@ -25,7 +25,10 @@ import { parseHandleTypeSuffix, type PTBGraph } from '../src/ptb/graph/types';
 import { ptbToRF, rfToPTB } from '../src/ptb/ptbAdapter';
 import { buildCommandPorts, buildMoveCallPorts } from '../src/ptb/registry';
 import { buildTransactionFromIR } from '../src/ptb/runtimeAdapter';
-import { renderCodePreview } from '../src/ui/codePreview';
+import {
+  renderCodePreview,
+  renderMermaidCopyText,
+} from '../src/ui/codePreview';
 import { EMPTY_CODE } from '../src/ui/emptyCode';
 import { stableGraphSig } from '../src/ui/graphSignature';
 
@@ -399,6 +402,37 @@ describe('model-root PTB boundary', () => {
     );
     expect(preview.code).toContain('export function buildTransaction()');
     expect(preview.code).toContain('tx.splitCoins');
+  });
+
+  it('renders Mermaid copy text through the model renderer', () => {
+    const vertical = renderMermaidCopyText(splitGasGraph(), {
+      direction: 'TD',
+    });
+    const horizontal = renderMermaidCopyText(splitGasGraph(), {
+      direction: 'LR',
+    });
+
+    expect(vertical).toContain('flowchart TD');
+    expect(horizontal).toContain('flowchart LR');
+    expect(vertical).toContain('SplitCoins');
+    expect(horizontal).toContain('SplitCoins');
+    expect(vertical).toContain('value 100');
+    expect(horizontal).toContain('classDef commandOutline stroke-width:3px');
+
+    const moveCall = renderMermaidCopyText(moveCallResultCountGraph(), {
+      direction: 'TD',
+    });
+    expect(moveCall).toContain('MoveCall 0x00000000...000001::m::f');
+    expect(moveCall).toContain('classDef commandOutline stroke-width:3px');
+    expect(moveCall).not.toContain('classDef moveCall fill:#ecfdf5');
+  });
+
+  it('rejects Mermaid copy text when the current graph has model diagnostics', () => {
+    expect(() =>
+      renderMermaidCopyText(transferToAddressGraph('myAddress'), {
+        direction: 'TD',
+      }),
+    ).toThrow(PTBModelError);
   });
 
   it('keeps empty preview placeholders aligned with model-rendered metadata', () => {

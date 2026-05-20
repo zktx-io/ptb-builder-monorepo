@@ -576,6 +576,7 @@ const graph = transactionIRToGraph(ir);
 const mermaid = transactionIRToMermaid(ir, {
   direction: 'LR',
   showArgumentValues: true,
+  shortenLabels: true,
   theme: 'semantic',
 });
 const raw = transactionIRToRaw(ir);
@@ -759,7 +760,7 @@ pure-type checks.
 
 ## Mermaid Rendering
 
-`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`. Unsupported renderer options fall back to the default rendering options and appear as diagnostics in the diagram.
+`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`. Input nodes include value summaries by default; pass `showInputValues: false` to hide them. Pass `shortenLabels: true` to shorten long input values, object ids, package ids, and type tags in node and edge labels. Resolved object inputs are summarized by ownership kind and object id; shared object summaries also show mutability. Raw object versions, initial shared versions, and digests are intentionally omitted because Mermaid output is an inspection diagram, not a raw object reference format. Command nodes are connected in PTB command-array order with `then` edges so the diagram shows execution order separately from argument data flow, and command node outlines are emphasized in every theme. `showArgumentValues: true` additionally labels argument edges with value summaries. Unsupported renderer options fall back to the default rendering options and appear as diagnostics in the diagram.
 
 Mermaid rendering includes validation diagnostics in the diagram and is defensive for malformed manual IR so callers can inspect problems without a `TypeError`.
 
@@ -794,6 +795,7 @@ export function transactionKindBytesToMermaid(bytes: Uint8Array): string {
   return transactionIRToMermaid(ir, {
     direction: 'LR',
     showArgumentValues: true,
+    shortenLabels: true,
     theme: 'semantic',
   });
 }

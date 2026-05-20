@@ -55,6 +55,12 @@ Use GraphQL when the same digest lookup should go through the GraphQL transport:
 npx @zktx.io/ptb-cli mermaid mainnet 8KjkR3gyEZExZE11BHDFGNsZyNXYBrENhctxGfKs57Sg --transport graphql
 ```
 
+Use shortened labels when Mermaid output should be easier to scan:
+
+```bash
+npx @zktx.io/ptb-cli mermaid "$TX_DATA_HEX" --shorten-labels
+```
+
 Text mode prints Mermaid directly:
 
 ```text
@@ -119,6 +125,7 @@ Parsing rules:
 --transport <grpc|graphql> Read-only digest lookup transport. Default: grpc.
 --grpc-url <url>          Override the network gRPC endpoint.
 --graphql-url <url>       Override the network GraphQL endpoint.
+--shorten-labels          Shorten long Mermaid node labels.
 --timeout-ms <ms>         Network digest lookup timeout. Default: 30000.
 --help                    Show help.
 ```
