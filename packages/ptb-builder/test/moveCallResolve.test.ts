@@ -7,10 +7,11 @@ import {
   toPTBFunctionOpenSignatures,
   toPTBModuleData,
 } from '../src/ptb/move/toPTBModuleData';
-import type { RFEdgeData, RFNodeData } from '../src/ptb/ptbAdapter';
+import type { RFNodeData } from '../src/ptb/ptbAdapter';
 import { buildDoc } from '../src/ptb/ptbDoc';
 import { refreshMoveCallPortsFromSignatures } from '../src/ui/moveCallSignaturePorts';
 import { buildResolvedMoveCallState } from '../src/ui/nodes/cmds/MoveCallCommand/resolveMoveCall';
+import type { RFEdgeData } from '../src/ui/rfGraphProjection';
 
 const PACKAGE_ID =
   '0x0000000000000000000000000000000000000000000000000000000000000002';
@@ -382,6 +383,56 @@ describe('MoveCall resolve state', () => {
     expect(ports?.find((port) => port.id === 'out_result')?.dataType).toEqual({
       kind: 'vector',
       elem: { kind: 'move_numeric', width: 'u64' },
+    });
+  });
+
+  it('keeps edge-referenced MoveCall ports that are not in the refreshed signature', () => {
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode('u64'), moveCallNode()],
+      [
+        typeEdge(),
+        {
+          id: 'pending-arg-edge',
+          type: 'ptb-io',
+          source: 'var-0',
+          sourceHandle: 'out',
+          target: 'call',
+          targetHandle: undefined,
+          targetHandleId: 'in_arg_1',
+        } as any,
+      ],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
+      ?.ports;
+
+    expect(ports?.map((port) => port.id)).toEqual([
+      'prev',
+      'next',
+      'in_type_0',
+      'in_arg_0',
+      'out_result',
+      'in_arg_1',
+    ]);
+    expect(ports?.find((port) => port.id === 'in_arg_1')).toMatchObject({
+      role: 'io',
+      direction: 'in',
+      label: 'arg1',
+      dataType: {
+        kind: 'unknown',
+        debugInfo: 'Referenced before MoveCall signature resolved',
+      },
     });
   });
 

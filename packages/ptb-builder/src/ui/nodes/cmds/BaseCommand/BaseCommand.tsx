@@ -7,18 +7,20 @@
 // - Count stepper is shown only if the command declares a countKey.
 // - Height is determined by IO rows (+ optional right-column offset).
 
-import { memo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
-import { Position } from '@xyflow/react';
+import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import { toPTBTypeFromConcreteTypeArgument } from '@zktx.io/ptb-model';
 
 import { CommandCountStepper } from './CommandCountStepper';
 import type {
   CommandNode,
   CommandRuntimeParams,
+  Port,
   PTBNode,
 } from '../../../../ptb/graph/types';
+import { serializePTBType } from '../../../../ptb/graph/types';
 import { countKeyOf, countMinOf } from '../../../../ptb/registry';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
@@ -46,14 +48,36 @@ type BaseCmdData = {
 };
 export type BaseCmdRFNode = Node<BaseCmdData, 'ptb-cmd'>;
 
+function portSignature(port: Port): string {
+  const type = port.dataType
+    ? serializePTBType(port.dataType)
+    : (port.typeStr ?? '');
+  return `${port.id}:${type}`;
+}
+
 export const BaseCommand = memo(function BaseCommand({
+  id: rfNodeId,
   data,
 }: NodeProps<BaseCmdRFNode>) {
   const node = data?.ptbNode as PTBNode | undefined;
   const { readOnly } = usePtb();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   // IO lists in UI order (left=in, right=out).
   const { inIO, outIO } = useCommandPorts(node);
+  const handleSignature = useMemo(
+    () =>
+      [
+        ...inIO.map((port) => `in:${portSignature(port)}`),
+        ...outIO.map((port) => `out:${portSignature(port)}`),
+      ].join('|'),
+    [inIO, outIO],
+  );
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => updateNodeInternals(rfNodeId));
+    return () => cancelAnimationFrame(frame);
+  }, [handleSignature, rfNodeId, updateNodeInternals]);
 
   // Narrow to Command node to get command kind & UI map.
   const cmdNode = node?.kind === 'Command' ? (node as CommandNode) : undefined;

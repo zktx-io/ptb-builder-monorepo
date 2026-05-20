@@ -839,8 +839,13 @@ describe('model-root PTB boundary', () => {
       unresolvedMove.ports.find((port) => port.id === 'in_arg_0')?.dataType,
     ).toBeUndefined();
     expect(rf.edges.find((edge) => edge.id === 'amount-edge')).toMatchObject({
-      sourceHandle: 'out:number',
-      targetHandle: 'in_amount_0:number',
+      sourceHandle: 'out',
+      targetHandle: 'in_amount_0',
+      data: {
+        dataType: 'u64',
+        visualState: 'ok',
+        reason: 'type-compatible',
+      },
     });
 
     const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);

@@ -203,26 +203,6 @@ export function isTypeCompatible(
   return isSameType(src, dst, depth);
 }
 
-/** Authoring-time IO connection policy for new edges. */
-export function canConnectIO(
-  source: Port | undefined,
-  target: Port | undefined,
-): boolean {
-  if (!source || !target) return false;
-  if (
-    source.role !== 'io' ||
-    target.role !== 'io' ||
-    source.direction !== 'out' ||
-    target.direction !== 'in'
-  ) {
-    return false;
-  }
-  if (isUnknownType(source.dataType) || isUnknownType(target.dataType)) {
-    return false;
-  }
-  return isTypeCompatible(source.dataType, target.dataType);
-}
-
 /* Cast inference: bind an abstract number source to a concrete top-level Move integer input. */
 export function inferCastTarget(
   src?: PTBType,

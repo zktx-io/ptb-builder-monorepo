@@ -63,28 +63,6 @@ export function findPortFromStore(
   return port;
 }
 
-/** IO: true if the exact target handle is already occupied by another IO edge. */
-export function isIOTargetBusy(edges: any[], c: Connection) {
-  const tgt = c.target;
-  const tHandle = getTargetHandle(c);
-  if (!tHandle) return false;
-
-  const tBase = parseHandleTypeSuffix(tHandle).baseId;
-
-  return edges?.some((e: any) => {
-    if (e.type !== 'ptb-io' || e.target !== tgt) return false;
-
-    const eh =
-      ((e as any).targetHandleId as string | null | undefined) ??
-      ((e as any).targetHandle as string | null | undefined);
-    const eTargetHandle = eh ?? undefined;
-    if (!eTargetHandle) return false;
-
-    const eBase = parseHandleTypeSuffix(eTargetHandle).baseId;
-    return eBase && tBase && eBase === tBase;
-  });
-}
-
 /** Flow: allow only next -> prev (by handle ids). */
 export function isFlowDirectionOK(c: Connection) {
   const sh = getSourceHandle(c);

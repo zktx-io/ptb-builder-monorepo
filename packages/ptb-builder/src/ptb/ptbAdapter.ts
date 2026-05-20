@@ -4,11 +4,10 @@
 // PTBGraph ↔ React Flow adapter.
 // - Nodes: SSOT lives in node.data.ptbNode. Variable nodes always materialize
 //   a single IO out port that mirrors varType.
-// - Edges: sourceHandle/targetHandle are projected into the React Flow handle
-//   namespace used by rendered nodes. Handle aliases are also set because local
-//   edge helpers read both field spellings.
-// - Edge badges: serialized types are derived from the port dataType, not from
-//   handle suffixes (suffixes are conservative).
+// - Edges: sourceHandle/targetHandle use stable rendered port ids. Handle
+//   aliases are also set because local edge helpers read both field spellings.
+// - Edge badges: serialized types are derived from the port dataType or edge
+//   metadata, not from React Flow handle identity.
 // -----------------------------------------------------------------------------
 
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
@@ -22,25 +21,20 @@ import {
 import type {
   CommandNode,
   CommandUIParams,
-  NumericWidth,
   Port,
   PTBEdge,
   PTBGraph,
   PTBNode,
 } from './graph/types';
-import {
-  buildHandleId,
-  parseHandleTypeSuffix,
-  serializePTBType,
-} from './graph/types';
+import { parseHandleTypeSuffix, serializePTBType } from './graph/types';
 import { PORTS } from './portTemplates';
 import { buildCommandPorts, sanitizeCommandUIParams } from './registry';
 import { extractHandles } from '../ui/handles/handleUtils';
-
-type RFEdgeWithHandleAliases = RFEdge<RFEdgeData> & {
-  sourceHandleId?: string;
-  targetHandleId?: string;
-};
+import {
+  projectEdgesForCurrentPorts,
+  type RFEdgeData,
+  type RFEdgeWithHandleAliases,
+} from '../ui/rfGraphProjection';
 
 const RF_NODE_Z_INDEX = 10;
 const RF_EDGE_Z_INDEX = 0;
@@ -49,12 +43,6 @@ const RF_EDGE_Z_INDEX = 0;
 export interface RFNodeData extends Record<string, unknown> {
   label?: string;
   ptbNode?: PTBNode;
-}
-
-/** UI edge payload: serialized type & cast metadata for badges/debug */
-export interface RFEdgeData extends Record<string, unknown> {
-  dataType?: string;
-  cast?: { to: NumericWidth };
 }
 
 /** Ensure a Variable node carries a concrete IO out port that reflects its varType. */
@@ -294,6 +282,89 @@ function projectEdgeHandleForRF(
     : handle;
 }
 
+function labelForEdgeReferencedPort(node: PTBNode, port: Port): string {
+  if (node.kind === 'Command' && node.command === 'moveCall') {
+    if (port.role === 'type' && port.direction === 'in') {
+      const index = indexedInputHandleIndex(port.id, 'type');
+      if (index !== undefined) return `T${index}`;
+    }
+    if (port.role === 'io' && port.direction === 'in') {
+      const index = indexedInputHandleIndex(port.id, 'arg');
+      if (index !== undefined) return `arg${index}`;
+    }
+  }
+  return port.id;
+}
+
+function edgeReferencedPortForRF(
+  node: PTBNode,
+  edge: PTBEdge,
+  endpoint: 'source' | 'target',
+): Port | undefined {
+  if (node.kind !== 'Command') return undefined;
+  const projected = projectEdgeHandleForRF(edge, endpoint);
+  const id = parseHandleTypeSuffix(projected).baseId;
+  if (!id) return undefined;
+
+  const port: Port = {
+    id,
+    role: edge.kind,
+    direction: endpoint === 'source' ? 'out' : 'in',
+  };
+  return {
+    ...port,
+    label: labelForEdgeReferencedPort(node, port),
+  };
+}
+
+function materializeEdgeReferencedCommandPorts(
+  nodes: readonly PTBNode[],
+  edges: readonly PTBEdge[],
+): PTBNode[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const additions = new Map<string, Port[]>();
+
+  function add(nodeId: string, port: Port | undefined) {
+    if (!port) return;
+    const ports = additions.get(nodeId) ?? [];
+    ports.push(port);
+    additions.set(nodeId, ports);
+  }
+
+  for (const edge of edges) {
+    const sourceNode = nodeById.get(edge.source);
+    const targetNode = nodeById.get(edge.target);
+    if (sourceNode) {
+      add(edge.source, edgeReferencedPortForRF(sourceNode, edge, 'source'));
+    }
+    if (targetNode) {
+      add(edge.target, edgeReferencedPortForRF(targetNode, edge, 'target'));
+    }
+  }
+
+  if (additions.size === 0) return [...nodes];
+
+  return nodes.map((node) => {
+    if (node.kind !== 'Command') return node;
+    const portsToAdd = additions.get(node.id);
+    if (!portsToAdd?.length) return node;
+
+    const seen = new Set((node.ports ?? []).map(keyedPort));
+    const missing = portsToAdd.filter((port) => {
+      const key = keyedPort(port);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (missing.length === 0) return node;
+
+    return {
+      ...node,
+      ports: [...(node.ports ?? []), ...missing],
+    };
+  });
+}
+
 function projectFlowHandleForPTB(
   handle: string,
   endpoint: 'source' | 'target',
@@ -350,21 +421,17 @@ function projectEdgeHandleForPTB(
 
 /**
  * PTBGraph → React Flow
- * - Project sourceHandle/targetHandle into the RF handle namespace.
+ * - Project sourceHandle/targetHandle into the stable rendered handle namespace.
  * - dataType for badges comes from the materialized port types (more reliable than suffix).
  */
 export function ptbToRF(graph: PTBGraph): {
   nodes: RFNode<RFNodeData>[];
   edges: RFEdge<RFEdgeData>[];
 } {
-  const matNodes = graph.nodes.map((n) => materializeNodeForRF(n));
-  const portByNodeAndId = new Map<string, Port>();
-  for (const node of matNodes) {
-    for (const port of node.ports ?? []) {
-      portByNodeAndId.set(`${node.id}:${port.id}`, port);
-    }
-  }
-
+  const matNodes = materializeEdgeReferencedCommandPorts(
+    graph.nodes.map((n) => materializeNodeForRF(n)),
+    graph.edges,
+  );
   const nodes: RFNode<RFNodeData>[] = matNodes.map((n) => ({
     id: n.id,
     type: mapPTBNodeToRFType(n),
@@ -376,40 +443,23 @@ export function ptbToRF(graph: PTBGraph): {
   const edges: RFEdge<RFEdgeData>[] = graph.edges.map((e) => {
     const projectedSourceHandle = projectEdgeHandleForRF(e, 'source');
     const projectedTargetHandle = projectEdgeHandleForRF(e, 'target');
-    const sBase = parseHandleTypeSuffix(projectedSourceHandle).baseId;
-    const tBase = parseHandleTypeSuffix(projectedTargetHandle).baseId;
 
-    const sPort = sBase
-      ? portByNodeAndId.get(`${e.source}:${sBase}`)
-      : undefined;
-    const tPort = tBase
-      ? portByNodeAndId.get(`${e.target}:${tBase}`)
-      : undefined;
-    const sh = sPort ? buildHandleId(sPort) : projectedSourceHandle;
-    const th = tPort ? buildHandleId(tPort) : projectedTargetHandle;
-
-    const srcTypeStr = sPort?.dataType
-      ? serializePTBType(sPort.dataType)
-      : undefined;
     const edge: RFEdgeWithHandleAliases = {
       id: e.id,
       source: e.source,
       target: e.target,
-      sourceHandle: sh,
-      targetHandle: th,
-      sourceHandleId: sh,
-      targetHandleId: th,
+      sourceHandle: projectedSourceHandle,
+      targetHandle: projectedTargetHandle,
+      sourceHandleId: projectedSourceHandle,
+      targetHandleId: projectedTargetHandle,
       type: mapPTBEdgeToRFType(e),
       zIndex: RF_EDGE_Z_INDEX,
-      data: {
-        dataType: srcTypeStr,
-        cast: e.cast,
-      },
+      data: e.cast ? { cast: e.cast } : undefined,
     };
     return edge;
   });
 
-  return { nodes, edges };
+  return { nodes, edges: projectEdgesForCurrentPorts(nodes, edges) };
 }
 
 /** Single-node helper */

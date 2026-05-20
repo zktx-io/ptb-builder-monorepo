@@ -1,8 +1,8 @@
 // src/ui/nodes/cmds/MoveCallCommand/MoveCallCommand.tsx
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Node, NodeProps } from '@xyflow/react';
-import { Position } from '@xyflow/react';
+import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import { parseObjectId } from '@zktx.io/ptb-model';
 
 import type {
@@ -11,6 +11,7 @@ import type {
   Port,
   PTBNode,
 } from '../../../../ptb/graph/types';
+import { serializePTBType } from '../../../../ptb/graph/types';
 import type { PTBFunctionData } from '../../../../ptb/ptbDoc';
 import { PTBHandleFlow } from '../../../handles/PTBHandleFlow';
 import { PTBHandleIO } from '../../../handles/PTBHandleIO';
@@ -76,7 +77,15 @@ function splitMoveCallTarget(
   return { pkgId, moduleName, functionName };
 }
 
+function portSignature(port: Port): string {
+  const type = port.dataType
+    ? serializePTBType(port.dataType)
+    : (port.typeStr ?? '');
+  return `${port.id}:${type}`;
+}
+
 export const MoveCallCommand = memo(function MoveCallCommand({
+  id: rfNodeId,
   data,
 }: NodeProps<MoveCallRFNode>) {
   const node = data?.ptbNode as CommandNode | undefined;
@@ -94,6 +103,7 @@ export const MoveCallCommand = memo(function MoveCallCommand({
     toast,
     readOnly,
   } = usePtb();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   // Local buffers avoid graph writes while typing an unresolved target.
   const [pkgIdBuf, setPkgIdBuf] = useState<string>(pkgIdValue);
@@ -115,6 +125,20 @@ export const MoveCallCommand = memo(function MoveCallCommand({
   // Ports (already materialized by registry; we only render them).
   const { inIO, outIO, inType } = useCommandPorts(node);
   const typeArgumentCount = inType.length;
+  const handleSignature = useMemo(
+    () =>
+      [
+        ...inType.map((port) => `type:${port.id}`),
+        ...inIO.map((port) => `in:${portSignature(port)}`),
+        ...outIO.map((port) => `out:${portSignature(port)}`),
+      ].join('|'),
+    [inIO, inType, outIO],
+  );
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => updateNodeInternals(rfNodeId));
+    return () => cancelAnimationFrame(frame);
+  }, [handleSignature, rfNodeId, updateNodeInternals]);
 
   // Min-height accounts for IO rows plus the fixed controls offset.
   const minHeight = minHeightWithOffset(

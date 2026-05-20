@@ -16,13 +16,14 @@ import type { ElkNode } from 'elkjs/lib/elk.bundled.js';
 import { isFlowEdge } from './flowPath';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
 import { inputIoPorts, outPortsWithPrefix } from '../../ptb/portQueries';
-import type { RFEdgeData, RFNodeData } from '../../ptb/ptbAdapter';
+import type { RFNodeData } from '../../ptb/ptbAdapter';
 import {
   BOTTOM_PADDING,
   NODE_SIZES,
   ROW_SPACING,
   TITLE_TO_IO_GAP,
 } from '../nodes/nodeLayout';
+import type { RFEdgeData } from '../rfGraphProjection';
 
 export type LayoutPositions = Record<string, { x: number; y: number }>;
 export type AutoLayoutOptions = {

@@ -661,6 +661,10 @@ describe('builder source guardrails', () => {
       'utf8',
     );
     const ptbFlow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const edgeLifecycle = readFileSync(
+      join(sourceRoot, 'ui', 'edgeLifecycle.ts'),
+      'utf8',
+    );
     const autoLayout = readFileSync(
       join(sourceRoot, 'ui', 'utils', 'autoLayout.ts'),
       'utf8',
@@ -671,7 +675,7 @@ describe('builder source guardrails', () => {
     expect(flow).not.toContain("startsWith('flow:')");
     expect(flow).not.toContain('ptbEdge');
     expect(ptbFlow).not.toContain('function createsLoop');
-    expect(ptbFlow).toContain('createsFlowLoop(filtered');
+    expect(edgeLifecycle).toContain('createsFlowLoop(filteredEdges');
     expect(ptbFlow).not.toContain('label: cast ?');
     expect(ptbFlow).not.toContain('(e as any).label');
     expect(autoLayout).toContain("import { isFlowEdge } from './flowPath';");
@@ -847,6 +851,38 @@ describe('builder source guardrails', () => {
     expect(provider).not.toContain('PTBMovePackageMetadata');
     expect(provider).not.toContain('getMoveFunction: (');
     expect(provider).not.toContain('const getMoveFunction =');
+  });
+
+  it('refreshes React Flow handle internals when command IO handles change', () => {
+    const baseCommand = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'cmds', 'BaseCommand', 'BaseCommand.tsx'),
+      'utf8',
+    );
+    const moveCall = readFileSync(
+      join(
+        sourceRoot,
+        'ui',
+        'nodes',
+        'cmds',
+        'MoveCallCommand',
+        'MoveCallCommand.tsx',
+      ),
+      'utf8',
+    );
+
+    for (const text of [baseCommand, moveCall]) {
+      expect(text).toContain('useUpdateNodeInternals');
+      expect(text).toContain('updateNodeInternals(rfNodeId)');
+      expect(text).toContain('key={port.id}');
+      expect(text).not.toContain('buildHandleId');
+    }
+
+    const ioHandle = readFileSync(
+      join(sourceRoot, 'ui', 'handles', 'PTBHandleIO.tsx'),
+      'utf8',
+    );
+    expect(ioHandle).toContain('const handleId = port.id;');
+    expect(ioHandle).not.toContain('buildHandleId');
   });
 
   it('keeps unsupported source folders absent', () => {

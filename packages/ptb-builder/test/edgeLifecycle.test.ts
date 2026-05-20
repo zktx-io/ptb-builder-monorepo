@@ -2,11 +2,11 @@ import type { Edge as RFEdge } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
 
 import type { PTBNode, PTBType } from '../src/ptb/graph/types';
-import type { RFEdgeData } from '../src/ptb/ptbAdapter';
 import {
+  decideConnection,
   filterConflictingIOEdges,
-  pruneExistingIOEdges,
-} from '../src/ui/edgePruning';
+} from '../src/ui/edgeLifecycle';
+import type { RFEdgeData } from '../src/ui/rfGraphProjection';
 
 const scalar = (
   name: 'address' | 'bool' | 'id' | 'number' | 'string',
@@ -15,11 +15,68 @@ const scalar = (
   name,
 });
 
-const moveNumeric = (
-  width: 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'u256',
-): PTBType => ({ kind: 'move_numeric', width });
+describe('connection decision', () => {
+  it('creates incompatible IO edges so diagnostics can explain the problem', () => {
+    const nodes = [
+      node('source', { out: scalar('string') }),
+      node('target', { in_recipient: scalar('address') }),
+    ].map(rfNode);
 
-const option = (elem: PTBType): PTBType => ({ kind: 'option', elem });
+    const decision = decideConnection(nodes, [], {
+      source: 'source',
+      sourceHandle: 'out',
+      target: 'target',
+      targetHandle: 'in_recipient',
+    });
+
+    expect(decision).toMatchObject({
+      action: 'create',
+      edgeType: 'ptb-io',
+      data: {
+        dataType: 'string',
+        visualState: 'incompatible',
+        reason: 'type-incompatible',
+      },
+    });
+  });
+
+  it('creates pending IO edges while endpoint types are unresolved', () => {
+    const nodes = [
+      node('source', { out: unknownType }),
+      node('target', { in_recipient: scalar('address') }),
+    ].map(rfNode);
+
+    const decision = decideConnection(nodes, [], {
+      source: 'source',
+      sourceHandle: 'out',
+      target: 'target',
+      targetHandle: 'in_recipient',
+    });
+
+    expect(decision).toMatchObject({
+      action: 'create',
+      edgeType: 'ptb-io',
+      data: {
+        dataType: 'address',
+        visualState: 'pending',
+        reason: 'type-pending',
+      },
+    });
+  });
+
+  it('rejects self connections before edge creation', () => {
+    const nodes = [node('source', { out: scalar('address') })].map(rfNode);
+
+    expect(
+      decideConnection(nodes, [], {
+        source: 'source',
+        sourceHandle: 'out',
+        target: 'source',
+        targetHandle: 'out',
+      }),
+    ).toEqual({ action: 'reject', reason: 'self-loop' });
+  });
+});
 
 const unknownType: PTBType = { kind: 'unknown' };
 
@@ -65,7 +122,7 @@ function edge(
   };
 }
 
-describe('IO edge pruning', () => {
+describe('IO edge replacement', () => {
   it('replaces existing IO target edges by base handle, ignoring type suffixes', () => {
     const edges = [
       edge(
@@ -120,72 +177,5 @@ describe('IO edge pruning', () => {
     } as any);
 
     expect(filtered?.map((item) => item.id)).toEqual(['other-base']);
-  });
-
-  it('keeps compatible IO edges after stripping React Flow type suffixes', () => {
-    const nodes = [
-      node('source', { out: scalar('number') }),
-      node('target', { in_amount_0: moveNumeric('u64') }),
-    ].map(rfNode);
-    const edges = [
-      {
-        ...edge('compatible', 'source', '', 'target', ''),
-        sourceHandleId: 'out:number',
-        targetHandleId: 'in_amount_0:u64',
-      } as RFEdge<RFEdgeData>,
-    ];
-
-    expect(pruneExistingIOEdges(nodes, edges).map((item) => item.id)).toEqual([
-      'compatible',
-    ]);
-  });
-
-  it('drops incompatible option and non-option IO edges', () => {
-    const nodes = [
-      node('source', { out: option(scalar('address')) }),
-      node('target', { in_recipient: scalar('address') }),
-    ].map(rfNode);
-    const edges = [
-      edge(
-        'incompatible',
-        'source',
-        'out:option<address>',
-        'target',
-        'in_recipient:address',
-      ),
-    ];
-
-    expect(pruneExistingIOEdges(nodes, edges)).toEqual([]);
-  });
-
-  it('preserves IO edges with unknown endpoint types and non-IO edges', () => {
-    const nodes = [
-      node('source', { out: unknownType }),
-      node('target', { in_recipient: scalar('address') }),
-    ].map(rfNode);
-    const edges = [
-      edge('unknown-io', 'source', 'out', 'target', 'in_recipient'),
-      edge('flow', 'source', 'flow-out', 'target', 'flow-in', 'ptb-flow'),
-    ];
-
-    expect(pruneExistingIOEdges(nodes, edges).map((item) => item.id)).toEqual([
-      'unknown-io',
-      'flow',
-    ]);
-  });
-
-  it('drops IO edges with missing endpoint ports', () => {
-    const nodes = [
-      node('source', { out: scalar('address') }),
-      node('target', { in_recipient: scalar('address') }),
-    ].map(rfNode);
-    const edges = [
-      edge('dangling', 'source', 'missing', 'target', 'in_recipient'),
-      edge('compatible', 'source', 'out', 'target', 'in_recipient'),
-    ];
-
-    expect(pruneExistingIOEdges(nodes, edges).map((item) => item.id)).toEqual([
-      'compatible',
-    ]);
   });
 });

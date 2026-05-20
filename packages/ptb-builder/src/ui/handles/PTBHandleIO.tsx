@@ -1,8 +1,8 @@
 // src/ui/handles/PTBHandleIO.tsx
 
 /** IO handle component.
- *  - Stable handle id is derived via buildHandleId(port) and may include a
- *    coarse type suffix (e.g., ":number", ":object", "vector<number>").
+ *  - Stable handle id is the canonical port id. Type data changes the visual
+ *    styling and edge metadata, not the React Flow handle identity.
  *  - Connection validation resolves structured PTB ports from the store and
  *    applies the same authoring policy as the canvas connection handler.
  *  - Visual category/glyphs are purely cosmetic; they do not affect validation.
@@ -22,20 +22,14 @@ import {
 } from '@xyflow/react';
 
 import {
-  findPortFromStore,
-  hasConcreteEnds,
-  isIOTargetBusy,
-  isSelfEdge,
-} from './handleUtils';
-import {
-  canConnectIO,
   ioCategoryOf,
   ioCategoryOfSerialized,
   isOptionSerialized,
   isVectorSerialized,
 } from '../../ptb/graph/typecheck';
-import { buildHandleId, serializePTBType } from '../../ptb/graph/types';
+import { serializePTBType } from '../../ptb/graph/types';
 import type { Port, PTBType } from '../../ptb/graph/types';
+import { decideConnection } from '../edgeLifecycle';
 
 /** Strict check: true only for PTB vector<T> (structured type). */
 function isVectorType(t?: PTBType): boolean {
@@ -60,8 +54,10 @@ function PTBHandleIOComponent({
 }: PTBHandleIOProps) {
   const store = useStoreApi();
 
-  // Stable RF handle id (may include ":type" suffix for IO)
-  const handleId = useMemo(() => buildHandleId(port), [port]);
+  // Stable RF handle id. Do not include type suffixes: Move signatures can
+  // change port types after edges exist, and React Flow requires handle ids to
+  // remain stable across that visual/type refresh.
+  const handleId = port.id;
 
   // Serialized hint is for badges/debug only; not the source of truth.
   const serializedHint = useMemo(
@@ -118,26 +114,10 @@ function PTBHandleIOComponent({
   const isValidConnection: IsValidConnection = useCallback(
     (edgeOrConn) => {
       const c = edgeOrConn as Connection;
-      if (!hasConcreteEnds(c)) return false;
-      if (isSelfEdge(c)) return false;
-
       const state = store.getState() as any;
       const nodes = Array.isArray(state.nodes) ? state.nodes : [];
       const edges = Array.isArray(state.edges) ? state.edges : [];
-      if (isIOTargetBusy(edges, c)) return false;
-
-      const sourcePort = findPortFromStore(
-        nodes,
-        c.source!,
-        c.sourceHandle as any,
-      );
-      const targetPort = findPortFromStore(
-        nodes,
-        c.target!,
-        c.targetHandle as any,
-      );
-
-      return canConnectIO(sourcePort, targetPort);
+      return decideConnection(nodes, edges, c).action === 'create';
     },
     [store],
   );

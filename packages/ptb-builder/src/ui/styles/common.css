@@ -8,7 +8,7 @@
   --ptb-flow-width: 2.75;
   --ptb-flow-dash: 5 5;
 
-  /* IO edge widths/dash (colors live in theme files) */
+  /* IO edge widths (colors live in theme files) */
   --ptb-io-address-width: 2.5;
   --ptb-io-number-width: 2.5;
   --ptb-io-bool-width: 2.5;
@@ -17,7 +17,6 @@
   --ptb-io-id-width: 2.5;
 
   --ptb-io-unknown-width: 2;
-  --ptb-io-unknown-dash: 4 4;
 
   /* Assets / Modal list */
   --ptb-assets-list-h: 58vh;
@@ -182,7 +181,10 @@
   --xy-edge-stroke: var(--ptb-io-unknown-stroke);
   --xy-edge-stroke-selected: var(--ptb-io-unknown-stroke-active);
   stroke-width: var(--ptb-io-unknown-width);
-  stroke-dasharray: var(--ptb-io-unknown-dash);
+}
+
+.ptb-io-edge.is-incompatible {
+  stroke-dasharray: 5 3 !important;
 }
 
 /* Base edge state uses the package stroke variable. */

@@ -13,8 +13,8 @@ import { BaseEdge, type EdgeProps, getBezierPath } from '@xyflow/react';
 
 import { ioCategoryOfSerialized } from '../../ptb/graph/typecheck';
 import { parseHandleTypeSuffix } from '../../ptb/graph/types';
-import type { RFEdgeData } from '../../ptb/ptbAdapter';
 import { extractHandles } from '../handles/handleUtils';
+import type { RFEdgeData } from '../rfGraphProjection';
 
 /**
  * IO edge renderer:
@@ -55,6 +55,7 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
   const tgtType = parseHandleTypeSuffix(tgtH).typeStr;
   const serializedType = edgeData?.dataType ?? srcType ?? tgtType;
   const cat = ioCategoryOfSerialized(serializedType);
+  const visualState = edgeData?.visualState ?? 'ok';
 
   return (
     <BaseEdge
@@ -63,6 +64,7 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
       className={[
         'ptb-io-edge',
         `ptb-io-edge--${cat}`,
+        `is-${visualState}`,
         selected ? 'is-selected' : '',
       ].join(' ')}
       interactionWidth={20}
@@ -71,7 +73,7 @@ export const EdgeIo = memo(function EdgeIo(props: EdgeProps) {
         vectorEffect: 'non-scaling-stroke',
         cursor: 'pointer',
       }}
-      aria-label="io-edge"
+      aria-label={visualState === 'ok' ? 'io-edge' : `${visualState} io-edge`}
       data-edge-id={id}
     />
   );
