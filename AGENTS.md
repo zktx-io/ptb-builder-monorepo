@@ -258,6 +258,61 @@ Rules:
 - Do not treat SDK builder conveniences such as `$Intent`, `UnresolvedPure`, or `UnresolvedObject` as canonical raw PTB commands.
 - Mermaid, TypeScript SDK code strings, raw PTB conversion, and runtime adapters should use `TransactionIR` as their transaction-semantics input unless implementation evidence proves a different boundary is safer.
 
+## SDK, Object Metadata, And Artifact Boundaries
+
+SDK `Transaction` helpers are runtime construction surfaces, not the source of
+truth for the canonical raw PTB, `TransactionIR`, or `PTBGraph` shape. Use the
+pinned SDK source to verify supported helper behavior, but do not copy SDK
+builder-internal convenience shapes such as `UnresolvedObject` or
+`UnresolvedPure` into canonical raw PTB or model document formats. When a
+runtime adapter intentionally emits an SDK helper call such as `tx.object(id)`,
+that is a builder/runtime construction decision, must stay separate from raw
+PTB conversion, and must document any host requirement such as building with an
+SDK client.
+
+When the pinned SDK has a public helper that represents the intended runtime or
+TypeScript authoring surface, use that helper instead of rebuilding its
+resolution behavior in builder UI, model conversion, or local metadata rules.
+Using the SDK only as reference material while implementing a similar local
+helper is a design defect unless source evidence proves the public helper cannot
+satisfy the verified boundary.
+Generated TypeScript SDK code should use the same public helper surface that a
+human SDK user would use. Do not add local object usage selectors, owner-based
+reference construction, or resolved-reference synthesis to replace a supported
+SDK helper such as `tx.object(id)`. Rebuilding a supported SDK helper's
+behavior locally is not a fallback; it is unnecessary work that adds review
+surface, user-flow complexity, and future refactor cost without improving the
+PTB boundary.
+
+Object metadata, resolved object references, and MoveCall argument usage are
+different facts:
+
+- Object metadata is the object identity and type information needed for
+  authoring and display, such as `objectId` and `typeTag`.
+- A resolved object reference is raw PTB data, such as an owned object
+  `objectId/version/digest`, a shared object `initialSharedVersion/mutable`, or
+  a receiving reference.
+- MoveCall argument usage is determined by the loaded Move function signature
+  and the SDK/runtime build boundary, not by Object node metadata alone or an
+  Object node UI choice.
+
+`@zktx.io/ptb-builder` may load object metadata for user convenience and type
+matching, but builder-authored Object nodes must not ask users to manually pick
+raw object usage modes such as object-ref, receiving, shared readonly, or shared
+mutable. If a resolved object reference came from decoded raw/on-chain PTB data,
+preserve it for fidelity. Do not invent a resolved raw reference from metadata
+loading, and do not infer ownership, receiving status, shared-object mutability,
+or resolved reference fields from display metadata.
+
+Raw exportability, TypeScript SDK code renderability, and runtime
+`Transaction` buildability are separate artifact gates. Do not reject a
+`TransactionIR` for every artifact just because one artifact cannot represent
+it. For example, an unresolved object id is not raw-exportable as a resolved raw
+object reference, but may still be renderable or buildable through a pinned SDK
+helper such as `tx.object(id)`. Conversely, a helper supported by runtime
+construction is not evidence that raw PTB conversion should accept the helper's
+internal unresolved shape.
+
 ## Scope Interpretation
 
 Do not interpret a user request as the lowest-effort literal edit that could satisfy the words in isolation. Interpret it by the product outcome the user is trying to make true, the affected boundary, and the adjacent invariants that must hold for the work to be complete.
