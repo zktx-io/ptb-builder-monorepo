@@ -34,7 +34,12 @@ import {
   type MovePackageSignatureEvidence,
   normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
-import { NUMERIC_WIDTHS, validateGraphPTBTypeInto } from '../ptbType.js';
+import {
+  isPTBType,
+  isPureInputPTBType,
+  NUMERIC_WIDTHS,
+  validateGraphPTBTypeInto,
+} from '../ptbType.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -823,7 +828,7 @@ function validateVariableSourceCompatibility(
 
   if (!rawInput) return;
   if (rawInput.kind === 'Pure') {
-    if (!isPureGraphType(varType)) {
+    if (!isPTBType(varType) || !isPureInputPTBType(varType)) {
       diagnostics.push(
         graphDiagnostic(
           'graph.variable.rawInputType',
@@ -854,27 +859,6 @@ function validateVariableSourceCompatibility(
         `${path}.varType`,
       ),
     );
-  }
-}
-
-export function isPureGraphType(
-  type: Record<string, unknown> | undefined,
-): boolean {
-  if (!type || typeof type.kind !== 'string') return false;
-  switch (type.kind) {
-    case 'unknown':
-    case 'move_numeric':
-      return true;
-    case 'scalar':
-      return type.name !== 'number';
-    case 'vector':
-    case 'option':
-      return isPlainObject(type.elem) && isPureGraphType(type.elem);
-    case 'object':
-    case 'tuple':
-      return false;
-    default:
-      return false;
   }
 }
 

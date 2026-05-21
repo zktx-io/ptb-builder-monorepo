@@ -60,6 +60,7 @@ import {
   RAW_ARGUMENT_INDEX_MAX,
   rawTransactionToIR,
   RESULT_HANDLE_ID,
+  serializePTBType,
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
   transactionIRToGraph,
@@ -92,6 +93,7 @@ import type {
   TypeArgumentNode,
   VariableNode,
 } from './index.js';
+import { inferTransactionIRInputTypes } from './inputTypeEvidence.js';
 import { STRUCTURAL_IGNORED_RAW_SOURCE_DIAGNOSTIC_CODES } from './ir/structural.js';
 
 function normalizedObjectId(value: string): string {
@@ -204,6 +206,12 @@ describe('public package surface', () => {
     });
     expect(typeof inferGraphInputTypes).toBe('function');
     expect(typeof materializeGraphInputValues).toBe('function');
+    expect(
+      serializePTBType({
+        kind: 'vector',
+        elem: { kind: 'move_numeric', width: 'u8' },
+      }),
+    ).toBe('vector<u8>');
     expect(RAW_ARGUMENT_INDEX_MAX).toBe(65_535);
     expect(MAX_RESULT_COUNT).toBe(65_536);
     expect(isNonNegativeSafeInteger(65_536)).toBe(true);
@@ -3326,6 +3334,375 @@ describe('TransactionIR renderers', () => {
     );
   });
 
+  it('labels Pure inputs in Mermaid from shared command input type evidence', () => {
+    const amountBytes = pureBytes('u64', '7');
+    const recipientBytes = pureBytes('address', normalizedObjectId('9'));
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        { id: 'amount', kind: 'Pure', bytes: amountBytes },
+        { id: 'recipient', kind: 'Pure', bytes: recipientBytes },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'GasCoin' },
+          amounts: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
+        },
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 0 }],
+          address: { kind: 'Input', index: 1 },
+          resultCount: 0,
+        },
+      ],
+    };
+    const before = JSON.parse(JSON.stringify(ir)) as TransactionIR;
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([
+      { inputIndex: 0, type: { kind: 'move_numeric', width: 'u64' } },
+      { inputIndex: 1, type: { kind: 'scalar', name: 'address' } },
+    ]);
+    expect(mermaid).toContain('Input 0: Pure (u64)<br/>bytes');
+    expect(mermaid).toContain('Input 1: Pure (address)<br/>bytes');
+    expect(ir).toEqual(before);
+  });
+
+  it('does not infer over an explicit conflicting Pure input type in Mermaid', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          type: { kind: 'object' },
+        },
+        {
+          id: 'amount',
+          kind: 'Pure',
+          value: '7',
+          type: { kind: 'move_numeric', width: 'u8' },
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0 },
+          amounts: [{ kind: 'Input', index: 1 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(mermaid).toContain('Input 1: Pure (u8)<br/>value 7');
+    expect(mermaid).not.toContain('Input 1: Pure (u64)');
+    expect(mermaid).toContain('diag0["ir.arg.pureType"]');
+  });
+
+  it('uses an explicit matching Pure input type without recording inference', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          type: { kind: 'object' },
+        },
+        {
+          id: 'amount',
+          kind: 'Pure',
+          value: '7',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0 },
+          amounts: [{ kind: 'Input', index: 1 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(mermaid).toContain('Input 1: Pure (u64)<br/>value 7');
+    expect(mermaid).not.toContain('ir.arg.pureType');
+  });
+
+  it('does not infer Pure labels for editable values without raw bytes', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          type: { kind: 'object' },
+        },
+        {
+          id: 'amount',
+          kind: 'Pure',
+          value: '7',
+          type: { kind: 'unknown', debugInfo: 'Pure' },
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0 },
+          amounts: [{ kind: 'Input', index: 1 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(mermaid).toContain('Input 1: Pure<br/>value 7');
+    expect(mermaid).not.toContain('Input 1: Pure (u64)');
+  });
+
+  it('does not infer Pure labels from malformed raw bytes', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'coin',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+          type: { kind: 'object' },
+        },
+        { id: 'amount', kind: 'Pure', bytes: 'not-base64' },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'Input', index: 0 },
+          amounts: [{ kind: 'Input', index: 1 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(mermaid).toContain('Input 1: Pure<br/>bytes not-base64');
+    expect(mermaid).not.toContain('Input 1: Pure (u64)');
+    expect(mermaid).toContain('diag0["ir.input.pure"]');
+  });
+
+  it('does not infer from malformed MoveCall argument metadata', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'payload',
+          kind: 'Pure',
+          bytes: pureBytes('u64', '7'),
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'demo',
+          function: 'broken_signature',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [{ body: { $kind: 'vector' } } as never],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(mermaid).toContain('Input 0: Pure<br/>bytes');
+    expect(mermaid).not.toContain('Input 0: Pure (');
+    expect(mermaid).toContain('diag0["ir.command.argumentTypes"]');
+  });
+
+  it('does not infer from malformed MakeMoveVec type metadata', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'object',
+          kind: 'Object',
+          source: { kind: 'Unresolved', objectId: normalizedObjectId('1') },
+        },
+      ],
+      commands: [
+        {
+          id: 'vec',
+          kind: 'MakeMoveVec',
+          type: 7 as never,
+          elements: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(
+      validateTransactionIR(ir).map((diagnostic) => diagnostic.code),
+    ).toContain('ir.command.moveTypeTag');
+  });
+
+  it('labels MoveCall Pure inputs in Mermaid from preserved argument metadata', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'payload',
+          kind: 'Pure',
+          bytes: pureBytes('vector<u8>' as PureTypeName, [1, 2, 3]),
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'demo',
+          function: 'accept_payload',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [
+            rawSignature({ $kind: 'vector', vector: { $kind: 'u8' } }),
+          ],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(mermaid).toContain('Input 0: Pure (vector&lt;u8&gt;)<br/>bytes');
+  });
+
+  it('does not infer concrete Pure labels from unresolved MoveCall generic metadata', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'payload',
+          kind: 'Pure',
+          bytes: pureBytes('vector<u8>' as PureTypeName, [1, 2, 3]),
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'demo',
+          function: 'generic_accept',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [
+            rawSignature({
+              $kind: 'vector',
+              vector: { $kind: 'typeParameter', index: 0 },
+            }),
+          ],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const inferences = inferTransactionIRInputTypes(ir);
+    const diagnostics = validateTransactionIR(ir).map(({ code }) => code);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(inferences.inferences).toEqual([]);
+    expect(diagnostics).not.toContain('ir.arg.pureType');
+    expect(mermaid).toContain('Input 0: Pure<br/>bytes');
+    expect(mermaid).not.toContain('vector&lt;unknown');
+  });
+
+  it('uses the same inferred graph input type when rendering Mermaid from edited graph IR', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: pureBytes('u64', '7') },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          command: 'splitCoins',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_amount_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+        },
+      ],
+    };
+
+    const ir = graphToTransactionIR(graph);
+    const mermaid = transactionIRToMermaid(ir);
+
+    expect(ir.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'move_numeric', width: 'u64' },
+    });
+    expect(mermaid).toContain('Input 0: Pure (u64)<br/>bytes');
+  });
+
   it('omits MoveCall type arguments from Mermaid labels', () => {
     const mermaid = transactionIRToMermaid({
       version: 'transaction_ir_1',
@@ -3655,9 +4032,11 @@ describe('TransactionIR renderers', () => {
     );
 
     expect(mermaid).toContain(
-      'Input 0: Pure<br/>value line<br/>next [U+202E][U+200B][U+D800][U+2028][U+2029][U+0080][U+009F]\uD83C\uDF89',
+      'Input 0: Pure (string)<br/>value line<br/>next [U+202E][U+200B][U+D800][U+2028][U+2029][U+0080][U+009F]\uD83C\uDF89',
     );
-    expect(mermaid).toContain('Input 1: Pure<br/>value null');
+    expect(mermaid).toContain(
+      'Input 1: Pure (option&lt;u64&gt;)<br/>value null',
+    );
     expect(mermaid).toContain(
       `MoveCall ${normalizedObjectId('2')}::mod&quot;ule&lt;::f`,
     );
@@ -3693,8 +4072,64 @@ describe('TransactionIR renderers', () => {
       { showArgumentValues: true },
     );
 
-    expect(mermaid).toContain('Input 0: Pure<br/>value [[1,2],[3,4]]');
+    expect(mermaid).toContain(
+      'Input 0: Pure (vector&lt;vector&lt;u8&gt;&gt;)<br/>value [[1,2],[3,4]]',
+    );
     expect(mermaid).not.toContain('value 1,2,3,4');
+  });
+
+  it('summarizes long array values in Mermaid input labels with remaining item count', () => {
+    const mermaid = transactionIRToMermaid(
+      {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'bytes',
+            kind: 'Pure',
+            value: Array.from({ length: 247 }, (_value, index) => index),
+            type: {
+              kind: 'vector',
+              elem: { kind: 'move_numeric', width: 'u8' },
+            },
+          },
+        ],
+        diagnostics: [],
+        commands: [],
+      },
+      { showArgumentValues: true },
+    );
+
+    expect(mermaid).toContain(
+      'Input 0: Pure (vector&lt;u8&gt;)<br/>value [0,1,2,... +244]',
+    );
+    expect(mermaid).not.toContain('value [0,1,2,3');
+  });
+
+  it('preserves string scalar quoting in Mermaid array value previews', () => {
+    const mermaid = transactionIRToMermaid(
+      {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'strings',
+            kind: 'Pure',
+            value: ['1', '2', '3', '4'],
+            type: {
+              kind: 'vector',
+              elem: { kind: 'scalar', name: 'string' },
+            },
+          },
+        ],
+        diagnostics: [],
+        commands: [],
+      },
+      { showArgumentValues: true },
+    );
+
+    expect(mermaid).toContain(
+      'Input 0: Pure (vector&lt;string&gt;)<br/>value [&quot;1&quot;,&quot;2&quot;,&quot;3&quot;,... +1]',
+    );
+    expect(mermaid).not.toContain('value [1,2,3,... +1]');
   });
 
   it('generates SDK 2.16.2 style transaction code', () => {
@@ -6543,6 +6978,114 @@ describe('graph conversion', () => {
       kind: 'Pure',
       type: { kind: 'scalar', name: 'address' },
     });
+  });
+
+  it('prefers command semantic evidence over stale input port dataType', () => {
+    const amountBytes = pureBytes('u64', '7');
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: amountBytes },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          command: 'splitCoins',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_coin', direction: 'in', role: 'io' },
+            {
+              id: 'in_amount_0',
+              direction: 'in',
+              role: 'io',
+              dataType: { kind: 'scalar', name: 'address' },
+            },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph);
+    const amount = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'amount',
+    );
+
+    expect(inferred.inferences).toEqual([
+      {
+        nodeId: 'amount',
+        from: { kind: 'unknown', debugInfo: 'Pure' },
+        to: { kind: 'move_numeric', width: 'u64' },
+      },
+    ]);
+    expect(amount?.varType).toEqual({ kind: 'move_numeric', width: 'u64' });
+  });
+
+  it('does not infer graph input types from malformed MakeMoveVec type metadata', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'elem',
+          kind: 'Variable',
+          name: 'elem',
+          varType: { kind: 'unknown', debugInfo: 'Object' },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'vec',
+          kind: 'Command',
+          command: 'makeMoveVec',
+          params: { runtime: { type: 7 } },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            {
+              id: 'in_elem_0',
+              direction: 'in',
+              role: 'io',
+              dataType: { kind: 'object' },
+            },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'elem-edge',
+          kind: 'io',
+          source: 'elem',
+          sourceHandle: 'out',
+          target: 'vec',
+          targetHandle: 'in_elem_0',
+        },
+      ],
+    };
+
+    const inferred = inferGraphInputTypes(graph);
+    const elem = inferred.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'elem',
+    );
+
+    expect(inferred.inferences).toEqual([]);
+    expect(inferred.graph).toBe(graph);
+    expect(elem?.varType).toEqual({ kind: 'unknown', debugInfo: 'Object' });
+    expect(collectGraphDiagnostics(graph).map((d) => d.code)).toContain(
+      'graph.command.params.runtime.type',
+    );
   });
 
   it('does not infer a Pure rawInput into an object variable type', () => {

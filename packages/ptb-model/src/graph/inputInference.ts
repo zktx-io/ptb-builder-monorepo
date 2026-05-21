@@ -11,7 +11,6 @@ import {
   type AnalyzePTBGraphOptions,
   type CommandNode,
   freezePTBGraph,
-  isPureGraphType,
   type Port,
   type PTBGraph,
   type PTBNode,
@@ -19,13 +18,15 @@ import {
   type VariableNode,
 } from './types.js';
 import {
+  commandInputSlotExpectation,
+  inputArgumentKindCanCarryType,
+  type PTBCommandInputSlot,
+} from '../inputTypeEvidence.js';
+import {
   lookupMoveSignatureEvidence,
   normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
-import {
-  toPTBTypeFromConcreteTypeArgument,
-  toPTBTypeFromOpenSignature,
-} from '../move/signature.js';
+import { ptbTypesEqual } from '../ptbType.js';
 import { parseMoveTypeTag } from '../raw/types.js';
 import { cloneJsonLike, NULL_VALUE } from '../utils.js';
 
@@ -46,6 +47,13 @@ export interface GraphInputTypeInferenceResult {
 type InferenceCandidate = {
   type: PTBType;
 };
+
+const BLOCK_PORT_FALLBACK = Symbol('block-port-fallback');
+
+type GraphCommandInputSlotResult =
+  | PTBCommandInputSlot
+  | typeof BLOCK_PORT_FALLBACK
+  | undefined;
 
 /**
  * Infers only graph input node types from concrete consumer-side command
@@ -157,46 +165,23 @@ function commandInputType(
   typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
   moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
 ): PTBType | undefined {
+  const slot = graphCommandInputSlot(
+    node,
+    targetHandle,
+    typeArgumentsByIndex,
+    moveSignatures,
+  );
+  if (slot === BLOCK_PORT_FALLBACK) return undefined;
+  const semantic = slot
+    ? commandInputSlotExpectation(slot)?.ptbType
+    : undefined;
+  if (semantic && semantic.kind !== 'unknown') return semantic;
+  if (slot) return undefined;
+
   const declared = declaredInputPortType(node, targetHandle);
   if (declared && declared.kind !== 'unknown') return declared;
 
-  switch (node.command) {
-    case 'splitCoins':
-      if (isInputHandle(targetHandle, 'coin')) return objectType();
-      if (isIndexedInputHandle(targetHandle, 'amount'))
-        return numericType('u64');
-      return undefined;
-    case 'mergeCoins':
-      if (
-        isInputHandle(targetHandle, 'destination') ||
-        isIndexedInputHandle(targetHandle, 'source')
-      ) {
-        return objectType();
-      }
-      return undefined;
-    case 'transferObjects':
-      if (isInputHandle(targetHandle, 'recipient'))
-        return scalarType('address');
-      if (isIndexedInputHandle(targetHandle, 'object')) return objectType();
-      return undefined;
-    case 'makeMoveVec':
-      if (!isIndexedInputHandle(targetHandle, 'elem')) return undefined;
-      return makeMoveVecElementType(node);
-    case 'upgrade':
-      return isInputHandle(targetHandle, 'upgradeCap')
-        ? objectType()
-        : undefined;
-    case 'moveCall':
-      return moveCallArgumentType(
-        node,
-        targetHandle,
-        typeArgumentsByIndex,
-        moveSignatures,
-      );
-    case 'publish':
-    case 'unsupported':
-      return undefined;
-  }
+  return undefined;
 }
 
 function declaredInputPortType(
@@ -209,27 +194,99 @@ function declaredInputPortType(
   )?.dataType;
 }
 
-function makeMoveVecElementType(node: CommandNode): PTBType | undefined {
-  const runtime = graphCommandRuntimeParams(node);
-  if (runtime?.type === undefined || runtime.type === NULL_VALUE) {
-    return objectType();
-  }
-  if (typeof runtime.type !== 'string') return undefined;
-  return toPTBTypeFromConcreteTypeArgument(runtime.type);
-}
-
-function moveCallArgumentType(
+function graphCommandInputSlot(
   node: CommandNode,
   targetHandle: string,
   typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
   moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
-): PTBType | undefined {
+): GraphCommandInputSlotResult {
+  switch (node.command) {
+    case 'splitCoins':
+      if (isInputHandle(targetHandle, 'coin')) {
+        return { commandKind: 'SplitCoins', field: 'coin' };
+      }
+      if (isIndexedInputHandle(targetHandle, 'amount')) {
+        return {
+          commandKind: 'SplitCoins',
+          field: 'amount',
+          index: indexedInputHandleIndex(targetHandle, 'amount') ?? 0,
+        };
+      }
+      return undefined;
+    case 'mergeCoins':
+      if (isInputHandle(targetHandle, 'destination')) {
+        return { commandKind: 'MergeCoins', field: 'destination' };
+      }
+      if (isIndexedInputHandle(targetHandle, 'source')) {
+        return {
+          commandKind: 'MergeCoins',
+          field: 'source',
+          index: indexedInputHandleIndex(targetHandle, 'source') ?? 0,
+        };
+      }
+      return undefined;
+    case 'transferObjects':
+      if (isInputHandle(targetHandle, 'recipient')) {
+        return { commandKind: 'TransferObjects', field: 'address' };
+      }
+      if (isIndexedInputHandle(targetHandle, 'object')) {
+        return {
+          commandKind: 'TransferObjects',
+          field: 'object',
+          index: indexedInputHandleIndex(targetHandle, 'object') ?? 0,
+        };
+      }
+      return undefined;
+    case 'makeMoveVec':
+      if (!isIndexedInputHandle(targetHandle, 'elem')) return undefined;
+      const type = makeMoveVecElementTypeTag(node);
+      if (type === undefined) return BLOCK_PORT_FALLBACK;
+      return {
+        commandKind: 'MakeMoveVec',
+        field: 'element',
+        index: indexedInputHandleIndex(targetHandle, 'elem') ?? 0,
+        type,
+      };
+    case 'upgrade':
+      return isInputHandle(targetHandle, 'upgradeCap')
+        ? { commandKind: 'Upgrade', field: 'ticket' }
+        : undefined;
+    case 'moveCall':
+      return moveCallArgumentSlot(
+        node,
+        targetHandle,
+        typeArgumentsByIndex,
+        moveSignatures,
+      );
+    case 'publish':
+      return { commandKind: 'Publish' };
+    case 'unsupported':
+      return { commandKind: 'Unsupported' };
+  }
+}
+
+function makeMoveVecElementTypeTag(
+  node: CommandNode,
+): string | null | undefined {
+  const runtime = graphCommandRuntimeParams(node);
+  if (runtime?.type === undefined || runtime.type === NULL_VALUE) {
+    return NULL_VALUE;
+  }
+  return typeof runtime.type === 'string' ? runtime.type : undefined;
+}
+
+function moveCallArgumentSlot(
+  node: CommandNode,
+  targetHandle: string,
+  typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
+  moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
+): GraphCommandInputSlotResult {
   const argumentIndex = indexedInputHandleIndex(targetHandle, 'arg');
   if (argumentIndex === undefined) return undefined;
 
   const runtime = graphCommandRuntimeParams(node);
   const target = parseGraphMoveCallTarget(runtime?.target).target;
-  if (!target) return undefined;
+  if (!target) return BLOCK_PORT_FALLBACK;
 
   const signature = lookupMoveSignatureEvidence(
     target.packageId,
@@ -238,13 +295,19 @@ function moveCallArgumentType(
     moveSignatures,
   );
   const parameter = signature?.parameters[argumentIndex];
-  if (!parameter) return undefined;
+  if (!signature) return undefined;
+  if (!parameter) return BLOCK_PORT_FALLBACK;
 
   const typeArguments = typeArgumentsForInference(
     signature.typeParameterCount,
     typeArgumentsByIndex,
   );
-  return toPTBTypeFromOpenSignature(parameter, typeArguments);
+  return {
+    commandKind: 'MoveCall',
+    argumentIndex,
+    argumentType: parameter,
+    typeArguments,
+  };
 }
 
 function typeArgumentsForInference(
@@ -269,11 +332,11 @@ function variableSourceCanCarryType(
 
   switch (node.rawInput.kind) {
     case 'Pure':
-      return isPureGraphType(type);
+      return inputArgumentKindCanCarryType('pure', type);
     case 'Object':
-      return type.kind === 'object';
+      return inputArgumentKindCanCarryType('object', type);
     case 'FundsWithdrawal':
-      return type.kind === 'unknown';
+      return inputArgumentKindCanCarryType('withdrawal', type);
   }
 }
 
@@ -294,54 +357,4 @@ function portWithType(port: Port, type: PTBType): Port {
     ...port,
     dataType: type,
   };
-}
-
-function ptbTypesEqual(left: PTBType, right: PTBType): boolean {
-  if (left.kind !== right.kind) return false;
-  switch (left.kind) {
-    case 'scalar':
-      return left.name === (right as Extract<PTBType, { kind: 'scalar' }>).name;
-    case 'move_numeric':
-      return (
-        left.width ===
-        (right as Extract<PTBType, { kind: 'move_numeric' }>).width
-      );
-    case 'object':
-      return (
-        left.typeTag === (right as Extract<PTBType, { kind: 'object' }>).typeTag
-      );
-    case 'vector':
-      return ptbTypesEqual(
-        left.elem,
-        (right as Extract<PTBType, { kind: 'vector' }>).elem,
-      );
-    case 'option':
-      return ptbTypesEqual(
-        left.elem,
-        (right as Extract<PTBType, { kind: 'option' }>).elem,
-      );
-    case 'tuple': {
-      const rightElems = (right as Extract<PTBType, { kind: 'tuple' }>).elems;
-      return (
-        left.elems.length === rightElems.length &&
-        left.elems.every((elem, index) =>
-          ptbTypesEqual(elem, rightElems[index]!),
-        )
-      );
-    }
-    case 'unknown':
-      return true;
-  }
-}
-
-function scalarType(name: 'address'): PTBType {
-  return { kind: 'scalar', name };
-}
-
-function numericType(width: 'u64'): PTBType {
-  return { kind: 'move_numeric', width };
-}
-
-function objectType(): PTBType {
-  return { kind: 'object' };
 }

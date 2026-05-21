@@ -21,6 +21,12 @@ import {
   TRANSACTION_IR_KEYS,
 } from './validationKeys.js';
 import {
+  commandInputSlotExpectation,
+  irCommandInputUses,
+  rawArgumentTypeForIRInput,
+} from '../inputTypeEvidence.js';
+import type { PTBInputArgumentKind } from '../inputTypeEvidence.js';
+import {
   lookupMoveSignatureEvidence,
   normalizeMovePackageSignatureEvidenceOption,
 } from '../move/evidence.js';
@@ -32,7 +38,14 @@ import {
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
 } from '../move/signature.js';
-import { isPTBType, validatePTBType } from '../ptbType.js';
+import {
+  describePTBType,
+  isPTBType,
+  ptbTypesAreComparable,
+  ptbTypeSatisfiesExpectation,
+  ptbTypesExactlyMatch,
+  validatePTBType,
+} from '../ptbType.js';
 import type { PTBType } from '../ptbType.js';
 import {
   isRawFundsWithdrawalArg,
@@ -49,7 +62,6 @@ import {
   isDenseArray,
   isRecord,
   jsonLikeEqual,
-  MAX_PTB_TYPE_DEPTH,
   NULL_VALUE,
 } from '../utils.js';
 import type { PlainDataIssue } from '../utils.js';
@@ -66,15 +78,6 @@ export interface ValidateTransactionIROptions {
   includeExistingDiagnostics?: boolean;
   includeUnsupportedDiagnostics?: boolean;
   moveSignatures?: MovePackageSignatureEvidence;
-}
-
-type ExpectedInputArgumentType = 'pure' | 'object' | 'withdrawal';
-
-interface CommandArgValidationEntry {
-  arg: IRArgRef;
-  path: string;
-  expectedInputType?: ExpectedInputArgumentType;
-  expectedPureType?: PTBType;
 }
 
 interface MoveCallEvidenceState {
@@ -250,8 +253,8 @@ export function validateTransactionIR(
       return;
     }
 
-    commandArgValidationEntries(command, commandIndex).forEach(
-      ({ arg, path, expectedInputType, expectedPureType }) => {
+    irCommandInputUses(command, commandIndex).forEach(
+      ({ arg, path, expectation }) => {
         validateArgRef(
           ir,
           commandIndex,
@@ -259,8 +262,8 @@ export function validateTransactionIR(
           path,
           diagnostics,
           moveCallEvidenceByCommandIndex,
-          expectedInputType,
-          expectedPureType,
+          expectation?.inputKind,
+          expectation?.ptbType,
         );
       },
     );
@@ -1403,93 +1406,6 @@ function requireArgRef(
   return false;
 }
 
-function commandArgValidationEntries(
-  command: IRCommand,
-  commandIndex: number,
-): CommandArgValidationEntry[] {
-  switch (command.kind) {
-    case 'MoveCall':
-      return command.arguments.map((arg, index) => ({
-        arg,
-        path: `$.commands[${commandIndex}].arguments[${index}]`,
-      }));
-    case 'TransferObjects':
-      return [
-        ...command.objects.map((arg, index) => ({
-          arg,
-          path: `$.commands[${commandIndex}].objects[${index}]`,
-          expectedInputType: 'object' as const,
-        })),
-        {
-          arg: command.address,
-          path: `$.commands[${commandIndex}].address`,
-          expectedInputType: 'pure',
-          expectedPureType: { kind: 'scalar', name: 'address' },
-        },
-      ];
-    case 'SplitCoins':
-      return [
-        {
-          arg: command.coin,
-          path: `$.commands[${commandIndex}].coin`,
-          expectedInputType: 'object',
-        },
-        ...command.amounts.map((arg, index) => ({
-          arg,
-          path: `$.commands[${commandIndex}].amounts[${index}]`,
-          expectedInputType: 'pure' as const,
-          expectedPureType: {
-            kind: 'move_numeric' as const,
-            width: 'u64' as const,
-          },
-        })),
-      ];
-    case 'MergeCoins':
-      return [
-        {
-          arg: command.destination,
-          path: `$.commands[${commandIndex}].destination`,
-          expectedInputType: 'object',
-        },
-        ...command.sources.map((arg, index) => ({
-          arg,
-          path: `$.commands[${commandIndex}].sources[${index}]`,
-          expectedInputType: 'object' as const,
-        })),
-      ];
-    case 'MakeMoveVec': {
-      const expectedPureType =
-        typeof command.type === 'string'
-          ? pureTypeFromMoveTypeTag(command.type)
-          : undefined;
-      return command.elements.map((arg, index) => ({
-        arg,
-        path: `$.commands[${commandIndex}].elements[${index}]`,
-        ...(command.type === NULL_VALUE
-          ? { expectedInputType: 'object' as const }
-          : {}),
-        ...(expectedPureType
-          ? {
-              expectedInputType: 'pure' as const,
-              expectedPureType,
-            }
-          : {}),
-      }));
-    }
-    case 'Upgrade':
-      return [
-        {
-          arg: command.ticket,
-          path: `$.commands[${commandIndex}].ticket`,
-          expectedInputType: 'object',
-        },
-      ];
-    case 'Publish':
-    case 'Unsupported':
-      return [];
-  }
-}
-
 function validateMakeMoveVecElementTypes(
   ir: TransactionIR,
   command: IRCommand,
@@ -1530,10 +1446,19 @@ function shouldSkipPrimitiveInputMakeMoveVecCheck(
   command: Extract<IRCommand, { kind: 'MakeMoveVec' }>,
   arg: IRArgRef,
 ): boolean {
+  const expectation =
+    typeof command.type === 'string' || command.type === NULL_VALUE
+      ? commandInputSlotExpectation({
+          commandKind: 'MakeMoveVec',
+          field: 'element',
+          index: 0,
+          type: command.type,
+        })
+      : undefined;
   return (
     arg.kind === 'Input' &&
-    typeof command.type === 'string' &&
-    pureTypeFromMoveTypeTag(command.type) !== undefined
+    expectation?.inputKind === 'pure' &&
+    expectation.ptbType !== undefined
   );
 }
 
@@ -1698,8 +1623,8 @@ function validateArgRef(
   path: string,
   diagnostics: TransactionDiagnostic[],
   moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
-  expectedInputType?: ExpectedInputArgumentType,
-  expectedPureType?: PTBType,
+  expectedInputType?: PTBInputArgumentKind,
+  expectedPTBType?: PTBType,
 ) {
   switch (arg.kind) {
     case 'GasCoin':
@@ -1717,7 +1642,7 @@ function validateArgRef(
       }
 
       if (arg.type !== undefined) {
-        const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
+        const actual = rawArgumentTypeForIRInput(ir.inputs[arg.index]);
         if (actual === undefined || arg.type !== actual) {
           diagnostics.push(
             irDiagnostic(
@@ -1729,7 +1654,7 @@ function validateArgRef(
         }
       }
       if (expectedInputType !== undefined) {
-        const actual = rawArgumentTypeForInput(ir.inputs[arg.index]);
+        const actual = rawArgumentTypeForIRInput(ir.inputs[arg.index]);
         if (actual === undefined || actual !== expectedInputType) {
           diagnostics.push(
             irDiagnostic(
@@ -1740,19 +1665,19 @@ function validateArgRef(
           );
         }
       }
-      if (expectedPureType !== undefined) {
+      if (expectedPTBType !== undefined) {
         const input = ir.inputs[arg.index];
         if (input?.kind === 'Pure' && input.type !== undefined) {
           const isUntypedRawByteHint =
             input.bytes !== undefined && input.type.kind === 'unknown';
           if (
             !isUntypedRawByteHint &&
-            !ptbTypeSatisfiesExpectation(input.type, expectedPureType)
+            !ptbTypeSatisfiesExpectation(input.type, expectedPTBType)
           ) {
             diagnostics.push(
               irDiagnostic(
                 'ir.arg.pureType',
-                `Input reference ${arg.index} must use ${describePTBType(expectedPureType)} for this command argument.`,
+                `Input reference ${arg.index} must use ${describePTBType(expectedPTBType)} for this command argument.`,
                 path,
               ),
             );
@@ -1782,215 +1707,6 @@ function validateArgRef(
         moveCallEvidenceByCommandIndex,
       );
       return;
-  }
-}
-
-function rawArgumentTypeForInput(
-  input: IRInput | undefined,
-): 'pure' | 'object' | 'withdrawal' | undefined {
-  switch (input?.kind) {
-    case 'Pure':
-      return 'pure';
-    case 'Object':
-      return 'object';
-    case 'FundsWithdrawal':
-      return 'withdrawal';
-    case 'Unsupported':
-    case undefined:
-      return undefined;
-  }
-}
-
-function pureTypeFromMoveTypeTag(type: string): PTBType | undefined {
-  switch (type) {
-    case 'bool':
-      return { kind: 'scalar', name: 'bool' };
-    case 'address':
-      return { kind: 'scalar', name: 'address' };
-    case 'u8':
-    case 'u16':
-    case 'u32':
-    case 'u64':
-    case 'u128':
-    case 'u256':
-      return { kind: 'move_numeric', width: type };
-    default:
-      return undefined;
-  }
-}
-
-function ptbTypeSatisfiesExpectation(
-  actual: PTBType,
-  expected: PTBType,
-): boolean {
-  if (actual.kind !== expected.kind) return false;
-
-  switch (expected.kind) {
-    case 'scalar':
-      return actual.kind === 'scalar' && actual.name === expected.name;
-    case 'move_numeric':
-      return actual.kind === 'move_numeric' && actual.width === expected.width;
-    case 'object':
-      return (
-        actual.kind === 'object' &&
-        (expected.typeTag === undefined || actual.typeTag === expected.typeTag)
-      );
-    case 'vector':
-      return (
-        actual.kind === 'vector' &&
-        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
-      );
-    case 'option':
-      return (
-        actual.kind === 'option' &&
-        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
-      );
-    case 'tuple':
-      return (
-        actual.kind === 'tuple' &&
-        actual.elems.length === expected.elems.length &&
-        actual.elems.every((elem, index) =>
-          ptbTypeSatisfiesExpectation(elem, expected.elems[index]!),
-        )
-      );
-    case 'unknown':
-      return actual.kind === 'unknown';
-  }
-}
-
-function ptbTypesAreComparable(
-  actual: PTBType,
-  expected: PTBType,
-  depth = 0,
-): boolean {
-  if (depth > MAX_PTB_TYPE_DEPTH) return false;
-  if (actual.kind === 'unknown' || expected.kind === 'unknown') return false;
-
-  if (actual.kind !== expected.kind) {
-    return (
-      ptbTypeHasConcreteShape(actual, depth) &&
-      ptbTypeHasConcreteShape(expected, depth)
-    );
-  }
-
-  switch (expected.kind) {
-    case 'scalar':
-    case 'move_numeric':
-      return true;
-    case 'object':
-      return (
-        actual.kind === 'object' && hasConcreteObjectTypeTags(actual, expected)
-      );
-    case 'vector':
-      return (
-        actual.kind === 'vector' &&
-        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
-      );
-    case 'option':
-      return (
-        actual.kind === 'option' &&
-        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
-      );
-    case 'tuple':
-      return (
-        actual.kind === 'tuple' &&
-        actual.elems.length === expected.elems.length &&
-        actual.elems.every((elem, index) =>
-          ptbTypesAreComparable(elem, expected.elems[index]!, depth + 1),
-        )
-      );
-  }
-}
-
-function ptbTypesExactlyMatch(
-  actual: PTBType,
-  expected: PTBType,
-  depth = 0,
-): boolean {
-  if (depth > MAX_PTB_TYPE_DEPTH) return false;
-  if (actual.kind !== expected.kind) return false;
-
-  switch (expected.kind) {
-    case 'scalar':
-      return actual.kind === 'scalar' && actual.name === expected.name;
-    case 'move_numeric':
-      return actual.kind === 'move_numeric' && actual.width === expected.width;
-    case 'object':
-      return (
-        actual.kind === 'object' && objectTypeTagsExactlyMatch(actual, expected)
-      );
-    case 'vector':
-      return (
-        actual.kind === 'vector' &&
-        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
-      );
-    case 'option':
-      return (
-        actual.kind === 'option' &&
-        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
-      );
-    case 'tuple':
-      return (
-        actual.kind === 'tuple' &&
-        actual.elems.length === expected.elems.length &&
-        actual.elems.every((elem, index) =>
-          ptbTypesExactlyMatch(elem, expected.elems[index]!, depth + 1),
-        )
-      );
-    case 'unknown':
-      return false;
-  }
-}
-
-function ptbTypeHasConcreteShape(type: PTBType, depth: number): boolean {
-  if (depth > MAX_PTB_TYPE_DEPTH) return false;
-  switch (type.kind) {
-    case 'unknown':
-      return false;
-    case 'object':
-      return type.typeTag !== undefined;
-    case 'scalar':
-    case 'move_numeric':
-    case 'vector':
-    case 'option':
-    case 'tuple':
-      return true;
-  }
-}
-
-function hasConcreteObjectTypeTags(
-  actual: Extract<PTBType, { kind: 'object' }>,
-  expected: Extract<PTBType, { kind: 'object' }>,
-): boolean {
-  return actual.typeTag !== undefined && expected.typeTag !== undefined;
-}
-
-function objectTypeTagsExactlyMatch(
-  actual: Extract<PTBType, { kind: 'object' }>,
-  expected: Extract<PTBType, { kind: 'object' }>,
-): boolean {
-  if (!hasConcreteObjectTypeTags(actual, expected)) return false;
-  const actualTypeTag = parseMoveTypeTag(actual.typeTag);
-  const expectedTypeTag = parseMoveTypeTag(expected.typeTag);
-  return actualTypeTag !== undefined && actualTypeTag === expectedTypeTag;
-}
-
-function describePTBType(type: PTBType): string {
-  switch (type.kind) {
-    case 'scalar':
-      return type.name;
-    case 'move_numeric':
-      return type.width;
-    case 'object':
-      return type.typeTag ? `object ${type.typeTag}` : 'object';
-    case 'vector':
-      return `vector<${describePTBType(type.elem)}>`;
-    case 'option':
-      return `option<${describePTBType(type.elem)}>`;
-    case 'tuple':
-      return `(${type.elems.map(describePTBType).join(', ')})`;
-    case 'unknown':
-      return 'unknown';
   }
 }
 

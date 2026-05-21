@@ -1,3 +1,4 @@
+import { inferTransactionIRInputTypes } from '../inputTypeEvidence.js';
 import { errorDiagnostic as modelDiagnostic } from '../ir/diagnostics.js';
 import type {
   DiagnosticCategory,
@@ -15,6 +16,7 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
+import { isPTBType, type PTBType, serializePTBType } from '../ptbType.js';
 import { isRawFundsWithdrawalArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
 import { isDenseArray, isRecord, NULL_VALUE } from '../utils.js';
@@ -45,6 +47,7 @@ const MERMAID_OPTION_FIELDS = [
   'shortenLabels',
   'theme',
 ] as const;
+const ARRAY_VALUE_PREVIEW_ITEMS = 3;
 
 export function transactionIRToMermaid(
   ir: TransactionIR,
@@ -95,6 +98,12 @@ export function transactionIRToMermaid(
   const hasGasCoin = renderIR.commands.some((command) =>
     irCommandArgRefs(command).some((arg) => arg.kind === 'GasCoin'),
   );
+  const inferredInputTypes = new Map(
+    inferTransactionIRInputTypes(renderIR).inferences.map((inference) => [
+      inference.inputIndex,
+      inference.type,
+    ]),
+  );
 
   renderIR.diagnostics.forEach((diagnostic, index) => {
     lines.push(`  diag${index}["${mermaidNodeLabel([diagnostic.code])}"]`);
@@ -103,7 +112,13 @@ export function transactionIRToMermaid(
   renderIR.inputs.forEach((input, index) => {
     lines.push(
       `  input${index}["${mermaidNodeLabel(
-        inputNodeLabel(input, index, showInputValues, shortenLabels),
+        inputNodeLabel(
+          input,
+          index,
+          showInputValues,
+          shortenLabels,
+          inferredInputTypes.get(index),
+        ),
       )}"]`,
     );
   });
@@ -315,8 +330,9 @@ function inputNodeLabel(
   index: number,
   showInputValues: boolean,
   shortenLabels: boolean,
+  inferredType: PTBType | undefined,
 ): string[] {
-  const kind = inputKindLabel(input);
+  const kind = inputKindLabel(input, inferredType);
   const lines = [`Input ${index}: ${kind}`];
   if (showInputValues) {
     lines.push(inputNodeValueLabel(input, shortenLabels));
@@ -324,9 +340,22 @@ function inputNodeLabel(
   return lines;
 }
 
-function inputKindLabel(input: unknown): string {
+function inputKindLabel(
+  input: unknown,
+  inferredType: PTBType | undefined,
+): string {
   if (!isRecord(input) || typeof input.kind !== 'string') {
     return 'Invalid';
+  }
+  if (input.kind === 'Pure') {
+    const explicitType = isPTBType(input.type) ? input.type : undefined;
+    const type =
+      explicitType && explicitType.kind !== 'unknown'
+        ? explicitType
+        : inferredType;
+    return type && type.kind !== 'unknown'
+      ? `Pure (${serializePTBType(type)})`
+      : 'Pure';
   }
   if (input.kind !== 'Object' || !isRecord(input.source)) {
     return input.kind;
@@ -490,16 +519,24 @@ function inputNodeValueLabel(input: unknown, shortenLabels: boolean): string {
 }
 
 function renderMermaidValue(value: unknown): string {
-  if (!Array.isArray(value) && !isRecord(value)) return String(value);
-  const seen = new WeakSet<object>();
+  return renderMermaidValueWithSeen(value, new WeakSet<object>());
+}
+
+function renderMermaidValueWithSeen(
+  value: unknown,
+  seen: WeakSet<object>,
+): string {
+  if (Array.isArray(value)) return renderArrayValue(value, seen);
+  if (!isRecord(value)) return String(value);
+  const jsonSeen = new WeakSet<object>();
   try {
     const rendered = JSON.stringify(value, (_key, item) => {
       if (typeof item === 'bigint') return item.toString();
       if (typeof item === 'function') return '[Function]';
       if (typeof item === 'symbol') return item.toString();
       if (typeof item === 'object' && item !== NULL_VALUE) {
-        if (seen.has(item)) return '[Circular]';
-        seen.add(item);
+        if (jsonSeen.has(item)) return '[Circular]';
+        jsonSeen.add(item);
       }
       return item;
     });
@@ -507,6 +544,45 @@ function renderMermaidValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function renderArrayValue(
+  value: readonly unknown[],
+  seen: WeakSet<object>,
+): string {
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  const preview = value
+    .slice(0, ARRAY_VALUE_PREVIEW_ITEMS)
+    .map((item) => renderArrayPreviewItem(item, seen));
+  const remaining = value.length - preview.length;
+  const suffix = remaining > 0 ? [`... +${remaining}`] : [];
+  return `[${[...preview, ...suffix].join(',')}]`;
+}
+
+function renderArrayPreviewItem(value: unknown, seen: WeakSet<object>): string {
+  if (Array.isArray(value) || isRecord(value)) {
+    return renderMermaidValueWithSeen(value, seen);
+  }
+  return renderJsonScalarValue(value);
+}
+
+function renderJsonScalarValue(value: unknown): string {
+  if (value === undefined) return String(NULL_VALUE);
+  const normalized = normalizeJsonScalarValue(value);
+  try {
+    const rendered = JSON.stringify(normalized);
+    return typeof rendered === 'string' ? rendered : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeJsonScalarValue(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function') return '[Function]';
+  if (typeof value === 'symbol') return value.toString();
+  return value;
 }
 
 function objectValueLabel(

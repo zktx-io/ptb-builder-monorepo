@@ -3,7 +3,7 @@ import type { GraphDiagnosticCode } from './graph/diagnostics.js';
 import { errorDiagnostic, freezeDiagnostics } from './ir/diagnostics.js';
 import type { TransactionDiagnostic } from './ir/diagnostics.js';
 import { isKnownNonObjectStructTypeTag } from './move/structTypeTags.js';
-import { parseMoveStructTypeTag } from './raw/types.js';
+import { parseMoveStructTypeTag, parseMoveTypeTag } from './raw/types.js';
 import { isDenseArray, isPlainObject, MAX_PTB_TYPE_DEPTH } from './utils.js';
 
 export const PTB_TYPE_KINDS = [
@@ -122,6 +122,271 @@ export function parsePTBObjectTypeTagCandidate(
   const typeTag = parseMoveStructTypeTag(value);
   if (typeTag === undefined) return undefined;
   return isKnownNonObjectStructTypeTag(typeTag) ? undefined : typeTag;
+}
+
+export function serializePTBType(type: PTBType): string {
+  switch (type.kind) {
+    case 'scalar':
+      return type.name;
+    case 'move_numeric':
+      return type.width;
+    case 'object':
+      return type.typeTag ? `object<${type.typeTag}>` : 'object';
+    case 'vector':
+      return `vector<${serializePTBType(type.elem)}>`;
+    case 'option':
+      return `option<${serializePTBType(type.elem)}>`;
+    case 'tuple':
+      return `(${type.elems.map(serializePTBType).join(',')})`;
+    case 'unknown':
+      return type.debugInfo ? `unknown (${type.debugInfo})` : 'unknown';
+  }
+}
+
+export function describePTBType(type: PTBType): string {
+  switch (type.kind) {
+    case 'scalar':
+      return type.name;
+    case 'move_numeric':
+      return type.width;
+    case 'object':
+      return type.typeTag ? `object ${type.typeTag}` : 'object';
+    case 'vector':
+      return `vector<${describePTBType(type.elem)}>`;
+    case 'option':
+      return `option<${describePTBType(type.elem)}>`;
+    case 'tuple':
+      return `(${type.elems.map(describePTBType).join(', ')})`;
+    case 'unknown':
+      return 'unknown';
+  }
+}
+
+export function isPureInputPTBType(type: PTBType): boolean {
+  switch (type.kind) {
+    case 'unknown':
+    case 'move_numeric':
+      return true;
+    case 'scalar':
+      return type.name !== 'number';
+    case 'vector':
+    case 'option':
+      return isPureInputPTBType(type.elem);
+    case 'object':
+    case 'tuple':
+      return false;
+  }
+}
+
+export function isResolvedPTBType(type: PTBType, depth = 0): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  switch (type.kind) {
+    case 'unknown':
+      return false;
+    case 'scalar':
+    case 'move_numeric':
+    case 'object':
+      return true;
+    case 'vector':
+    case 'option':
+      return isResolvedPTBType(type.elem, depth + 1);
+    case 'tuple':
+      return type.elems.every((elem) => isResolvedPTBType(elem, depth + 1));
+  }
+}
+
+export function ptbTypesEqual(left: PTBType, right: PTBType): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case 'scalar':
+      return left.name === (right as Extract<PTBType, { kind: 'scalar' }>).name;
+    case 'move_numeric':
+      return (
+        left.width ===
+        (right as Extract<PTBType, { kind: 'move_numeric' }>).width
+      );
+    case 'object':
+      return (
+        left.typeTag === (right as Extract<PTBType, { kind: 'object' }>).typeTag
+      );
+    case 'vector':
+      return ptbTypesEqual(
+        left.elem,
+        (right as Extract<PTBType, { kind: 'vector' }>).elem,
+      );
+    case 'option':
+      return ptbTypesEqual(
+        left.elem,
+        (right as Extract<PTBType, { kind: 'option' }>).elem,
+      );
+    case 'tuple': {
+      const rightElems = (right as Extract<PTBType, { kind: 'tuple' }>).elems;
+      return (
+        left.elems.length === rightElems.length &&
+        left.elems.every((elem, index) =>
+          ptbTypesEqual(elem, rightElems[index]!),
+        )
+      );
+    }
+    case 'unknown':
+      return true;
+  }
+}
+
+export function ptbTypeSatisfiesExpectation(
+  actual: PTBType,
+  expected: PTBType,
+): boolean {
+  if (actual.kind !== expected.kind) return false;
+
+  switch (expected.kind) {
+    case 'scalar':
+      return actual.kind === 'scalar' && actual.name === expected.name;
+    case 'move_numeric':
+      return actual.kind === 'move_numeric' && actual.width === expected.width;
+    case 'object':
+      return (
+        actual.kind === 'object' &&
+        (expected.typeTag === undefined || actual.typeTag === expected.typeTag)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypeSatisfiesExpectation(actual.elem, expected.elem)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypeSatisfiesExpectation(elem, expected.elems[index]!),
+        )
+      );
+    case 'unknown':
+      return actual.kind === 'unknown';
+  }
+}
+
+export function ptbTypesAreComparable(
+  actual: PTBType,
+  expected: PTBType,
+  depth = 0,
+): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  if (actual.kind === 'unknown' || expected.kind === 'unknown') return false;
+
+  if (actual.kind !== expected.kind) {
+    return (
+      ptbTypeHasConcreteShape(actual, depth) &&
+      ptbTypeHasConcreteShape(expected, depth)
+    );
+  }
+
+  switch (expected.kind) {
+    case 'scalar':
+    case 'move_numeric':
+      return true;
+    case 'object':
+      return (
+        actual.kind === 'object' && hasConcreteObjectTypeTags(actual, expected)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypesAreComparable(actual.elem, expected.elem, depth + 1)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypesAreComparable(elem, expected.elems[index]!, depth + 1),
+        )
+      );
+  }
+}
+
+export function ptbTypesExactlyMatch(
+  actual: PTBType,
+  expected: PTBType,
+  depth = 0,
+): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  if (actual.kind !== expected.kind) return false;
+
+  switch (expected.kind) {
+    case 'scalar':
+      return actual.kind === 'scalar' && actual.name === expected.name;
+    case 'move_numeric':
+      return actual.kind === 'move_numeric' && actual.width === expected.width;
+    case 'object':
+      return (
+        actual.kind === 'object' && objectTypeTagsExactlyMatch(actual, expected)
+      );
+    case 'vector':
+      return (
+        actual.kind === 'vector' &&
+        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
+      );
+    case 'option':
+      return (
+        actual.kind === 'option' &&
+        ptbTypesExactlyMatch(actual.elem, expected.elem, depth + 1)
+      );
+    case 'tuple':
+      return (
+        actual.kind === 'tuple' &&
+        actual.elems.length === expected.elems.length &&
+        actual.elems.every((elem, index) =>
+          ptbTypesExactlyMatch(elem, expected.elems[index]!, depth + 1),
+        )
+      );
+    case 'unknown':
+      return false;
+  }
+}
+
+function ptbTypeHasConcreteShape(type: PTBType, depth: number): boolean {
+  if (depth > MAX_PTB_TYPE_DEPTH) return false;
+  switch (type.kind) {
+    case 'unknown':
+      return false;
+    case 'object':
+      return type.typeTag !== undefined;
+    case 'scalar':
+    case 'move_numeric':
+    case 'vector':
+    case 'option':
+    case 'tuple':
+      return true;
+  }
+}
+
+function hasConcreteObjectTypeTags(
+  actual: Extract<PTBType, { kind: 'object' }>,
+  expected: Extract<PTBType, { kind: 'object' }>,
+): boolean {
+  return actual.typeTag !== undefined && expected.typeTag !== undefined;
+}
+
+function objectTypeTagsExactlyMatch(
+  actual: Extract<PTBType, { kind: 'object' }>,
+  expected: Extract<PTBType, { kind: 'object' }>,
+): boolean {
+  if (!hasConcreteObjectTypeTags(actual, expected)) return false;
+  const actualTypeTag = parseMoveTypeTag(actual.typeTag);
+  const expectedTypeTag = parseMoveTypeTag(expected.typeTag);
+  return actualTypeTag !== undefined && actualTypeTag === expectedTypeTag;
 }
 
 function validatePTBTypeInto(

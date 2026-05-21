@@ -70,6 +70,7 @@ The root entrypoint exposes:
 - Move function signature evidence types and guards for host-provided package
   metadata;
 - canonical graph handle helpers and protocol index/result-count limit helpers;
+- PTB type validation, serialization, and equality helpers;
 - scalar and byte normalizers needed before constructing model values;
 - `NULL_VALUE`, the canonical JSON-stable representation for `option<T>` `None`.
 
@@ -108,6 +109,10 @@ The helper output is the canonical `PTBGraph` handle id. UI frameworks may add
 their own screen-state handles while rendering, but persisted `PTBGraph` data and
 graph-to-IR inputs must use the model handles without React Flow suffixes,
 builder aliases, or legacy names.
+
+Use `serializePTBType()` and `ptbTypesEqual()` from the root export when
+displaying or comparing model `PTBType` values. Downstream packages should not
+copy PTB type string formatting or equality rules.
 
 Use `pureTypeName()` from the root export in SDK-facing adapters instead of
 re-implementing the type-name mapping:

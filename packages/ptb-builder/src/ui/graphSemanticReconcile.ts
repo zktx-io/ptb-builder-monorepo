@@ -1,5 +1,9 @@
 import type { Node as RFNode } from '@xyflow/react';
-import type { PTBGraph, PTBType, VariableNode } from '@zktx.io/ptb-model';
+import {
+  type PTBGraph,
+  ptbTypesEqual,
+  type VariableNode,
+} from '@zktx.io/ptb-model';
 
 import { serializePTBType } from '../ptb/graph/types';
 import type { RFNodeData } from '../ptb/ptbAdapter';
@@ -47,8 +51,4 @@ export function applyInferredVariableTypesToRFNodes(
   });
 
   return changed ? nextNodes : nodes;
-}
-
-function ptbTypesEqual(left: PTBType, right: PTBType): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

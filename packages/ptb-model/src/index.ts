@@ -62,6 +62,8 @@ export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export {
   isPTBType,
   parsePTBObjectTypeTagCandidate,
+  ptbTypesEqual,
+  serializePTBType,
   validatePTBType,
 } from './ptbType.js';
 export type {
