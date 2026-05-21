@@ -343,6 +343,21 @@ For every task:
 6. Do not duplicate existing logic, registries, protocol metadata, conversion rules, validation rules, renderer rules, or SDK-shape normalization without a clear reason.
 7. Make the quality-first complete change that satisfies the goal after the affected boundary is understood. Do not make symptom-only patches that leave the same invariant broken on adjacent paths.
    Evaluate planning and implementation units by dependency and logical cohesion, not by diff size, file count, or phase count. Group strongly dependent work into one coherent change when the pieces must be completed together to preserve the same product boundary, shared invariant, failure handling, docs, tests, public exports, or user-facing behavior. When two implementations satisfy the same behavior and quality bar, prefer the shorter and simpler one.
+
+When a source-of-truth boundary is changed, moved, or newly introduced, define
+its contract before editing dependent code. The contract must name the inputs,
+outputs, state transitions, diagnostics, context options, fast paths, and
+public surfaces that consume or expose the same invariant. Do not treat a local
+symptom fix as complete until every caller, converter, parser, renderer,
+validator, branded or frozen state, public option, and README claim that
+depends on the invariant has been checked or updated. Also check repository
+status, including untracked files, before judging the change complete.
+
+Tests for source-of-truth changes must cover invariant preservation across
+state transitions, not only representative success cases. Include negative
+cases for missing context propagation, stale fast paths, post-parse mutation of
+validation evidence, incomplete canonical interface sets, and mismatch between
+documented public options and implementation behavior.
 8. After the change, re-check every affected area.
 9. Run relevant checks, tests, builds, pack dry-runs, or manual verification when available.
 10. Fix errors or regressions caused by the change before calling the work complete.
