@@ -43,7 +43,7 @@ export const OptionToggle = memo(function OptionToggle({
       }}
       className={clsx(
         // size: match MiniStepper height (16px)
-        'relative inline-flex h-4 w-7 items-center rounded-full transition-colors',
+        'relative inline-flex h-4 w-7 items-center rounded-full p-0.5 transition-colors',
         // skin
         disabled
           ? 'bg-gray-300 dark:bg-stone-700 cursor-not-allowed opacity-70'
@@ -61,7 +61,7 @@ export const OptionToggle = memo(function OptionToggle({
       <span
         className={clsx(
           'inline-block h-3 w-3 transform rounded-full bg-white transition-transform',
-          some ? 'translate-x-3' : 'translate-x-0.5',
+          some ? 'translate-x-3' : 'translate-x-0',
           disabled ? 'opacity-90' : '',
         )}
       />
