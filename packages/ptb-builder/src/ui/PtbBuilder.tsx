@@ -80,7 +80,11 @@ export type PublicPTBApi = {
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
   exportDocResult: (opts?: { sender?: string }) => PTBExportDocResult;
   loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
-  loadFromOnChainTx: (chain: Chain, digest: string) => Promise<PTBActionResult>;
+  loadFromOnChainTx: (
+    chain: Chain,
+    digest: string,
+    opts?: { mode?: 'readonly' | 'editable' },
+  ) => Promise<PTBActionResult>;
   setTheme: (t: Theme) => void;
 };
 

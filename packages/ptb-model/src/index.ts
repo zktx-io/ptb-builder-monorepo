@@ -52,6 +52,12 @@ export type {
   GraphInputTypeInferenceOptions,
   GraphInputTypeInferenceResult,
 } from './graph/inputInference.js';
+export { materializeGraphInputValues } from './graph/inputMaterialization.js';
+export type {
+  GraphInputValueMaterialization,
+  GraphInputValueMaterializationOptions,
+  GraphInputValueMaterializationResult,
+} from './graph/inputMaterialization.js';
 export type { NumericWidth, PTBScalar, PTBType } from './ptbType.js';
 export {
   isPTBType,

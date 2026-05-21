@@ -290,10 +290,20 @@ if (doc) {
   }
 }
 
-// Load graph from on-chain transaction digest
+// Load graph from on-chain transaction digest. Pure raw inputs that can be
+// decoded losslessly are materialized for display, using fetched Move function
+// signatures when the consumer type needs them.
 const chainLoadResult = await loadFromOnChainTx('sui:testnet', '0x1234…');
 if (!chainLoadResult.ok) {
   console.warn(chainLoadResult.error);
+}
+
+// Load an on-chain transaction as an editable template instead of a read-only viewer.
+const editableLoadResult = await loadFromOnChainTx('sui:testnet', '0x1234…', {
+  mode: 'editable',
+});
+if (!editableLoadResult.ok) {
+  console.warn(editableLoadResult.error);
 }
 
 // Switch theme at runtime

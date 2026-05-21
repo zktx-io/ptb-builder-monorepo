@@ -39,6 +39,7 @@ import {
   isU16Index,
   isUnknownResultOutputHandle,
   jsonStringifyWithBigInt,
+  materializeGraphInputValues,
   MAX_RESULT_COUNT,
   nestedResultHandle,
   nestedResultHandleIndex,
@@ -202,6 +203,7 @@ describe('public package surface', () => {
       index: 10,
     });
     expect(typeof inferGraphInputTypes).toBe('function');
+    expect(typeof materializeGraphInputValues).toBe('function');
     expect(RAW_ARGUMENT_INDEX_MAX).toBe(65_535);
     expect(MAX_RESULT_COUNT).toBe(65_536);
     expect(isNonNegativeSafeInteger(65_536)).toBe(true);
@@ -6692,6 +6694,355 @@ describe('graph conversion', () => {
     );
   });
 
+  it('materializes inferred Pure rawInput bytes into editable values', () => {
+    const recipientId = normalizedObjectId('9');
+    const recipientBytes = pureBytes('address', recipientId);
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          bytes: recipientBytes,
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: normalizedObjectId('2'),
+          module: 'demo',
+          function: 'accept_address',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          _argumentTypes: [rawSignature({ $kind: 'address' })],
+          resultCount: 0,
+        },
+      ],
+    };
+
+    const graph = transactionIRToGraph(ir);
+    const before = graph.nodes.find(
+      (node): node is VariableNode => node.id === 'var-0',
+    );
+    expect(before?.rawInput).toEqual({ kind: 'Pure', bytes: recipientBytes });
+    expect(before).not.toHaveProperty('value');
+
+    const materialized = materializeGraphInputValues(graph);
+    const input = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'var-0',
+    );
+    const exported = graphToTransactionIR(materialized.graph);
+
+    expect(materialized.valueMaterializations).toEqual([
+      {
+        nodeId: 'var-0',
+        type: { kind: 'scalar', name: 'address' },
+        value: recipientId,
+      },
+    ]);
+    expect(input?.varType).toEqual({ kind: 'scalar', name: 'address' });
+    expect(input?.value).toBe(recipientId);
+    expect(input).not.toHaveProperty('rawInput');
+    expect(before?.rawInput).toEqual({ kind: 'Pure', bytes: recipientBytes });
+    expect(before).not.toHaveProperty('value');
+    expect(exported.diagnostics).toEqual([]);
+    expect(exported.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'scalar', name: 'address' },
+      value: recipientId,
+    });
+    expect(exported.inputs[0]).not.toHaveProperty('bytes');
+    expect(transactionIRToRaw(exported).inputs[0]).toEqual({
+      kind: 'Pure',
+      bytes: recipientBytes,
+    });
+  });
+
+  it('materializes only lossless supported Pure values', () => {
+    const badBytes = appendByte(pureBytes('u64', '7'), 0);
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'move_numeric', width: 'u64' },
+          rawInput: { kind: 'Pure', bytes: badBytes },
+          ports: [
+            {
+              id: 'out',
+              direction: 'out',
+              role: 'io',
+              dataType: { kind: 'move_numeric', width: 'u64' },
+            },
+          ],
+        },
+      ],
+      edges: [],
+    };
+
+    const materialized = materializeGraphInputValues(graph);
+    const amount = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'amount',
+    );
+
+    expect(materialized.valueMaterializations).toEqual([]);
+    expect(materialized.graph).toBe(graph);
+    expect(amount?.rawInput).toEqual({ kind: 'Pure', bytes: badBytes });
+    expect(amount).not.toHaveProperty('value');
+  });
+
+  it('materializes MoveCall Pure rawInput bytes from signature evidence', () => {
+    const packageId = normalizedObjectId('2');
+    const amountBytes = pureBytes('u64', '42');
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        demo: {
+          accept_amount: {
+            typeParameterCount: 0,
+            parameters: [rawSignature({ $kind: 'u64' })],
+            returns: [],
+          },
+        },
+      },
+    };
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: amountBytes },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: { target: `${packageId}::demo::accept_amount` },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out',
+          target: 'call',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    };
+
+    const withoutEvidence = materializeGraphInputValues(graph);
+    const materialized = materializeGraphInputValues(graph, { moveSignatures });
+    const amount = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'amount',
+    );
+    const exported = graphToTransactionIR(materialized.graph, {
+      moveSignatures,
+    });
+
+    expect(withoutEvidence.valueMaterializations).toEqual([]);
+    expect(withoutEvidence.graph).toBe(graph);
+    expect(materialized.typeInferences).toEqual([
+      {
+        nodeId: 'amount',
+        from: { kind: 'unknown', debugInfo: 'Pure' },
+        to: { kind: 'move_numeric', width: 'u64' },
+      },
+    ]);
+    expect(materialized.valueMaterializations).toEqual([
+      {
+        nodeId: 'amount',
+        type: { kind: 'move_numeric', width: 'u64' },
+        value: '42',
+      },
+    ]);
+    expect(amount?.varType).toEqual({ kind: 'move_numeric', width: 'u64' });
+    expect(amount?.value).toBe('42');
+    expect(amount).not.toHaveProperty('rawInput');
+    expect(exported.inputs[0]).toMatchObject({
+      kind: 'Pure',
+      type: { kind: 'move_numeric', width: 'u64' },
+      value: '42',
+    });
+    expect(transactionIRToRaw(exported).inputs[0]).toEqual({
+      kind: 'Pure',
+      bytes: amountBytes,
+    });
+  });
+
+  it('materializes MoveCall vector<u8> Pure rawInput bytes from signature evidence', () => {
+    const packageId = normalizedObjectId('2');
+    const payload = [1, 0, 0, 0, 6, 13, 255];
+    const payloadBytes = pureBytes('vector<u8>' as PureTypeName, payload);
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        demo: {
+          accept_payload: {
+            typeParameterCount: 0,
+            parameters: [
+              rawSignature({ $kind: 'vector', vector: { $kind: 'u8' } }),
+            ],
+            returns: [],
+          },
+        },
+      },
+    };
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'payload',
+          kind: 'Variable',
+          name: 'payload',
+          varType: { kind: 'unknown', debugInfo: 'Pure' },
+          rawInput: { kind: 'Pure', bytes: payloadBytes },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: { target: `${packageId}::demo::accept_payload` },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_arg_0', direction: 'in', role: 'io' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'payload-edge',
+          kind: 'io',
+          source: 'payload',
+          sourceHandle: 'out',
+          target: 'call',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    };
+
+    const materialized = materializeGraphInputValues(graph, { moveSignatures });
+    const input = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'payload',
+    );
+    const exported = graphToTransactionIR(materialized.graph, {
+      moveSignatures,
+    });
+
+    expect(input?.varType).toEqual({
+      kind: 'vector',
+      elem: { kind: 'move_numeric', width: 'u8' },
+    });
+    expect(input?.value).toEqual(payload);
+    expect(input).not.toHaveProperty('rawInput');
+    expect(transactionIRToRaw(exported).inputs[0]).toEqual({
+      kind: 'Pure',
+      bytes: payloadBytes,
+    });
+  });
+
+  it('keeps SDK parsed Pure value shapes when materializing graph inputs', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'move_numeric', width: 'u64' },
+          rawInput: { kind: 'Pure', bytes: pureBytes('u64', '42') },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'bytes',
+          kind: 'Variable',
+          name: 'bytes',
+          varType: {
+            kind: 'vector',
+            elem: { kind: 'move_numeric', width: 'u8' },
+          },
+          rawInput: {
+            kind: 'Pure',
+            bytes: pureBytes('vector<u8>' as PureTypeName, [1, 2, 3]),
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const materialized = materializeGraphInputValues(graph);
+    const amount = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'amount',
+    );
+    const bytes = materialized.graph.nodes.find(
+      (node): node is VariableNode => node.id === 'bytes',
+    );
+
+    expect(amount?.value).toBe('42');
+    expect(bytes?.value).toEqual([1, 2, 3]);
+    expect(amount).not.toHaveProperty('rawInput');
+    expect(bytes).not.toHaveProperty('rawInput');
+  });
+
+  it('does not materialize Object or FundsWithdrawal rawInput values', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'object',
+          kind: 'Variable',
+          name: 'object',
+          varType: { kind: 'object' },
+          rawInput: {
+            kind: 'Object',
+            object: {
+              kind: 'SharedObject',
+              objectId: normalizedObjectId('5'),
+              initialSharedVersion: '1',
+              mutable: true,
+            },
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'withdrawal',
+          kind: 'Variable',
+          name: 'withdrawal',
+          varType: { kind: 'unknown', debugInfo: 'FundsWithdrawal' },
+          rawInput: {
+            kind: 'FundsWithdrawal',
+            value: {
+              reservation: { kind: 'MaxAmountU64', amount: '1' },
+              typeArg: { kind: 'Balance', type: TEST_SUI_TYPE },
+              withdrawFrom: { kind: 'Sender' },
+            },
+          },
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+      ],
+      edges: [],
+    };
+
+    const materialized = materializeGraphInputValues(graph);
+
+    expect(materialized.valueMaterializations).toEqual([]);
+    expect(materialized.graph).toBe(graph);
+  });
+
   it('infers concrete MoveCall arguments without unrelated type arguments', () => {
     const packageId = normalizedObjectId('2');
     const moveSignatures: MovePackageSignatureEvidence = {
@@ -8304,7 +8655,7 @@ describe('validateTransactionIR', () => {
     expect(codes).toContain('ir.command.resultCount');
   });
 
-  it('reports raw-conversion-only requirements as PTBModelError diagnostics', () => {
+  it('converts encodable typed Pure values during raw PTB conversion', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       inputs: [
@@ -8319,7 +8670,10 @@ describe('validateTransactionIR', () => {
       commands: [],
     };
 
-    expectModelErrorCodes(() => transactionIRToRaw(ir), ['raw.ir.pureBytes']);
+    expect(transactionIRToRaw(ir).inputs[0]).toEqual({
+      kind: 'Pure',
+      bytes: pureBytes('u64', '1'),
+    });
   });
 
   it('rejects unresolved object ids only at the raw export gate', () => {

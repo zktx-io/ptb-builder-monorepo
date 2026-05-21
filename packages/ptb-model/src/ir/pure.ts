@@ -123,6 +123,82 @@ export function isPureValueCompatible(type: PTBType, value: unknown): boolean {
   );
 }
 
+export type DecodeCanonicalPureBytesResult =
+  | {
+      ok: true;
+      typeName: string;
+      value: unknown;
+    }
+  | {
+      ok: false;
+      reason:
+        | 'unsupportedType'
+        | 'invalidBase64'
+        | 'invalidBcs'
+        | 'nonCanonicalBcs';
+    };
+
+export function decodeCanonicalPureBytesValue(
+  type: PTBType,
+  bytes: string,
+): DecodeCanonicalPureBytesResult {
+  const typeName = pureTypeName(type);
+  if (typeName === undefined) return { ok: false, reason: 'unsupportedType' };
+
+  const decoded = decodeBase64Bytes(bytes);
+  if (!decoded) return { ok: false, reason: 'invalidBase64' };
+
+  try {
+    const schema = pureBcsSchemaFromTypeName(typeName as PureTypeName);
+    const sourceBytes = Uint8Array.from(decoded);
+    const parsed = schema.parse(sourceBytes);
+    const canonicalBytes = schema.serialize(parsed as never).toBytes();
+
+    if (!bytesEqual(sourceBytes, canonicalBytes)) {
+      return { ok: false, reason: 'nonCanonicalBcs' };
+    }
+
+    return { ok: true, typeName, value: parsed };
+  } catch {
+    return { ok: false, reason: 'invalidBcs' };
+  }
+}
+
+export type EncodePureValueToBytesResult =
+  | {
+      ok: true;
+      typeName: string;
+      bytes: string;
+    }
+  | {
+      ok: false;
+      reason: 'unsupportedType' | 'invalidValue';
+    };
+
+export function encodePureValueToBytes(
+  type: PTBType,
+  value: unknown,
+): EncodePureValueToBytesResult {
+  const typeName = pureTypeName(type);
+  if (typeName === undefined) return { ok: false, reason: 'unsupportedType' };
+  if (!isPureValueCompatible(type, value)) {
+    return { ok: false, reason: 'invalidValue' };
+  }
+
+  try {
+    const schema = pureBcsSchemaFromTypeName(typeName as PureTypeName);
+    return {
+      ok: true,
+      typeName,
+      bytes: schema
+        .serialize(normalizePureValueForRender(type, value) as never)
+        .toBase64(),
+    };
+  } catch {
+    return { ok: false, reason: 'invalidValue' };
+  }
+}
+
 /**
  * Validate canonical raw Pure bytes against an explicit pure type hint.
  * The caller must already have accepted the string as canonical base64.
@@ -133,23 +209,16 @@ export function pureBytesTypeHintDiagnostic(
   bytes: string,
   path: string,
 ): TransactionDiagnostic | undefined {
-  const typeName = pureTypeName(type);
-  if (typeName === undefined) return undefined;
-
-  const decoded = decodeBase64Bytes(bytes);
-  if (!decoded) return undefined;
-
-  try {
-    const schema = pureBcsSchemaFromTypeName(typeName as PureTypeName);
-    const sourceBytes = Uint8Array.from(decoded);
-    const parsed = schema.parse(sourceBytes);
-    const canonicalBytes = schema.serialize(parsed as never).toBytes();
-
-    if (bytesEqual(sourceBytes, canonicalBytes)) return undefined;
-  } catch {
-    // Fall through to the canonical BCS diagnostic below.
+  const decoded = decodeCanonicalPureBytesValue(type, bytes);
+  if (
+    decoded.ok ||
+    decoded.reason === 'unsupportedType' ||
+    decoded.reason === 'invalidBase64'
+  ) {
+    return undefined;
   }
 
+  const typeName = pureTypeName(type);
   return pureDiagnostic(
     'ir.input.pureBytesType',
     `Pure input ${inputId} raw bytes must be canonical BCS for ${typeName}.`,

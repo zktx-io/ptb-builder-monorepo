@@ -123,6 +123,10 @@ describe('autoLayoutFlow', () => {
 
     const positions = await autoLayoutFlow(nodes, edges, {});
 
+    expect(positions.start!.x).toBeLessThan(positions.call!.x);
+    expect(positions.call!.x).toBeLessThan(positions.end!.x);
+    expect(positions.start!.y).toBe(positions.call!.y);
+    expect(positions.end!.y).toBe(positions.call!.y);
     expect(positions['type-0']!.y).toBeLessThan(positions['type-1']!.y);
     expect(positions['type-1']!.y).toBeLessThan(positions['var-0']!.y);
     expect(positions['var-0']!.y).toBeLessThan(positions['var-1']!.y);

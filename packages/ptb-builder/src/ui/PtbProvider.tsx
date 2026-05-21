@@ -31,6 +31,7 @@ import type { Transaction } from '@mysten/sui/transactions';
 import {
   type IRInput,
   irObjectId,
+  materializeGraphInputValues,
   type MovePackageSignatureEvidence,
   parseObjectId,
   rawTransactionToIR,
@@ -217,6 +218,23 @@ function moveCallFunctionRefsFromIRCommands(
   return [...refs.values()];
 }
 
+async function fetchMoveFunctionSignatureEntry(
+  client: PtbCoreClient,
+  ref: MoveCallFunctionRef,
+): Promise<CachedMoveFunction> {
+  const response = await client.core.getMoveFunction({
+    packageId: ref.packageId,
+    moduleName: ref.moduleName,
+    name: ref.functionName,
+  });
+  return {
+    packageId: parseObjectId(response.function.packageId) ?? ref.packageId,
+    moduleName: response.function.moduleName || ref.moduleName,
+    functionName: response.function.name || ref.functionName,
+    signature: toPTBFunctionDataEntry(response.function),
+  };
+}
+
 export type PtbContextValue = {
   graph: PTBGraph;
   setGraph: (g: PTBGraph) => void;
@@ -263,6 +281,7 @@ export type PtbContextValue = {
   loadFromOnChainTx: (
     chain: Chain,
     txDigest: string,
+    opts?: { mode?: 'readonly' | 'editable' },
   ) => Promise<PTBActionResult>;
   loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
 
@@ -284,14 +303,23 @@ export type PtbContextValue = {
 
   isWellKnownAvailable: (k: WellKnownId) => boolean;
 
-  registerFlowActions: (a: {
-    fitToContent?: () => void;
-    updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
-  }) => void;
+  registerFlowActions: (a: RegisteredFlowActions) => void;
 
   graphEpoch: number;
 
   codePipOpenTick: number;
+};
+
+type FlowViewportState = { x: number; y: number; zoom: number };
+type FlowGraphCaptureResult =
+  | { ok: true; graph: PTBGraph }
+  | { ok: false; error: string };
+type RegisteredFlowActions = {
+  fitViewportToContent?: () => void;
+  autoLayoutGeneratedTransactionGraph?: () => void;
+  updateViewport?: (v?: FlowViewportState) => void;
+  captureGraph?: () => FlowGraphCaptureResult;
+  getViewportState?: () => FlowViewportState;
 };
 
 const PtbContext = createContext<PtbContextValue | undefined>(undefined);
@@ -396,20 +424,11 @@ export function PtbProvider({
   }, [toastProp]);
 
   // Flow actions
-  const flowActionsRef = React.useRef<{
-    fitToContent?: () => void;
-    updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
-  }>({});
+  const flowActionsRef = React.useRef<RegisteredFlowActions>({});
 
-  const registerFlowActions = React.useCallback(
-    (a: {
-      fitToContent?: () => void;
-      updateViewport?: (v?: { x: number; y: number; zoom: number }) => void;
-    }) => {
-      flowActionsRef.current = { ...flowActionsRef.current, ...a };
-    },
-    [],
-  );
+  const registerFlowActions = React.useCallback((a: RegisteredFlowActions) => {
+    flowActionsRef.current = { ...flowActionsRef.current, ...a };
+  }, []);
 
   // Editor mode
   const [readOnly, setReadOnly] = useState<boolean>(false);
@@ -954,19 +973,11 @@ export function PtbProvider({
       const fetchMoveFunction = async (): Promise<
         CachedMoveFunction | undefined
       > => {
-        const response = await client.core.getMoveFunction({
+        const entry = await fetchMoveFunctionSignatureEntry(client, {
           packageId: id,
           moduleName,
-          name: functionName,
+          functionName,
         });
-        const resolvedPackageId =
-          parseObjectId(response.function.packageId) ?? id;
-        const entry: CachedMoveFunction = {
-          packageId: resolvedPackageId,
-          moduleName: response.function.moduleName || moduleName,
-          functionName: response.function.name || functionName,
-          signature: toPTBFunctionDataEntry(response.function),
-        };
         const next = upsertCachedMoveFunction(
           metadataCacheRef.current,
           chain,
@@ -1064,7 +1075,8 @@ export function PtbProvider({
   const loadTxStatus = providerUiState.transaction;
 
   const loadFromOnChainTx: PtbContextValue['loadFromOnChainTx'] = useCallback(
-    async (chain, txDigest) => {
+    async (chain, txDigest, opts) => {
+      const editable = opts?.mode === 'editable';
       explicitLoadStartedRef.current = true;
       const load = lifecycleRef.current.beginLoad('transaction');
       const digest = (txDigest || '').trim();
@@ -1165,27 +1177,61 @@ export function PtbProvider({
 
         const moveCallRefs = moveCallFunctionRefsFromIRCommands(ir.commands);
 
-        // 3) Surface model diagnostics and build an editable graph.
+        // 3) Surface model diagnostics and prepare load-scoped metadata.
         ir.diagnostics.forEach((diagnostic) => {
           toastImpl({
             message: formatModelDiagnostic(diagnostic),
             variant: 'warning',
           });
         });
-        const decoded = transactionIRToGraph(ir);
+        let loadCache = replaceCachedChainData(
+          metadataCacheRef.current,
+          chain,
+          {
+            modules: EMPTY_MODULES,
+            objects: objectsEmbed,
+          },
+        );
+        for (const ref of moveCallRefs) {
+          if (!lifecycleRef.current.isCurrent(load)) {
+            return ptbActionError('Transaction load was superseded.');
+          }
+          try {
+            const entry = await fetchMoveFunctionSignatureEntry(
+              localClient,
+              ref,
+            );
+            const next = upsertCachedMoveFunction(loadCache, chain, entry);
+            loadCache = next.cache;
+          } catch (error) {
+            if (lifecycleRef.current.isCurrent(load)) {
+              toastImpl({
+                message: formatModelErrorMessage(
+                  error,
+                  `Failed to fetch Move function signature for ${ref.packageId}::${ref.moduleName}::${ref.functionName}.`,
+                ),
+                variant: 'warning',
+              });
+            }
+          }
+        }
+        if (!lifecycleRef.current.isCurrent(load)) {
+          return ptbActionError('Transaction load was superseded.');
+        }
+        const moveSignatures = moveSignatureEvidenceFromCache(loadCache, chain);
+        const decoded = materializeGraphInputValues(
+          transactionIRToGraph(ir),
+          moveSignatures ? { moveSignatures } : {},
+        ).graph;
 
-        // 4) Fix chain and prime object cache. Move package metadata hydrates
+        // 4) Fix chain and prime metadata cache. Move package indexes hydrate
         // after the graph is visible so package discovery never blocks viewing.
         cancelPendingDocChange();
         resetBeforeLoad();
-        metadataCacheRef.current = replaceCachedChainData(
-          metadataCacheRef.current,
-          chain,
-          { modules: EMPTY_MODULES, objects: objectsEmbed },
-        );
+        metadataCacheRef.current = loadCache;
         setMetadataRevision((revision) => revision + 1);
         setActiveChain(chain);
-        setModules(EMPTY_MODULES);
+        setModules(loadCache.modulesByChain[chain] ?? EMPTY_MODULES);
         setPackageIndexes(
           metadataCacheRef.current.packageIndexesByChain[chain] ??
             EMPTY_PACKAGE_INDEXES,
@@ -1194,16 +1240,24 @@ export function PtbProvider({
         const nextView = { ...DEFAULT_PTB_VIEW };
         setView(nextView);
 
-        // 5) Replace snapshot (viewer mode) and bump epoch.
+        // 5) Replace snapshot and bump epoch.
         replaceGraphImmediate(decoded);
-        setReadOnly(true);
-        setProviderUiState(providerReadyReadonlyTransaction(transactionStatus));
+        setReadOnly(!editable);
+        setProviderUiState(
+          editable
+            ? providerReadyEditable()
+            : providerReadyReadonlyTransaction(transactionStatus),
+        );
 
-        setCodePipOpenTick(0);
-        lifecycleRef.current.complete(load, 'ready-readonly-transaction');
+        setCodePipOpenTick((tick) => (editable ? tick + 1 : 0));
+        lifecycleRef.current.complete(
+          load,
+          editable ? 'ready-editable' : 'ready-readonly-transaction',
+        );
 
         lifecycleRef.current.afterAnimationFrames(load, () => {
-          flowActionsRef.current.fitToContent?.();
+          // Transactions do not carry editor layout; build an initial canvas layout.
+          flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();
         });
 
         void (async () => {
@@ -1239,19 +1293,19 @@ export function PtbProvider({
 
           for (const ref of moveCallRefs) {
             if (!lifecycleRef.current.isCurrent(load)) return;
+            const cached = getCachedMoveFunction(
+              metadataCacheRef.current,
+              chain,
+              ref.packageId,
+              ref.moduleName,
+              ref.functionName,
+            );
+            if (cached) continue;
             try {
-              const response = await localClient.core.getMoveFunction({
-                packageId: ref.packageId,
-                moduleName: ref.moduleName,
-                name: ref.functionName,
-              });
-              const entry: CachedMoveFunction = {
-                packageId:
-                  parseObjectId(response.function.packageId) ?? ref.packageId,
-                moduleName: response.function.moduleName || ref.moduleName,
-                functionName: response.function.name || ref.functionName,
-                signature: toPTBFunctionDataEntry(response.function),
-              };
+              const entry = await fetchMoveFunctionSignatureEntry(
+                localClient,
+                ref,
+              );
               const next = upsertCachedMoveFunction(
                 metadataCacheRef.current,
                 chain,
@@ -1332,6 +1386,23 @@ export function PtbProvider({
           doc.chain,
           { modules: doc.modules, objects: doc.objects },
         );
+        const graphForEditing = materializeGraphInputValues(doc.graph, {
+          moveSignatures: moveSignatureEvidenceFromCache(
+            metadataCacheRef.current,
+            doc.chain,
+          ),
+        }).graph;
+        const loadedDoc =
+          graphForEditing === doc.graph
+            ? doc.doc
+            : buildDoc({
+                chain: doc.chain,
+                graph: graphForEditing,
+                view: doc.view,
+                sender: doc.doc.sender,
+                modules: doc.modules,
+                objects: doc.objects,
+              });
         setMetadataRevision((revision) => revision + 1);
 
         setView(nextView);
@@ -1342,18 +1413,19 @@ export function PtbProvider({
             EMPTY_PACKAGE_INDEXES,
         );
         setObjects(doc.objects);
-        replaceGraphImmediate(doc.graph);
+        replaceGraphImmediate(graphForEditing);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        const delivery = deliverDocChange(doc.doc);
+        const delivery = deliverDocChange(loadedDoc);
         if (!delivery.ok) {
           lifecycleRef.current.fail(load, delivery.error);
           return delivery;
         }
         lifecycleRef.current.complete(load, 'ready-editable');
         lifecycleRef.current.afterAnimationFrames(load, () => {
-          flowActionsRef.current.updateViewport?.(nextView);
+          // PTB files already own node positions; only fit the viewport.
+          flowActionsRef.current.fitViewportToContent?.();
         });
         return PTB_ACTION_OK;
       } else {
@@ -1401,7 +1473,8 @@ export function PtbProvider({
         }
         lifecycleRef.current.complete(load, 'ready-editable');
         lifecycleRef.current.afterAnimationFrames(load, () => {
-          flowActionsRef.current.updateViewport?.(nextView);
+          // Empty PTB documents already provide seed node positions; only fit the viewport.
+          flowActionsRef.current.fitViewportToContent?.();
         });
         return PTB_ACTION_OK;
       }
@@ -1456,13 +1529,28 @@ export function PtbProvider({
       }
       const sender = opts?.sender;
       try {
+        const graphCapture = flowActionsRef.current.captureGraph?.();
+        if (graphCapture && !graphCapture.ok) {
+          const message = graphCapture.error;
+          setProviderUiState((prev) => providerExportError(prev, message));
+          toastImpl({
+            message,
+            variant: 'error',
+          });
+          return ptbExportDocError(message);
+        }
+
+        const graphForExport = graphCapture?.graph ?? graph;
+        const viewForExport =
+          flowActionsRef.current.getViewportState?.() ?? view;
+
         setProviderUiState(clearProviderNoticeState);
         return {
           ok: true,
           doc: buildDoc({
             chain: activeChain,
-            graph,
-            view,
+            graph: graphForExport,
+            view: viewForExport,
             sender,
             modules: modules ?? {},
             objects: objects ?? {},

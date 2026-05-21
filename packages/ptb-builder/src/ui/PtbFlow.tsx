@@ -195,7 +195,7 @@ export function PTBFlow() {
     ReturnType<typeof createReactFlowCommitController<RFSnapshot>> | undefined
   >(undefined);
   const persistSnapshotRef = useRef<(snapshot: RFSnapshot) => void>(() => {});
-  const onAutoLayoutRef = useRef<() => void | Promise<void>>(() => {});
+  const fitViewportToContentRef = useRef<() => void>(() => {});
   const measuredLayoutFrameRef = useRef<number | undefined>(undefined);
 
   // Patch callback refs (avoid TDZ during initial render)
@@ -952,7 +952,7 @@ export function PTBFlow() {
         if (measuredLayoutFrameRef.current !== undefined) return;
         measuredLayoutFrameRef.current = requestAnimationFrame(() => {
           measuredLayoutFrameRef.current = undefined;
-          onAutoLayoutRef.current();
+          fitViewportToContentRef.current();
         });
       }
     },
@@ -1206,6 +1206,7 @@ export function PTBFlow() {
     const session = flowSessionRef.current;
     const isCurrentLayout = () =>
       session === flowSessionRef.current && !rehydratingRef.current;
+    const currentSnapshot = () => rfSnapshotRef.current;
 
     // Guard 1: rehydrate in progress → defer
     if (rehydratingRef.current) {
@@ -1221,11 +1222,11 @@ export function PTBFlow() {
     }
 
     // Guard 2: nodes not ready yet → retry a few frames
-    if (!rfNodes || rfNodes.length === 0) {
+    if (currentSnapshot().rfNodes.length === 0) {
       let tries = 0;
       const retry = () => {
         if (session !== flowSessionRef.current) return;
-        if (!rehydratingRef.current && rfNodes.length > 0) {
+        if (!rehydratingRef.current && currentSnapshot().rfNodes.length > 0) {
           onAutoLayout();
           return;
         }
@@ -1235,18 +1236,28 @@ export function PTBFlow() {
       return;
     }
 
-    const positions: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
-      targetCenter: getViewportCenterFlow(),
-    });
+    const snapshot = currentSnapshot();
+    const positions: LayoutPositions = await autoLayoutFlow(
+      snapshot.rfNodes,
+      snapshot.rfEdges,
+      {
+        targetCenter: getViewportCenterFlow(),
+      },
+    );
     if (!isCurrentLayout()) return;
 
     // Fallback: retry next frame if layout returned empty
     if (!positions || Object.keys(positions).length === 0) {
       requestAnimationFrame(async () => {
         if (!isCurrentLayout()) return;
-        const pos2: LayoutPositions = await autoLayoutFlow(rfNodes, rfEdges, {
-          targetCenter: getViewportCenterFlow(),
-        });
+        const retrySnapshot = currentSnapshot();
+        const pos2: LayoutPositions = await autoLayoutFlow(
+          retrySnapshot.rfNodes,
+          retrySnapshot.rfEdges,
+          {
+            targetCenter: getViewportCenterFlow(),
+          },
+        );
         if (!isCurrentLayout()) return;
         if (!pos2 || Object.keys(pos2).length === 0) return; // give up silently
         setRF((prev) => {
@@ -1265,7 +1276,11 @@ export function PTBFlow() {
             nextNodes,
             prev.rfEdges,
           );
-          return { rfNodes: nextNodes, rfEdges: nextEdges };
+          const nextSnapshot = { rfNodes: nextNodes, rfEdges: nextEdges };
+          if (!readOnly) {
+            commitControllerRef.current?.recordChange(nextSnapshot);
+          }
+          return nextSnapshot;
         });
         requestAnimationFrame(() => {
           if (!isCurrentLayout()) return;
@@ -1294,7 +1309,11 @@ export function PTBFlow() {
           : n,
       );
       const nextEdges = projectEdgesForCurrentPorts(nextNodes, prev.rfEdges);
-      return { rfNodes: nextNodes, rfEdges: nextEdges };
+      const nextSnapshot = { rfNodes: nextNodes, rfEdges: nextEdges };
+      if (!readOnly) {
+        commitControllerRef.current?.recordChange(nextSnapshot);
+      }
+      return nextSnapshot;
     });
 
     requestAnimationFrame(() => {
@@ -1306,15 +1325,30 @@ export function PTBFlow() {
       }
       setLayoutReady(true);
     });
-  }, [rfNodes, rfEdges, getViewportCenterFlow, fitView]);
+  }, [getViewportCenterFlow, fitView, readOnly]);
+
+  const fitViewportToContent = useCallback(() => {
+    requestAnimationFrame(() => {
+      try {
+        fitView({ padding: 0.2, duration: 300 });
+      } catch {
+        /* no-op */
+      }
+      setLayoutReady(true);
+    });
+  }, [fitView]);
 
   useEffect(() => {
-    onAutoLayoutRef.current = onAutoLayout;
-  }, [onAutoLayout]);
+    fitViewportToContentRef.current = fitViewportToContent;
+  }, [fitViewportToContent]);
 
-  const fitToContent = useCallback(() => {
-    onAutoLayoutRef.current();
+  const fitViewportToContentAction = useCallback(() => {
+    fitViewportToContentRef.current();
   }, []);
+
+  const autoLayoutGeneratedTransactionGraph = useCallback(() => {
+    void onAutoLayout();
+  }, [onAutoLayout]);
 
   const updateViewport = useCallback(
     (v?: { x: number; y: number; zoom: number }) => {
@@ -1327,15 +1361,39 @@ export function PTBFlow() {
     [getViewport, setViewExternal, setViewport],
   );
 
+  const captureGraph = useCallback(() => {
+    const converted = safeRfToPTB(rfSnapshotRef.current, { notify: false });
+    if (!converted.ok) return { ok: false as const, error: converted.message };
+    return { ok: true as const, graph: converted.graph };
+  }, [safeRfToPTB]);
+
+  const getViewportState = useCallback(() => getViewport(), [getViewport]);
+
   useEffect(() => {
-    registerFlowActions({ fitToContent, updateViewport });
+    registerFlowActions({
+      fitViewportToContent: fitViewportToContentAction,
+      autoLayoutGeneratedTransactionGraph,
+      updateViewport,
+      captureGraph,
+      getViewportState,
+    });
     return () => {
       registerFlowActions({
-        fitToContent: undefined,
+        fitViewportToContent: undefined,
+        autoLayoutGeneratedTransactionGraph: undefined,
         updateViewport: undefined,
+        captureGraph: undefined,
+        getViewportState: undefined,
       });
     };
-  }, [registerFlowActions, fitToContent, updateViewport]);
+  }, [
+    registerFlowActions,
+    fitViewportToContentAction,
+    autoLayoutGeneratedTransactionGraph,
+    updateViewport,
+    captureGraph,
+    getViewportState,
+  ]);
 
   const onAssetPick = useCallback(
     (obj: {

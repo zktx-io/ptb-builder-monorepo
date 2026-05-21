@@ -62,7 +62,8 @@ The root entrypoint exposes:
 - canonical data types for documents, raw PTB data, `TransactionIR`, and `PTBGraph`;
 - validation and diagnostic helpers;
 - raw/IR/graph conversion functions;
-- graph input type inference for consumer-side command type evidence;
+- graph input type inference and explicit editable input value materialization
+  for consumer-side command type evidence;
 - Mermaid and TypeScript SDK code string renderers;
 - structural IR parsing helpers and projection-specific IR validators;
 - the pure type-name helper used by SDK-facing adapters;
@@ -152,6 +153,17 @@ variable `varType` and output port `dataType` values only. It does not
 synthesize input values, raw input payloads, command ports, edges, or UI state.
 `graphToTransactionIR()` applies the same inference before conversion, so
 rendering and code generation use the same model-owned rule.
+
+Use `materializeGraphInputValues()` when a host intentionally wants an editable
+graph after loading decoded transaction data. The helper first applies the same
+input type inference, then converts canonical Pure `rawInput.bytes` into a
+typed graph `value` only when the pinned SDK BCS schema can decode the bytes and
+re-encode the decoded value to the exact same bytes. A successful Pure
+materialization removes `rawInput`; Pure graph variables must not carry both
+raw bytes and a typed value. Object, `FundsWithdrawal`, unsupported, invalid,
+and non-canonical inputs are preserved instead of being guessed. MoveCall
+inputs whose raw transaction data does not carry argument types require
+host-provided Move signature evidence before they can be materialized.
 
 Use the Move signature evidence guards when a host has fetched package metadata
 and wants to pass that verified metadata into later model validation steps. The
@@ -546,7 +558,10 @@ exist.
 Graph `rawInput` values are closed-shape canonical raw inputs. Pure `rawInput`
 cannot also carry a typed graph `value`. Object and `FundsWithdrawal` rawInput
 may carry a graph `value` only when that value structurally equals the canonical
-raw payload.
+raw payload. `materializeGraphInputValues()` is the explicit model-owned bridge
+from canonical Pure raw bytes to editable graph values; normal raw, IR, graph,
+Mermaid, and TypeScript SDK rendering conversions do not silently create
+editable values.
 
 The scalar normalizers, SDK metadata guard, and diagnostic helpers are exported
 for host-side validation before creating raw or graph values:
@@ -622,7 +637,7 @@ rendered in canonical 32-byte `0x`-prefixed lowercase hex form. That
 normalization recursively applies to `address` and `id` leaves inside composite
 pure types, such as `option<vector<address>>`. Raw PTB and graph rawInput
 boundaries remain canonical-only; this normalization is the explicit TS SDK code
-rendering step.
+rendering and typed raw-conversion step.
 
 Pure inputs may use raw `bytes` or a typed (`value`, `type`) pair. Typed pure
 inputs must include both fields; `option<T>` `None` must be stored as explicit
@@ -630,13 +645,17 @@ inputs must include both fields; `option<T>` `None` must be stored as explicit
 must not carry a typed `value`. When raw `bytes` carry a concrete pure type hint,
 validation checks that the payload round-trips through the installed SDK BCS
 schema for that type. For example, `vector<u8>` bytes must include BCS vector
-framing; a raw byte blob is not a canonical `vector<u8>` payload.
+framing; a raw byte blob is not a canonical `vector<u8>` payload. Raw PTB
+conversion serializes typed Pure values through the same installed SDK BCS
+schema instead of requiring callers to keep raw bytes after editable
+materialization.
 `validateTransactionIR()` rejects ambiguous Pure inputs instead of letting raw,
 graph, or code rendering paths silently choose one representation.
 
 Empty base64 strings are accepted at the raw byte layer because the SDK
 `BCSBytes` schema is a string and the SDK base64 decoder accepts empty strings.
-`ptb-model` does not infer the expected Move type for raw Pure bytes. If a
+`ptb-model` infers graph input types only from verified graph command evidence,
+such as concrete command ports or host-supplied Move signature evidence. If a
 concrete type hint is present, empty bytes must pass that type's BCS round-trip
 check; otherwise Move argument decoding may still reject untyped bytes when a
 command consumes them.

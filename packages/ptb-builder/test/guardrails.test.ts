@@ -208,13 +208,172 @@ describe('builder source guardrails', () => {
     expect(end).toBeGreaterThan(start);
     expect(segment).not.toContain("mode: 'loading-transaction'");
     expect(segment).not.toContain('setReadOnly(false);');
+    expect(segment).toContain('setReadOnly(!editable);');
     expect(segment.indexOf('resetBeforeLoad()')).toBeGreaterThan(
-      segment.indexOf('const decoded = transactionIRToGraph(ir);'),
+      segment.indexOf('materializeGraphInputValues('),
     );
     expect(segment).toContain('const nextView = { ...DEFAULT_PTB_VIEW };');
     expect(segment.indexOf('setView(nextView);')).toBeGreaterThan(
       segment.indexOf('resetBeforeLoad()'),
     );
+  });
+
+  it('keeps editable input value materialization at load boundaries', () => {
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const reconcile = readFileSync(
+      join(sourceRoot, 'ui', 'graphSemanticReconcile.ts'),
+      'utf8',
+    );
+
+    expect(provider).toContain('materializeGraphInputValues');
+    expect(flow).not.toContain('materializeGraphInputValues');
+    expect(reconcile).not.toContain('materializeGraphInputValues');
+
+    const loadStart = provider.indexOf('const loadFromOnChainTx');
+    const loadEnd = provider.indexOf('// ---- document loader', loadStart);
+    const loadSegment = provider.slice(loadStart, loadEnd);
+
+    expect(loadStart).toBeGreaterThanOrEqual(0);
+    expect(loadEnd).toBeGreaterThan(loadStart);
+    const loadCacheIndex = loadSegment.indexOf('let loadCache =');
+    const signatureFetchIndex = loadSegment.indexOf(
+      'fetchMoveFunctionSignatureEntry(',
+    );
+    const materializeIndex = loadSegment.indexOf(
+      'materializeGraphInputValues(',
+    );
+    expect(loadCacheIndex).toBeGreaterThanOrEqual(0);
+    expect(signatureFetchIndex).toBeGreaterThan(loadCacheIndex);
+    expect(signatureFetchIndex).toBeLessThan(materializeIndex);
+    expect(
+      loadSegment.slice(loadCacheIndex, signatureFetchIndex),
+    ).not.toContain('if (editable)');
+    expect(loadSegment).toContain(
+      'const moveSignatures = moveSignatureEvidenceFromCache(loadCache, chain);',
+    );
+  });
+
+  it('keeps auto-layout based on the latest RF snapshot rather than a stale render closure', () => {
+    const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const start = flow.indexOf('const onAutoLayout = useCallback');
+    const end = flow.indexOf('const fitViewportToContent = useCallback', start);
+    const segment = flow.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain(
+      'const currentSnapshot = () => rfSnapshotRef.current;',
+    );
+    expect(segment).toContain('currentSnapshot().rfNodes.length');
+    expect(segment).toContain('snapshot.rfNodes');
+    expect(segment).toContain(
+      'commitControllerRef.current?.recordChange(nextSnapshot);',
+    );
+    expect(segment).not.toContain('await autoLayoutFlow(rfNodes, rfEdges');
+  });
+
+  it('separates document viewport fitting from transaction graph layout', () => {
+    const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const fitStart = flow.indexOf(
+      'const fitViewportToContentAction = useCallback',
+    );
+    const fitEnd = flow.indexOf(
+      'const autoLayoutGeneratedTransactionGraph = useCallback',
+      fitStart,
+    );
+    const fitSegment = flow.slice(fitStart, fitEnd);
+    const measuredStart = flow.indexOf(
+      'if ((readOnly || rehydrating) && hasMeasuredSizeChange)',
+    );
+    const measuredEnd = flow.indexOf('},\n    [readOnly]', measuredStart);
+    const measuredSegment = flow.slice(measuredStart, measuredEnd);
+
+    expect(fitStart).toBeGreaterThanOrEqual(0);
+    expect(fitEnd).toBeGreaterThan(fitStart);
+    expect(fitSegment).toContain('fitViewportToContentRef.current();');
+    expect(fitSegment).not.toContain('onAutoLayout');
+    expect(fitSegment).not.toContain('autoLayoutFlow');
+
+    expect(measuredStart).toBeGreaterThanOrEqual(0);
+    expect(measuredEnd).toBeGreaterThan(measuredStart);
+    expect(measuredSegment).toContain('fitViewportToContentRef.current();');
+    expect(measuredSegment).not.toContain('onAutoLayout');
+    expect(measuredSegment).not.toContain('autoLayoutFlow');
+
+    const loadDocStart = provider.indexOf('const loadFromDoc');
+    const loadDocEnd = provider.indexOf('// ---- export doc', loadDocStart);
+    const loadDocSegment = provider.slice(loadDocStart, loadDocEnd);
+
+    expect(loadDocStart).toBeGreaterThanOrEqual(0);
+    expect(loadDocEnd).toBeGreaterThan(loadDocStart);
+    expect(loadDocSegment).toContain(
+      'flowActionsRef.current.fitViewportToContent?.();',
+    );
+    expect(loadDocSegment).not.toContain(
+      'flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();',
+    );
+    expect(loadDocSegment).not.toContain(
+      'flowActionsRef.current.updateViewport?.(nextView);',
+    );
+
+    const loadTxStart = provider.indexOf('const loadFromOnChainTx');
+    const loadTxEnd = provider.indexOf('// ---- document loader', loadTxStart);
+    const loadTxSegment = provider.slice(loadTxStart, loadTxEnd);
+
+    expect(loadTxStart).toBeGreaterThanOrEqual(0);
+    expect(loadTxEnd).toBeGreaterThan(loadTxStart);
+    expect(loadTxSegment).toContain(
+      'flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();',
+    );
+    expect(loadTxSegment).not.toContain(
+      'flowActionsRef.current.fitViewportToContent?.();',
+    );
+  });
+
+  it('exports the live React Flow graph and viewport instead of stale provider state', () => {
+    const provider = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const exportStart = provider.indexOf('const exportDocResult = useCallback');
+    const exportEnd = provider.indexOf(
+      'const exportDoc = useCallback',
+      exportStart,
+    );
+    const exportSegment = provider.slice(exportStart, exportEnd);
+    const registerStart = flow.indexOf('registerFlowActions({');
+    const registerEnd = flow.indexOf('});\n    return () =>', registerStart);
+    const registerSegment = flow.slice(registerStart, registerEnd);
+
+    expect(exportStart).toBeGreaterThanOrEqual(0);
+    expect(exportEnd).toBeGreaterThan(exportStart);
+    expect(exportSegment).toContain(
+      'const graphCapture = flowActionsRef.current.captureGraph?.();',
+    );
+    expect(exportSegment).toContain(
+      'const graphForExport = graphCapture?.graph ?? graph;',
+    );
+    expect(exportSegment).toContain(
+      'flowActionsRef.current.getViewportState?.() ?? view',
+    );
+    expect(exportSegment).toContain('graph: graphForExport');
+    expect(exportSegment).toContain('view: viewForExport');
+
+    expect(registerStart).toBeGreaterThanOrEqual(0);
+    expect(registerEnd).toBeGreaterThan(registerStart);
+    expect(registerSegment).toContain('fitViewportToContent');
+    expect(registerSegment).toContain('autoLayoutGeneratedTransactionGraph');
+    expect(registerSegment).toContain('captureGraph');
+    expect(registerSegment).toContain('getViewportState');
   });
 
   it('keeps failed replacement transaction loads from clearing the committed viewer transaction', () => {

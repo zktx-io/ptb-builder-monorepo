@@ -28,6 +28,7 @@ import {
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
 import { isU16Index } from '../ir/limits.js';
+import { encodePureValueToBytes } from '../ir/pure.js';
 import {
   finalizeStructuralTransactionIR,
   isStructuralTransactionIR,
@@ -152,14 +153,7 @@ export function transactionIRToRaw(
     inputs: ir.inputs.map((input, index) => {
       switch (input.kind) {
         case 'Pure': {
-          if (input.bytes === undefined) {
-            throwRawConversionError(
-              'raw.ir.pureBytes',
-              `Pure input ${index} requires raw bytes for raw PTB conversion.`,
-              `$.inputs[${index}].bytes`,
-            );
-          }
-          return { kind: 'Pure', bytes: input.bytes };
+          return { kind: 'Pure', bytes: rawPureInputBytes(input, index) };
         }
         case 'Object': {
           const object = irResolvedObjectArg(input);
@@ -186,6 +180,34 @@ export function transactionIRToRaw(
       irCommandToRawCommand(command, index),
     ),
   };
+}
+
+function rawPureInputBytes(
+  input: Extract<IRInput, { kind: 'Pure' }>,
+  index: number,
+): string {
+  const bytes = rawPureInputBytesOrUndefined(input);
+  if (bytes !== undefined) return bytes;
+
+  throwRawConversionError(
+    'raw.ir.pureBytes',
+    `Pure input ${index} requires raw bytes or an encodable typed pure value for raw PTB conversion.`,
+    `$.inputs[${index}]`,
+  );
+}
+
+function rawPureInputBytesOrUndefined(
+  input: Extract<IRInput, { kind: 'Pure' }>,
+): string | undefined {
+  if (input.bytes !== undefined) return input.bytes;
+  if (
+    input.type !== undefined &&
+    Object.prototype.hasOwnProperty.call(input, 'value')
+  ) {
+    const encoded = encodePureValueToBytes(input.type, input.value);
+    if (encoded.ok) return encoded.bytes;
+  }
+  return undefined;
 }
 
 export function assertRawConvertibleIR(ir: TransactionIR): void {
@@ -216,12 +238,12 @@ export function validateRawConvertibleIR(
   ir.inputs.forEach((input, index) => {
     switch (input.kind) {
       case 'Pure':
-        if (input.bytes === undefined) {
+        if (rawPureInputBytesOrUndefined(input) === undefined) {
           diagnostics.push(
             rawDiagnostic(
               'raw.ir.pureBytes',
-              `Pure input ${index} requires raw bytes for raw PTB conversion.`,
-              `$.inputs[${index}].bytes`,
+              `Pure input ${index} requires raw bytes or an encodable typed pure value for raw PTB conversion.`,
+              `$.inputs[${index}]`,
             ),
           );
         }
