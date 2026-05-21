@@ -43,6 +43,24 @@ describe('autoLayoutFlow', () => {
     expect(positions['var-2']!.y - positions['var-1']!.y).toBe(264);
   });
 
+  it('does not estimate vector node height from vector item count', async () => {
+    const nodes = [
+      baseNode('start', 'Start'),
+      baseNode('var-0', 'Variable', {
+        varType: { kind: 'vector', elem: { kind: 'scalar', name: 'string' } },
+        value: Array.from({ length: 50 }, (_, index) => `item-${index}`),
+      }),
+      baseNode('var-1', 'Variable', {
+        varType: { kind: 'scalar', name: 'string' },
+      }),
+      baseNode('end', 'End'),
+    ];
+
+    const positions = await autoLayoutFlow(nodes, [], {});
+
+    expect(positions['var-1']!.y - positions['var-0']!.y).toBe(124);
+  });
+
   it('orders MoveCall TypeArgument and value input nodes by target handle order', async () => {
     const nodes = [
       baseNode('start', 'Start'),

@@ -5,6 +5,7 @@ import { ImageOff, Loader2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import { usePtb } from './PtbProvider';
+import { useModalFocusTrap } from './utils/useModalFocusTrap';
 import type { ObjectMetadataInfo } from '../ptb/objectMetadata';
 
 export type OwnedItem = {
@@ -210,42 +211,11 @@ export function AssetsModal({
     onClose();
   }, [onClose]);
 
-  useEffect(() => {
-    if (!open) return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusableSelector =
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusable = Array.from(
-      panel.querySelectorAll<HTMLElement>(focusableSelector),
-    ).filter((element) => !element.hasAttribute('disabled'));
-    focusable[0]?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        handleClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const items = Array.from(
-        panel.querySelectorAll<HTMLElement>(focusableSelector),
-      ).filter((element) => !element.hasAttribute('disabled'));
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    panel.addEventListener('keydown', onKeyDown);
-    return () => panel.removeEventListener('keydown', onKeyDown);
-  }, [handleClose, open]);
+  useModalFocusTrap({
+    onClose: handleClose,
+    open,
+    panelRef,
+  });
 
   const handlePick = (item: OwnedItem) => {
     onPick(item);

@@ -74,20 +74,6 @@ function measuredHeight(n: RFNode<RFNodeData>): number | undefined {
   );
 }
 
-function getLength(val: unknown): number {
-  if (val === undefined) return 0;
-  if (Array.isArray(val)) return val.length;
-  if (ArrayBuffer.isView(val) && !(val instanceof DataView)) {
-    return (val as unknown as ArrayLike<unknown>).length;
-  }
-  if (typeof (val as any)?.[Symbol.iterator] === 'function') {
-    let count = 0;
-    for (const _ of val as Iterable<unknown>) count++;
-    return count;
-  }
-  return 0;
-}
-
 /** Estimate effective height purely from ptbNode data (ports only). */
 function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
   const kind = nodeKind(n);
@@ -101,10 +87,6 @@ function estimateHeightFromData(n: RFNode<RFNodeData>): number | undefined {
 
     if (vt?.kind === 'object') {
       return isWellKnownObjectVar(n) ? base : base + TEXT_INPUT_H;
-    }
-
-    if (vt?.kind === 'vector') {
-      return base + getLength(p.value) * TEXT_INPUT_H + 4;
     }
 
     return base;

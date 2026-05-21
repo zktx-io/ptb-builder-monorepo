@@ -594,36 +594,47 @@ describe('builder source guardrails', () => {
       join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
       'utf8',
     );
+    const start = text.indexOf('const applyVectorValue = useCallback');
+    const end = text.indexOf('const renderVectorPreview', start);
+    const segment = text.slice(start, end);
 
     expect(text).toContain('const cancelPendingPureValueDrafts = useCallback');
-    expect(text).toContain('const replaceVectorItems = useCallback');
-    expect(text).toMatch(
-      /const stepVec = useCallback[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*replaceVectorItems\(next\);[\s\S]*patchVar\(\{ value: next \}\);/,
-    );
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('cancelPendingPureValueDrafts();');
+    expect(segment).toContain('patchVar({ value: nextValue });');
     expect(text).toMatch(
       /onToggle=\{\(next\) => \{[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*OPTION_NONE_VALUE/,
     );
-    expect(text).toMatch(
-      /onChange=\{\(newVal\) => \{[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*replaceVectorItems\(next\);[\s\S]*patchVar\(\{ value: next \}\);/,
-    );
     expect(text).not.toContain('defer(() => patchVar({ value: next }))');
     expect(text).not.toContain('setVecItems((prev)');
+    expect(text).not.toContain('debouncedPatchVector');
   });
 
-  it('keeps vector<bool> editor buffers type-honest', () => {
-    const text = readFileSync(
+  it('keeps vector editing behind preview and modal Apply boundaries', () => {
+    const varNode = readFileSync(
       join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
       'utf8',
     );
+    const vectorValue = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'vectorValue.ts'),
+      'utf8',
+    );
+    const modal = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VectorEditorModal.tsx'),
+      'utf8',
+    );
 
-    expect(text).toContain('type VectorEditorItem = string | boolean');
-    expect(text).toContain('useState<VectorEditorItem[]>');
-    expect(text).toContain('parseBoolEditorValue(variableValue ?? scalarBuf)');
-    expect(text).toContain('allowUnset');
-    expect(text).toContain('onUnset');
-    expect(text).toContain('value={variableValue as boolean | undefined}');
-    expect(text).not.toContain('newVal as any');
-    expect(text).not.toContain('copy as any');
+    expect(varNode).toContain('renderVectorPreview()');
+    expect(varNode).toContain('<VectorEditorModal');
+    expect(varNode).not.toContain('renderVectorEditor');
+    expect(varNode).not.toContain('<MiniStepper');
+    expect(varNode).not.toContain('allowUnset');
+    expect(modal).toContain('parseVectorDraftText(draft, elemType)');
+    expect(modal).toContain('onApply(parsed.value)');
+    expect(vectorValue).toContain('type VectorEditorItem = string | boolean');
+    expect(vectorValue).toContain('Line ${index + 1} must be true or false.');
+    expect(vectorValue).not.toContain(' as any');
   });
 
   it('keeps transaction object metadata fetches concurrency-bounded', () => {
@@ -805,6 +816,31 @@ describe('builder source guardrails', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(segment).not.toMatch(/setPrevStack\(\(.*loadPage/s);
+  });
+
+  it('keeps modal keyboard focus behavior centralized', () => {
+    const hook = readFileSync(
+      join(sourceRoot, 'ui', 'utils', 'useModalFocusTrap.ts'),
+      'utf8',
+    );
+    const assetsModal = readFileSync(
+      join(sourceRoot, 'ui', 'AssetsModal.tsx'),
+      'utf8',
+    );
+    const vectorModal = readFileSync(
+      join(sourceRoot, 'ui', 'nodes', 'vars', 'VectorEditorModal.tsx'),
+      'utf8',
+    );
+
+    expect(hook).toContain('export function useModalFocusTrap');
+    expect(hook).toContain("event.key === 'Escape'");
+    expect(hook).toContain("event.key !== 'Tab'");
+    expect(hook).toContain('previousActiveElement');
+    expect(assetsModal).toContain('useModalFocusTrap({');
+    expect(vectorModal).toContain('useModalFocusTrap({');
+    expect(vectorModal).toContain('initialFocusRef: textareaRef');
+    expect(assetsModal).not.toContain("addEventListener('keydown'");
+    expect(vectorModal).not.toContain("addEventListener('keydown'");
   });
 
   it('keeps auto-layout handle parsing aligned with model handle suffixes', () => {
