@@ -1,12 +1,6 @@
-import {
-  indexedInputHandleIndex,
-  isIndexedInputHandle,
-  isInputHandle,
-} from './handles.js';
-import {
-  graphCommandRuntimeParams,
-  parseGraphMoveCallTarget,
-} from './moveCallEvidence.js';
+import { graphCommandInputSlot } from './commandSemantics.js';
+import { indexedInputHandleIndex } from './handles.js';
+import { graphCommandRuntimeParams } from './moveCallEvidence.js';
 import {
   type AnalyzePTBGraphOptions,
   type CommandNode,
@@ -20,15 +14,11 @@ import {
 import {
   commandInputSlotExpectation,
   inputArgumentKindCanCarryType,
-  type PTBCommandInputSlot,
 } from '../inputTypeEvidence.js';
-import {
-  lookupMoveSignatureEvidence,
-  normalizeMovePackageSignatureEvidenceOption,
-} from '../move/evidence.js';
+import { normalizeMovePackageSignatureEvidenceOption } from '../move/evidence.js';
 import { ptbTypesEqual } from '../ptbType.js';
 import { parseMoveTypeTag } from '../raw/types.js';
-import { cloneJsonLike, NULL_VALUE } from '../utils.js';
+import { cloneJsonLike } from '../utils.js';
 
 export interface GraphInputTypeInferenceOptions
   extends Pick<AnalyzePTBGraphOptions, 'moveSignatures'> {}
@@ -47,13 +37,6 @@ export interface GraphInputTypeInferenceResult {
 type InferenceCandidate = {
   type: PTBType;
 };
-
-const BLOCK_PORT_FALLBACK = Symbol('block-port-fallback');
-
-type GraphCommandInputSlotResult =
-  | PTBCommandInputSlot
-  | typeof BLOCK_PORT_FALLBACK
-  | undefined;
 
 /**
  * Infers only graph input node types from concrete consumer-side command
@@ -165,13 +148,13 @@ function commandInputType(
   typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
   moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
 ): PTBType | undefined {
-  const slot = graphCommandInputSlot(
-    node,
-    targetHandle,
-    typeArgumentsByIndex,
+  const resolution = graphCommandInputSlot(node.command, targetHandle, {
     moveSignatures,
-  );
-  if (slot === BLOCK_PORT_FALLBACK) return undefined;
+    runtime: graphCommandRuntimeParams(node),
+    typeArgumentsByIndex,
+  });
+  if (resolution?.kind === 'blocked') return undefined;
+  const slot = resolution?.slot;
   const semantic = slot
     ? commandInputSlotExpectation(slot)?.ptbType
     : undefined;
@@ -192,134 +175,6 @@ function declaredInputPortType(
     (port) =>
       port.id === targetHandle && port.role === 'io' && port.direction === 'in',
   )?.dataType;
-}
-
-function graphCommandInputSlot(
-  node: CommandNode,
-  targetHandle: string,
-  typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
-  moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
-): GraphCommandInputSlotResult {
-  switch (node.command) {
-    case 'splitCoins':
-      if (isInputHandle(targetHandle, 'coin')) {
-        return { commandKind: 'SplitCoins', field: 'coin' };
-      }
-      if (isIndexedInputHandle(targetHandle, 'amount')) {
-        return {
-          commandKind: 'SplitCoins',
-          field: 'amount',
-          index: indexedInputHandleIndex(targetHandle, 'amount') ?? 0,
-        };
-      }
-      return undefined;
-    case 'mergeCoins':
-      if (isInputHandle(targetHandle, 'destination')) {
-        return { commandKind: 'MergeCoins', field: 'destination' };
-      }
-      if (isIndexedInputHandle(targetHandle, 'source')) {
-        return {
-          commandKind: 'MergeCoins',
-          field: 'source',
-          index: indexedInputHandleIndex(targetHandle, 'source') ?? 0,
-        };
-      }
-      return undefined;
-    case 'transferObjects':
-      if (isInputHandle(targetHandle, 'recipient')) {
-        return { commandKind: 'TransferObjects', field: 'address' };
-      }
-      if (isIndexedInputHandle(targetHandle, 'object')) {
-        return {
-          commandKind: 'TransferObjects',
-          field: 'object',
-          index: indexedInputHandleIndex(targetHandle, 'object') ?? 0,
-        };
-      }
-      return undefined;
-    case 'makeMoveVec':
-      if (!isIndexedInputHandle(targetHandle, 'elem')) return undefined;
-      const type = makeMoveVecElementTypeTag(node);
-      if (type === undefined) return BLOCK_PORT_FALLBACK;
-      return {
-        commandKind: 'MakeMoveVec',
-        field: 'element',
-        index: indexedInputHandleIndex(targetHandle, 'elem') ?? 0,
-        type,
-      };
-    case 'upgrade':
-      return isInputHandle(targetHandle, 'upgradeCap')
-        ? { commandKind: 'Upgrade', field: 'ticket' }
-        : undefined;
-    case 'moveCall':
-      return moveCallArgumentSlot(
-        node,
-        targetHandle,
-        typeArgumentsByIndex,
-        moveSignatures,
-      );
-    case 'publish':
-      return { commandKind: 'Publish' };
-    case 'unsupported':
-      return { commandKind: 'Unsupported' };
-  }
-}
-
-function makeMoveVecElementTypeTag(
-  node: CommandNode,
-): string | null | undefined {
-  const runtime = graphCommandRuntimeParams(node);
-  if (runtime?.type === undefined || runtime.type === NULL_VALUE) {
-    return NULL_VALUE;
-  }
-  return typeof runtime.type === 'string' ? runtime.type : undefined;
-}
-
-function moveCallArgumentSlot(
-  node: CommandNode,
-  targetHandle: string,
-  typeArgumentsByIndex: ReadonlyMap<number, string> | undefined,
-  moveSignatures: AnalyzePTBGraphOptions['moveSignatures'],
-): GraphCommandInputSlotResult {
-  const argumentIndex = indexedInputHandleIndex(targetHandle, 'arg');
-  if (argumentIndex === undefined) return undefined;
-
-  const runtime = graphCommandRuntimeParams(node);
-  const target = parseGraphMoveCallTarget(runtime?.target).target;
-  if (!target) return BLOCK_PORT_FALLBACK;
-
-  const signature = lookupMoveSignatureEvidence(
-    target.packageId,
-    target.moduleName,
-    target.functionName,
-    moveSignatures,
-  );
-  const parameter = signature?.parameters[argumentIndex];
-  if (!signature) return undefined;
-  if (!parameter) return BLOCK_PORT_FALLBACK;
-
-  const typeArguments = typeArgumentsForInference(
-    signature.typeParameterCount,
-    typeArgumentsByIndex,
-  );
-  return {
-    commandKind: 'MoveCall',
-    argumentIndex,
-    argumentType: parameter,
-    typeArguments,
-  };
-}
-
-function typeArgumentsForInference(
-  count: number,
-  byIndex: ReadonlyMap<number, string> | undefined,
-): string[] {
-  if (count === 0) return [];
-  const typeArguments: string[] = [];
-  for (let index = 0; index < count; index += 1) {
-    typeArguments.push(byIndex?.get(index) ?? '');
-  }
-  return typeArguments;
 }
 
 function variableSourceCanCarryType(

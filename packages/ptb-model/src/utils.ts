@@ -161,6 +161,25 @@ export function findNonPlainData(
   return undefined;
 }
 
+export function deepFreezeJsonLike(value: unknown): void {
+  const stack: unknown[] = [value];
+  const seen = new WeakSet<object>();
+
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!Array.isArray(item) && !isPlainObject(item)) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+
+    if (Array.isArray(item)) {
+      item.forEach((child) => stack.push(child));
+    } else {
+      Object.values(item).forEach((child) => stack.push(child));
+    }
+    Object.freeze(item);
+  }
+}
+
 function cloneJsonLikeChild(
   value: unknown,
   seen: WeakMap<object, unknown>,

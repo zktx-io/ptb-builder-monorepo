@@ -1,9 +1,8 @@
 import { graphDiagnostic } from './diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
-import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
-  lookupMoveSignatureEvidence,
   type MovePackageSignatureEvidence,
+  resolveMoveCallSignatureEvidence,
 } from '../move/evidence.js';
 import { parseMoveIdentifier, parseObjectId } from '../raw/types.js';
 import { isPlainObject } from '../utils.js';
@@ -25,7 +24,10 @@ export interface GraphMoveCallTargetParseResult {
 }
 
 export interface GraphMoveCallEvidenceState {
-  effectiveResultCount: number;
+  resultArity: number;
+  parameterCount: number;
+  typeParameterCount: number;
+  typeArgumentsComplete: boolean;
 }
 
 export function graphCommandRuntimeParams(node: {
@@ -78,63 +80,44 @@ export function graphMoveCallEvidenceState(
   const target = parseGraphMoveCallTarget(runtime.target).target;
   if (target === undefined) return undefined;
 
-  const hasExplicitResultCount =
-    Object.prototype.hasOwnProperty.call(runtime, 'resultCount') &&
-    runtime.resultCount !== undefined;
-  const explicitResultCount = hasExplicitResultCount
-    ? runtime.resultCount
-    : undefined;
-  if (
-    explicitResultCount !== undefined &&
-    (!isNonNegativeSafeInteger(explicitResultCount) ||
-      explicitResultCount > MAX_RESULT_COUNT)
-  ) {
-    return undefined;
-  }
-
-  const signature = lookupMoveSignatureEvidence(
-    target.packageId,
-    target.moduleName,
-    target.functionName,
+  const evidence = resolveMoveCallSignatureEvidence({
+    packageId: target.packageId,
+    moduleName: target.moduleName,
+    functionName: target.functionName,
     moveSignatures,
-  );
-  if (signature === undefined) return undefined;
+    typeArguments,
+    explicitResultCount: runtime.resultCount,
+  });
+  if (evidence === undefined) return undefined;
 
-  if (typeArguments.length !== signature.typeParameterCount) {
+  if (!evidence.typeArgumentsComplete) {
     if (diagnostics !== undefined && nodePath !== undefined) {
       diagnostics.push(
         graphDiagnostic(
           'graph.command.moveCall.typeArgumentsCount',
-          `PTB graph MoveCall typeArguments length must match signature typeParameterCount ${signature.typeParameterCount}.`,
+          `PTB graph MoveCall typeArguments length must match signature typeParameterCount ${evidence.signature.typeParameterCount}.`,
           nodePath,
         ),
       );
     }
-    return undefined;
   }
 
-  const evidenceResultCount = signature.returns.length;
-  if (evidenceResultCount > MAX_RESULT_COUNT) return undefined;
-
-  if (typeof explicitResultCount === 'number') {
-    if (explicitResultCount !== evidenceResultCount) {
-      if (diagnostics !== undefined && nodePath !== undefined) {
-        diagnostics.push(
-          graphDiagnostic(
-            GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
-            `PTB graph MoveCall resultCount ${explicitResultCount} does not match signature returns length ${evidenceResultCount}.`,
-            `${nodePath}.params.runtime.resultCount`,
-          ),
-        );
-      }
-      return { effectiveResultCount: explicitResultCount };
+  if (evidence.resultCountMismatch) {
+    if (diagnostics !== undefined && nodePath !== undefined) {
+      diagnostics.push(
+        graphDiagnostic(
+          GRAPH_MOVE_CALL_RESULT_COUNT_MISMATCH_DIAGNOSTIC,
+          `PTB graph MoveCall resultCount ${String(runtime.resultCount)} does not match signature returns length ${evidence.resultArity}.`,
+          `${nodePath}.params.runtime.resultCount`,
+        ),
+      );
     }
-    return {
-      effectiveResultCount: explicitResultCount,
-    };
   }
 
   return {
-    effectiveResultCount: evidenceResultCount,
+    resultArity: evidence.resultArity,
+    parameterCount: evidence.signature.parameters.length,
+    typeParameterCount: evidence.signature.typeParameterCount,
+    typeArgumentsComplete: evidence.typeArgumentsComplete,
   };
 }

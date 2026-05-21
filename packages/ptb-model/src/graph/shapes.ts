@@ -32,13 +32,6 @@ export type CommandKind =
   | 'upgrade'
   | 'unsupported';
 
-export interface CommandUIParams {
-  amountsCount?: number;
-  sourcesCount?: number;
-  objectsCount?: number;
-  elemsCount?: number;
-}
-
 export interface CommandRuntimeParams {
   target?: string;
   resultCount?: number;
@@ -63,7 +56,6 @@ export interface CommandNode extends NodeBase {
   command: CommandKind;
   params?: {
     runtime?: CommandRuntimeParams;
-    ui?: CommandUIParams;
   };
 }
 

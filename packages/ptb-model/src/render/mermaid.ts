@@ -16,6 +16,10 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
+import {
+  isMovePackageSignatureEvidence,
+  type MovePackageSignatureEvidence,
+} from '../move/evidence.js';
 import { isPTBType, type PTBType, serializePTBType } from '../ptbType.js';
 import { isRawFundsWithdrawalArg } from '../raw/types.js';
 import type { RawObjectArg } from '../raw/types.js';
@@ -38,6 +42,7 @@ export interface TransactionIRToMermaidOptions {
   showArgumentValues?: boolean;
   shortenLabels?: boolean;
   theme?: 'none' | 'semantic';
+  moveSignatures?: MovePackageSignatureEvidence;
 }
 
 const MERMAID_OPTION_FIELDS = [
@@ -46,6 +51,7 @@ const MERMAID_OPTION_FIELDS = [
   'showArgumentValues',
   'shortenLabels',
   'theme',
+  'moveSignatures',
 ] as const;
 const ARRAY_VALUE_PREVIEW_ITEMS = 3;
 
@@ -57,6 +63,11 @@ export function transactionIRToMermaid(
   const renderOptions = isRecord(options)
     ? (options as TransactionIRToMermaidOptions)
     : {};
+  const moveSignatures = isMovePackageSignatureEvidence(
+    renderOptions.moveSignatures,
+  )
+    ? renderOptions.moveSignatures
+    : undefined;
   const source: Record<string, unknown> = isRecord(ir) ? ir : {};
   const renderIR: TransactionIR = {
     version:
@@ -71,6 +82,7 @@ export function transactionIRToMermaid(
       ...optionDiagnostics,
       ...validateTransactionIR(ir, {
         includeExistingDiagnostics: true,
+        moveSignatures,
       }),
     ],
   };
@@ -99,10 +111,9 @@ export function transactionIRToMermaid(
     irCommandArgRefs(command).some((arg) => arg.kind === 'GasCoin'),
   );
   const inferredInputTypes = new Map(
-    inferTransactionIRInputTypes(renderIR).inferences.map((inference) => [
-      inference.inputIndex,
-      inference.type,
-    ]),
+    inferTransactionIRInputTypes(renderIR, { moveSignatures }).inferences.map(
+      (inference) => [inference.inputIndex, inference.type],
+    ),
   );
 
   renderIR.diagnostics.forEach((diagnostic, index) => {
@@ -256,6 +267,19 @@ function validateMermaidOptions(
         'shape',
         'Mermaid theme must be none or semantic.',
         '$.options.theme',
+      ),
+    );
+  }
+  if (
+    options.moveSignatures !== undefined &&
+    !isMovePackageSignatureEvidence(options.moveSignatures)
+  ) {
+    diagnostics.push(
+      renderDiagnostic(
+        'mermaid.moveSignatures',
+        'shape',
+        'Mermaid moveSignatures must be Move package signature evidence.',
+        '$.options.moveSignatures',
       ),
     );
   }

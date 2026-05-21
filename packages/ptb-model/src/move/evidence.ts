@@ -95,13 +95,65 @@ export function normalizeMovePackageSignatureEvidenceOption(
  * Looks up a function signature by already-normalized MoveCall coordinates.
  * This helper does not normalize package, module, or function keys.
  */
-export function lookupMoveSignatureEvidence(
+function lookupMoveSignatureEvidence(
   packageId: string,
   moduleName: string,
   functionName: string,
   evidence: MovePackageSignatureEvidence | undefined,
 ): MoveFunctionSignatureEvidence | undefined {
   return evidence?.[packageId]?.[moduleName]?.[functionName];
+}
+
+export interface MoveCallSignatureEvidenceResolution {
+  signature: MoveFunctionSignatureEvidence;
+  resultArity: number;
+  typeArgumentsComplete: boolean;
+  resultCountMismatch: boolean;
+}
+
+export interface ResolveMoveCallSignatureEvidenceOptions {
+  packageId: string;
+  moduleName: string;
+  functionName: string;
+  moveSignatures: MovePackageSignatureEvidence | undefined;
+  typeArguments?: readonly string[];
+  explicitResultCount?: unknown;
+}
+
+export function resolveMoveCallSignatureEvidence({
+  packageId,
+  moduleName,
+  functionName,
+  moveSignatures,
+  typeArguments = [],
+  explicitResultCount,
+}: ResolveMoveCallSignatureEvidenceOptions):
+  | MoveCallSignatureEvidenceResolution
+  | undefined {
+  const signature = lookupMoveSignatureEvidence(
+    packageId,
+    moduleName,
+    functionName,
+    moveSignatures,
+  );
+  if (signature === undefined) return undefined;
+
+  const explicitResultCountPresent = explicitResultCount !== undefined;
+  const explicitResultCountValid =
+    !explicitResultCountPresent ||
+    (isNonNegativeSafeInteger(explicitResultCount) &&
+      explicitResultCount <= MAX_RESULT_COUNT);
+
+  return {
+    signature,
+    resultArity: signature.returns.length,
+    typeArgumentsComplete:
+      typeArguments.length === signature.typeParameterCount,
+    resultCountMismatch:
+      explicitResultCountValid &&
+      typeof explicitResultCount === 'number' &&
+      explicitResultCount !== signature.returns.length,
+  };
 }
 
 function openSignatureTypeParametersWithinBound(

@@ -95,6 +95,7 @@ import {
   RESULT_HANDLE_ID,
   indexedInputHandle,
   inputHandle,
+  knownResultOutputHandles,
   nestedResultHandle,
 } from '@zktx.io/ptb-model';
 
@@ -103,6 +104,7 @@ const firstAmount = indexedInputHandle('amount', 0); // "in_amount_0"
 const firstMoveType = indexedInputHandle('type', 0); // "in_type_0"
 const singleResult = RESULT_HANDLE_ID; // "out_result"
 const firstNestedResult = nestedResultHandle(0); // "out_0"
+const canonicalOutputs = knownResultOutputHandles(2); // ["out_0", "out_1"]
 ```
 
 The helper output is the canonical `PTBGraph` handle id. UI frameworks may add
@@ -126,15 +128,13 @@ export function sdkPureType(type: PTBType | undefined): string | undefined {
 }
 ```
 
-`CommandUIParams` is display-only and currently allows only command-owned count
-fields:
-
-| Command | UI field |
-| --- | --- |
-| `splitCoins` | `amountsCount` |
-| `mergeCoins` | `sourcesCount` |
-| `transferObjects` | `objectsCount` |
-| `makeMoveVec` | `elemsCount` |
+Command authoring arity is represented by the command's declared graph ports,
+not by a separate UI count object. For example, a `SplitCoins` node with one
+`in_amount_0` port has one coin result and uses `out_result`; a node with two
+dense amount ports uses `out_0` and `out_1`. UI packages may keep their own
+draft count state, but canonical `PTBGraph` data must not store it. Known-result
+commands must declare the exact canonical output port set for their result
+arity; missing result ports and extra result ports are both graph diagnostics.
 
 Use `validatePTBType()` for standalone model type validation. It reports
 model-wide `ptb.type.*` diagnostics. Graph validation and graph conversion still
@@ -184,6 +184,7 @@ import {
   isMovePackageSignatureEvidence,
   isTxContextOpenSignature,
   parseExecutableGraph,
+  resolveMoveCallSignatureEvidence,
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
   validateTransactionIR,
@@ -205,6 +206,14 @@ const moveSignatures: MovePackageSignatureEvidence = buildHostEvidence();
 if (!isMovePackageSignatureEvidence(moveSignatures)) {
   throw new Error('Host evidence must match the model evidence shape.');
 }
+const moveCallEvidence = resolveMoveCallSignatureEvidence({
+  packageId,
+  moduleName,
+  functionName,
+  moveSignatures,
+  typeArguments,
+  explicitResultCount,
+});
 const irDiagnostics = validateTransactionIR(ir, { moveSignatures });
 const graphDiagnostics = analyzePTBGraph(graph, { moveSignatures }).diagnostics;
 const executableGraph = parseExecutableGraph(graph, { moveSignatures });
@@ -218,22 +227,43 @@ Move type argument strings with the installed SDK type-tag parser and map
 OpenSignature generic structs to generic object types. Concrete type argument
 strings preserve their full object `typeTag`; open generic signatures remain
 generic object types even when concrete type arguments are supplied. These
-helpers define the model evidence shape only. Evidence-aware `MoveCall` result
-arity and limited `MakeMoveVec` element type validation are available only when
-the host explicitly passes `moveSignatures` to `validateTransactionIR()`,
-`analyzePTBGraph()`, `parseExecutableGraph()`, or `graphToTransactionIR()`.
-Graph-to-IR conversion may
-materialize an evidence-derived MoveCall `resultCount` into the returned IR, and
-IR-to-graph conversion then preserves that count in `params.runtime.resultCount`.
+helpers define the model evidence shape and shared MoveCall signature
+resolution. Downstream builders should use `resolveMoveCallSignatureEvidence()`
+instead of recomputing signature arity or result-count mismatch rules.
+Evidence-aware `MoveCall` result arity and limited `MakeMoveVec` element type
+validation are available only when the host explicitly passes `moveSignatures`
+to the model boundary that needs evidence: `validateTransactionIR()`,
+`transactionIRToGraph()`, `analyzePTBGraph()`, `parseExecutableGraph()`,
+`graphToTransactionIR()`, `validateTsSdkRenderableIR()`,
+`transactionIRToTsSdkCode()`, or `transactionIRToMermaid()`. Graph analysis
+returns `moveCallEvidenceByNodeId` entries whose `resultArity` comes from the
+matched signature returns and whose `parameterCount` comes from the matched
+signature parameters and whose `typeParameterCount` comes from the matched
+signature type parameters, while `typeArgumentsComplete` only controls whether
+generic parameter and return types can be concretized. Graph-to-IR conversion may
+materialize an evidence-derived MoveCall `resultCount` into the returned IR, and IR-to-graph
+conversion can use signature evidence to project canonical MoveCall output ports
+and persist that arity into `params.runtime.resultCount` so the resulting graph
+remains a self-contained canonical `PTBGraph`.
+Base `TransactionIR` validation preserves protocol `Result` and `NestedResult`
+references when MoveCall result arity is not known yet. Projection gates that
+must materialize concrete result slots, such as graph conversion or runtime
+`Transaction` construction, require matching signature evidence or an explicit
+`resultCount` before they can accept those references. Callers that need this
+stricter IR check can pass `requireKnownResultArity: true` to
+`validateTransactionIR()`.
 The model does not fetch package metadata, persist evidence in PTB documents, or
 infer result arity from metadata fields that happen to be present on raw PTB
-data. Malformed `moveSignatures` options are rejected; validate host evidence
-with `isMovePackageSignatureEvidence()` before passing it. Mermaid rendering can
-surface evidence diagnostics already stored on the IR. Raw
-conversion and TS SDK renderability validators do not accept Move signature
-evidence and recompute their own evidence-free checks.
+data. Validation, graph conversion, executable graph parsing, and TypeScript SDK
+code rendering reject malformed `moveSignatures` options. Mermaid rendering is
+an inspection renderer: malformed `moveSignatures` options are emitted as
+diagram diagnostics, and verified evidence can label otherwise-untyped Pure
+inputs, but the renderer never mutates input bytes or stores evidence on the IR.
+Validate host evidence with `isMovePackageSignatureEvidence()` before passing it
+to any boundary.
 
-Do not store transaction semantics in `params.ui`. MoveCall targets and
+Do not store UI state or transaction semantics in `params.ui`; canonical
+`PTBGraph` command params support only `params.runtime`. MoveCall targets and
 `resultCount`, MakeMoveVec explicit type, Publish modules and dependencies, and
 Upgrade package/modules/dependencies belong in `params.runtime`. Concrete
 MoveCall type arguments are graph entities: store them as `TypeArgument` nodes
@@ -245,8 +275,8 @@ When updating a downstream builder, CLI, example, fixture, or template, first
 convert its data to the canonical model contract. Remove local duplicates of
 model helpers, remove builder-style handle aliases such as `out_coin_0` and
 `out_ret_0`, and remove stale UI fields such as `modulesCount`, `depsCount`,
-`policyWidth`, and `params.ui.readOnly`. If compatibility with older stored data
-is required, perform that translation in an explicitly named compatibility
+`policyWidth`, and any `params.ui` object. If compatibility with older stored
+data is required, perform that translation in an explicitly named compatibility
 utility before calling canonical model parsers or converters.
 
 ## Data Model
@@ -361,19 +391,34 @@ Current partial or unsupported areas are:
 
 - raw Pure bytes are validated as base64. When a concrete pure type hint is
   present, the bytes must round-trip through the installed SDK BCS schema for
-  that type. The consuming Move type is not inferred;
+  that type. The consuming Move type is not written back into the input unless
+  a caller explicitly materializes a graph value;
 - `MoveCall` result value types and `MakeMoveVec` element result types are not
   inferred from package metadata by default. When a host passes verified
-  `moveSignatures` to `validateTransactionIR()`, `analyzePTBGraph()`,
-  `parseExecutableGraph()`, or `graphToTransactionIR()`, the model can use the
-  matching function signature to
-  check `MoveCall` result arity, Result/NestedResult bounds, graph output ports,
-  and comparable `MakeMoveVec` element types. Graph-to-IR conversion can fill a
-  missing MoveCall `IRCommand.resultCount` from matching evidence; IR-to-graph
-  conversion preserves that materialized count as `params.runtime.resultCount`.
-  `MakeMoveVec` type checking only runs when the target MoveCall evidence has
-  matching type arguments and result count, or when an input already carries a
-  concrete PTB type. Generic, unknown, and object types without concrete
+  `moveSignatures` to `validateTransactionIR()`, `transactionIRToGraph()`,
+  `analyzePTBGraph()`, `parseExecutableGraph()`, `graphToTransactionIR()`,
+  `validateTsSdkRenderableIR()`, `transactionIRToTsSdkCode()`, or
+  `transactionIRToMermaid()`,
+  the model can use the matching function signature to
+  check `MoveCall` argument count against signature parameter length,
+  type-argument count against signature type-parameter length, result arity,
+  Result/NestedResult bounds, graph input and output ports, comparable
+  `MakeMoveVec` element types, TS SDK result-slot renderability, and Mermaid
+  Pure-input type labels. Argument length mismatches use the
+  `ir.command.moveCall.argumentsLength` diagnostic. Graph-to-IR
+  conversion can fill a missing
+  MoveCall `IRCommand.resultCount` from matching evidence. IR-to-graph
+  conversion can use matching evidence to produce the correct output handles and
+  records the resolved arity as `params.runtime.resultCount` for saved graph/document round trips.
+  Raw/IR preservation paths do not require Move signature evidence merely to
+  carry protocol `Result` or `NestedResult` references. Graph conversion and
+  runtime transaction-building paths do require known result arity because they
+  materialize concrete output handles or SDK result slots.
+  `MakeMoveVec` type checking uses MoveCall return type evidence when the target
+  MoveCall has matching type arguments, or when an input already carries a
+  concrete PTB type. Result-count mismatch remains a separate diagnostic;
+  signature return arity is still the source of truth for result slots. Generic,
+  unknown, and object types without concrete
   `typeTag` evidence are skipped. Primitive `MakeMoveVec` input checks stay on
   existing argument diagnostics: Pure type mismatches use `ir.arg.pureType`, and
   non-Pure inputs use `ir.arg.semanticType`. String, vector, option, object, and
@@ -418,10 +463,9 @@ Current partial or unsupported areas are:
   with hidden fields turns the containing MoveCall into `Unsupported` and emits
   a `raw.command.moveCall.argumentTypes` diagnostic. The field must match the
   exported `RawOpenSignature` shape exactly.
-- `CommandNode.params.runtime` is the only graph command parameter section that
-  can provide transaction semantics. `params.ui` is display-only and
-  closed-shape; both sections use exported closed TypeScript shapes and
-  command-specific runtime key validation. Builder-shaped sections such as
+- `CommandNode.params.runtime` is the only graph command parameter section.
+  UI state such as draft counts, collapsed state, or read-only state is not part
+  of canonical `PTBGraph` data. Builder-shaped sections such as `params.ui` and
   `params.moveCall` are rejected as unknown fields.
 - Sponsor `FundsWithdrawal` is preserved in raw, IR, graph, and Mermaid
   inspection paths, but TS SDK code string rendering rejects it because the
@@ -429,8 +473,10 @@ Current partial or unsupported areas are:
 - Empty raw Pure byte strings without a type hint are accepted at the raw byte
   layer because the installed SDK byte schema and decoder accept them. Empty
   bytes are not canonical BCS for any concrete pure type hint, so typed empty raw
-  Pure bytes are rejected. This package does not infer the consuming Move type
-  for raw Pure bytes.
+  Pure bytes are rejected. Raw conversion does not write a consuming Move type
+  back into raw Pure bytes; evidence-aware graph and renderer paths may use
+  command usage or supplied Move signatures to display or materialize a typed
+  model value without changing the raw byte payload.
 - `IRPureValue` may contain `bigint` for typed pure code generation; use `jsonStringifyWithBigInt()` when serializing such IR values to JSON text.
 - New support should be added only when it improves faithful Sui PTB
   representation, validation, conversion, graph editing, inspection rendering,
@@ -625,7 +671,9 @@ The generated source targets the public helper surface in `@mysten/sui@2.16.2`, 
 - `tx.withdrawal(...)`
 
 Code string rendering validates the `TransactionIR` shape and conversion
-requirements before rendering. Unresolved object ids render through
+requirements before rendering. Pass verified `moveSignatures` when a MoveCall
+result reference needs signature-derived arity before code generation.
+Unresolved object ids render through
 `tx.object(id)`; resolved object references render through the resolved SDK
 helpers. Unsupported inputs and shapes that cannot be represented honestly with
 the public SDK helper surface throw instead of emitting incomplete or misleading
@@ -692,9 +740,17 @@ All model array fields must be dense JavaScript arrays. Sparse arrays are
 rejected at public validation and conversion boundaries instead of being treated
 as omitted elements.
 
-`transactionIRToRaw()` emits canonical raw PTB data only. A `Pure` input must already have raw `bytes`, and an `Object` input must already have a resolved object argument. Typed pure display values can be rendered to TS SDK code when the SDK pure helper supports the type, but they are not silently BCS-encoded by this package.
+`transactionIRToRaw()` emits canonical raw PTB data only. A `Pure` input must either carry raw `bytes` or a typed (`type`, `value`) pair that can be encoded through the installed SDK BCS schema. An `Object` input must already have a resolved object argument. Typed pure display values are not guessed from UI strings; they are encoded only through the explicit typed Pure representation.
 
-`transactionIRToRaw()`, `transactionIRToGraph()`, and `transactionIRToTsSdkCode()` validate the IR shape instead of treating stored `diagnostics` as authoritative state. IR values that were structurally checked by this package can skip the repeated structural validation step, but projection-specific checks still run. `transactionIRToMermaid()` preserves diagnostics in the diagram because it is an inspection renderer and does not treat structural branding as a rendering precondition.
+`transactionIRToRaw()` and `transactionIRToGraph()` validate the current IR shape
+instead of treating stored `diagnostics` as authoritative state. IR values that
+were structurally checked by this package can skip the repeated structural
+validation step, but projection-specific checks still run. `transactionIRToTsSdkCode()`
+validates TS SDK renderability with known result arity required for
+`Result`/`NestedResult` references, using supplied `moveSignatures` when needed.
+`transactionIRToMermaid()` preserves diagnostics in the diagram because it is an
+inspection renderer and does not treat structural branding as a rendering
+precondition.
 
 When a graph is authored manually, `rawInput` is the canonical way to represent resolved raw `Object` inputs (`ImmOrOwnedObject`, `SharedObject`, and `Receiving`) and `FundsWithdrawal` inputs. A value-only object variable represents only an unresolved SDK object id when it is a canonical object id string or an object containing only `objectId`; it is not raw-exportable until a resolved raw object reference is supplied through `rawInput`.
 
@@ -722,17 +778,26 @@ graph may be persistable while it is still missing command input edges, missing 
 complete Start-to-End flow path, missing a MoveCall target, or carrying a blank
 `TypeArgument` node; those are normal intermediate editor states.
 `parsePTBDocV4()` and `validatePTBDocV4()` reject malformed document data and
-graph diagnostics that block documents, but they do not require the graph to be
-executable.
+graph diagnostics that block documents, including non-canonical command output
+ports. They do not require the graph to be executable.
 
-`parseExecutableGraph()` is the executable graph boundary. It rejects any graph
-diagnostic whose `blocks.execution` flag is true and returns a branded
-`ExecutablePTBGraph` for callers that want a checked fast path. `graphToTransactionIR()`
+`parseExecutableGraph()` is the executable graph boundary. It uses the same
+graph-to-IR conversion and IR validation diagnostics as `graphToTransactionIR()`
+before returning a branded `ExecutablePTBGraph`. `graphToTransactionIR()`
 accepts either an unchecked `PTBGraph` for inspection conversion or an
 `ExecutablePTBGraph` returned by `parseExecutableGraph()`. Document-blocking
 graphs return an empty IR with diagnostics; document-valid but execution-invalid
-graphs still produce inspection IR with diagnostics so renderers and editors can
-show the current graph state.
+graphs can still produce inspection IR with diagnostics so renderers and editors
+can show the current graph state.
+
+`analyzePTBGraph()`, `parseExecutableGraph()`, and the unchecked
+`graphToTransactionIR(PTBGraph, options)` inspection path accept an optional
+`path` root for graph diagnostics when the graph is nested inside a larger
+document. The executable-graph overload of `graphToTransactionIR()` does not
+accept conversion options; pass `path` before executable branding. Diagnostics
+emitted by later `TransactionIR` validation keep their IR paths, such as
+`$.inputs[0].value`, because those paths refer to the generated IR rather than
+the source graph.
 
 The executable graph brand is tied to the object returned by
 `parseExecutableGraph()`. JSON serialization, `structuredClone()`, object spread,
@@ -740,6 +805,13 @@ or rebuilding the graph produces an unchecked `PTBGraph`; validate that new grap
 again before using the executable fast path. Callers should pass the returned
 `ExecutablePTBGraph` directly to `graphToTransactionIR()` and should not reuse
 analysis facts after editing, cloning, or reloading graph data.
+
+Graph-to-IR execution diagnostics that are not document requirements include
+required command runtime payloads, canonical object input values, numeric edge
+cast applicability, typed pure-value validation failures after input-type
+inference (`ir.input.pureValue`), and references to only previously ordered
+command results. Those diagnostics still allow unchecked inspection conversion
+through `graphToTransactionIR(PTBGraph)`, but they prevent executable branding.
 
 `analyzePTBGraph()` still reports diagnostics for top-level graph fields, node
 ids, port ids, edge ids, handle existence, edge direction, edge role, duplicate
@@ -749,51 +821,52 @@ digits, and underscores. This keeps typed handle suffixes and UI aliases out of
 canonical `PTBGraph` data.
 It also validates optional public graph fields such as node positions, port
 labels and type strings, edge casts, variable semantics, PTB type hints, and
-command params. `PTBGraph` supports only `nodes` and `edges` at the graph
-top level. Graph nodes, positions, ports, edges, edge casts, variable semantics,
-and PTB type hint objects reject unsupported fields instead of preserving
-hidden metadata. `CommandNode.params` is a closed object with only `runtime`
-and `ui` sections. `runtime` is the host-provided command payload that can
-define transaction semantics; `ui` is display-only. Both sections accept only
-the fields declared by the exported TypeScript types and by command-specific
-runtime validation. Builder-shaped sections such as `params.moveCall` are
-rejected instead of being preserved.
+command params. `PTBGraph` supports only `nodes` and `edges` at the graph top
+level. Graph nodes, positions, ports, edges, edge casts, variable semantics, and
+PTB type hint objects reject unsupported fields instead of preserving hidden
+metadata. `CommandNode.params` is a closed object with only a `runtime` section.
+`runtime` is the host-provided command payload that can define transaction
+semantics and accepts only the fields declared by the exported TypeScript types
+and by command-specific runtime validation. Builder-shaped sections such as
+`params.ui` or `params.moveCall` are rejected instead of being preserved.
 
 Command input ports use canonical ids such as `in_arg_0`, `in_elem_0`,
 `in_amount_0`, `in_object_0`, `in_source_0`, `in_coin`, `in_destination`,
 `in_recipient`, and `in_upgradeCap`. Indexed input ports must be dense from zero
 within each command-specific group. Required command input ports must have
 incoming IO edges for the graph to be executable, but inspection conversion can
-still preserve the current graph state with diagnostics. For executable graphs,
-commands with no results, such as `TransferObjects`, `MergeCoins`, and
+still preserve document-valid intermediate graph state with diagnostics. Command
+output ports are part of the canonical document contract: a command that declares
+an output handle it cannot produce is not a valid PTB document. Commands with no
+results, such as `TransferObjects`, `MergeCoins`, and
 `Unsupported`, must not declare IO output ports. Commands with exactly one known
-result use `out_result`; the nested `out_0` form is accepted only when an actual
-outgoing edge preserves an existing `NestedResult(i, 0)` reference. Commands
-with multiple known results use dense nested result handles such as `out_0` and
-`out_1`; `out_result` is not valid for multi-result command execution, and
-`Result(i)` is valid only for a command with exactly one result, matching Sui
-execution arity checks. A `MoveCall` with no explicit `resultCount` has unknown
-arity, so the graph may declare `out_result` or u16-addressable nested `out_N`
-handles without the model guessing the real count. Separate `outputs` arrays
-are not transaction semantics.
+result use only `out_result`. Commands with multiple known results use dense
+nested result handles such as `out_0` and `out_1`; `out_result` is not valid for
+multi-result command execution, and `Result(i)` is valid only for a command with
+exactly one result, matching Sui execution arity checks. When IR-to-graph
+conversion sees `NestedResult(i, 0)` for a producer with exactly one result, the
+graph normalizes it to `out_result`; converting that graph back to IR emits the
+canonical `Result(i)` form. A `MoveCall` without explicit `resultCount` or
+matching `moveSignatures` has unknown arity and cannot declare output ports in
+canonical `PTBGraph` data. Separate `outputs` arrays are not transaction
+semantics.
 Builder-style aliases such as bare `amount_0`, `MakeMoveVec` `in_arg_0`,
-`out_coin_0`, and `out_ret_0` are not canonical model graph handles.
+`in_dest`, `out_coin_0`, and `out_ret_0` are not canonical model graph handles.
 
 Graph edge casts bind the abstract graph scalar type `number` to a concrete Move
 integer width such as `u64`. They are not general numeric conversions: concrete
 `move_numeric` values are not widened or narrowed by an edge cast. Known command
 arguments also enforce the SDK/Sui input class or pure type when the model can
-verify it from typed inputs. For example, `SplitCoins.amounts` must be typed Pure
-`u64`, `TransferObjects.address` must be typed Pure `address`, and
-`MakeMoveVec` without an explicit type requires object inputs. Raw Pure byte
-inputs can omit a type hint because this package does not infer the consuming
-Move type. A manual IR `Pure` input with raw bytes and
-`type: { kind: 'unknown' }` is treated as an untyped raw byte input for command
-pure-type checks.
+verify it from typed inputs or supplied signature evidence. For example,
+`SplitCoins.amounts` must be typed Pure `u64`, `TransferObjects.address` must be
+typed Pure `address`, and `MakeMoveVec` without an explicit type requires object
+inputs. Raw Pure byte inputs can omit a type hint and remain raw bytes;
+renderers may display an inferred label from command usage or supplied Move
+signature evidence, but they do not write that label back into the IR.
 
 ## Mermaid Rendering
 
-`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`. Input nodes include value summaries by default; pass `showInputValues: false` to hide them. Pass `shortenLabels: true` to shorten long input values, object ids, package ids, and type tags in node and edge labels. Resolved object inputs are summarized by ownership kind and object id; shared object summaries also show mutability. Raw object versions, initial shared versions, and digests are intentionally omitted because Mermaid output is an inspection diagram, not a raw object reference format. Command nodes are connected in PTB command-array order with `then` edges so the diagram shows execution order separately from argument data flow, and command node outlines are emphasized in every theme. `showArgumentValues: true` additionally labels argument edges with value summaries. Unsupported renderer options fall back to the default rendering options and appear as diagnostics in the diagram.
+`transactionIRToMermaid()` emits a Mermaid `flowchart`, not sequence or state syntax. Supported directions are `TD` and `LR`; supported themes are `none` and `semantic`. Input nodes include value summaries by default; pass `showInputValues: false` to hide them. Pass `shortenLabels: true` to shorten long input values, object ids, package ids, and type tags in node and edge labels. Pass verified `moveSignatures` when Mermaid should use MoveCall signature evidence for diagnostics and Pure-input type labels. Resolved object inputs are summarized by ownership kind and object id; shared object summaries also show mutability. Raw object versions, initial shared versions, and digests are intentionally omitted because Mermaid output is an inspection diagram, not a raw object reference format. Command nodes are connected in PTB command-array order with `then` edges so the diagram shows execution order separately from argument data flow, and command node outlines are emphasized in every theme. `showArgumentValues: true` additionally labels argument edges with value summaries. Unsupported renderer options fall back to the default rendering options and appear as diagnostics in the diagram.
 
 Mermaid rendering includes validation diagnostics in the diagram and is defensive for malformed manual IR so callers can inspect problems without a `TypeError`.
 
@@ -855,8 +928,9 @@ that need evidence-aware graph checks should parse the document first, then call
 evidence.
 When present, `sender` must be a canonical Sui address. `chain` is a host-owned
 string label; applications such as `@zktx.io/ptb-builder` may apply their own
-supported-chain policy after model parsing. When present, `view.zoom` must be a
-positive finite number.
+supported-chain policy after model parsing. When present, `view` must be a
+closed object with finite `x` and `y` numbers and a positive finite `zoom`
+number.
 
 Unsupported document versions are rejected by `@zktx.io/ptb-model`. Convert
 them outside this package before calling `parsePTBDocV4()`.

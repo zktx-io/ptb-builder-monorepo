@@ -11,7 +11,6 @@ import {
   normalizePureValueForRender,
   pureTypeName,
 } from '../ir/pure.js';
-import { isStructuralTransactionIR } from '../ir/structural.js';
 import type {
   IRArgRef,
   IRCommand,
@@ -20,6 +19,7 @@ import type {
 } from '../ir/types.js';
 import { irObjectId, irResolvedObjectArg } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
+import type { ValidateTransactionIROptions } from '../ir/validate.js';
 import type { RawFundsWithdrawalArg } from '../raw/types.js';
 import { jsonStringifyWithBigInt } from '../utils.js';
 
@@ -34,8 +34,14 @@ function renderDiagnostic(
 const TS_CODE_UNSAFE_LITERAL_CHAR =
   /[\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
-export function transactionIRToTsSdkCode(ir: TransactionIR): string {
-  assertTsSdkRenderableIR(ir);
+export interface TransactionIRToTsSdkCodeOptions
+  extends Pick<ValidateTransactionIROptions, 'moveSignatures'> {}
+
+export function transactionIRToTsSdkCode(
+  ir: TransactionIR,
+  options: TransactionIRToTsSdkCodeOptions = {},
+): string {
+  assertTsSdkRenderableIR(ir, options);
 
   const lines = [`import { Transaction } from '@mysten/sui/transactions';`, ''];
 
@@ -130,26 +136,30 @@ function renderInput(input: IRInput, index: number): string {
   return _exhaustive;
 }
 
-export function assertTsSdkRenderableIR(ir: TransactionIR): void {
+export function assertTsSdkRenderableIR(
+  ir: TransactionIR,
+  options: TransactionIRToTsSdkCodeOptions = {},
+): void {
   assertNoErrors(
     'TransactionIR cannot be rendered to TS SDK code.',
-    validateTsSdkRenderableIR(ir),
+    validateTsSdkRenderableIR(ir, options),
   );
 }
 
 export function validateTsSdkRenderableIR(
   ir: TransactionIR,
+  options: TransactionIRToTsSdkCodeOptions = {},
 ): readonly TransactionDiagnostic[] {
   const diagnostics = [
     ...existingGraphDiagnostics(ir).filter(
       (diagnostic) => diagnostic.blocks.execution,
     ),
-    ...(isStructuralTransactionIR(ir)
-      ? []
-      : validateTransactionIR(ir, {
-          includeExistingDiagnostics: false,
-          includeUnsupportedDiagnostics: false,
-        })),
+    ...validateTransactionIR(ir, {
+      includeExistingDiagnostics: false,
+      includeUnsupportedDiagnostics: false,
+      moveSignatures: options.moveSignatures,
+      requireKnownResultArity: true,
+    }),
   ];
   if (hasErrors(diagnostics)) {
     return diagnostics;

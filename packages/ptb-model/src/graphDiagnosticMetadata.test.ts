@@ -31,15 +31,8 @@ describe('graph diagnostic metadata', () => {
       'graph.command.params.runtime.target',
       'graph.command.params.runtime.type',
       'graph.command.params.runtime.unknownField',
-      'graph.command.params.ui',
-      'graph.command.params.ui.count',
-      'graph.command.params.ui.unknownField',
       'graph.command.params.unknownField',
       'graph.command.makeMoveVec.type',
-      'graph.command.base64BytesParam',
-      'graph.command.objectIdArrayParam',
-      'graph.command.objectIdParam',
-      'graph.command.emptyInput',
       'graph.edge',
       'graph.edge.cast',
       'graph.edge.cast.unknownField',
@@ -47,8 +40,6 @@ describe('graph diagnostic metadata', () => {
       'graph.edge.id',
       'graph.edge.kind',
       'graph.edge.unknownField',
-      'graph.input.object.invalidKind',
-      'graph.input.object.unresolved',
       'graph.plainData',
       'graph.port',
       'graph.port.direction',
@@ -85,8 +76,15 @@ describe('graph diagnostic metadata', () => {
       'graph.variable.semantic.unknownField',
       'graph.variable.sourceConflict',
     ] as const;
+    const expectedShapeExecutionCodes = [
+      'graph.command.base64BytesParam',
+      'graph.command.objectIdArrayParam',
+      'graph.command.objectIdParam',
+      'graph.command.emptyInput',
+      'graph.input.object.invalidKind',
+      'graph.input.object.unresolved',
+    ] as const;
     const expectedReferenceDocumentCodes = [
-      'graph.arg.source',
       'graph.edge.direction',
       'graph.edge.duplicate',
       'graph.edge.duplicateFlowSource',
@@ -101,11 +99,12 @@ describe('graph diagnostic metadata', () => {
       'graph.node.duplicate',
       'graph.port.duplicate',
     ] as const;
+    const expectedReferenceExecutionCodes = ['graph.arg.source'] as const;
     const expectedSemanticExecutionCodes = [
       'graph.command.inputMissing',
       'graph.command.moveCall.typeArgumentMissing',
       'graph.command.moveCall.targetMissing',
-      'graph.command.outputPort.invalid',
+      'graph.edge.castApplicability',
       'graph.flow.cycle',
       'graph.flow.disconnected',
       'graph.flow.end',
@@ -114,7 +113,11 @@ describe('graph diagnostic metadata', () => {
       'graph.typeArgument.valueMissing',
       'graph.variable.duplicateName',
     ] as const;
+    const expectedSemanticDocumentCodes = [
+      'graph.command.outputPort.invalid',
+    ] as const;
     const expectedEvidenceExecutionCodes = [
+      'graph.ir.resultArity',
       'graph.command.moveCall.resultCountMismatch',
       'graph.command.moveCall.typeArgumentsCount',
     ] as const;
@@ -123,9 +126,21 @@ describe('graph diagnostic metadata', () => {
         code,
         { category: 'shape', blocks: documentAndExecution },
       ]),
+      ...expectedShapeExecutionCodes.map((code) => [
+        code,
+        { category: 'shape', blocks: executionOnly },
+      ]),
       ...expectedReferenceDocumentCodes.map((code) => [
         code,
         { category: 'reference', blocks: documentAndExecution },
+      ]),
+      ...expectedReferenceExecutionCodes.map((code) => [
+        code,
+        { category: 'reference', blocks: executionOnly },
+      ]),
+      ...expectedSemanticDocumentCodes.map((code) => [
+        code,
+        { category: 'semantic', blocks: documentAndExecution },
       ]),
       ...expectedSemanticExecutionCodes.map((code) => [
         code,

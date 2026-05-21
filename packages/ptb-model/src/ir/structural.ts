@@ -9,8 +9,8 @@ import type { TransactionIR } from './types.js';
 import { validateTransactionIR } from './validate.js';
 import {
   cloneJsonLike,
+  deepFreezeJsonLike,
   findNonPlainData,
-  isPlainObject,
   NULL_VALUE,
 } from '../utils.js';
 
@@ -186,23 +186,4 @@ function withPlainDataDiagnostics(
       issue.path,
     ),
   ]);
-}
-
-function deepFreezeJsonLike(value: unknown): void {
-  const stack: unknown[] = [value];
-  const seen = new WeakSet<object>();
-
-  while (stack.length > 0) {
-    const item = stack.pop();
-    if (!Array.isArray(item) && !isPlainObject(item)) continue;
-    if (seen.has(item)) continue;
-    seen.add(item);
-
-    if (Array.isArray(item)) {
-      item.forEach((child) => stack.push(child));
-    } else {
-      Object.values(item).forEach((child) => stack.push(child));
-    }
-    Object.freeze(item);
-  }
 }

@@ -1,9 +1,9 @@
-import type {
-  IRArgRef,
-  IRCommand,
-  IRInput,
-  TransactionIR,
-} from './ir/types.js';
+import type { IRArgRef, IRInput, TransactionIR } from './ir/types.js';
+import {
+  normalizeMovePackageSignatureEvidenceOption,
+  resolveMoveCallSignatureEvidence,
+} from './move/evidence.js';
+import type { MovePackageSignatureEvidence } from './move/evidence.js';
 import {
   toPTBTypeFromConcreteTypeArgument,
   toPTBTypeFromOpenSignature,
@@ -68,6 +68,10 @@ export interface TransactionIRInputTypeInferenceResult {
   inferences: readonly TransactionIRInputTypeInference[];
 }
 
+export interface TransactionIRInputTypeInferenceOptions {
+  moveSignatures?: MovePackageSignatureEvidence;
+}
+
 type InferenceCandidate = {
   type: PTBType;
 };
@@ -105,12 +109,13 @@ export function commandInputSlotExpectation(
 export function irCommandInputUses(
   command: unknown,
   commandIndex: number,
+  options: TransactionIRInputTypeInferenceOptions = {},
 ): readonly IRCommandInputUse[] {
   if (!isRecord(command) || typeof command.kind !== 'string') return [];
 
   switch (command.kind) {
     case 'MoveCall':
-      return moveCallInputUses(command, commandIndex);
+      return moveCallInputUses(command, commandIndex, options.moveSignatures);
     case 'TransferObjects':
       return [
         ...argArray(command.objects).map((arg, index) =>
@@ -191,13 +196,17 @@ export function irCommandInputUses(
 
 export function inferTransactionIRInputTypes(
   ir: Pick<TransactionIR, 'inputs' | 'commands'>,
+  options: TransactionIRInputTypeInferenceOptions = {},
 ): TransactionIRInputTypeInferenceResult {
+  const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
+    options.moveSignatures,
+  );
   const inputs = isDenseArray(ir.inputs) ? ir.inputs : [];
   const commands = isDenseArray(ir.commands) ? ir.commands : [];
   const candidatesByInput = new Map<number, InferenceCandidate[]>();
 
   commands.forEach((command, commandIndex) => {
-    irCommandInputUses(command, commandIndex).forEach(
+    irCommandInputUses(command, commandIndex, { moveSignatures }).forEach(
       ({ arg, expectation }) => {
         if (arg.kind !== 'Input') return;
         if (!Number.isSafeInteger(arg.index) || arg.index < 0) return;
@@ -281,6 +290,7 @@ function inputCanAcceptInferredType(input: IRInput | undefined): boolean {
 function moveCallInputUses(
   command: Record<string, unknown>,
   commandIndex: number,
+  moveSignatures: MovePackageSignatureEvidence | undefined,
 ): readonly IRCommandInputUse[] {
   const argumentTypes = isDenseArray(command._argumentTypes)
     ? command._argumentTypes
@@ -290,13 +300,27 @@ function moveCallInputUses(
         return typeof typeArgument === 'string';
       })
     : [];
+  const evidence =
+    typeof command.package === 'string' &&
+    typeof command.module === 'string' &&
+    typeof command.function === 'string'
+      ? resolveMoveCallSignatureEvidence({
+          packageId: command.package,
+          moduleName: command.module,
+          functionName: command.function,
+          moveSignatures,
+          typeArguments,
+          explicitResultCount: command.resultCount,
+        })
+      : undefined;
+  const parameters = evidence?.signature.parameters ?? argumentTypes;
 
   return argArray(command.arguments).map((arg, index) =>
     irInputUse(arg, `$.commands[${commandIndex}].arguments[${index}]`, {
       commandKind: 'MoveCall',
       argumentIndex: index,
-      argumentType: isRawOpenSignature(argumentTypes?.[index])
-        ? argumentTypes[index]
+      argumentType: isRawOpenSignature(parameters?.[index])
+        ? parameters[index]
         : undefined,
       typeArguments,
     }),

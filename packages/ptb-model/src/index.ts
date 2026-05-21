@@ -25,7 +25,6 @@ export type {
   CommandKind,
   CommandNode,
   CommandRuntimeParams,
-  CommandUIParams,
   EdgeKind,
   EndNode,
   NodeBase,
@@ -39,7 +38,8 @@ export type {
   TypeArgumentNode,
   VariableNode,
 } from './graph/types.js';
-export { analyzePTBGraph, parseExecutableGraph } from './graph/types.js';
+export { parseExecutableGraph } from './graph/executableGraph.js';
+export { analyzePTBGraph } from './graph/types.js';
 export type {
   AnalyzePTBGraphOptions,
   ExecutablePTBGraph,
@@ -52,6 +52,7 @@ export type {
   GraphInputTypeInferenceOptions,
   GraphInputTypeInferenceResult,
 } from './graph/inputInference.js';
+export type { GraphMoveCallEvidenceState } from './graph/moveCallEvidence.js';
 export { materializeGraphInputValues } from './graph/inputMaterialization.js';
 export type {
   GraphInputValueMaterialization,
@@ -67,14 +68,17 @@ export {
   validatePTBType,
 } from './ptbType.js';
 export type {
+  MoveCallSignatureEvidenceResolution,
   MoveFunctionSignatureEvidence,
   MoveModuleSignatureEvidence,
   MovePackageSignatureEvidence,
+  ResolveMoveCallSignatureEvidenceOptions,
 } from './move/evidence.js';
 export {
   isMoveFunctionSignatureEvidence,
   isMoveModuleSignatureEvidence,
   isMovePackageSignatureEvidence,
+  resolveMoveCallSignatureEvidence,
 } from './move/evidence.js';
 export {
   isTxContextOpenSignature,
@@ -90,7 +94,7 @@ export {
   isIndexedInputHandle,
   isInputHandle,
   isNestedResultHandle,
-  isUnknownResultOutputHandle,
+  knownResultOutputHandles,
   nestedResultHandle,
   nestedResultHandleIndex,
   RESULT_HANDLE_ID,
@@ -156,7 +160,10 @@ export {
 export { jsonStringifyWithBigInt, NULL_VALUE } from './utils.js';
 
 export { graphToTransactionIR, transactionIRToGraph } from './graph/convert.js';
-export type { GraphToTransactionIROptions } from './graph/convert.js';
+export type {
+  GraphToTransactionIROptions,
+  TransactionIRToGraphOptions,
+} from './graph/convert.js';
 export {
   assertRawConvertibleIR,
   rawTransactionToIR,
@@ -173,5 +180,6 @@ export {
   transactionIRToTsSdkCode,
   validateTsSdkRenderableIR,
 } from './render/tsSdkCode.js';
+export type { TransactionIRToTsSdkCodeOptions } from './render/tsSdkCode.js';
 export { validateTransactionIR } from './ir/validate.js';
 export type { ValidateTransactionIROptions } from './ir/validate.js';

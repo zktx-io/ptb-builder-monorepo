@@ -37,8 +37,8 @@ import {
   isStructuralTransactionIR,
   isTxContextOpenSignature,
   isU16Index,
-  isUnknownResultOutputHandle,
   jsonStringifyWithBigInt,
+  knownResultOutputHandles,
   materializeGraphInputValues,
   MAX_RESULT_COUNT,
   nestedResultHandle,
@@ -59,6 +59,7 @@ import {
   pureTypeName,
   RAW_ARGUMENT_INDEX_MAX,
   rawTransactionToIR,
+  resolveMoveCallSignatureEvidence,
   RESULT_HANDLE_ID,
   serializePTBType,
   toPTBTypeFromConcreteTypeArgument,
@@ -77,6 +78,7 @@ import type {
   AnalyzePTBGraphOptions,
   CommandNode,
   GraphDiagnostic,
+  GraphMoveCallEvidenceState,
   GraphToTransactionIROptions,
   IRArgRef,
   IRCommand,
@@ -90,6 +92,7 @@ import type {
   RawOpenSignature,
   RawProgrammableTransaction,
   TransactionIR,
+  TransactionIRToGraphOptions,
   TypeArgumentNode,
   VariableNode,
 } from './index.js';
@@ -193,19 +196,39 @@ describe('public package surface', () => {
     expect(inputHandle('coin')).toBe('in_coin');
     expect(isInputHandle('in_coin', 'coin')).toBe(true);
     expect(indexedInputHandle('amount', 0)).toBe('in_amount_0');
+    expect(() => indexedInputHandle('amount', -1)).toThrow(RangeError);
+    expect(() => indexedInputHandle('amount', 1.5)).toThrow(RangeError);
+    expect(() =>
+      indexedInputHandle('amount', RAW_ARGUMENT_INDEX_MAX + 1),
+    ).toThrow(RangeError);
     expect(isIndexedInputHandle('in_amount_0', 'amount')).toBe(true);
     expect(indexedInputHandleIndex('in_amount_0', 'amount')).toBe(0);
     expect(RESULT_HANDLE_ID).toBe('out_result');
+    expect(knownResultOutputHandles(0)).toEqual([]);
+    expect(knownResultOutputHandles(1)).toEqual(['out_result']);
+    expect(knownResultOutputHandles(2)).toEqual(['out_0', 'out_1']);
+    expect(knownResultOutputHandles(Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(knownResultOutputHandles(1.5)).toEqual([]);
+    expect(knownResultOutputHandles(MAX_RESULT_COUNT + 1)).toEqual([]);
     expect(nestedResultHandle(0)).toBe('out_0');
+    expect(() => nestedResultHandle(-1)).toThrow(RangeError);
+    expect(() => nestedResultHandle(1.5)).toThrow(RangeError);
+    expect(() => nestedResultHandle(MAX_RESULT_COUNT)).toThrow(RangeError);
     expect(nestedResultHandleIndex('out_0')).toBe(0);
     expect(isNestedResultHandle('out_65535')).toBe(true);
-    expect(isUnknownResultOutputHandle('out_result')).toBe(true);
     expect(indexedHandleSuffix('in_arg_10')).toEqual({
       prefix: 'in_arg',
       index: 10,
     });
     expect(typeof inferGraphInputTypes).toBe('function');
     expect(typeof materializeGraphInputValues).toBe('function');
+    const graphMoveCallEvidence: GraphMoveCallEvidenceState = {
+      resultArity: 1,
+      parameterCount: 0,
+      typeParameterCount: 0,
+      typeArgumentsComplete: false,
+    };
+    expect(graphMoveCallEvidence.resultArity).toBe(1);
     expect(
       serializePTBType({
         kind: 'vector',
@@ -361,6 +384,20 @@ describe('Move signature evidence guards', () => {
     expect(isMovePackageSignatureEvidence(packageEvidence)).toBe(true);
     expect(isMovePackageSignatureEvidence(typedPackageEvidence)).toBe(true);
     expect(isMovePackageSignatureEvidence({})).toBe(true);
+    expect(
+      resolveMoveCallSignatureEvidence({
+        packageId: normalizedObjectId('2'),
+        moduleName: 'sui',
+        functionName: 'generic',
+        moveSignatures: packageEvidence,
+        typeArguments: [],
+        explicitResultCount: 2,
+      }),
+    ).toMatchObject({
+      resultArity: 1,
+      typeArgumentsComplete: false,
+      resultCountMismatch: true,
+    });
   });
 
   it('rejects non-canonical or host-unfiltered Move signature evidence', () => {
@@ -689,13 +726,14 @@ describe('MoveCall signature evidence validation', () => {
   function evidenceFor(
     returns: RawOpenSignature[],
     typeParameterCount = 0,
+    parameters: RawOpenSignature[] = [],
   ): MovePackageSignatureEvidence {
     return {
       [packageId]: {
         [moduleName]: {
           [functionName]: {
             typeParameterCount,
-            parameters: [],
+            parameters,
             returns,
           },
         },
@@ -778,7 +816,7 @@ describe('MoveCall signature evidence validation', () => {
     );
   }
 
-  it('skips MoveCall arity checks when host evidence is absent or missing', () => {
+  it('preserves MoveCall result references when arity evidence is absent or missing', () => {
     const ir = irUsingProducerResult({ kind: 'Result', commandIndex: 0 });
     const unrelatedEvidence: MovePackageSignatureEvidence = {
       [packageId]: {
@@ -792,21 +830,33 @@ describe('MoveCall signature evidence validation', () => {
       },
     };
 
-    expect(diagnosticCodes(ir)).toEqual([]);
-    expect(diagnosticCodes(ir, unrelatedEvidence)).toEqual([]);
+    expect(diagnosticCodes(ir)).not.toContain('ir.arg.resultArity');
+    expect(diagnosticCodes(ir, unrelatedEvidence)).not.toContain(
+      'ir.arg.resultArity',
+    );
   });
 
-  it('reports MoveCall type argument count mismatches and skips derived arity', () => {
+  it('rejects unknown MoveCall result arity when an artifact gate requires it', () => {
+    const ir = irUsingProducerResult({ kind: 'Result', commandIndex: 0 });
+
+    const codes = validateTransactionIR(ir, {
+      requireKnownResultArity: true,
+    }).map((diagnostic) => diagnostic.code);
+
+    expect(codes).toContain('ir.arg.resultArity');
+  });
+
+  it('reports MoveCall type argument count mismatches while preserving signature arity', () => {
     const codes = diagnosticCodes(
       irUsingProducerResult({ kind: 'Result', commandIndex: 0 }),
       evidenceFor([u64Return, u64Return], 1),
     );
 
     expect(codes).toContain('ir.command.moveCall.typeArgumentsCount');
-    expect(codes).not.toContain('ir.arg.resultArity');
+    expect(codes).toContain('ir.arg.resultArity');
   });
 
-  it('reports explicit MoveCall resultCount mismatches but keeps explicit arity', () => {
+  it('reports explicit MoveCall resultCount mismatches and keeps signature arity', () => {
     const codes = diagnosticCodes(
       irUsingProducerResult(
         { kind: 'Result', commandIndex: 0 },
@@ -816,7 +866,7 @@ describe('MoveCall signature evidence validation', () => {
     );
 
     expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
-    expect(codes).not.toContain('ir.arg.resultArity');
+    expect(codes).toContain('ir.arg.resultArity');
   });
 
   it('accepts matching explicit MoveCall resultCount evidence', () => {
@@ -833,6 +883,60 @@ describe('MoveCall signature evidence validation', () => {
     );
 
     expect(codes).toEqual([]);
+  });
+
+  it('reports MoveCall argument count mismatches against host signature evidence', () => {
+    const codes = diagnosticCodes(
+      {
+        version: 'transaction_ir_1',
+        inputs: [],
+        diagnostics: [],
+        commands: [moveCall()],
+      },
+      evidenceFor([], 0, [
+        rawSignature({ $kind: 'u64' }),
+        rawSignature({ $kind: 'address' }),
+      ]),
+    );
+
+    expect(codes).toContain('ir.command.moveCall.argumentsLength');
+  });
+
+  it('uses host signature evidence to validate MoveCall argument input kind', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'object',
+          kind: 'Object',
+          source: {
+            kind: 'Unresolved',
+            objectId: normalizedObjectId('9'),
+          },
+        },
+      ],
+      diagnostics: [],
+      commands: [
+        moveCall({
+          arguments: [{ kind: 'Input', index: 0 }],
+        }),
+      ],
+    };
+    const moveSignatures = evidenceFor([], 0, [
+      rawSignature({ $kind: 'address' }),
+    ]);
+
+    expect(diagnosticCodes(ir, moveSignatures)).toContain(
+      'ir.arg.semanticType',
+    );
+    expect(
+      validateTsSdkRenderableIR(ir, { moveSignatures }).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain('ir.arg.semanticType');
+    expect(transactionIRToMermaid(ir, { moveSignatures })).toContain(
+      'ir.arg.semanticType',
+    );
   });
 
   it('uses host evidence to validate single result references', () => {
@@ -1518,21 +1622,10 @@ describe('PTBDocV4', () => {
     );
   });
 
-  it('keeps document validation evidence-free after parsing', () => {
+  it('rejects non-canonical MoveCall output ports during document validation', () => {
     const packageId = normalizedObjectId('2');
     const moduleName = 'm';
     const functionName = 'f';
-    const moveSignatures: MovePackageSignatureEvidence = {
-      [packageId]: {
-        [moduleName]: {
-          [functionName]: {
-            typeParameterCount: 0,
-            parameters: [],
-            returns: [rawSignature({ $kind: 'u64' })],
-          },
-        },
-      },
-    };
     const doc = {
       version: 'ptb_4',
       graph: {
@@ -1553,21 +1646,13 @@ describe('PTBDocV4', () => {
       },
     };
 
-    expect(
-      validatePTBDocV4(doc).map((diagnostic) => diagnostic.code),
-    ).not.toContain('graph.command.outputPort.invalid');
-
-    const parsed = parsePTBDocV4(doc);
-    const graphDiagnostics = collectGraphDiagnostics(parsed.graph, {
-      moveSignatures,
-    });
-
-    expect(graphDiagnostics).toContainEqual(
+    expect(validatePTBDocV4(doc)).toContainEqual(
       expect.objectContaining({
         code: 'graph.command.outputPort.invalid',
-        path: '$.nodes[0].ports[0].id',
+        path: '$.graph.nodes[0].ports[0].id',
       }),
     );
+    expect(() => parsePTBDocV4(doc)).toThrow(PTBModelError);
   });
 
   it('rejects unknown PTB document view fields', () => {
@@ -1706,7 +1791,7 @@ describe('PTB type validation', () => {
           kind: 'Variable',
           name: 'input_0',
           varType: varType as PTBType,
-          ports: [],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
       ],
       edges: [],
@@ -2694,6 +2779,64 @@ describe('rawTransactionToIR', () => {
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
   });
 
+  it('preserves raw MoveCall result references before signature evidence is available', () => {
+    const ir = rawTransactionToIR({
+      inputs: [{ $kind: 'Pure', Pure: { bytes: 'AQID' } }],
+      commands: [
+        {
+          $kind: 'MoveCall',
+          MoveCall: {
+            package: '0x2',
+            module: 'coin',
+            function: 'split',
+            typeArguments: [],
+            arguments: [],
+          },
+        },
+        {
+          $kind: 'TransferObjects',
+          TransferObjects: {
+            objects: [{ $kind: 'Result', Result: 0 }],
+            address: { $kind: 'Input', Input: 0 },
+          },
+        },
+      ],
+    });
+
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'ir.arg.resultArity',
+    );
+    expect(
+      validateRawConvertibleIR(ir).map((diagnostic) => diagnostic.code),
+    ).not.toContain('ir.arg.resultArity');
+    expect(
+      validateTsSdkRenderableIR(ir).map((diagnostic) => diagnostic.code),
+    ).toContain('ir.arg.resultArity');
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [normalizedObjectId('2')]: {
+        coin: {
+          split: {
+            typeParameterCount: 0,
+            parameters: [],
+            returns: [rawDatatypeSignature(TEST_COIN_TYPE)],
+          },
+        },
+      },
+    };
+    expect(
+      validateTsSdkRenderableIR(ir, { moveSignatures }).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).not.toContain('ir.arg.resultArity');
+    expect(() =>
+      transactionIRToTsSdkCode(ir, { moveSignatures }),
+    ).not.toThrow();
+    expectModelErrorCodes(
+      () => transactionIRToGraph(ir),
+      ['graph.ir.resultArity'],
+    );
+  });
+
   it('preserves SDK Input.type and MoveCall _argumentTypes metadata', () => {
     const ir = rawTransactionToIR({
       inputs: [{ $kind: 'Pure', Pure: { bytes: 'AA==' } }],
@@ -3618,6 +3761,51 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).toContain('Input 0: Pure (vector&lt;u8&gt;)<br/>bytes');
   });
 
+  it('labels MoveCall Pure inputs in Mermaid from supplied signature evidence', () => {
+    const packageId = normalizedObjectId('2');
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      diagnostics: [],
+      inputs: [
+        {
+          id: 'amount',
+          kind: 'Pure',
+          bytes: pureBytes('u64', '7'),
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: packageId,
+          module: 'demo',
+          function: 'accept_amount',
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+          resultCount: 0,
+        },
+      ],
+    };
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        demo: {
+          accept_amount: {
+            typeParameterCount: 0,
+            parameters: [rawSignature({ $kind: 'u64' })],
+            returns: [],
+          },
+        },
+      },
+    };
+
+    const withoutEvidence = transactionIRToMermaid(ir);
+    const withEvidence = transactionIRToMermaid(ir, { moveSignatures });
+
+    expect(withoutEvidence).toContain('Input 0: Pure<br/>bytes');
+    expect(withoutEvidence).not.toContain('Input 0: Pure (u64)');
+    expect(withEvidence).toContain('Input 0: Pure (u64)<br/>bytes');
+  });
+
   it('does not infer concrete Pure labels from unresolved MoveCall generic metadata', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
@@ -3678,6 +3866,7 @@ describe('TransactionIR renderers', () => {
             { id: 'in', direction: 'in', role: 'flow' },
             { id: 'out', direction: 'out', role: 'flow' },
             { id: 'in_amount_0', direction: 'in', role: 'io' },
+            { id: 'out_result', direction: 'out', role: 'io' },
           ],
         },
       ],
@@ -3885,6 +4074,12 @@ describe('TransactionIR renderers', () => {
     });
     expect(invalidShortenLabels).toMatch(/^flowchart TD/);
     expect(invalidShortenLabels).toContain('mermaid.shortenLabels');
+
+    const invalidMoveSignatures = transactionIRToMermaid(ir, {
+      moveSignatures: [] as never,
+    });
+    expect(invalidMoveSignatures).toMatch(/^flowchart TD/);
+    expect(invalidMoveSignatures).toContain('mermaid.moveSignatures');
 
     const unknownOption = transactionIRToMermaid(ir, {
       showArgsValues: true,
@@ -5165,7 +5360,7 @@ describe('graph conversion', () => {
           id: 'cmd-1',
           kind: 'Command',
           command: 'splitCoins',
-          ports: [],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
       ],
       edges: [],
@@ -5291,6 +5486,400 @@ describe('graph conversion', () => {
     );
   });
 
+  it('uses the graph conversion path option for graph diagnostics', () => {
+    const path = '$.doc.graph';
+    const graphIR = graphToTransactionIR(undefined as unknown as PTBGraph, {
+      path,
+    });
+
+    expect(graphIR.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.invalid',
+        path,
+      }),
+    );
+
+    try {
+      parseExecutableGraph(undefined, { path });
+    } catch (error) {
+      expect(error).toBeInstanceOf(PTBModelError);
+      expect((error as PTBModelError).diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'graph.invalid',
+          path,
+        }),
+      );
+      return;
+    }
+
+    throw new Error('Expected PTBModelError.');
+  });
+
+  it('rejects graph conversion precondition failures at the executable boundary', () => {
+    const start = {
+      id: 'start',
+      kind: 'Start' as const,
+      ports: [{ id: 'out', direction: 'out' as const, role: 'flow' as const }],
+    };
+    const end = {
+      id: 'end',
+      kind: 'End' as const,
+      ports: [{ id: 'in', direction: 'in' as const, role: 'flow' as const }],
+    };
+    const addressInput: VariableNode = {
+      id: 'recipient',
+      kind: 'Variable',
+      name: 'recipient',
+      varType: { kind: 'scalar', name: 'address' },
+      value: normalizedObjectId('2'),
+      ports: [{ id: 'out_value', direction: 'out', role: 'io' }],
+    };
+    const objectInput: VariableNode = {
+      id: 'object',
+      kind: 'Variable',
+      name: 'object',
+      varType: { kind: 'object' },
+      value: normalizedObjectId('2'),
+      ports: [{ id: 'out_value', direction: 'out', role: 'io' }],
+    };
+    const flow = (source: string, target: string) => ({
+      id: `flow-${source}-${target}`,
+      kind: 'flow' as const,
+      source,
+      sourceHandle: 'out',
+      target,
+      targetHandle: 'in',
+    });
+    const flowGraph = (command: CommandNode): PTBGraph => ({
+      nodes: [start, command, end],
+      edges: [flow('start', command.id), flow(command.id, 'end')],
+    });
+
+    const missingTargetGraph = flowGraph({
+      id: 'call',
+      kind: 'Command',
+      command: 'moveCall',
+      params: { runtime: { resultCount: 1 } },
+      ports: [
+        { id: 'in', direction: 'in', role: 'flow' },
+        { id: 'out', direction: 'out', role: 'flow' },
+        { id: 'out_result', direction: 'out', role: 'io' },
+      ],
+    });
+    const missingPublishPayloadGraph = flowGraph({
+      id: 'publish',
+      kind: 'Command',
+      command: 'publish',
+      params: { runtime: {} },
+      ports: [
+        { id: 'in', direction: 'in', role: 'flow' },
+        { id: 'out', direction: 'out', role: 'flow' },
+        { id: 'out_result', direction: 'out', role: 'io' },
+      ],
+    });
+    const futureResultGraph: PTBGraph = {
+      nodes: [
+        start,
+        addressInput,
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+            { id: 'in_object_0', direction: 'in', role: 'io' },
+          ],
+        },
+        {
+          id: 'producer',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${normalizedObjectId('2')}::m::f`,
+              resultCount: 1,
+            },
+          },
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'out_result', direction: 'out', role: 'io' },
+          ],
+        },
+        end,
+      ],
+      edges: [
+        flow('start', 'transfer'),
+        flow('transfer', 'producer'),
+        flow('producer', 'end'),
+        {
+          id: 'recipient-edge',
+          kind: 'io',
+          source: 'recipient',
+          sourceHandle: 'out_value',
+          target: 'transfer',
+          targetHandle: 'in_recipient',
+        },
+        {
+          id: 'future-result-edge',
+          kind: 'io',
+          source: 'producer',
+          sourceHandle: 'out_result',
+          target: 'transfer',
+          targetHandle: 'in_object_0',
+        },
+      ],
+    };
+    const unresolvedObjectGraph: PTBGraph = {
+      nodes: [
+        start,
+        {
+          ...objectInput,
+          value: 'not-an-object-id',
+        },
+        end,
+      ],
+      edges: [flow('start', 'end')],
+    };
+    const invalidCastGraph: PTBGraph = {
+      nodes: [
+        start,
+        addressInput,
+        objectInput,
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+            { id: 'in_object_0', direction: 'in', role: 'io' },
+          ],
+        },
+        end,
+      ],
+      edges: [
+        flow('start', 'transfer'),
+        flow('transfer', 'end'),
+        {
+          id: 'recipient-edge',
+          kind: 'io',
+          source: 'recipient',
+          sourceHandle: 'out_value',
+          target: 'transfer',
+          targetHandle: 'in_recipient',
+        },
+        {
+          id: 'object-edge',
+          kind: 'io',
+          source: 'object',
+          sourceHandle: 'out_value',
+          target: 'transfer',
+          targetHandle: 'in_object_0',
+          cast: { to: 'u64' },
+        },
+      ],
+    };
+    const splitCoinsCommand: CommandNode = {
+      id: 'split',
+      kind: 'Command',
+      command: 'splitCoins',
+      ports: [
+        { id: 'in', direction: 'in', role: 'flow' },
+        { id: 'out', direction: 'out', role: 'flow' },
+        { id: 'in_coin', direction: 'in', role: 'io' },
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'out_result', direction: 'out', role: 'io' },
+      ],
+    };
+    const unknownCoinGraph: PTBGraph = {
+      nodes: [
+        start,
+        {
+          id: 'coin',
+          kind: 'Variable',
+          name: 'coin',
+          varType: { kind: 'unknown' },
+          value: 'not-an-object-id',
+          ports: [{ id: 'out_value', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'move_numeric', width: 'u64' },
+          value: '1',
+          ports: [{ id: 'out_value', direction: 'out', role: 'io' }],
+        },
+        splitCoinsCommand,
+        end,
+      ],
+      edges: [
+        flow('start', 'split'),
+        flow('split', 'end'),
+        {
+          id: 'coin-edge',
+          kind: 'io',
+          source: 'coin',
+          sourceHandle: 'out_value',
+          target: 'split',
+          targetHandle: 'in_coin',
+        },
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out_value',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+        },
+      ],
+    };
+    const unknownAmountGraph: PTBGraph = {
+      nodes: [
+        start,
+        {
+          ...objectInput,
+          id: 'coin',
+          name: 'coin',
+        },
+        {
+          id: 'amount',
+          kind: 'Variable',
+          name: 'amount',
+          varType: { kind: 'unknown' },
+          value: 'not-a-u64',
+          ports: [{ id: 'out_value', direction: 'out', role: 'io' }],
+        },
+        splitCoinsCommand,
+        end,
+      ],
+      edges: [
+        flow('start', 'split'),
+        flow('split', 'end'),
+        {
+          id: 'coin-edge',
+          kind: 'io',
+          source: 'coin',
+          sourceHandle: 'out_value',
+          target: 'split',
+          targetHandle: 'in_coin',
+        },
+        {
+          id: 'amount-edge',
+          kind: 'io',
+          source: 'amount',
+          sourceHandle: 'out_value',
+          target: 'split',
+          targetHandle: 'in_amount_0',
+        },
+      ],
+    };
+    const inferredCastGraph: PTBGraph = {
+      nodes: [
+        start,
+        {
+          ...addressInput,
+          varType: { kind: 'unknown' },
+        },
+        objectInput,
+        {
+          id: 'transfer',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', direction: 'in', role: 'flow' },
+            { id: 'out', direction: 'out', role: 'flow' },
+            { id: 'in_recipient', direction: 'in', role: 'io' },
+            { id: 'in_object_0', direction: 'in', role: 'io' },
+          ],
+        },
+        end,
+      ],
+      edges: [
+        flow('start', 'transfer'),
+        flow('transfer', 'end'),
+        {
+          id: 'recipient-edge',
+          kind: 'io',
+          source: 'recipient',
+          sourceHandle: 'out_value',
+          target: 'transfer',
+          targetHandle: 'in_recipient',
+          cast: { to: 'u64' },
+        },
+        {
+          id: 'object-edge',
+          kind: 'io',
+          source: 'object',
+          sourceHandle: 'out_value',
+          target: 'transfer',
+          targetHandle: 'in_object_0',
+        },
+      ],
+    };
+
+    expect(
+      validatePTBDocV4({ version: 'ptb_4', graph: missingTargetGraph }),
+    ).toEqual([]);
+    expect(
+      validatePTBDocV4({ version: 'ptb_4', graph: missingPublishPayloadGraph }),
+    ).toEqual([]);
+
+    [
+      {
+        graph: missingTargetGraph,
+        code: 'graph.command.moveCall.targetMissing',
+      },
+      {
+        graph: missingPublishPayloadGraph,
+        code: 'graph.command.base64BytesParam',
+      },
+      { graph: futureResultGraph, code: 'graph.arg.source' },
+      { graph: unresolvedObjectGraph, code: 'graph.input.object.unresolved' },
+      { graph: invalidCastGraph, code: 'graph.edge.castApplicability' },
+      { graph: unknownCoinGraph, code: 'graph.input.object.unresolved' },
+      { graph: unknownAmountGraph, code: 'ir.input.pureValue' },
+      { graph: inferredCastGraph, code: 'graph.edge.castApplicability' },
+    ].forEach(({ graph, code }) => {
+      expect(
+        collectGraphDiagnostics(graph).map((diagnostic) => diagnostic.code),
+      ).not.toContain(code);
+      expect(
+        graphToTransactionIR(graph).diagnostics.map(
+          (diagnostic) => diagnostic.code,
+        ),
+      ).toContain(code);
+      expectModelErrorCodes(() => parseExecutableGraph(graph), [code]);
+    });
+
+    const path = '$.doc.graph';
+    const prefixedIR = graphToTransactionIR(missingTargetGraph, { path });
+    expect(prefixedIR.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.moveCall.targetMissing',
+        path: `${path}.nodes[1]`,
+      }),
+    );
+    try {
+      parseExecutableGraph(missingTargetGraph, { path });
+    } catch (error) {
+      expect(error).toBeInstanceOf(PTBModelError);
+      expect((error as PTBModelError).diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'graph.command.moveCall.targetMissing',
+          path: `${path}.nodes[1]`,
+        }),
+      );
+      return;
+    }
+
+    throw new Error('Expected PTBModelError.');
+  });
+
   it('uses executable graph facts instead of accepting new conversion evidence', () => {
     const graph: PTBGraph = {
       nodes: [
@@ -5323,6 +5912,9 @@ describe('graph conversion', () => {
     expect(() =>
       graphToTransactionIR(executable, { moveSignatures: {} }),
     ).toThrow(TypeError);
+    expect(() => graphToTransactionIR(executable, { path: '$.graph' })).toThrow(
+      TypeError,
+    );
   });
 
   it('keeps unresolved object ids as objects through graph round-trip', () => {
@@ -5572,15 +6164,13 @@ describe('graph conversion', () => {
     expect(codes).toContain('graph.port.unknownField');
     expect(codes).toContain('graph.port.field');
     expect(codes).toContain('graph.command.params.runtime');
-    expect(codes).toContain('graph.command.params.ui.count');
-    expect(codes).toContain('graph.command.params.ui.unknownField');
     expect(codes).toContain('graph.command.params.unknownField');
     expect(codes).toContain('graph.edge.unknownField');
     expect(codes).toContain('graph.edge.cast.unknownField');
     expect(codes).toContain('graph.edge.cast');
   });
 
-  it('rejects unsafe integer graph UI counts', () => {
+  it('rejects graph UI params as non-model command params', () => {
     const diagnostics = collectGraphDiagnostics({
       nodes: [
         {
@@ -5592,7 +6182,7 @@ describe('graph conversion', () => {
               amountsCount: Number.MAX_SAFE_INTEGER + 1,
             },
           },
-          ports: [],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
       ],
       edges: [],
@@ -5600,8 +6190,8 @@ describe('graph conversion', () => {
 
     expect(diagnostics).toContainEqual(
       expect.objectContaining({
-        code: 'graph.command.params.ui.count',
-        path: '$.nodes[0].params.ui.amountsCount',
+        code: 'graph.command.params.unknownField',
+        path: '$.nodes[0].params.ui',
       }),
     );
   });
@@ -5950,7 +6540,7 @@ describe('graph conversion', () => {
     );
   });
 
-  it('rejects builder-shaped MoveCall and UI transaction params in the model graph', () => {
+  it('rejects builder-shaped MoveCall and UI params in the model graph', () => {
     const graph: PTBGraph = {
       nodes: [
         {
@@ -5978,7 +6568,6 @@ describe('graph conversion', () => {
     const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
 
     expect(ir.commands).toEqual([]);
-    expect(codes).toContain('graph.command.params.ui.unknownField');
     expect(codes).toContain('graph.command.params.unknownField');
   });
 
@@ -6128,7 +6717,7 @@ describe('graph conversion', () => {
     const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
 
     expect(ir.commands).toEqual([]);
-    expect(codes).toContain('graph.command.params.ui.unknownField');
+    expect(codes).toContain('graph.command.params.unknownField');
   });
 
   it('rejects malformed runtime MakeMoveVec type values instead of treating them as null', () => {
@@ -6918,7 +7507,12 @@ describe('graph conversion', () => {
     expect(graph.nodes.every((node) => !('data' in node))).toBe(true);
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
     expect(roundTripped.diagnostics).toEqual([]);
-    expect(transactionIRToRaw(roundTripped)).toEqual(sampleRawTransaction());
+    const expectedRaw = sampleRawTransaction();
+    expect(expectedRaw.commands[1]?.kind).toBe('MergeCoins');
+    if (expectedRaw.commands[1]?.kind === 'MergeCoins') {
+      expectedRaw.commands[1].sources = [{ kind: 'Result', commandIndex: 0 }];
+    }
+    expect(transactionIRToRaw(roundTripped)).toEqual(expectedRaw);
   });
 
   it('infers unknown graph input types from concrete consumer command handles', () => {
@@ -7655,6 +8249,51 @@ describe('graph conversion', () => {
     expect(recipient?.varType).toEqual({ kind: 'scalar', name: 'address' });
   });
 
+  it('preserves Move signature evidence through IR to graph input inference', () => {
+    const packageId = normalizedObjectId('2');
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        demo: {
+          accept_address: {
+            typeParameterCount: 0,
+            parameters: [rawSignature({ $kind: 'address' })],
+            returns: [],
+          },
+        },
+      },
+    };
+    const graph = transactionIRToGraph(
+      {
+        version: 'transaction_ir_1',
+        inputs: [
+          {
+            id: 'recipient',
+            kind: 'Pure',
+            bytes: pureBytes('address', normalizedObjectId('9')),
+          },
+        ],
+        commands: [
+          {
+            id: 'call',
+            kind: 'MoveCall',
+            package: packageId,
+            module: 'demo',
+            function: 'accept_address',
+            typeArguments: [],
+            arguments: [{ kind: 'Input', index: 0, type: 'pure' }],
+          },
+        ],
+        diagnostics: [],
+      },
+      { moveSignatures },
+    );
+    const recipient = graph.nodes.find(
+      (node): node is VariableNode => node.id === 'var-0',
+    );
+
+    expect(recipient?.varType).toEqual({ kind: 'scalar', name: 'address' });
+  });
+
   it('keeps FundsWithdrawal graph variables out of the object type category', () => {
     const source = rawTransactionToIR(sampleRawTransaction());
     const graph = transactionIRToGraph(source);
@@ -7760,7 +8399,7 @@ describe('graph conversion', () => {
               dependencies,
             },
           },
-          ports: [],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
       ],
       edges: [
@@ -8168,6 +8807,7 @@ describe('graph conversion', () => {
             { id: 'out', direction: 'out', role: 'flow' },
             { id: 'in_coin', direction: 'in', role: 'io' },
             { id: 'in_amount_0', direction: 'in', role: 'io' },
+            { id: 'out_result', direction: 'out', role: 'io' },
           ],
         } as never,
       ],
@@ -8235,7 +8875,7 @@ describe('graph conversion', () => {
           id: 'publish',
           kind: 'Command',
           command: 'publish',
-          ports: [],
+          ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
         },
       ],
       edges: [],
@@ -8265,7 +8905,10 @@ describe('graph conversion', () => {
               dependencies: [],
             },
           },
-          ports: [{ id: 'in_upgradeCap', direction: 'in', role: 'io' }],
+          ports: [
+            { id: 'in_upgradeCap', direction: 'in', role: 'io' },
+            { id: 'out_result', direction: 'out', role: 'io' },
+          ],
         },
       ],
       edges: [
@@ -8403,7 +9046,7 @@ describe('graph conversion', () => {
     );
   });
 
-  it('declares only referenced graph output handles for unknown MoveCall nested results', () => {
+  it('rejects unknown MoveCall result references during graph projection', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       inputs: [],
@@ -8431,13 +9074,59 @@ describe('graph conversion', () => {
         },
       ],
     };
-    const graph = transactionIRToGraph(ir);
-    const source = graph.nodes.find((node) => node.id === 'cmd-0');
-    const sourcePorts = source?.ports.map((port) => port.id);
+    expectModelErrorCodes(
+      () => transactionIRToGraph(ir),
+      ['graph.ir.resultArity'],
+    );
+  });
 
-    expect(sourcePorts).toContain('out_5');
-    expect(sourcePorts).not.toContain('out_0');
-    expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
+  it('revalidates structural IR against Move signature evidence during graph projection', () => {
+    const packageId = normalizedObjectId('2');
+    const ir = parseStructuralTransactionIR({
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'command_0',
+          kind: 'MoveCall',
+          package: packageId,
+          module: 'coin',
+          function: 'split',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 1,
+        },
+        {
+          id: 'command_1',
+          kind: 'MoveCall',
+          package: packageId,
+          module: 'coin',
+          function: 'value',
+          typeArguments: [],
+          arguments: [{ kind: 'Result', commandIndex: 0 }],
+        },
+      ],
+    });
+    const moveSignatures: MovePackageSignatureEvidence = {
+      [packageId]: {
+        coin: {
+          split: {
+            typeParameterCount: 0,
+            parameters: [],
+            returns: [
+              rawSignature({ $kind: 'u64' }),
+              rawSignature({ $kind: 'u64' }),
+            ],
+          },
+        },
+      },
+    };
+
+    expectModelErrorCodes(
+      () => transactionIRToGraph(ir, { moveSignatures }),
+      ['ir.command.moveCall.resultCountMismatch', 'ir.arg.resultArity'],
+    );
   });
 
   it('does not expose nested result handles for single-result package commands', () => {
@@ -8498,7 +9187,7 @@ describe('graph conversion', () => {
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
   });
 
-  it('declares nested handles for single-result package commands when IR references them', () => {
+  it('canonicalizes single-result NestedResult references to Result handles', () => {
     const ir: TransactionIR = {
       version: 'transaction_ir_1',
       inputs: [
@@ -8565,8 +9254,12 @@ describe('graph conversion', () => {
 
     commandPorts.slice(0, 3).forEach((ports) => {
       expect(ports).toContain('out_result');
-      expect(ports).toContain('out_0');
+      expect(ports).not.toContain('out_0');
     });
+    const sourceHandles = graph.edges
+      .filter((edge) => edge.kind === 'io' && edge.target === 'cmd-3')
+      .map((edge) => edge.sourceHandle);
+    expect(sourceHandles).toEqual(['out_result', 'out_result', 'out_result']);
     expect(graphEdgesHaveDeclaredHandles(graph)).toBe(true);
     expect(graphToTransactionIR(graph).diagnostics).toEqual([]);
   });
@@ -8647,6 +9340,7 @@ describe('graph conversion', () => {
           function: 'value',
           typeArguments: [TEST_SUI_TYPE],
           arguments: [{ kind: 'Input', index: 0 }],
+          resultCount: 1,
         },
       ],
     };
@@ -10768,14 +11462,18 @@ describe('model graph command argument semantics', () => {
 
   function graphEvidenceFor(
     returns: RawOpenSignature[],
-    options: { functionName?: string; typeParameterCount?: number } = {},
+    options: {
+      functionName?: string;
+      typeParameterCount?: number;
+      parameters?: RawOpenSignature[];
+    } = {},
   ): MovePackageSignatureEvidence {
     return {
       [graphEvidencePackageId]: {
         [graphEvidenceModuleName]: {
           [options.functionName ?? graphEvidenceFunctionName]: {
             typeParameterCount: options.typeParameterCount ?? 0,
-            parameters: [],
+            parameters: options.parameters ?? [],
             returns,
           },
         },
@@ -10844,6 +11542,7 @@ describe('model graph command argument semantics', () => {
           ports: [
             { id: 'in_coin', direction: 'in', role: 'io' },
             { id: 'in_amount_0', direction: 'in', role: 'io' },
+            { id: 'out_result', direction: 'out', role: 'io' },
           ],
         },
       ],
@@ -10865,6 +11564,65 @@ describe('model graph command argument semantics', () => {
           targetHandle: 'in_amount_0',
           ...(cast ? { cast } : {}),
         },
+      ],
+    };
+  }
+
+  function variableInput(id: string): VariableNode {
+    return {
+      id,
+      kind: 'Variable',
+      name: id,
+      varType: { kind: 'move_numeric', width: 'u64' },
+      value: '1',
+      ports: [{ id: 'out', direction: 'out', role: 'io' }],
+    };
+  }
+
+  function commandGraphWithMissingDeclaredIndexedInput(options: {
+    command: CommandNode;
+    connectedHandles: string[];
+  }): PTBGraph {
+    return {
+      nodes: [
+        {
+          id: 'start',
+          kind: 'Start',
+          ports: [{ id: 'out', direction: 'out', role: 'flow' }],
+        },
+        ...options.connectedHandles.map(variableInput),
+        options.command,
+        {
+          id: 'end',
+          kind: 'End',
+          ports: [{ id: 'in', direction: 'in', role: 'flow' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-command',
+          kind: 'flow',
+          source: 'start',
+          sourceHandle: 'out',
+          target: options.command.id,
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-command-end',
+          kind: 'flow',
+          source: options.command.id,
+          sourceHandle: 'out',
+          target: 'end',
+          targetHandle: 'in',
+        },
+        ...options.connectedHandles.map((handle) => ({
+          id: `io-${handle}`,
+          kind: 'io' as const,
+          source: handle,
+          sourceHandle: 'out',
+          target: options.command.id,
+          targetHandle: handle,
+        })),
       ],
     };
   }
@@ -11024,14 +11782,14 @@ describe('model graph command argument semantics', () => {
       );
     });
 
-    const validResultCodes = collectGraphDiagnostics(
+    const invalidResultCodes = collectGraphDiagnostics(
       graphFor('splitCoins', [
         ...flowPorts,
         { id: 'out_result', direction: 'out', role: 'io' },
         { id: 'out_0', direction: 'out', role: 'io' },
       ]),
     ).map((diagnostic) => diagnostic.code);
-    expect(validResultCodes).not.toContain('graph.command.outputPort.invalid');
+    expect(invalidResultCodes).toContain('graph.command.outputPort.invalid');
   });
 
   it('rejects non-canonical graph command input ports', () => {
@@ -11301,7 +12059,7 @@ describe('model graph command argument semantics', () => {
     );
   });
 
-  it('keeps inspection conversion available when evidence-derived output arity rejects a declared port', () => {
+  it('blocks graph conversion when evidence-derived output arity rejects a declared port', () => {
     const graph = moveCallGraph({
       ports: [{ id: 'out_2', direction: 'out', role: 'io' }],
     });
@@ -11311,39 +12069,39 @@ describe('model graph command argument semantics', () => {
     const ir = graphToTransactionIR(graph, options);
 
     expect(ir.inputs).toEqual([]);
-    expect(ir.commands).toHaveLength(1);
+    expect(ir.commands).toEqual([]);
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'graph.command.outputPort.invalid',
     );
-    expect(
-      validateRawConvertibleIR(ir).map((diagnostic) => diagnostic.code),
-    ).toContain('graph.command.outputPort.invalid');
-    expect(
-      validateTsSdkRenderableIR(ir).map((diagnostic) => diagnostic.code),
-    ).toContain('graph.command.outputPort.invalid');
     expect(() => parseExecutableGraph(graph, options)).toThrow(PTBModelError);
   });
 
   it('reports graph MoveCall evidence mismatches without blocking graph conversion', () => {
-    const graph = moveCallGraph({ runtime: { resultCount: 1 } });
+    const graph = moveCallGraph({
+      runtime: { resultCount: 1 },
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ],
+    });
     const ir = graphToTransactionIR(graph, {
       moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
     });
     const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
 
     expect(codes).toContain('graph.command.moveCall.resultCountMismatch');
-    expect(codes).toContain('ir.command.moveCall.resultCountMismatch');
+    expect(codes).not.toContain('ir.command.moveCall.resultCountMismatch');
     expect(ir.commands[0]).toMatchObject({
       kind: 'MoveCall',
-      resultCount: 1,
+      resultCount: 2,
     });
-    expect(isStructuralTransactionIR(ir)).toBe(false);
+    expect(isStructuralTransactionIR(ir)).toBe(true);
     expect(isStructuralTransactionIR(parseStructuralTransactionIR(ir))).toBe(
       true,
     );
   });
 
-  it('reports graph MoveCall type argument count mismatches and skips derived output arity', () => {
+  it('reports graph MoveCall type argument mismatches while preserving signature output arity', () => {
     const graph = moveCallGraph({
       ports: [{ id: 'out_2', direction: 'out', role: 'io' }],
     });
@@ -11355,15 +12113,20 @@ describe('model graph command argument semantics', () => {
     const codes = diagnostics.map((diagnostic) => diagnostic.code);
 
     expect(codes).toContain('graph.command.moveCall.typeArgumentsCount');
-    expect(codes).not.toContain('graph.command.outputPort.invalid');
+    expect(codes).toContain('graph.command.outputPort.invalid');
   });
 
   it('reports graph MoveCall type argument mismatches without blocking graph conversion', () => {
-    const ir = graphToTransactionIR(moveCallGraph(), {
-      moveSignatures: graphEvidenceFor([graphU64Return], {
-        typeParameterCount: 1,
+    const ir = graphToTransactionIR(
+      moveCallGraph({
+        ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
       }),
-    });
+      {
+        moveSignatures: graphEvidenceFor([graphU64Return], {
+          typeParameterCount: 1,
+        }),
+      },
+    );
     const codes = ir.diagnostics.map((diagnostic) => diagnostic.code);
 
     expect(codes).toContain('graph.command.moveCall.typeArgumentsCount');
@@ -11409,7 +12172,12 @@ describe('model graph command argument semantics', () => {
   });
 
   it('fills graph to IR MoveCall resultCount from matching host evidence', () => {
-    const graph = moveCallGraph();
+    const graph = moveCallGraph({
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ],
+    });
     const ir = graphToTransactionIR(graph, {
       moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
     });
@@ -11423,7 +12191,13 @@ describe('model graph command argument semantics', () => {
   });
 
   it('accepts matching explicit graph MoveCall resultCount evidence', () => {
-    const graph = moveCallGraph({ runtime: { resultCount: 2 } });
+    const graph = moveCallGraph({
+      runtime: { resultCount: 2 },
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ],
+    });
     const ir = graphToTransactionIR(graph, {
       moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
     });
@@ -11437,7 +12211,12 @@ describe('model graph command argument semantics', () => {
   });
 
   it('materializes evidence-derived MoveCall resultCount on graph round-trip', () => {
-    const graph = moveCallGraph();
+    const graph = moveCallGraph({
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ],
+    });
     const ir = graphToTransactionIR(graph, {
       moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
     });
@@ -11454,15 +12233,114 @@ describe('model graph command argument semantics', () => {
     });
   });
 
-  it('preserves explicit MoveCall resultCount priority with host evidence', () => {
-    const graph = moveCallGraph({ runtime: { resultCount: 1 } });
+  it('materializes signature-derived MoveCall resultCount during IR to graph conversion', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: graphEvidencePackageId,
+          module: graphEvidenceModuleName,
+          function: graphEvidenceFunctionName,
+          typeArguments: [],
+          arguments: [],
+        },
+      ],
+    };
+    const options: TransactionIRToGraphOptions = {
+      moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
+    };
+    const graph = transactionIRToGraph(ir, options);
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+
+    expect(command?.params).toEqual({
+      runtime: {
+        target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+        resultCount: 2,
+      },
+    });
+    expect(validatePTBDocV4({ version: 'ptb_4', graph })).toEqual([]);
+  });
+
+  it('materializes signature-derived MoveCall input port types during IR to graph conversion', () => {
+    const ir: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'address',
+          kind: 'Pure',
+          bytes: pureBytes('address', normalizedObjectId('9')),
+          type: { kind: 'unknown' },
+        },
+      ],
+      diagnostics: [],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: graphEvidencePackageId,
+          module: graphEvidenceModuleName,
+          function: graphEvidenceFunctionName,
+          typeArguments: [],
+          arguments: [{ kind: 'Input', index: 0 }],
+        },
+      ],
+    };
+    const graph = transactionIRToGraph(ir, {
+      moveSignatures: graphEvidenceFor([], {
+        parameters: [rawSignature({ $kind: 'address' })],
+      }),
+    });
+    const command = graph.nodes.find(
+      (node): node is CommandNode => node.kind === 'Command',
+    );
+
+    expect(
+      command?.ports.find((port) => port.id === 'in_arg_0')?.dataType,
+    ).toEqual({ kind: 'scalar', name: 'address' });
+  });
+
+  it('freezes executable graph evidence against caller mutation', () => {
+    const moveSignatures = graphEvidenceFor([graphU64Return]);
+    const graph = moveCallGraph({
+      ports: [{ id: 'out_result', direction: 'out', role: 'io' }],
+    });
+    const executable = parseExecutableGraph(graph, { moveSignatures });
+    moveSignatures[graphEvidencePackageId]![graphEvidenceModuleName]![
+      graphEvidenceFunctionName
+    ]!.returns.push(graphU64Return);
+    const ir = graphToTransactionIR(executable);
+
+    expect(ir.diagnostics).toEqual([]);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'MoveCall',
+      resultCount: 1,
+    });
+  });
+
+  it('uses signature arity over mismatched explicit MoveCall resultCount', () => {
+    const graph = moveCallGraph({
+      runtime: { resultCount: 1 },
+      ports: [
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ],
+    });
     const ir = graphToTransactionIR(graph, {
       moveSignatures: graphEvidenceFor([graphU64Return, graphStringReturn]),
     });
 
-    expect(ir.commands[0]).toMatchObject({ resultCount: 1 });
+    expect(ir.commands[0]).toMatchObject({ resultCount: 2 });
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'graph.command.moveCall.resultCountMismatch',
+    );
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'ir.command.moveCall.resultCountMismatch',
     );
     expectModelErrorCodes(
       () => transactionIRToGraph(ir),
@@ -11501,7 +12379,10 @@ describe('model graph command argument semantics', () => {
           kind: 'Command',
           command: 'makeMoveVec',
           params: { runtime: { type: 'address' } },
-          ports: [{ id: 'in_elem_0', direction: 'in', role: 'io' }],
+          ports: [
+            { id: 'in_elem_0', direction: 'in', role: 'io' },
+            { id: 'out_result', direction: 'out', role: 'io' },
+          ],
         },
       ],
       edges: [
@@ -11547,7 +12428,6 @@ describe('model graph command argument semantics', () => {
     if (split?.kind !== 'Command') throw new Error('Expected SplitCoins node');
     split.ports.push(
       { id: 'in_amount_1', direction: 'in', role: 'io' },
-      { id: 'out_result', direction: 'out', role: 'io' },
       { id: 'out_2', direction: 'out', role: 'io' },
     );
 
@@ -11558,11 +12438,418 @@ describe('model graph command argument semantics', () => {
       )
       .map((diagnostic) => diagnostic.path);
 
-    expect(invalidOutputPaths).toContain('$.nodes[2].ports[3].id');
+    expect(invalidOutputPaths).toContain('$.nodes[2].ports[2].id');
     expect(invalidOutputPaths).toContain('$.nodes[2].ports[4].id');
   });
 
-  it('allows single-result nested output handles only when an edge uses them', () => {
+  it('validates SplitCoins output arity from declared amount ports', () => {
+    const splitGraph = (ports: Port[]): PTBGraph => ({
+      nodes: [
+        {
+          id: 'split',
+          kind: 'Command',
+          command: 'splitCoins',
+          ports: [
+            { id: 'prev', direction: 'in', role: 'flow' },
+            { id: 'next', direction: 'out', role: 'flow' },
+            { id: 'in_coin', direction: 'in', role: 'io' },
+            ...ports,
+          ],
+        },
+      ],
+      edges: [],
+    });
+
+    const oneAmountCodes = collectGraphDiagnostics(
+      splitGraph([
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'out_result', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(oneAmountCodes).toContain('graph.command.inputMissing');
+    expect(oneAmountCodes).not.toContain('graph.command.outputPort.invalid');
+
+    const wrongSingleCodes = collectGraphDiagnostics(
+      splitGraph([
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'out_0', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(wrongSingleCodes).toContain('graph.command.outputPort.invalid');
+
+    const twoAmountCodes = collectGraphDiagnostics(
+      splitGraph([
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'in_amount_1', direction: 'in', role: 'io' },
+        { id: 'out_0', direction: 'out', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(twoAmountCodes).not.toContain('graph.command.outputPort.invalid');
+
+    const wrongMultiCodes = collectGraphDiagnostics(
+      splitGraph([
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'in_amount_1', direction: 'in', role: 'io' },
+        { id: 'out_result', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(wrongMultiCodes).toContain('graph.command.outputPort.invalid');
+
+    const missingMultiCodes = collectGraphDiagnostics(
+      splitGraph([
+        { id: 'in_amount_0', direction: 'in', role: 'io' },
+        { id: 'in_amount_1', direction: 'in', role: 'io' },
+        { id: 'out_1', direction: 'out', role: 'io' },
+      ]),
+    ).map((diagnostic) => diagnostic.code);
+    expect(missingMultiCodes).toContain('graph.command.outputPort.invalid');
+  });
+
+  it('requires every canonical known-result output port', () => {
+    const cases: Array<{
+      name: string;
+      graph: PTBGraph;
+      options?: GraphToTransactionIROptions;
+    }> = [
+      {
+        name: 'makeMoveVec',
+        graph: {
+          nodes: [
+            {
+              id: 'vec',
+              kind: 'Command',
+              command: 'makeMoveVec',
+              params: { runtime: { type: 'u64' } },
+              ports: [{ id: 'in_elem_0', direction: 'in', role: 'io' }],
+            },
+          ],
+          edges: [],
+        },
+      },
+      {
+        name: 'moveCall',
+        graph: moveCallGraph({
+          runtime: { resultCount: 2 },
+          ports: [{ id: 'out_1', direction: 'out', role: 'io' }],
+        }),
+      },
+      {
+        name: 'splitCoins',
+        graph: {
+          nodes: [
+            {
+              id: 'split',
+              kind: 'Command',
+              command: 'splitCoins',
+              ports: [
+                { id: 'in_coin', direction: 'in', role: 'io' },
+                { id: 'in_amount_0', direction: 'in', role: 'io' },
+                { id: 'in_amount_1', direction: 'in', role: 'io' },
+                { id: 'out_1', direction: 'out', role: 'io' },
+              ],
+            },
+          ],
+          edges: [],
+        },
+      },
+    ];
+
+    cases.forEach(({ name, graph, options }) => {
+      const codes = collectGraphDiagnostics(graph, options).map(
+        (diagnostic) => diagnostic.code,
+      );
+
+      expect(codes, name).toContain('graph.command.outputPort.invalid');
+      expect(() => parseExecutableGraph(graph, options)).toThrow(PTBModelError);
+    });
+  });
+
+  it('passes host MoveCall parameter evidence through graph executable validation', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'object',
+          kind: 'Variable',
+          name: 'object',
+          varType: { kind: 'object' },
+          value: normalizedObjectId('9'),
+          ports: [{ id: 'out', direction: 'out', role: 'io' }],
+        },
+        {
+          id: 'call',
+          kind: 'Command',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+            },
+          },
+          ports: [{ id: 'in_arg_0', direction: 'in', role: 'io' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'arg-edge',
+          kind: 'io',
+          source: 'object',
+          sourceHandle: 'out',
+          target: 'call',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    };
+    const options: GraphToTransactionIROptions = {
+      moveSignatures: graphEvidenceFor([], {
+        parameters: [rawSignature({ $kind: 'address' })],
+      }),
+    };
+    const ir = graphToTransactionIR(graph, options);
+
+    expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'ir.arg.semanticType',
+    );
+    expect(() => parseExecutableGraph(graph, options)).toThrow(PTBModelError);
+  });
+
+  it('requires every declared indexed command input before graph lowering', () => {
+    const cases: Array<{ name: string; graph: PTBGraph }> = [
+      {
+        name: 'splitCoins',
+        graph: commandGraphWithMissingDeclaredIndexedInput({
+          command: {
+            id: 'cmd',
+            kind: 'Command',
+            command: 'splitCoins',
+            ports: [
+              { id: 'in', direction: 'in', role: 'flow' },
+              { id: 'out', direction: 'out', role: 'flow' },
+              { id: 'in_coin', direction: 'in', role: 'io' },
+              { id: 'in_amount_0', direction: 'in', role: 'io' },
+              { id: 'in_amount_1', direction: 'in', role: 'io' },
+              { id: 'out_0', direction: 'out', role: 'io' },
+              { id: 'out_1', direction: 'out', role: 'io' },
+            ],
+          },
+          connectedHandles: ['in_coin', 'in_amount_0'],
+        }),
+      },
+      {
+        name: 'mergeCoins',
+        graph: commandGraphWithMissingDeclaredIndexedInput({
+          command: {
+            id: 'cmd',
+            kind: 'Command',
+            command: 'mergeCoins',
+            ports: [
+              { id: 'in', direction: 'in', role: 'flow' },
+              { id: 'out', direction: 'out', role: 'flow' },
+              { id: 'in_destination', direction: 'in', role: 'io' },
+              { id: 'in_source_0', direction: 'in', role: 'io' },
+              { id: 'in_source_1', direction: 'in', role: 'io' },
+            ],
+          },
+          connectedHandles: ['in_destination', 'in_source_0'],
+        }),
+      },
+      {
+        name: 'transferObjects',
+        graph: commandGraphWithMissingDeclaredIndexedInput({
+          command: {
+            id: 'cmd',
+            kind: 'Command',
+            command: 'transferObjects',
+            ports: [
+              { id: 'in', direction: 'in', role: 'flow' },
+              { id: 'out', direction: 'out', role: 'flow' },
+              { id: 'in_recipient', direction: 'in', role: 'io' },
+              { id: 'in_object_0', direction: 'in', role: 'io' },
+              { id: 'in_object_1', direction: 'in', role: 'io' },
+            ],
+          },
+          connectedHandles: ['in_recipient', 'in_object_0'],
+        }),
+      },
+      {
+        name: 'makeMoveVec',
+        graph: commandGraphWithMissingDeclaredIndexedInput({
+          command: {
+            id: 'cmd',
+            kind: 'Command',
+            command: 'makeMoveVec',
+            params: { runtime: { type: 'u64' } },
+            ports: [
+              { id: 'in', direction: 'in', role: 'flow' },
+              { id: 'out', direction: 'out', role: 'flow' },
+              { id: 'in_elem_0', direction: 'in', role: 'io' },
+              { id: 'in_elem_1', direction: 'in', role: 'io' },
+              { id: 'out_result', direction: 'out', role: 'io' },
+            ],
+          },
+          connectedHandles: ['in_elem_0'],
+        }),
+      },
+      {
+        name: 'moveCall',
+        graph: commandGraphWithMissingDeclaredIndexedInput({
+          command: {
+            id: 'cmd',
+            kind: 'Command',
+            command: 'moveCall',
+            params: {
+              runtime: {
+                target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+              },
+            },
+            ports: [
+              { id: 'in', direction: 'in', role: 'flow' },
+              { id: 'out', direction: 'out', role: 'flow' },
+              { id: 'in_arg_0', direction: 'in', role: 'io' },
+              { id: 'in_arg_1', direction: 'in', role: 'io' },
+            ],
+          },
+          connectedHandles: ['in_arg_0'],
+        }),
+      },
+    ];
+
+    cases.forEach(({ name, graph }) => {
+      const diagnostics = collectGraphDiagnostics(graph);
+      expect(
+        diagnostics.map((diagnostic) => diagnostic.code),
+        name,
+      ).toContain('graph.command.inputMissing');
+
+      const ir = graphToTransactionIR(graph);
+      expect(ir.commands[0], name).toMatchObject({
+        kind: 'Unsupported',
+        sourceKind: 'GraphCommandInvalidInput',
+      });
+    });
+  });
+
+  it('requires signature-declared MoveCall arguments even before graph ports are declared', () => {
+    const graph = commandGraphWithMissingDeclaredIndexedInput({
+      command: {
+        id: 'cmd',
+        kind: 'Command',
+        command: 'moveCall',
+        params: {
+          runtime: {
+            target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+          },
+        },
+        ports: [
+          { id: 'in', direction: 'in', role: 'flow' },
+          { id: 'out', direction: 'out', role: 'flow' },
+          { id: 'in_arg_0', direction: 'in', role: 'io' },
+        ],
+      },
+      connectedHandles: ['in_arg_0'],
+    });
+    const options: GraphToTransactionIROptions = {
+      moveSignatures: graphEvidenceFor([], {
+        parameters: [
+          rawSignature({ $kind: 'u64' }),
+          rawSignature({ $kind: 'address' }),
+        ],
+      }),
+    };
+
+    const diagnostics = collectGraphDiagnostics(graph, options);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'graph.command.inputMissing',
+    );
+
+    const ir = graphToTransactionIR(graph, options);
+    expect(ir.commands[0]).toMatchObject({
+      kind: 'Unsupported',
+      sourceKind: 'GraphCommandInvalidInput',
+    });
+  });
+
+  it('rejects MoveCall argument ports beyond signature parameter arity', () => {
+    const command: CommandNode = {
+      id: 'cmd',
+      kind: 'Command',
+      command: 'moveCall',
+      params: {
+        runtime: {
+          target: `${graphEvidencePackageId}::${graphEvidenceModuleName}::${graphEvidenceFunctionName}`,
+        },
+      },
+      ports: [
+        { id: 'in', direction: 'in', role: 'flow' },
+        { id: 'out', direction: 'out', role: 'flow' },
+        { id: 'in_arg_0', direction: 'in', role: 'io' },
+        { id: 'in_arg_1', direction: 'in', role: 'io' },
+        { id: 'in_arg_2', direction: 'in', role: 'io' },
+      ],
+    };
+    const options: GraphToTransactionIROptions = {
+      moveSignatures: graphEvidenceFor([], {
+        parameters: [
+          rawSignature({ $kind: 'u64' }),
+          rawSignature({ $kind: 'address' }),
+        ],
+      }),
+    };
+
+    [
+      commandGraphWithMissingDeclaredIndexedInput({
+        command,
+        connectedHandles: ['in_arg_0', 'in_arg_1'],
+      }),
+      commandGraphWithMissingDeclaredIndexedInput({
+        command,
+        connectedHandles: ['in_arg_0', 'in_arg_1', 'in_arg_2'],
+      }),
+    ].forEach((graph) => {
+      const diagnostics = collectGraphDiagnostics(graph, options);
+      expect(diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'graph.command.inputPort.invalid',
+          path: expect.stringMatching(/\.ports\[4\]\.id$/),
+        }),
+      );
+
+      const ir = graphToTransactionIR(graph, options);
+      expect(ir.inputs).toEqual([]);
+      expect(ir.commands).toEqual([]);
+      expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        'graph.command.inputPort.invalid',
+      );
+      expect(() => parseExecutableGraph(graph, options)).toThrow(PTBModelError);
+    });
+  });
+
+  it('rejects MoveCall type ports beyond signature type parameter arity', () => {
+    const graph = moveCallGraph({
+      ports: [
+        { id: 'in_type_0', direction: 'in', role: 'type' },
+        { id: 'in_type_1', direction: 'in', role: 'type' },
+      ],
+    });
+    const options: GraphToTransactionIROptions = {
+      moveSignatures: graphEvidenceFor([], { typeParameterCount: 1 }),
+    };
+    const diagnostics = collectGraphDiagnostics(graph, options);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.inputPort.invalid',
+        path: '$.nodes[0].ports[1].id',
+      }),
+    );
+    expect(graphToTransactionIR(graph, options).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.command.inputPort.invalid',
+      }),
+    );
+    expect(() => parseExecutableGraph(graph, options)).toThrow(PTBModelError);
+  });
+
+  it('rejects single-result nested output handles even when an edge uses them', () => {
     const baseSource: CommandNode = {
       id: 'source',
       kind: 'Command',
@@ -11611,10 +12898,10 @@ describe('model graph command argument semantics', () => {
     }).map((diagnostic) => diagnostic.code);
 
     expect(unusedCodes).toContain('graph.command.outputPort.invalid');
-    expect(usedCodes).not.toContain('graph.command.outputPort.invalid');
+    expect(usedCodes).toContain('graph.command.outputPort.invalid');
   });
 
-  it('keeps unknown MoveCall output arity structural without guessing a count', () => {
+  it('rejects unknown MoveCall output handles without guessing a count', () => {
     const graphFor = (outputId: string): PTBGraph => ({
       nodes: [
         {
@@ -11636,7 +12923,7 @@ describe('model graph command argument semantics', () => {
       collectGraphDiagnostics(graphFor('out_65535')).map(
         (diagnostic) => diagnostic.code,
       ),
-    ).not.toContain('graph.command.outputPort.invalid');
+    ).toContain('graph.command.outputPort.invalid');
     expect(
       collectGraphDiagnostics(graphFor('out_65536')).map(
         (diagnostic) => diagnostic.code,
@@ -11644,7 +12931,7 @@ describe('model graph command argument semantics', () => {
     ).toContain('graph.command.outputPort.invalid');
   });
 
-  it('keeps inspection conversion available for non-canonical command output ports', () => {
+  it('blocks graph conversion for non-canonical command output ports', () => {
     const graph: PTBGraph = {
       nodes: [
         {
@@ -11663,7 +12950,7 @@ describe('model graph command argument semantics', () => {
     const ir = graphToTransactionIR(graph);
 
     expect(ir.inputs).toEqual([]);
-    expect(ir.commands).toHaveLength(1);
+    expect(ir.commands).toEqual([]);
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'graph.command.outputPort.invalid',
     );
@@ -11865,7 +13152,7 @@ describe('structural ownership and defensive renderers', () => {
           nodes: [{ ...validCommand, params: { ui: new UIShape() } }],
           edges: [],
         },
-        code: 'graph.command.params.ui',
+        code: 'graph.command.params.unknownField',
       },
       {
         graph: {

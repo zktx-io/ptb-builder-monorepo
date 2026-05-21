@@ -27,8 +27,8 @@ import {
 } from '../inputTypeEvidence.js';
 import type { PTBInputArgumentKind } from '../inputTypeEvidence.js';
 import {
-  lookupMoveSignatureEvidence,
   normalizeMovePackageSignatureEvidenceOption,
+  resolveMoveCallSignatureEvidence,
 } from '../move/evidence.js';
 import type {
   MoveFunctionSignatureEvidence,
@@ -78,10 +78,12 @@ export interface ValidateTransactionIROptions {
   includeExistingDiagnostics?: boolean;
   includeUnsupportedDiagnostics?: boolean;
   moveSignatures?: MovePackageSignatureEvidence;
+  requireKnownResultArity?: boolean;
 }
 
 interface MoveCallEvidenceState {
-  effectiveResultCount?: number;
+  resultArity: number;
+  typeArgumentsComplete: boolean;
   signatureForType?: MoveFunctionSignatureEvidence;
 }
 
@@ -101,6 +103,7 @@ export function validateTransactionIR(
   const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
     options.moveSignatures,
   );
+  const requireKnownResultArity = options.requireKnownResultArity ?? false;
   const diagnostics: TransactionDiagnostic[] = [];
 
   if (!isRecord(value)) {
@@ -253,7 +256,7 @@ export function validateTransactionIR(
       return;
     }
 
-    irCommandInputUses(command, commandIndex).forEach(
+    irCommandInputUses(command, commandIndex, { moveSignatures }).forEach(
       ({ arg, path, expectation }) => {
         validateArgRef(
           ir,
@@ -264,6 +267,7 @@ export function validateTransactionIR(
           moveCallEvidenceByCommandIndex,
           expectation?.inputKind,
           expectation?.ptbType,
+          requireKnownResultArity,
         );
       },
     );
@@ -1166,56 +1170,52 @@ function moveCallEvidenceState(
 ): MoveCallEvidenceState | undefined {
   if (command.kind !== 'MoveCall') return undefined;
 
-  const signature = lookupMoveSignatureEvidence(
-    command.package,
-    command.module,
-    command.function,
+  const evidence = resolveMoveCallSignatureEvidence({
+    packageId: command.package,
+    moduleName: command.module,
+    functionName: command.function,
     moveSignatures,
-  );
-  if (signature === undefined) return undefined;
+    typeArguments: command.typeArguments,
+    explicitResultCount: command.resultCount,
+  });
+  if (evidence === undefined) return undefined;
 
-  const typeArgumentsValid =
-    command.typeArguments.length === signature.typeParameterCount;
-  if (!typeArgumentsValid) {
+  if (!evidence.typeArgumentsComplete) {
     diagnostics.push(
       irDiagnostic(
         'ir.command.moveCall.typeArgumentsCount',
-        `MoveCall command ${commandIndex} typeArguments length must match signature typeParameterCount ${signature.typeParameterCount}.`,
+        `MoveCall command ${commandIndex} typeArguments length must match signature typeParameterCount ${evidence.signature.typeParameterCount}.`,
         `$.commands[${commandIndex}].typeArguments`,
       ),
     );
-    return undefined;
   }
 
-  const explicitResultCount = command.resultCount;
-  const evidenceResultCount = signature.returns.length;
-  if (explicitResultCount !== undefined) {
-    if (
-      !isNonNegativeSafeInteger(explicitResultCount) ||
-      explicitResultCount > MAX_RESULT_COUNT
-    ) {
-      return undefined;
-    }
+  if (evidence.resultCountMismatch) {
+    diagnostics.push(
+      irDiagnostic(
+        'ir.command.moveCall.resultCountMismatch',
+        `MoveCall command ${commandIndex} resultCount ${command.resultCount} does not match signature returns length ${evidence.resultArity}.`,
+        `$.commands[${commandIndex}].resultCount`,
+      ),
+    );
+  }
 
-    if (explicitResultCount !== evidenceResultCount) {
-      diagnostics.push(
-        irDiagnostic(
-          'ir.command.moveCall.resultCountMismatch',
-          `MoveCall command ${commandIndex} resultCount ${explicitResultCount} does not match signature returns length ${evidenceResultCount}.`,
-          `$.commands[${commandIndex}].resultCount`,
-        ),
-      );
-      return { effectiveResultCount: explicitResultCount };
-    }
-    return {
-      effectiveResultCount: explicitResultCount,
-      signatureForType: signature,
-    };
+  if (command.arguments.length !== evidence.signature.parameters.length) {
+    diagnostics.push(
+      irDiagnostic(
+        'ir.command.moveCall.argumentsLength',
+        `MoveCall command ${commandIndex} arguments length must match signature parameters length ${evidence.signature.parameters.length}.`,
+        `$.commands[${commandIndex}].arguments`,
+      ),
+    );
   }
 
   return {
-    effectiveResultCount: evidenceResultCount,
-    signatureForType: signature,
+    resultArity: evidence.resultArity,
+    typeArgumentsComplete: evidence.typeArgumentsComplete,
+    ...(evidence.typeArgumentsComplete
+      ? { signatureForType: evidence.signature }
+      : {}),
   };
 }
 
@@ -1625,6 +1625,7 @@ function validateArgRef(
   moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
   expectedInputType?: PTBInputArgumentKind,
   expectedPTBType?: PTBType,
+  requireKnownResultArity = false,
 ) {
   switch (arg.kind) {
     case 'GasCoin':
@@ -1694,6 +1695,7 @@ function validateArgRef(
         path,
         diagnostics,
         moveCallEvidenceByCommandIndex,
+        requireKnownResultArity,
       );
       return;
     case 'NestedResult':
@@ -1705,6 +1707,7 @@ function validateArgRef(
         path,
         diagnostics,
         moveCallEvidenceByCommandIndex,
+        requireKnownResultArity,
       );
       return;
   }
@@ -1718,6 +1721,7 @@ function validateResultRef(
   path: string,
   diagnostics: TransactionDiagnostic[],
   moveCallEvidenceByCommandIndex: MoveCallEvidenceStateByCommandIndex,
+  requireKnownResultArity: boolean,
 ) {
   if (
     !isU16Index(targetCommandIndex) ||
@@ -1767,10 +1771,20 @@ function validateResultRef(
 
   const command = ir.commands[targetCommandIndex];
   const resultCount =
-    moveCallEvidenceByCommandIndex.get(targetCommandIndex)
-      ?.effectiveResultCount ?? command.resultCount;
+    moveCallEvidenceByCommandIndex.get(targetCommandIndex)?.resultArity ??
+    command.resultCount;
 
-  if (typeof resultCount !== 'number') return;
+  if (typeof resultCount !== 'number') {
+    if (!requireKnownResultArity) return;
+    diagnostics.push(
+      irDiagnostic(
+        'ir.arg.resultArity',
+        `Result reference ${targetCommandIndex} requires known command result arity; provide resultCount or Move signature evidence.`,
+        path,
+      ),
+    );
+    return;
+  }
 
   if (
     !isNonNegativeSafeInteger(resultCount) ||

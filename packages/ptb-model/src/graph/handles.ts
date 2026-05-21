@@ -1,4 +1,8 @@
-import { isU16Index } from '../ir/limits.js';
+import {
+  isNonNegativeSafeInteger,
+  isU16Index,
+  MAX_RESULT_COUNT,
+} from '../ir/limits.js';
 
 export const RESULT_HANDLE_ID = 'out_result';
 
@@ -15,6 +19,11 @@ export function inputHandle(name: string): string {
 }
 
 export function indexedInputHandle(name: string, index: number): string {
+  if (!isU16Index(index)) {
+    throw new RangeError(
+      `Indexed input handle index must be a non-negative u16 integer, got ${String(index)}.`,
+    );
+  }
   return `${inputHandle(name)}_${index}`;
 }
 
@@ -38,6 +47,11 @@ export function isIndexedInputHandle(handle: string, name: string): boolean {
 }
 
 export function nestedResultHandle(index: number): string {
+  if (!isU16Index(index)) {
+    throw new RangeError(
+      `Nested result handle index must be a non-negative u16 integer, got ${String(index)}.`,
+    );
+  }
   return `out_${index}`;
 }
 
@@ -62,41 +76,36 @@ export function indexedHandleSuffix(
     : { prefix: value.slice(0, separatorIndex), index };
 }
 
-export function singleResultOutputHandles(
-  referencedNestedResultIndexes: readonly number[],
-): string[] {
-  return [
-    RESULT_HANDLE_ID,
-    ...(referencedNestedResultIndexes.includes(0)
-      ? [nestedResultHandle(0)]
-      : []),
-  ];
-}
-
-export function knownResultOutputHandles(
-  resultCount: number,
-  referencedNestedResultIndexes: readonly number[] = [],
-): string[] {
+export function knownResultOutputHandles(resultCount: number): string[] {
+  if (
+    !isNonNegativeSafeInteger(resultCount) ||
+    resultCount > MAX_RESULT_COUNT
+  ) {
+    return [];
+  }
   if (resultCount <= 0) return [];
-  if (resultCount === 1)
-    return singleResultOutputHandles(referencedNestedResultIndexes);
+  if (resultCount === 1) return [RESULT_HANDLE_ID];
 
   return Array.from({ length: resultCount }, (_value, index) =>
     nestedResultHandle(index),
   );
 }
 
-export function unknownResultOutputHandles(
-  referencedNestedResultIndexes: readonly number[] = [],
-): string[] {
-  return [
-    RESULT_HANDLE_ID,
-    ...referencedNestedResultIndexes.map((index) => nestedResultHandle(index)),
-  ];
-}
+export function isKnownResultOutputHandle(
+  handle: string,
+  resultCount: number,
+): boolean {
+  if (
+    !isNonNegativeSafeInteger(resultCount) ||
+    resultCount > MAX_RESULT_COUNT ||
+    resultCount <= 0
+  ) {
+    return false;
+  }
+  if (resultCount === 1) return handle === RESULT_HANDLE_ID;
 
-export function isUnknownResultOutputHandle(handle: string): boolean {
-  return handle === RESULT_HANDLE_ID || isNestedResultHandle(handle);
+  const index = nestedResultHandleIndex(handle);
+  return index !== undefined && index < resultCount;
 }
 
 function parseIndexSuffix(value: string): number | undefined {

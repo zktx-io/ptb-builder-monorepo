@@ -53,17 +53,10 @@ const SHAPE_DOCUMENT_CODES = [
   'graph.command.params.runtime.target',
   'graph.command.params.runtime.type',
   'graph.command.params.runtime.unknownField',
-  'graph.command.params.ui',
-  'graph.command.params.ui.count',
-  'graph.command.params.ui.unknownField',
   'graph.command.params.unknownField',
   'graph.command.makeMoveVec.type',
   'graph.typeArgument.port',
   'graph.typeArgument.value',
-  'graph.command.base64BytesParam',
-  'graph.command.objectIdArrayParam',
-  'graph.command.objectIdParam',
-  'graph.command.emptyInput',
   'graph.edge',
   'graph.edge.cast',
   'graph.edge.cast.unknownField',
@@ -71,8 +64,6 @@ const SHAPE_DOCUMENT_CODES = [
   'graph.edge.id',
   'graph.edge.kind',
   'graph.edge.unknownField',
-  'graph.input.object.invalidKind',
-  'graph.input.object.unresolved',
   'graph.plainData',
   'graph.port',
   'graph.port.direction',
@@ -108,8 +99,16 @@ const SHAPE_DOCUMENT_CODES = [
   'graph.variable.sourceConflict',
 ] as const;
 
+const SHAPE_EXECUTION_CODES = [
+  'graph.command.base64BytesParam',
+  'graph.command.objectIdArrayParam',
+  'graph.command.objectIdParam',
+  'graph.command.emptyInput',
+  'graph.input.object.invalidKind',
+  'graph.input.object.unresolved',
+] as const;
+
 const REFERENCE_DOCUMENT_CODES = [
-  'graph.arg.source',
   'graph.edge.direction',
   'graph.edge.duplicate',
   'graph.edge.duplicateFlowSource',
@@ -125,11 +124,13 @@ const REFERENCE_DOCUMENT_CODES = [
   'graph.port.duplicate',
 ] as const;
 
+const REFERENCE_EXECUTION_CODES = ['graph.arg.source'] as const;
+
 const SEMANTIC_EXECUTION_CODES = [
   'graph.command.inputMissing',
   'graph.command.moveCall.typeArgumentMissing',
   'graph.command.moveCall.targetMissing',
-  'graph.command.outputPort.invalid',
+  'graph.edge.castApplicability',
   'graph.flow.cycle',
   'graph.flow.disconnected',
   'graph.flow.end',
@@ -139,14 +140,20 @@ const SEMANTIC_EXECUTION_CODES = [
   'graph.variable.duplicateName',
 ] as const;
 
+const SEMANTIC_DOCUMENT_CODES = ['graph.command.outputPort.invalid'] as const;
+
 const EVIDENCE_EXECUTION_CODES = [
+  'graph.ir.resultArity',
   'graph.command.moveCall.resultCountMismatch',
   'graph.command.moveCall.typeArgumentsCount',
 ] as const;
 
 const ALL_GRAPH_DIAGNOSTIC_CODES = [
   ...SHAPE_DOCUMENT_CODES,
+  ...SHAPE_EXECUTION_CODES,
   ...REFERENCE_DOCUMENT_CODES,
+  ...REFERENCE_EXECUTION_CODES,
+  ...SEMANTIC_DOCUMENT_CODES,
   ...SEMANTIC_EXECUTION_CODES,
   ...EVIDENCE_EXECUTION_CODES,
 ] as const;
@@ -175,9 +182,16 @@ export const GRAPH_DIAGNOSTIC_META: Record<
   GraphDiagnosticMeta
 > = {
   ...metaEntries(SHAPE_DOCUMENT_CODES, 'shape', BLOCKS_DOCUMENT_AND_EXECUTION),
+  ...metaEntries(SHAPE_EXECUTION_CODES, 'shape', BLOCKS_EXECUTION_ONLY),
   ...metaEntries(
     REFERENCE_DOCUMENT_CODES,
     'reference',
+    BLOCKS_DOCUMENT_AND_EXECUTION,
+  ),
+  ...metaEntries(REFERENCE_EXECUTION_CODES, 'reference', BLOCKS_EXECUTION_ONLY),
+  ...metaEntries(
+    SEMANTIC_DOCUMENT_CODES,
+    'semantic',
     BLOCKS_DOCUMENT_AND_EXECUTION,
   ),
   ...metaEntries(SEMANTIC_EXECUTION_CODES, 'semantic', BLOCKS_EXECUTION_ONLY),

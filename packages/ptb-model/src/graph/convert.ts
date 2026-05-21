@@ -1,17 +1,17 @@
+import {
+  irCommandGraphInputEntries,
+  irCommandGraphKind,
+  irCommandGraphOutputHandles,
+  requiredGraphCommandInputHandles,
+} from './commandSemantics.js';
 import { graphDiagnostic } from './diagnostics.js';
 import {
-  indexedHandleSuffix,
   indexedInputHandle,
   indexedInputHandleIndex,
   inputHandle,
-  isIndexedInputHandle,
-  isInputHandle,
-  knownResultOutputHandles,
   nestedResultHandle,
   nestedResultHandleIndex,
   RESULT_HANDLE_ID,
-  singleResultOutputHandles,
-  unknownResultOutputHandles,
 } from './handles.js';
 import { inferGraphInputTypes } from './inputInference.js';
 import {
@@ -41,16 +41,16 @@ import type {
   VariableNode,
 } from './types.js';
 import {
+  commandInputSlotExpectation,
+  irCommandInputUses,
+} from '../inputTypeEvidence.js';
+import {
   assertNoErrors,
   existingGraphDiagnostics,
   hasErrors,
 } from '../ir/diagnostics.js';
 import type { TransactionDiagnostic } from '../ir/diagnostics.js';
-import {
-  isNonNegativeSafeInteger,
-  isU16Index,
-  MAX_RESULT_COUNT,
-} from '../ir/limits.js';
+import { isNonNegativeSafeInteger, MAX_RESULT_COUNT } from '../ir/limits.js';
 import {
   finalizeStructuralTransactionIR,
   isStructuralTransactionIR,
@@ -64,8 +64,11 @@ import type {
   TransactionIR,
 } from '../ir/types.js';
 import { validateTransactionIR } from '../ir/validate.js';
-import { normalizeMovePackageSignatureEvidenceOption } from '../move/evidence.js';
-import { toPTBTypeFromOpenSignature } from '../move/signature.js';
+import {
+  normalizeMovePackageSignatureEvidenceOption,
+  resolveMoveCallSignatureEvidence,
+} from '../move/evidence.js';
+import type { MovePackageSignatureEvidence } from '../move/evidence.js';
 import type { RawCallArg } from '../raw/types.js';
 import {
   parseBase64Bytes,
@@ -83,11 +86,15 @@ const GAS_NODE_ID = 'gas';
 const GAS_HANDLE_ID = 'out';
 
 export interface GraphToTransactionIROptions
+  extends Pick<AnalyzePTBGraphOptions, 'moveSignatures' | 'path'> {}
+
+export interface TransactionIRToGraphOptions
   extends Pick<AnalyzePTBGraphOptions, 'moveSignatures'> {}
 
 interface GraphConversionAnalysis {
   analysis: PTBGraphAnalysis;
   moveSignatures?: AnalyzePTBGraphOptions['moveSignatures'];
+  path: string;
 }
 
 interface GraphArgRead {
@@ -139,10 +146,11 @@ export function graphToTransactionIR(
   graph: PTBGraph,
   options: GraphToTransactionIROptions = {},
 ): TransactionIR {
-  const { analysis: graphValidation, moveSignatures } = graphConversionAnalysis(
-    graph,
-    options,
-  );
+  const {
+    analysis: graphValidation,
+    moveSignatures,
+    path,
+  } = graphConversionAnalysis(graph, options);
   const graphDiagnostics = graphValidation.diagnostics;
   if (hasErrors(graphDocumentDiagnostics(graphDiagnostics))) {
     return createTransactionIR([], [], graphDiagnostics);
@@ -160,6 +168,7 @@ export function graphToTransactionIR(
   const inputConstraints = collectGraphInputConstraints(
     graphIndex.incomingIoEdgesByTarget,
     nodesById,
+    path,
   );
   const typeArgumentsByCommand = collectGraphTypeArguments(
     graphIndex.incomingTypeEdgesByTarget,
@@ -206,7 +215,7 @@ export function graphToTransactionIR(
     const input = variableNodeToInput(
       node,
       resolvedInputId,
-      `$.nodes[${nodeIndex}]`,
+      `${path}.nodes[${nodeIndex}]`,
       diagnostics,
       inputType,
     );
@@ -230,7 +239,7 @@ export function graphToTransactionIR(
   commandNodes.forEach((node) => {
     const commandIndex = commands.length;
     commandIndexes.set(node.id, commandIndex);
-    const nodePath = `$.nodes[${nodeIndexesById.get(node.id)}]`;
+    const nodePath = `${path}.nodes[${nodeIndexesById.get(node.id)}]`;
     const command = commandNodeToIRCommand(
       node,
       nodePath,
@@ -241,6 +250,7 @@ export function graphToTransactionIR(
       commandIndexes,
       graphValidation.moveCallEvidenceByNodeId.get(node.id),
       diagnostics,
+      path,
     );
     commands.push(command);
   });
@@ -307,10 +317,11 @@ function graphConversionAnalysis(
   graph: PTBGraph,
   options: GraphToTransactionIROptions,
 ): GraphConversionAnalysis {
+  const path = options.path ?? '$';
   if (isExecutablePTBGraph(graph)) {
-    if (options.moveSignatures !== undefined) {
+    if (options.moveSignatures !== undefined || options.path !== undefined) {
       throw new TypeError(
-        'graphToTransactionIR does not accept moveSignatures for an ExecutablePTBGraph.',
+        'graphToTransactionIR does not accept conversion options for an ExecutablePTBGraph.',
       );
     }
     const facts = executablePTBGraphFacts(graph);
@@ -320,6 +331,7 @@ function graphConversionAnalysis(
     return {
       analysis: facts.analysis,
       moveSignatures: facts.moveSignatures,
+      path,
     };
   }
 
@@ -327,8 +339,9 @@ function graphConversionAnalysis(
     options.moveSignatures,
   );
   return {
-    analysis: analyzePTBGraph(graph, { moveSignatures }),
+    analysis: analyzePTBGraph(graph, { path, moveSignatures }),
     moveSignatures,
+    path,
   };
 }
 
@@ -390,6 +403,7 @@ function referencedGraphInputKeys(
 function collectGraphInputConstraints(
   incomingIoEdgesByTarget: Map<string, IndexedGraphEdge[]>,
   nodesById: Map<string, PTBNode>,
+  path: string,
 ): Map<string, GraphInputConstraint[]> {
   const result = new Map<string, GraphInputConstraint[]>();
 
@@ -407,7 +421,7 @@ function collectGraphInputConstraints(
       const constraints = result.get(key) ?? [];
       constraints.push({
         cast: edge.cast.to,
-        path: `$.edges[${edgeIndex}]`,
+        path: `${path}.edges[${edgeIndex}]`,
       });
       result.set(key, constraints);
     });
@@ -481,7 +495,7 @@ function applyGraphInputCast(
 
   diagnostics.push(
     graphDiagnostic(
-      'graph.edge.cast',
+      'graph.edge.castApplicability',
       `Edge cast on variable ${node.id} can only bind an abstract number input to a concrete Move integer width.`,
       constraint.path,
     ),
@@ -489,8 +503,17 @@ function applyGraphInputCast(
   return currentType;
 }
 
-export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
-  assertGraphableTransactionIR(ir);
+export function transactionIRToGraph(
+  ir: TransactionIR,
+  options: TransactionIRToGraphOptions = {},
+): PTBGraph {
+  const moveSignatures = normalizeMovePackageSignatureEvidenceOption(
+    options.moveSignatures,
+  );
+  assertGraphableTransactionIR(ir, { moveSignatures });
+  const resultArityByCommand = commandResultArityByIndex(ir.commands, {
+    moveSignatures,
+  });
 
   const nodes: PTBNode[] = [
     {
@@ -509,7 +532,6 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     },
   ];
   const edges: PTBEdge[] = [];
-  const nestedResultHandles = nestedResultHandlesByCommand(ir.commands);
   const typeArgumentNodeIds = new Map<string, string>();
 
   const hasGasCoin = ir.commands.some((command) =>
@@ -557,7 +579,8 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     const node = irCommandToGraphCommand(
       command,
       index,
-      nestedResultHandles.get(index) ?? [],
+      resultArityByCommand.get(index),
+      { moveSignatures },
     );
     nodes.push(node);
     if (command.kind === 'MoveCall') {
@@ -588,8 +611,8 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     });
     previous = node.id;
 
-    commandArgEntries(command).forEach(({ arg, handle }, argIndex) => {
-      const source = sourceForArg(arg);
+    irCommandGraphInputEntries(command).forEach(({ arg, handle }, argIndex) => {
+      const source = sourceForArg(arg, resultArityByCommand);
       edges.push({
         id: `io-${source.node}-${node.id}-${argIndex}`,
         kind: 'io',
@@ -610,7 +633,7 @@ export function transactionIRToGraph(ir: TransactionIR): PTBGraph {
     targetHandle: 'in',
   });
 
-  const inferred = inferGraphInputTypes({ nodes, edges });
+  const inferred = inferGraphInputTypes({ nodes, edges }, { moveSignatures });
   return freezePTBGraph(inferred.graph);
 }
 
@@ -817,17 +840,86 @@ function inputSemantic(input: IRInput): VariableNode['semantic'] | undefined {
   };
 }
 
-function assertGraphableTransactionIR(ir: TransactionIR): void {
+function assertGraphableTransactionIR(
+  ir: TransactionIR,
+  options: TransactionIRToGraphOptions = {},
+): void {
+  const requiresIRValidation =
+    !isStructuralTransactionIR(ir) || options.moveSignatures !== undefined;
   const diagnostics = [
     ...existingGraphDiagnostics(ir),
-    ...(isStructuralTransactionIR(ir)
-      ? []
-      : validateTransactionIR(ir, {
+    ...(requiresIRValidation
+      ? validateTransactionIR(ir, {
           includeExistingDiagnostics: false,
           includeUnsupportedDiagnostics: false,
-        })),
+          moveSignatures: options.moveSignatures,
+        })
+      : []),
+    ...graphableResultReferenceDiagnostics(ir, options.moveSignatures),
   ];
   assertNoErrors('TransactionIR cannot be converted to PTBGraph.', diagnostics);
+}
+
+function graphableResultReferenceDiagnostics(
+  ir: TransactionIR,
+  moveSignatures: MovePackageSignatureEvidence | undefined,
+): TransactionDiagnostic[] {
+  if (!isPlainObject(ir) || !isDenseArray(ir.commands)) {
+    return [];
+  }
+  const resultArityByCommand = commandResultArityByIndex(ir.commands, {
+    moveSignatures,
+  });
+  const diagnostics: TransactionDiagnostic[] = [];
+
+  ir.commands.forEach((command, commandIndex) => {
+    irCommandArgRefs(command).forEach((arg) => {
+      if (arg.kind !== 'Result' && arg.kind !== 'NestedResult') return;
+      const resultArity = resultArityByCommand.get(arg.commandIndex);
+      if (resultArity !== undefined) return;
+      diagnostics.push(
+        graphDiagnostic(
+          'graph.ir.resultArity',
+          `Command ${commandIndex} references command ${arg.commandIndex}, but that producer has no known result arity for graph projection.`,
+          `$.commands[${commandIndex}]`,
+        ),
+      );
+    });
+  });
+
+  return diagnostics;
+}
+
+function commandResultArityByIndex(
+  commands: readonly IRCommand[],
+  options: TransactionIRToGraphOptions = {},
+): Map<number, number> {
+  const arityByIndex = new Map<number, number>();
+
+  commands.forEach((command, index) => {
+    const arity = commandResultArity(command, options.moveSignatures);
+    if (arity !== undefined) arityByIndex.set(index, arity);
+  });
+
+  return arityByIndex;
+}
+
+function commandResultArity(
+  command: IRCommand,
+  moveSignatures: MovePackageSignatureEvidence | undefined,
+): number | undefined {
+  if (command.kind !== 'MoveCall') return command.resultCount;
+
+  return (
+    resolveMoveCallSignatureEvidence({
+      packageId: command.package,
+      moduleName: command.module,
+      functionName: command.function,
+      moveSignatures,
+      typeArguments: command.typeArguments,
+      explicitResultCount: command.resultCount,
+    })?.resultArity ?? command.resultCount
+  );
 }
 
 function rawInputToIRInput(
@@ -888,28 +980,36 @@ function commandNodeToIRCommand(
   commandIndexes: Map<string, number>,
   moveCallEvidence: GraphMoveCallEvidenceState | undefined,
   diagnostics: TransactionDiagnostic[],
+  path: string,
 ): IRCommand {
+  const requiredInputHandles = requiredGraphCommandInputHandles(node.command, {
+    declaredInputPortIds: commandIoInputPortIds(node),
+    runtime: node.params?.runtime as Record<string, unknown> | undefined,
+    moveCallParameterCount: moveCallEvidence?.parameterCount,
+  });
   const arg = (handle: string) =>
-    readIncomingArg(
+    readIncomingArgByHandle(
       incomingEdges,
       inputRefs,
       commandIndexes,
       handle,
       diagnostics,
+      path,
     );
-  const args = (match: (handle: string) => boolean) =>
-    readIncomingArgs(
+  const indexedArgs = (name: string) =>
+    readIncomingArgsByHandles(
       incomingEdges,
       inputRefs,
       commandIndexes,
-      match,
+      indexedRequiredInputHandles(requiredInputHandles, name),
       diagnostics,
+      path,
     );
 
   switch (node.command) {
     case 'splitCoins': {
-      const amounts = args((handle) => isIndexedInputHandle(handle, 'amount'));
-      const coin = arg('coin');
+      const amounts = indexedArgs('amount');
+      const coin = arg(inputHandle('coin'));
       if (coin.invalid || amounts.invalid || !coin.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -933,8 +1033,8 @@ function commandNodeToIRCommand(
       };
     }
     case 'mergeCoins': {
-      const destination = arg('destination');
-      const sources = args((handle) => isIndexedInputHandle(handle, 'source'));
+      const destination = arg(inputHandle('destination'));
+      const sources = indexedArgs('source');
       if (destination.invalid || sources.invalid || !destination.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -958,8 +1058,8 @@ function commandNodeToIRCommand(
       };
     }
     case 'transferObjects': {
-      const objects = args((handle) => isIndexedInputHandle(handle, 'object'));
-      const address = arg('recipient');
+      const objects = indexedArgs('object');
+      const address = arg(inputHandle('recipient'));
       if (objects.invalid || address.invalid || !address.ref) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -983,7 +1083,7 @@ function commandNodeToIRCommand(
       };
     }
     case 'makeMoveVec': {
-      const elements = args((handle) => isIndexedInputHandle(handle, 'elem'));
+      const elements = indexedArgs('elem');
       if (elements.invalid) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -1028,7 +1128,7 @@ function commandNodeToIRCommand(
         );
       }
       const { packageId, moduleName, functionName } = parsedTarget.target;
-      const moveArgs = args((handle) => isIndexedInputHandle(handle, 'arg'));
+      const moveArgs = indexedArgs('arg');
       if (moveArgs.invalid) {
         return invalidGraphCommand(node, 'GraphCommandInvalidInput');
       }
@@ -1090,7 +1190,7 @@ function commandNodeToIRCommand(
         diagnostics,
       );
       const packageId = objectIdParam(node, nodePath, 'package', diagnostics);
-      const ticket = arg('upgradeCap');
+      const ticket = arg(inputHandle('upgradeCap'));
       if (
         !modules ||
         !dependencies ||
@@ -1133,19 +1233,38 @@ function requireNonEmptyGraphArgs(
   return false;
 }
 
-function readIncomingArg(
+function commandIoInputPortIds(node: CommandNode): ReadonlySet<string> {
+  return new Set(
+    node.ports
+      .filter((port) => port.role === 'io' && port.direction === 'in')
+      .map((port) => port.id),
+  );
+}
+
+function indexedRequiredInputHandles(
+  handles: readonly string[],
+  name: string,
+): string[] {
+  return handles.filter(
+    (handle) => indexedInputHandleIndex(handle, name) !== undefined,
+  );
+}
+
+function readIncomingArgByHandle(
   incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
-  handleNeedle: string,
+  handle: string,
   diagnostics: TransactionDiagnostic[],
+  path: string,
 ): GraphSingleArgRead {
-  const result = readIncomingArgs(
+  const result = readIncomingArgsByHandles(
     incomingEdges,
     inputRefs,
     commandIndexes,
-    (handle) => isInputHandle(handle, handleNeedle),
+    [handle],
     diagnostics,
+    path,
   );
   if (result.refs[0]) {
     return {
@@ -1159,19 +1278,38 @@ function readIncomingArg(
   };
 }
 
-function readIncomingArgs(
+function readIncomingArgsByHandles(
   incomingEdges: readonly IndexedGraphEdge[],
   inputRefs: Map<string, IRArgRef>,
   commandIndexes: Map<string, number>,
-  match: (handle: string) => boolean,
+  handles: readonly string[],
   diagnostics: TransactionDiagnostic[],
+  path: string,
 ): GraphArgRead {
   const refs: IRArgRef[] = [];
   let invalid = false;
+  const edgesByTargetHandle = new Map<string, IndexedGraphEdge>();
+  const expectedHandles = new Set(handles);
 
-  incomingEdges
-    .filter(({ edge }) => match(edge.targetHandle))
-    .sort((a, b) => compareHandles(a.edge.targetHandle, b.edge.targetHandle))
+  incomingEdges.forEach((indexedEdge) => {
+    if (expectedHandles.has(indexedEdge.edge.targetHandle)) {
+      edgesByTargetHandle.set(indexedEdge.edge.targetHandle, indexedEdge);
+    }
+  });
+
+  handles
+    .map((handle) => {
+      const indexedEdge = edgesByTargetHandle.get(handle);
+      if (indexedEdge === undefined) {
+        invalid = true;
+        return undefined;
+      }
+      return indexedEdge;
+    })
+    .filter(
+      (indexedEdge): indexedEdge is IndexedGraphEdge =>
+        indexedEdge !== undefined,
+    )
     .map(({ edge, edgeIndex }): IRArgRef | undefined => {
       const directInput = inputRefs.get(
         edgeKey(edge.source, edge.sourceHandle),
@@ -1184,7 +1322,7 @@ function readIncomingArgs(
           graphDiagnostic(
             'graph.arg.source',
             `Edge ${edge.id} references a source that is not an input or previously ordered command.`,
-            `$.edges[${edgeIndex}]`,
+            `${path}.edges[${edgeIndex}]`,
           ),
         );
         invalid = true;
@@ -1242,23 +1380,26 @@ function orderCommandNodes(
 function irCommandToGraphCommand(
   command: IRCommand,
   index: number,
-  referencedNestedResultIndexes: readonly number[] = [],
+  resultArity: number | undefined,
+  options: TransactionIRToGraphOptions = {},
 ): CommandNode {
-  const params = graphCommandParams(command);
+  const params = graphCommandParams(command, resultArity);
   return {
     id: `cmd-${index}`,
     kind: 'Command',
     label: command.kind,
-    command: graphCommandKind(command),
+    command: irCommandGraphKind(command),
     ...(params !== undefined ? { params } : {}),
-    ports: commandPorts(command, referencedNestedResultIndexes),
+    ports: commandPorts(command, index, resultArity, options),
     position: { x: 0, y: 120 * index },
   };
 }
 
 function commandPorts(
   command: IRCommand,
-  referencedNestedResultIndexes: readonly number[] = [],
+  commandIndex: number,
+  resultArity: number | undefined,
+  options: TransactionIRToGraphOptions,
 ): Port[] {
   const ports: Port[] = [
     { id: 'in', direction: 'in', role: 'flow' },
@@ -1274,8 +1415,11 @@ function commandPorts(
       });
     });
   }
-  commandArgEntries(command).forEach(({ handle }, index) => {
-    const dataType = commandArgumentPortType(command, index);
+  const inputUses = irCommandInputUses(command, commandIndex, {
+    moveSignatures: options.moveSignatures,
+  });
+  irCommandGraphInputEntries(command).forEach(({ handle }, index) => {
+    const dataType = commandArgumentPortType(inputUses[index]);
     ports.push({
       id: handle,
       direction: 'in',
@@ -1284,100 +1428,31 @@ function commandPorts(
     });
   });
 
-  commandOutputHandles(command, referencedNestedResultIndexes).forEach(
-    (handle) => {
-      ports.push({ id: handle, direction: 'out', role: 'io' });
-    },
-  );
+  irCommandGraphOutputHandles(command, resultArity).forEach((handle) => {
+    ports.push({ id: handle, direction: 'out', role: 'io' });
+  });
 
   return ports;
 }
 
 function commandArgumentPortType(
-  command: IRCommand,
-  argumentIndex: number,
+  inputUse: ReturnType<typeof irCommandInputUses>[number] | undefined,
 ): PTBType | undefined {
-  if (command.kind !== 'MoveCall') return undefined;
-  if (!Array.isArray(command._argumentTypes)) return undefined;
-  const signature = command._argumentTypes[argumentIndex];
-  return signature
-    ? toPTBTypeFromOpenSignature(signature, command.typeArguments)
+  return inputUse?.slot
+    ? commandInputSlotExpectation(inputUse.slot)?.ptbType
     : undefined;
 }
 
-function commandOutputHandles(
+function graphCommandParams(
   command: IRCommand,
-  referencedNestedResultIndexes: readonly number[] = [],
-): string[] {
-  switch (command.kind) {
-    case 'TransferObjects':
-    case 'MergeCoins':
-    case 'Unsupported':
-      return [];
-    case 'Publish':
-    case 'MakeMoveVec':
-    case 'Upgrade':
-      return singleResultOutputHandles(referencedNestedResultIndexes);
-    case 'MoveCall':
-      return moveCallOutputHandles(command, referencedNestedResultIndexes);
-    case 'SplitCoins':
-      return knownResultOutputHandles(
-        command.resultCount,
-        referencedNestedResultIndexes,
-      );
-  }
-}
-
-function moveCallOutputHandles(
-  command: Extract<IRCommand, { kind: 'MoveCall' }>,
-  referencedNestedResultIndexes: readonly number[],
-): string[] {
-  if (command.resultCount === 0) return [];
-  if (command.resultCount === undefined) {
-    return unknownResultOutputHandles(referencedNestedResultIndexes);
-  }
-
-  return knownResultOutputHandles(
-    command.resultCount,
-    referencedNestedResultIndexes,
-  );
-}
-
-function nestedResultHandlesByCommand(
-  commands: IRCommand[],
-): Map<number, number[]> {
-  const indexes = new Map<number, Set<number>>();
-
-  commands.forEach((command) => {
-    irCommandArgRefs(command).forEach((arg) => {
-      if (arg.kind !== 'NestedResult') return;
-      if (!isU16Index(arg.resultIndex)) return;
-      const currentIndexes = indexes.get(arg.commandIndex) ?? new Set<number>();
-      currentIndexes.add(arg.resultIndex);
-      indexes.set(arg.commandIndex, currentIndexes);
-    });
-  });
-
-  const handlesByCommand = new Map<number, number[]>();
-  indexes.forEach((commandIndexes, commandIndex) => {
-    handlesByCommand.set(
-      commandIndex,
-      [...commandIndexes].sort((left, right) => left - right),
-    );
-  });
-
-  return handlesByCommand;
-}
-
-function graphCommandParams(command: IRCommand): CommandNode['params'] {
+  resultArity?: number,
+): CommandNode['params'] {
   switch (command.kind) {
     case 'MoveCall':
       return {
         runtime: {
           target: `${command.package}::${command.module}::${command.function}`,
-          ...(command.resultCount !== undefined
-            ? { resultCount: command.resultCount }
-            : {}),
+          ...(resultArity !== undefined ? { resultCount: resultArity } : {}),
         },
       };
     case 'Publish':
@@ -1421,84 +1496,25 @@ function graphCommandParams(command: IRCommand): CommandNode['params'] {
   return _exhaustive;
 }
 
-function graphCommandKind(command: IRCommand): CommandNode['command'] {
-  switch (command.kind) {
-    case 'MoveCall':
-      return 'moveCall';
-    case 'TransferObjects':
-      return 'transferObjects';
-    case 'SplitCoins':
-      return 'splitCoins';
-    case 'MergeCoins':
-      return 'mergeCoins';
-    case 'Publish':
-      return 'publish';
-    case 'MakeMoveVec':
-      return 'makeMoveVec';
-    case 'Upgrade':
-      return 'upgrade';
-    case 'Unsupported':
-      return 'unsupported';
-  }
-}
-
-function commandArgEntries(
-  command: IRCommand,
-): { arg: IRArgRef; handle: string }[] {
-  switch (command.kind) {
-    case 'MoveCall':
-      return command.arguments.map((arg, index) => ({
-        arg,
-        handle: indexedInputHandle('arg', index),
-      }));
-    case 'TransferObjects':
-      return [
-        ...command.objects.map((arg, index) => ({
-          arg,
-          handle: indexedInputHandle('object', index),
-        })),
-        { arg: command.address, handle: inputHandle('recipient') },
-      ];
-    case 'SplitCoins':
-      return [
-        { arg: command.coin, handle: inputHandle('coin') },
-        ...command.amounts.map((arg, index) => ({
-          arg,
-          handle: indexedInputHandle('amount', index),
-        })),
-      ];
-    case 'MergeCoins':
-      return [
-        { arg: command.destination, handle: inputHandle('destination') },
-        ...command.sources.map((arg, index) => ({
-          arg,
-          handle: indexedInputHandle('source', index),
-        })),
-      ];
-    case 'MakeMoveVec':
-      return command.elements.map((arg, index) => ({
-        arg,
-        handle: indexedInputHandle('elem', index),
-      }));
-    case 'Upgrade':
-      return [{ arg: command.ticket, handle: inputHandle('upgradeCap') }];
-    case 'Publish':
-    case 'Unsupported':
-      return [];
-  }
-}
-
-function sourceForArg(arg: IRArgRef): { node: string; handle: string } {
+function sourceForArg(
+  arg: IRArgRef,
+  resultArityByCommand: ReadonlyMap<number, number>,
+): { node: string; handle: string } {
   switch (arg.kind) {
     case 'Input':
       return { node: `var-${arg.index}`, handle: 'out' };
     case 'Result':
       return { node: `cmd-${arg.commandIndex}`, handle: RESULT_HANDLE_ID };
-    case 'NestedResult':
+    case 'NestedResult': {
+      const resultArity = resultArityByCommand.get(arg.commandIndex);
+      if (resultArity === 1 && arg.resultIndex === 0) {
+        return { node: `cmd-${arg.commandIndex}`, handle: RESULT_HANDLE_ID };
+      }
       return {
         node: `cmd-${arg.commandIndex}`,
         handle: nestedResultHandle(arg.resultIndex),
       };
+    }
     case 'GasCoin':
       return { node: GAS_NODE_ID, handle: GAS_HANDLE_ID };
   }
@@ -1549,14 +1565,15 @@ function moveCallResultCountParam(
   node: CommandNode,
   evidenceState?: GraphMoveCallEvidenceState,
 ): { resultCount: number } | undefined {
+  if (evidenceState?.resultArity !== undefined) {
+    return { resultCount: evidenceState.resultArity };
+  }
   const runtime = graphCommandRuntimeParams(node);
   const resultCount = runtime?.resultCount;
   return isNonNegativeSafeInteger(resultCount) &&
     resultCount <= MAX_RESULT_COUNT
     ? { resultCount }
-    : evidenceState?.effectiveResultCount !== undefined
-      ? { resultCount: evidenceState.effectiveResultCount }
-      : undefined;
+    : undefined;
 }
 
 function moveCallTypeArguments(
@@ -1744,30 +1761,4 @@ function typeTagFromNode(
 
 function edgeKey(nodeId: string, handleId: string): string {
   return `${nodeId}:${handleId}`;
-}
-
-function compareHandles(left: string, right: string): number {
-  const leftKey = handleSortKey(left);
-  const rightKey = handleSortKey(right);
-
-  if (leftKey.prefix === rightKey.prefix) {
-    if (leftKey.index !== undefined && rightKey.index !== undefined) {
-      return leftKey.index - rightKey.index;
-    }
-    if (leftKey.index !== undefined) return -1;
-    if (rightKey.index !== undefined) return 1;
-  }
-
-  return leftKey.raw.localeCompare(rightKey.raw);
-}
-
-function handleSortKey(value: string): {
-  raw: string;
-  prefix: string;
-  index?: number;
-} {
-  const suffix = indexedHandleSuffix(value);
-  return suffix
-    ? { raw: value, prefix: suffix.prefix, index: suffix.index }
-    : { raw: value, prefix: value };
 }

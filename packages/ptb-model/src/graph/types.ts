@@ -1,18 +1,14 @@
 import {
-  blocksDocument,
-  blocksExecution,
-  graphDiagnostic,
-} from './diagnostics.js';
+  expectedGraphCommandOutputHandles,
+  graphCommandInputPortMatch,
+  graphCommandTypeInputPortMatch,
+  invalidGraphCommandInputHandles,
+  isGraphCommandOutputHandleAllowed,
+  missingRequiredGraphInputHandles,
+} from './commandSemantics.js';
+import { blocksDocument, graphDiagnostic } from './diagnostics.js';
 import type { GraphDiagnosticCode } from './diagnostics.js';
-import {
-  indexedInputHandle,
-  indexedInputHandleIndex,
-  inputHandle,
-  isInputHandle,
-  isUnknownResultOutputHandle,
-  nestedResultHandleIndex,
-  RESULT_HANDLE_ID,
-} from './handles.js';
+import { indexedInputHandleIndex } from './handles.js';
 import {
   graphCommandRuntimeParams,
   type GraphMoveCallEvidenceState,
@@ -20,11 +16,8 @@ import {
   parseGraphMoveCallTarget,
 } from './moveCallEvidence.js';
 import { normalizeGraphRawInput } from './rawInput.js';
-import {
-  assertNoErrors,
-  freezeDiagnostics,
-  isGraphDiagnostic,
-} from '../ir/diagnostics.js';
+import type { CommandKind, Port, PortDirection, PTBNode } from './shapes.js';
+import { freezeDiagnostics, isGraphDiagnostic } from '../ir/diagnostics.js';
 import type {
   GraphDiagnostic,
   TransactionDiagnostic,
@@ -47,27 +40,18 @@ import {
   parseObjectId,
 } from '../raw/types.js';
 import {
-  cloneJsonLike,
   findNonPlainData,
   isDenseArray,
   isFiniteNumber,
   isPlainObject,
   NULL_VALUE,
 } from '../utils.js';
-import type {
-  CommandKind,
-  Port,
-  PortDirection,
-  PTBGraph,
-  PTBNode,
-} from './shapes.js';
 
 export type { NumericWidth, PTBScalar, PTBType } from '../ptbType.js';
 export type {
   CommandKind,
   CommandNode,
   CommandRuntimeParams,
-  CommandUIParams,
   EdgeKind,
   EndNode,
   NodeBase,
@@ -81,15 +65,15 @@ export type {
   TypeArgumentNode,
   VariableNode,
 } from './shapes.js';
-
-declare const EXECUTABLE_PTB_GRAPH_BRAND: unique symbol;
-
-export type ExecutablePTBGraph = PTBGraph & {
-  readonly [EXECUTABLE_PTB_GRAPH_BRAND]: true;
-};
-
-const executableGraphs = new WeakSet<object>();
-const executableGraphFacts = new WeakMap<object, ExecutablePTBGraphFacts>();
+export type {
+  ExecutablePTBGraph,
+  ExecutablePTBGraphFacts,
+} from './executableGraphState.js';
+export {
+  executablePTBGraphFacts,
+  freezePTBGraph,
+  isExecutablePTBGraph,
+} from './executableGraphState.js';
 
 const NODE_KINDS = [
   'Start',
@@ -113,8 +97,6 @@ const PORT_DIRECTIONS = ['in', 'out'] as const;
 const PORT_ROLES = ['flow', 'io', 'type'] as const;
 const GRAPH_KEYS = ['nodes', 'edges'] as const;
 const NODE_BASE_KEYS = ['id', 'kind', 'label', 'ports', 'position'] as const;
-const START_NODE_KEYS = NODE_BASE_KEYS;
-const END_NODE_KEYS = NODE_BASE_KEYS;
 const COMMAND_NODE_KEYS = [...NODE_BASE_KEYS, 'command', 'params'] as const;
 const VARIABLE_NODE_KEYS = [
   ...NODE_BASE_KEYS,
@@ -147,7 +129,7 @@ const EDGE_CAST_KEYS = ['to'] as const;
 const POSITION_KEYS = ['x', 'y'] as const;
 const GAS_COIN_SEMANTIC_KEYS = ['kind'] as const;
 const UNSUPPORTED_INPUT_SEMANTIC_KEYS = ['kind', 'sourceKind'] as const;
-const COMMAND_PARAM_KEYS = ['runtime', 'ui'] as const;
+const COMMAND_PARAM_KEYS = ['runtime'] as const;
 const COMMAND_RUNTIME_KEYS_BY_KIND = {
   splitCoins: [],
   mergeCoins: [],
@@ -158,19 +140,14 @@ const COMMAND_RUNTIME_KEYS_BY_KIND = {
   upgrade: ['modules', 'dependencies', 'package'],
   unsupported: ['sourceKind', 'value'],
 } as const satisfies Record<CommandKind, readonly string[]>;
-const COMMAND_UI_COUNT_KEYS = [
-  'amountsCount',
-  'sourcesCount',
-  'objectsCount',
-  'elemsCount',
-] as const;
-const COMMAND_UI_KEYS = [...COMMAND_UI_COUNT_KEYS] as const;
 interface GraphNodeIndex {
   id: string;
   kind: PTBNode['kind'];
   ports: Map<string, Port>;
   ioInputPortIds: Set<string>;
+  ioInputPortPaths: Map<string, string>;
   typeInputPortIds: Set<string>;
+  typeInputPortPaths: Map<string, string>;
   ioOutputPorts: Array<{ id: string; path: string }>;
   path: string;
   command?: CommandKind;
@@ -189,11 +166,6 @@ export type ParseExecutableGraphOptions = AnalyzePTBGraphOptions;
 export interface PTBGraphAnalysis {
   diagnostics: readonly TransactionDiagnostic[];
   moveCallEvidenceByNodeId: ReadonlyMap<string, GraphMoveCallEvidenceState>;
-}
-
-export interface ExecutablePTBGraphFacts {
-  analysis: PTBGraphAnalysis;
-  moveSignatures?: MovePackageSignatureEvidence;
 }
 
 export function analyzePTBGraph(
@@ -275,43 +247,6 @@ export function analyzePTBGraph(
   };
 }
 
-export function parseExecutableGraph(
-  value: unknown,
-  options: ParseExecutableGraphOptions = {},
-): ExecutablePTBGraph {
-  const analysis = analyzePTBGraph(value, options);
-  assertNoErrors(
-    'PTB graph is not executable.',
-    graphDiagnostics(analysis.diagnostics).filter(blocksExecution),
-  );
-  const graph = cloneJsonLike(value) as PTBGraph;
-  const executable = markExecutablePTBGraph(graph);
-  executableGraphFacts.set(executable, {
-    analysis,
-    moveSignatures: normalizeMovePackageSignatureEvidenceOption(
-      options.moveSignatures,
-    ),
-  });
-  return executable;
-}
-
-export function isExecutablePTBGraph(
-  value: unknown,
-): value is ExecutablePTBGraph {
-  return (
-    typeof value === 'object' &&
-    value !== NULL_VALUE &&
-    Object.isFrozen(value) &&
-    executableGraphs.has(value)
-  );
-}
-
-export function executablePTBGraphFacts(
-  graph: ExecutablePTBGraph,
-): ExecutablePTBGraphFacts | undefined {
-  return executableGraphFacts.get(graph);
-}
-
 export function graphDocumentDiagnostics(
   diagnostics: readonly TransactionDiagnostic[],
 ): readonly GraphDiagnostic[] {
@@ -322,42 +257,6 @@ function graphDiagnostics(
   diagnostics: readonly TransactionDiagnostic[],
 ): GraphDiagnostic[] {
   return diagnostics.filter(isGraphDiagnostic);
-}
-
-function markExecutablePTBGraph(graph: PTBGraph): ExecutablePTBGraph {
-  const plainDataIssue = findNonPlainData(graph);
-  if (plainDataIssue) {
-    throw new TypeError(
-      `ExecutablePTBGraph cannot contain non-plain data at ${plainDataIssue.path}.`,
-    );
-  }
-  freezePTBGraph(graph);
-  executableGraphs.add(graph);
-  return graph as ExecutablePTBGraph;
-}
-
-export function freezePTBGraph<T extends PTBGraph>(graph: T): T {
-  deepFreezeGraph(graph);
-  return graph;
-}
-
-function deepFreezeGraph(value: unknown): void {
-  const stack: unknown[] = [value];
-  const seen = new WeakSet<object>();
-
-  while (stack.length > 0) {
-    const item = stack.pop();
-    if (!Array.isArray(item) && !isPlainObject(item)) continue;
-    if (seen.has(item)) continue;
-    seen.add(item);
-
-    if (Array.isArray(item)) {
-      item.forEach((child) => stack.push(child));
-    } else {
-      Object.values(item).forEach((child) => stack.push(child));
-    }
-    Object.freeze(item);
-  }
 }
 
 function validateNode(
@@ -464,10 +363,6 @@ function validateCommandNode(
   validateCommandInputPorts(value, commandKind, path, diagnostics);
 }
 
-type CommandInputPortMatch =
-  | { kind: 'single' }
-  | { kind: 'indexed'; group: string; index: number };
-
 function validateCommandInputPorts(
   value: Record<string, unknown>,
   commandKind: CommandKind | undefined,
@@ -494,8 +389,8 @@ function validateCommandInputPorts(
     if (port.role !== 'io' && port.role !== 'type') return;
     const match =
       port.role === 'io'
-        ? commandInputPortMatch(commandKind, port.id)
-        : commandTypeInputPortMatch(commandKind, port.id);
+        ? graphCommandInputPortMatch(commandKind, port.id)
+        : graphCommandTypeInputPortMatch(commandKind, port.id);
     if (match === undefined) {
       diagnostics.push(
         graphDiagnostic(
@@ -535,64 +430,6 @@ function validateCommandInputPorts(
       expectedIndex = port.index + 1;
     });
   });
-}
-
-function commandInputPortMatch(
-  commandKind: CommandKind,
-  portId: string,
-): CommandInputPortMatch | undefined {
-  switch (commandKind) {
-    case 'splitCoins':
-      return (
-        singleInputPortMatch(portId, 'coin') ??
-        indexedInputPortMatch(portId, 'amount')
-      );
-    case 'mergeCoins':
-      return (
-        singleInputPortMatch(portId, 'destination') ??
-        indexedInputPortMatch(portId, 'source')
-      );
-    case 'transferObjects':
-      return (
-        singleInputPortMatch(portId, 'recipient') ??
-        indexedInputPortMatch(portId, 'object')
-      );
-    case 'makeMoveVec':
-      return indexedInputPortMatch(portId, 'elem');
-    case 'moveCall':
-      return indexedInputPortMatch(portId, 'arg');
-    case 'upgrade':
-      return singleInputPortMatch(portId, 'upgradeCap');
-    case 'publish':
-    case 'unsupported':
-      return undefined;
-  }
-}
-
-function commandTypeInputPortMatch(
-  commandKind: CommandKind,
-  portId: string,
-): CommandInputPortMatch | undefined {
-  return commandKind === 'moveCall'
-    ? indexedInputPortMatch(portId, 'type')
-    : undefined;
-}
-
-function singleInputPortMatch(
-  portId: string,
-  name: string,
-): CommandInputPortMatch | undefined {
-  return isInputHandle(portId, name) ? { kind: 'single' } : undefined;
-}
-
-function indexedInputPortMatch(
-  portId: string,
-  name: string,
-): CommandInputPortMatch | undefined {
-  const index = indexedInputHandleIndex(portId, name);
-  return index === undefined
-    ? undefined
-    : { kind: 'indexed', group: name, index };
 }
 
 function validateVariableNode(
@@ -1159,7 +996,9 @@ function validateGraphReferences(
 
     const ports = new Map<string, Port>();
     const ioInputPortIds = new Set<string>();
+    const ioInputPortPaths = new Map<string, string>();
     const typeInputPortIds = new Set<string>();
+    const typeInputPortPaths = new Map<string, string>();
     const ioOutputPorts: Array<{ id: string; path: string }> = [];
     const seenPortIds = new Set<string>();
     node.ports.forEach((port, portIndex) => {
@@ -1190,9 +1029,17 @@ function validateGraphReferences(
       });
       if (port.role === 'io' && port.direction === 'in') {
         ioInputPortIds.add(port.id);
+        ioInputPortPaths.set(
+          port.id,
+          `${path}.nodes[${index}].ports[${portIndex}].id`,
+        );
       }
       if (port.role === 'type' && port.direction === 'in') {
         typeInputPortIds.add(port.id);
+        typeInputPortPaths.set(
+          port.id,
+          `${path}.nodes[${index}].ports[${portIndex}].id`,
+        );
       }
       if (port.role === 'io' && port.direction === 'out') {
         ioOutputPorts.push({
@@ -1214,7 +1061,9 @@ function validateGraphReferences(
       kind: node.kind,
       ports,
       ioInputPortIds,
+      ioInputPortPaths,
       typeInputPortIds,
+      typeInputPortPaths,
       ioOutputPorts,
       path: nodePath,
       ...(node.kind === 'TypeArgument' && typeof node.value === 'string'
@@ -1235,7 +1084,6 @@ function validateGraphReferences(
   const flowSources = new Set<string>();
   const flowTargets = new Set<string>();
   const validIoIncomingHandlesByCommand = new Map<string, Set<string>>();
-  const validIoOutgoingHandlesByCommand = new Map<string, Set<string>>();
   const incomingTypeArgumentsByCommand = new Map<
     string,
     Map<string, string | undefined>
@@ -1315,13 +1163,6 @@ function validateGraphReferences(
             edge.targetHandle,
           );
         }
-        if (sourceCommand !== undefined) {
-          addHandleToMap(
-            validIoOutgoingHandlesByCommand,
-            edge.source,
-            edge.sourceHandle,
-          );
-        }
       }
       ioTargets.add(key);
     }
@@ -1394,7 +1235,6 @@ function validateGraphReferences(
       incomingTypeArgumentsByCommand.get(node.id),
       diagnostics,
     );
-    if (typeArguments === undefined) return;
 
     const moveCallEvidence = graphMoveCallEvidenceState(
       node.runtime,
@@ -1412,7 +1252,6 @@ function validateGraphReferences(
   validateCommandSemanticEdges(
     nodesById,
     validIoIncomingHandlesByCommand,
-    validIoOutgoingHandlesByCommand,
     invalidInputCommands,
     invalidOutputCommands,
     diagnostics,
@@ -1481,7 +1320,7 @@ function moveCallTypeArgumentsForNode(
   node: GraphNodeIndex,
   incomingTypeArguments: Map<string, string | undefined> | undefined,
   diagnostics: TransactionDiagnostic[],
-): string[] | undefined {
+): string[] {
   const handles = [...node.typeInputPortIds]
     .map((handle) => ({
       handle,
@@ -1503,10 +1342,10 @@ function moveCallTypeArgumentsForNode(
           node.path,
         ),
       );
-      return undefined;
+      continue;
     }
     const typeArgument = incomingTypeArguments.get(handle);
-    if (typeArgument === undefined) return undefined;
+    if (typeArgument === undefined) continue;
     typeArguments.push(typeArgument);
   }
 
@@ -1526,7 +1365,6 @@ function commandRuntimeHasUnknownFields(
 function validateCommandSemanticEdges(
   nodesById: Map<string, GraphNodeIndex>,
   incomingHandlesByCommand: Map<string, Set<string>>,
-  outgoingHandlesByCommand: Map<string, Set<string>>,
   invalidInputCommands: Set<string>,
   invalidOutputCommands: Set<string>,
   diagnostics: TransactionDiagnostic[],
@@ -1536,8 +1374,6 @@ function validateCommandSemanticEdges(
 
     const incomingHandles =
       incomingHandlesByCommand.get(node.id) ?? new Set<string>();
-    const outgoingHandles =
-      outgoingHandlesByCommand.get(node.id) ?? new Set<string>();
     const hasInputPortShapeIssue = commandInputPortShapeIssue(node);
 
     if (!hasInputPortShapeIssue && !invalidInputCommands.has(node.id)) {
@@ -1550,13 +1386,7 @@ function validateCommandSemanticEdges(
     }
 
     if (!invalidOutputCommands.has(node.id)) {
-      validateDeclaredCommandOutputs(
-        node,
-        incomingHandles,
-        outgoingHandles,
-        invalidInputCommands,
-        diagnostics,
-      );
+      validateDeclaredCommandOutputs(node, diagnostics);
     }
   });
 }
@@ -1565,10 +1395,12 @@ function commandInputPortShapeIssue(node: GraphNodeIndex): boolean {
   if (node.command === undefined) return false;
 
   for (const portId of node.ioInputPortIds) {
-    if (commandInputPortMatch(node.command, portId) === undefined) return true;
+    if (graphCommandInputPortMatch(node.command, portId) === undefined) {
+      return true;
+    }
   }
   for (const portId of node.typeInputPortIds) {
-    if (commandTypeInputPortMatch(node.command, portId) === undefined) {
+    if (graphCommandTypeInputPortMatch(node.command, portId) === undefined) {
       return true;
     }
   }
@@ -1583,51 +1415,34 @@ function validateRequiredCommandInputs(
 ): void {
   if (node.command === undefined) return;
 
-  const missing: string[] = [];
-  switch (node.command) {
-    case 'splitCoins':
-      if (!incomingHandles.has(inputHandle('coin'))) {
-        missing.push(inputHandle('coin'));
-      }
-      if (!hasIndexedIncomingHandle(incomingHandles, 'amount')) {
-        missing.push(indexedInputHandle('amount', 0));
-      }
-      break;
-    case 'mergeCoins':
-      if (!incomingHandles.has(inputHandle('destination'))) {
-        missing.push(inputHandle('destination'));
-      }
-      if (!hasIndexedIncomingHandle(incomingHandles, 'source')) {
-        missing.push(indexedInputHandle('source', 0));
-      }
-      break;
-    case 'transferObjects':
-      if (!incomingHandles.has(inputHandle('recipient'))) {
-        missing.push(inputHandle('recipient'));
-      }
-      if (!hasIndexedIncomingHandle(incomingHandles, 'object')) {
-        missing.push(indexedInputHandle('object', 0));
-      }
-      break;
-    case 'makeMoveVec':
-      if (
-        (node.runtime?.type === undefined ||
-          node.runtime.type === NULL_VALUE) &&
-        !hasIndexedIncomingHandle(incomingHandles, 'elem')
-      ) {
-        missing.push(indexedInputHandle('elem', 0));
-      }
-      break;
-    case 'upgrade':
-      if (!incomingHandles.has(inputHandle('upgradeCap'))) {
-        missing.push(inputHandle('upgradeCap'));
-      }
-      break;
-    case 'moveCall':
-    case 'publish':
-    case 'unsupported':
-      break;
-  }
+  const invalidDeclaredHandles = invalidGraphCommandInputHandles(node.command, {
+    declaredInputPortIds: node.ioInputPortIds,
+    declaredTypeInputPortIds: node.typeInputPortIds,
+    moveCallParameterCount: node.moveCallEvidence?.parameterCount,
+    moveCallTypeParameterCount: node.moveCallEvidence?.typeParameterCount,
+  });
+  invalidDeclaredHandles.forEach((handle) => {
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.command.inputPort.invalid',
+        `PTB graph ${node.command} command declares input port ${handle} outside the command's signature arity.`,
+        node.ioInputPortPaths.get(handle) ??
+          node.typeInputPortPaths.get(handle) ??
+          node.path,
+      ),
+    );
+  });
+  if (invalidDeclaredHandles.length > 0) invalidInputCommands.add(node.id);
+
+  const missing = missingRequiredGraphInputHandles(
+    node.command,
+    incomingHandles,
+    {
+      declaredInputPortIds: node.ioInputPortIds,
+      runtime: node.runtime,
+      moveCallParameterCount: node.moveCallEvidence?.parameterCount,
+    },
+  );
 
   missing.forEach((handle) => {
     diagnostics.push(
@@ -1641,41 +1456,30 @@ function validateRequiredCommandInputs(
   if (missing.length > 0) invalidInputCommands.add(node.id);
 }
 
-function hasIndexedIncomingHandle(
-  incomingHandles: Set<string>,
-  name: string,
-): boolean {
-  for (const handle of incomingHandles) {
-    if (indexedInputHandleIndex(handle, name) !== undefined) return true;
-  }
-  return false;
-}
-
 function validateDeclaredCommandOutputs(
   node: GraphNodeIndex,
-  incomingHandles: Set<string>,
-  outgoingHandles: Set<string>,
-  invalidInputCommands: Set<string>,
   diagnostics: TransactionDiagnostic[],
 ): void {
   if (node.command === undefined) return;
 
+  const declaredHandles = new Set(node.ioOutputPorts.map((port) => port.id));
+  expectedGraphCommandOutputHandles(node.command, {
+    declaredInputPortIds: node.ioInputPortIds,
+    moveCallResultCount: commandResultCountForNode(node),
+  }).forEach((handle) => {
+    if (declaredHandles.has(handle)) return;
+
+    diagnostics.push(
+      graphDiagnostic(
+        'graph.command.outputPort.invalid',
+        `PTB graph ${node.command} command is missing canonical IO output port ${handle}.`,
+        node.path,
+      ),
+    );
+  });
+
   node.ioOutputPorts.forEach((port) => {
-    if (
-      node.command === 'splitCoins' &&
-      invalidInputCommands.has(node.id) &&
-      isUnknownResultOutputHandle(port.id)
-    ) {
-      return;
-    }
-    if (
-      isDeclaredCommandOutputAllowed(
-        node,
-        port.id,
-        incomingHandles,
-        outgoingHandles,
-      )
-    ) {
+    if (isDeclaredCommandOutputAllowed(node, port.id)) {
       return;
     }
 
@@ -1692,70 +1496,21 @@ function validateDeclaredCommandOutputs(
 function isDeclaredCommandOutputAllowed(
   node: GraphNodeIndex,
   portId: string,
-  incomingHandles: Set<string>,
-  outgoingHandles: Set<string>,
 ): boolean {
-  switch (node.command) {
-    case 'transferObjects':
-    case 'mergeCoins':
-    case 'unsupported':
-      return false;
-    case 'publish':
-    case 'makeMoveVec':
-    case 'upgrade':
-      return isSingleResultOutputAllowed(portId, outgoingHandles);
-    case 'splitCoins':
-      return isKnownResultOutputAllowed(
-        portId,
-        countIndexedIncomingHandles(incomingHandles, 'amount'),
-        outgoingHandles,
-      );
-    case 'moveCall': {
-      const resultCount =
-        node.moveCallEvidence?.effectiveResultCount ??
-        node.runtime?.resultCount;
-      return isNonNegativeSafeInteger(resultCount) &&
-        resultCount <= MAX_RESULT_COUNT
-        ? isKnownResultOutputAllowed(portId, resultCount, outgoingHandles)
-        : isUnknownResultOutputHandle(portId);
-    }
-    default:
-      return false;
-  }
-}
-
-function isSingleResultOutputAllowed(
-  portId: string,
-  outgoingHandles: Set<string>,
-): boolean {
-  return (
-    portId === RESULT_HANDLE_ID ||
-    (nestedResultHandleIndex(portId) === 0 && outgoingHandles.has(portId))
-  );
-}
-
-function isKnownResultOutputAllowed(
-  portId: string,
-  resultCount: number,
-  outgoingHandles: Set<string>,
-): boolean {
-  if (resultCount <= 0) return false;
-  if (resultCount === 1)
-    return isSingleResultOutputAllowed(portId, outgoingHandles);
-
-  const index = nestedResultHandleIndex(portId);
-  return index !== undefined && index < resultCount;
-}
-
-function countIndexedIncomingHandles(
-  incomingHandles: Set<string>,
-  name: string,
-): number {
-  let count = 0;
-  incomingHandles.forEach((handle) => {
-    if (indexedInputHandleIndex(handle, name) !== undefined) count += 1;
+  if (node.command === undefined) return false;
+  return isGraphCommandOutputHandleAllowed(node.command, portId, {
+    declaredInputPortIds: node.ioInputPortIds,
+    moveCallResultCount: commandResultCountForNode(node),
   });
-  return count;
+}
+
+function commandResultCountForNode(node: GraphNodeIndex): number | undefined {
+  return (
+    node.moveCallEvidence?.resultArity ??
+    (typeof node.runtime?.resultCount === 'number'
+      ? node.runtime.resultCount
+      : undefined)
+  );
 }
 
 function isGasSemantic(value: unknown): boolean {
@@ -1988,7 +1743,6 @@ function validateCommandParams(
     `${path}.runtime`,
     diagnostics,
   );
-  validateCommandUIParams(value.ui, `${path}.ui`, diagnostics);
 }
 
 function validateCommandRuntimeParams(
@@ -2139,42 +1893,6 @@ function validatePlainDataField(
   );
 }
 
-function validateCommandUIParams(
-  value: unknown,
-  path: string,
-  diagnostics: TransactionDiagnostic[],
-): void {
-  if (value === undefined) return;
-  if (!isPlainObject(value)) {
-    diagnostics.push(
-      graphDiagnostic(
-        'graph.command.params.ui',
-        'PTB graph command UI params must be an object when present.',
-        path,
-      ),
-    );
-    return;
-  }
-
-  validateUnknownFields(
-    value,
-    COMMAND_UI_KEYS,
-    'graph.command.params.ui.unknownField',
-    path,
-    'PTB graph command UI params',
-    diagnostics,
-  );
-  COMMAND_UI_COUNT_KEYS.forEach((key) => {
-    validateOptionalNonNegativeIntegerField(
-      value[key],
-      `${path}.${key}`,
-      'graph.command.params.ui.count',
-      `PTB graph command UI param ${key} must be a non-negative integer when present.`,
-      diagnostics,
-    );
-  });
-}
-
 function validateEdgeCast(
   value: unknown,
   path: string,
@@ -2316,20 +2034,6 @@ function validateOptionalResultCountField(
   );
 }
 
-function validateOptionalNonNegativeIntegerField(
-  value: unknown,
-  path: string,
-  code: GraphDiagnosticCode,
-  message: string,
-  diagnostics: TransactionDiagnostic[],
-): void {
-  if (value === undefined) return;
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
-    return;
-  }
-  diagnostics.push(graphDiagnostic(code, message, path));
-}
-
 function validateUnknownFields(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
@@ -2414,9 +2118,9 @@ function validateVariableSemantic(
 function nodeKeysForKind(kind: PTBNode['kind']): readonly string[] {
   switch (kind) {
     case 'Start':
-      return START_NODE_KEYS;
+      return NODE_BASE_KEYS;
     case 'End':
-      return END_NODE_KEYS;
+      return NODE_BASE_KEYS;
     case 'Command':
       return COMMAND_NODE_KEYS;
     case 'Variable':
