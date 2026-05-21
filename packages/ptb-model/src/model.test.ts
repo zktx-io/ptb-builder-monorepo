@@ -3312,14 +3312,15 @@ describe('TransactionIR renderers', () => {
     expect(mermaid).not.toContain(
       'input0 -- "input 0: bytes AQID" --> command0',
     );
-    expect(mermaid).toContain('command0 -. then .-> command1');
-    expect(mermaid).toContain('command4 -. then .-> command5');
-    expect(mermaid).toContain('command5 -. then .-> command6');
-    expect(mermaid).not.toContain('command6 -. then .-> command7');
+    expect(mermaid).toContain('command0 -- then --> command1');
+    expect(mermaid).toContain('command4 -- then --> command5');
+    expect(mermaid).toContain('command5 -- then --> command6');
+    expect(mermaid).not.toContain('command6 -- then --> command7');
     expect(mermaid).toContain('gas["GasCoin"]');
     expect(mermaid).toContain('gas --> command0');
     expect(mermaid).toContain('SplitCoins');
     expect(mermaid).toContain('classDef commandOutline stroke-width:3px');
+    expect(mermaid).toContain('linkStyle 0,1,2,3,4,5 stroke-width:3px');
     expect(mermaid).toContain(
       'class command0,command1,command2,command3,command4,command5,command6 commandOutline',
     );

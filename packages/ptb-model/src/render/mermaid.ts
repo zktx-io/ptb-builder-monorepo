@@ -120,8 +120,10 @@ export function transactionIRToMermaid(
     );
   });
 
+  const commandSequenceLinkIndexes: number[] = [];
   for (let index = 0; index < renderIR.commands.length - 1; index += 1) {
-    lines.push(`  command${index} -. then .-> command${index + 1}`);
+    commandSequenceLinkIndexes.push(index);
+    lines.push(`  command${index} -- then --> command${index + 1}`);
   }
 
   renderIR.commands.forEach((command, index) => {
@@ -142,6 +144,11 @@ export function transactionIRToMermaid(
     lines.push(
       '  classDef commandOutline stroke-width:3px',
       `  class ${commandNodeIds.join(',')} commandOutline`,
+    );
+  }
+  if (commandSequenceLinkIndexes.length > 0) {
+    lines.push(
+      `  linkStyle ${commandSequenceLinkIndexes.join(',')} stroke-width:3px`,
     );
   }
 
