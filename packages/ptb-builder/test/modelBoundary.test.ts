@@ -2,7 +2,6 @@ import {
   graphToTransactionIR,
   hasErrors,
   type MovePackageSignatureEvidence,
-  nestedResultHandle,
   NULL_VALUE,
   PTBModelError,
   type PTBType,
@@ -21,7 +20,11 @@ import {
   makeObject,
   makeString,
 } from '../src/ptb/factories';
-import { parseHandleTypeSuffix, type PTBGraph } from '../src/ptb/graph/types';
+import {
+  parseHandleTypeSuffix,
+  type PTBGraph,
+  toModelPTBGraph,
+} from '../src/ptb/graph/types';
 import { ptbToRF, rfToPTB } from '../src/ptb/ptbAdapter';
 import { buildCommandPorts, buildMoveCallPorts } from '../src/ptb/registry';
 import { buildTransactionFromIR } from '../src/ptb/runtimeAdapter';
@@ -38,6 +41,10 @@ const SUI_PACKAGE =
   '0x0000000000000000000000000000000000000000000000000000000000000002';
 const SUI_TYPE = `${SUI_PACKAGE}::sui::SUI`;
 const TEST_DIGEST = 'vQMG8nrGirX14JLfyzy15DrYD3gwRC1eUmBmBzYUsgh';
+
+function builderGraphToIR(graph: PTBGraph) {
+  return graphToTransactionIR(toModelPTBGraph(graph));
+}
 
 function splitGasGraph(): PTBGraph {
   return {
@@ -296,7 +303,7 @@ describe('model-root PTB boundary', () => {
     const graph = splitGasGraph();
     const rf = ptbToRF(graph);
     const roundTripGraph = rfToPTB(rf.nodes, rf.edges, graph);
-    const ir = graphToTransactionIR(roundTripGraph);
+    const ir = builderGraphToIR(roundTripGraph);
 
     expect(ir.diagnostics).toEqual([]);
     expect(ir.commands[0]).toMatchObject({ kind: 'SplitCoins' });
@@ -351,7 +358,7 @@ describe('model-root PTB boundary', () => {
     );
 
     const roundTripGraph = rfToPTB(rf.nodes, rf.edges, graph);
-    const ir = graphToTransactionIR(roundTripGraph);
+    const ir = builderGraphToIR(roundTripGraph);
 
     expect(roundTripGraph.edges[0]).toMatchObject({ kind: 'type' });
     expect(ir.diagnostics).toEqual([]);
@@ -453,7 +460,7 @@ describe('model-root PTB boundary', () => {
 
   it('keeps stale model preview visible when the current graph has diagnostics', () => {
     const previousModelCode = transactionIRToTsSdkCode(
-      graphToTransactionIR(splitGasGraph()),
+      builderGraphToIR(splitGasGraph()),
     );
     const preview = renderCodePreview(transferToAddressGraph('myAddress'), {
       chain: 'sui:testnet',
@@ -493,7 +500,7 @@ describe('model-root PTB boundary', () => {
   });
 
   it('does not substitute wallet sentinels into IR arguments', () => {
-    const ir = graphToTransactionIR(transferToAddressGraph('myAddress'));
+    const ir = builderGraphToIR(transferToAddressGraph('myAddress'));
 
     expect(() => buildTransactionFromIR(ir, { sender: ADDRESS })).toThrow(
       PTBModelError,
@@ -606,6 +613,158 @@ describe('model-root PTB boundary', () => {
     }
   });
 
+  it('builds runtime nested result refs for known SplitCoins and MoveCall arity', () => {
+    const splitIr: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'amount0',
+          kind: 'Pure',
+          value: '1',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+        {
+          id: 'amount1',
+          kind: 'Pure',
+          value: '2',
+          type: { kind: 'move_numeric', width: 'u64' },
+        },
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          value: ADDRESS,
+          type: { kind: 'scalar', name: 'address' },
+        },
+      ],
+      commands: [
+        {
+          id: 'split',
+          kind: 'SplitCoins',
+          coin: { kind: 'GasCoin' },
+          amounts: [
+            { kind: 'Input', index: 0 },
+            { kind: 'Input', index: 1 },
+          ],
+          resultCount: 2,
+        },
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 1 }],
+          address: { kind: 'Input', index: 2 },
+          resultCount: 0,
+        },
+      ],
+      diagnostics: [],
+    };
+    const moveCallIr: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          value: ADDRESS,
+          type: { kind: 'scalar', name: 'address' },
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 2,
+        },
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 1 }],
+          address: { kind: 'Input', index: 0 },
+          resultCount: 0,
+        },
+      ],
+      diagnostics: [],
+    };
+
+    expect(() => buildTransactionFromIR(splitIr)).not.toThrow();
+    expect(() => buildTransactionFromIR(moveCallIr)).not.toThrow();
+  });
+
+  it('rejects runtime nested MoveCall refs without known arity bounds', () => {
+    const unknownArity: TransactionIR = {
+      version: 'transaction_ir_1',
+      inputs: [
+        {
+          id: 'recipient',
+          kind: 'Pure',
+          value: ADDRESS,
+          type: { kind: 'scalar', name: 'address' },
+        },
+      ],
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [],
+        },
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 0 }],
+          address: { kind: 'Input', index: 0 },
+          resultCount: 0,
+        },
+      ],
+      diagnostics: [],
+    };
+    const outOfBounds: TransactionIR = {
+      ...unknownArity,
+      commands: [
+        {
+          id: 'call',
+          kind: 'MoveCall',
+          package: ADDRESS,
+          module: 'm',
+          function: 'f',
+          typeArguments: [],
+          arguments: [],
+          resultCount: 1,
+        },
+        {
+          id: 'transfer',
+          kind: 'TransferObjects',
+          objects: [{ kind: 'NestedResult', commandIndex: 0, resultIndex: 1 }],
+          address: { kind: 'Input', index: 0 },
+          resultCount: 0,
+        },
+      ],
+    };
+
+    expect(() => buildTransactionFromIR(unknownArity)).toThrow(PTBModelError);
+    try {
+      buildTransactionFromIR(unknownArity);
+    } catch (error) {
+      expect((error as PTBModelError).diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'ir.arg.resultArity' }),
+      );
+    }
+    expect(() => buildTransactionFromIR(outOfBounds)).toThrow(PTBModelError);
+    try {
+      buildTransactionFromIR(outOfBounds);
+    } catch (error) {
+      expect((error as PTBModelError).diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'ir.arg.nestedResult' }),
+      );
+    }
+  });
+
   it('rejects empty address and id pure values before runtime build', () => {
     const cases: Array<{ id: string; type: PTBType; value: unknown }> = [
       {
@@ -656,7 +815,7 @@ describe('model-root PTB boundary', () => {
       edges: [],
     };
 
-    const ir = graphToTransactionIR(graph);
+    const ir = builderGraphToIR(graph);
 
     expect(ir.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
       'graph.variable.duplicateName',
@@ -703,7 +862,7 @@ describe('model-root PTB boundary', () => {
 
     expect(merge.ports.map((port) => port.id)).toContain('in_destination');
 
-    const ir = graphToTransactionIR(graph);
+    const ir = builderGraphToIR(graph);
 
     expect(ir.diagnostics).toEqual([]);
     expect(ir.commands[0]).toMatchObject({
@@ -940,7 +1099,7 @@ describe('model-root PTB boundary', () => {
     });
 
     const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
-    const projected = graphToTransactionIR(roundTrip);
+    const projected = builderGraphToIR(roundTrip);
     const consumer = projected.commands[1];
 
     expect(projected.diagnostics).toEqual([]);
@@ -1002,7 +1161,7 @@ describe('model-root PTB boundary', () => {
     expect(sourceHandles).toEqual(['out_0', 'out_1']);
 
     const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
-    const projected = graphToTransactionIR(roundTrip);
+    const projected = builderGraphToIR(roundTrip);
     const consumer = projected.commands[1];
 
     expect(projected.diagnostics).toEqual([]);
@@ -1168,7 +1327,7 @@ describe('model-root PTB boundary', () => {
       } satisfies TransactionIR,
     },
   ])(
-    'preserves model-owned $label single-result nested handles through RF projection',
+    'canonicalizes model-owned $label single-result NestedResult references through RF projection',
     ({ ir }) => {
       const graph = transactionIRToGraph(ir);
       const rf = ptbToRF(graph);
@@ -1187,21 +1346,18 @@ describe('model-root PTB boundary', () => {
         (handle) => parseHandleTypeSuffix(handle).baseId,
       );
 
-      expect(sourcePortIds).toEqual(
-        expect.arrayContaining([RESULT_HANDLE_ID, nestedResultHandle(0)]),
-      );
-      expect(sourceHandleBases).toEqual([nestedResultHandle(0)]);
+      expect(sourcePortIds).toContain(RESULT_HANDLE_ID);
+      expect(sourcePortIds).not.toContain('out_0');
+      expect(sourceHandleBases).toEqual([RESULT_HANDLE_ID]);
 
       const roundTrip = rfToPTB(rf.nodes, rf.edges, graph);
-      const projected = graphToTransactionIR(roundTrip);
+      const projected = builderGraphToIR(roundTrip);
       const consumer = projected.commands[1];
 
       expect(projected.diagnostics).toEqual([]);
       expect(consumer?.kind).toBe('MoveCall');
       if (consumer?.kind !== 'MoveCall') throw new Error('Expected MoveCall');
-      expect(consumer.arguments).toEqual([
-        { kind: 'NestedResult', commandIndex: 0, resultIndex: 0 },
-      ]);
+      expect(consumer.arguments).toEqual([{ kind: 'Result', commandIndex: 0 }]);
     },
   );
 
@@ -1313,7 +1469,7 @@ describe('model-root PTB boundary', () => {
     };
 
     const roundTrippedGraph = JSON.parse(JSON.stringify(graph)) as PTBGraph;
-    const ir = graphToTransactionIR(roundTrippedGraph);
+    const ir = builderGraphToIR(roundTrippedGraph);
 
     expect(ir.diagnostics).toEqual([]);
     expect(ir.inputs[0]).toMatchObject({
@@ -1400,7 +1556,7 @@ describe('model-root PTB boundary', () => {
     };
 
     const roundTrippedGraph = JSON.parse(JSON.stringify(graph)) as PTBGraph;
-    const ir = graphToTransactionIR(roundTrippedGraph);
+    const ir = builderGraphToIR(roundTrippedGraph);
     const input = ir.inputs[0];
 
     expect(ir.diagnostics).toEqual([]);
@@ -1418,7 +1574,7 @@ describe('model-root PTB boundary', () => {
   });
 
   it('applies runtime envelope only to transaction metadata', () => {
-    const ir = graphToTransactionIR(splitGasGraph());
+    const ir = builderGraphToIR(splitGasGraph());
     const tx = buildTransactionFromIR(ir, {
       sender: ADDRESS,
       gasBudget: 123n,
@@ -1431,7 +1587,7 @@ describe('model-root PTB boundary', () => {
   });
 
   it('rejects non-canonical runtime envelope values before SDK transaction mutation', () => {
-    const ir = graphToTransactionIR(splitGasGraph());
+    const ir = builderGraphToIR(splitGasGraph());
 
     expect(() => buildTransactionFromIR(ir, { sender: '0x1' })).toThrow(
       'Runtime sender must be a canonical Sui address.',

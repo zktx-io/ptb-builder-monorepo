@@ -1,4 +1,8 @@
-import { rawTransactionToIR, transactionIRToGraph } from '@zktx.io/ptb-model';
+import {
+  rawTransactionToIR,
+  RESULT_HANDLE_ID,
+  transactionIRToGraph,
+} from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import { makeCommandNode } from '../src/ptb/factories';
@@ -251,6 +255,116 @@ describe('ptbToRF command port materialization', () => {
     expect(
       persisted?.kind === 'Command' ? persisted.params?.ui : undefined,
     ).toEqual({ amountsCount: 3 });
+  });
+
+  it('replaces same-count stale single-result output ids with canonical ports', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'split',
+          kind: 'Command',
+          label: 'SplitCoins',
+          command: 'splitCoins',
+          params: { ui: { amountsCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_coin', role: 'io', direction: 'in' },
+            { id: 'in_amount_0', role: 'io', direction: 'in' },
+            { id: 'out_0', role: 'io', direction: 'out' },
+          ],
+        },
+      ],
+      edges: [],
+    };
+
+    const { nodes } = ptbToRF(graph);
+    const split = nodes[0]?.data?.ptbNode;
+    const ports = split?.kind === 'Command' ? split.ports : [];
+
+    expect(portIds(ports)).toContain(RESULT_HANDLE_ID);
+    expect(portIds(ports)).not.toContain('out_0');
+  });
+
+  it('replaces stale MoveCall single-result output ids when result count is known', () => {
+    const ports = buildCommandPorts(
+      'moveCall',
+      undefined,
+      { target: '0x2::m::f', resultCount: 1 },
+      [
+        { id: 'in_arg_0', role: 'io', direction: 'in' },
+        {
+          id: 'out_0',
+          role: 'io',
+          direction: 'out',
+          dataType: { kind: 'move_numeric', width: 'u64' },
+        },
+      ],
+    );
+
+    expect(portIds(ports)).toContain(RESULT_HANDLE_ID);
+    expect(portIds(ports)).not.toContain('out_0');
+    expect(
+      ports.find((port) => port.id === RESULT_HANDLE_ID)?.dataType,
+    ).toBeUndefined();
+  });
+
+  it('does not preserve edges attached to non-canonical single-result output ids', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'split',
+          kind: 'Command',
+          label: 'SplitCoins',
+          command: 'splitCoins',
+          params: { ui: { amountsCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_coin', role: 'io', direction: 'in' },
+            { id: 'in_amount_0', role: 'io', direction: 'in' },
+            { id: 'out_coin_0', role: 'io', direction: 'out' },
+          ],
+        },
+        {
+          id: 'consumer',
+          kind: 'Command',
+          label: 'MoveCall',
+          command: 'moveCall',
+          params: {
+            runtime: {
+              target: '0x2::coin::value',
+              resultCount: 0,
+            },
+          },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_arg_0', role: 'io', direction: 'in' },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'noncanonical-output-edge',
+          kind: 'io',
+          source: 'split',
+          sourceHandle: 'out_coin_0',
+          target: 'consumer',
+          targetHandle: 'in_arg_0',
+        },
+      ],
+    };
+
+    const { nodes, edges } = ptbToRF(graph);
+    const split = nodes.find((node) => node.id === 'split')?.data?.ptbNode;
+    const ports = split?.kind === 'Command' ? split.ports : [];
+
+    expect(portIds(ports)).toContain(RESULT_HANDLE_ID);
+    expect(portIds(ports)).not.toContain('out_coin_0');
+    expect(edges.map((edge) => edge.id)).not.toContain(
+      'noncanonical-output-edge',
+    );
   });
 
   it('keeps MakeMoveVec zero-element authoring only when the runtime type is explicit', () => {

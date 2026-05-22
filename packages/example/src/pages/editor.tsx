@@ -1,18 +1,17 @@
 import { useCurrentNetwork, useDAppKit } from '@mysten/dapp-kit-react';
-import { PTBDoc, usePTB } from '@zktx.io/ptb-builder';
+import { usePTB } from '@zktx.io/ptb-builder';
+import type { PTBDoc } from '@zktx.io/ptb-builder';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 import { ConnectScreen } from '../components/ConnectScreen';
 import { DragAndDrop } from '../components/DragAndDrop';
-import { usePtbUndo } from '../components/usePtbUndo';
 import { DAPP_NETWORKS } from '../dapp-kit';
 import { SuiChain, SuiNetwork } from '../network';
 
 export const Editor = () => {
   const dAppKit = useDAppKit();
   const network = useCurrentNetwork() as SuiNetwork;
-  const { loadFromDoc } = usePTB();
-  const { reset, undo, redo } = usePtbUndo();
+  const { loadFromDoc, undo, redo } = usePTB();
 
   // Safe parser for "sui:<network>"
   const parseNetwork = (chain?: string): SuiNetwork | undefined => {
@@ -36,35 +35,27 @@ export const Editor = () => {
     if (!result.ok) {
       return { ok: false as const, message: result.error };
     }
-    reset();
   };
 
   const handleChancel = () => {
     loadFromDoc(`sui:${network}` as SuiChain);
-    reset();
   };
 
   useHotkeys(
     'meta+z,ctrl+z',
     () => {
-      const doc = undo();
-      if (doc) {
-        loadFromDoc(doc);
-      }
+      undo();
     },
-    { enableOnFormTags: true, preventDefault: false },
+    { enableOnFormTags: true, preventDefault: true },
     [undo],
   );
 
   useHotkeys(
     'meta+shift+z,ctrl+shift+z,ctrl+y',
     () => {
-      const doc = redo();
-      if (doc) {
-        loadFromDoc(doc);
-      }
+      redo();
     },
-    { enableOnFormTags: true, preventDefault: false },
+    { enableOnFormTags: true, preventDefault: true },
     [redo],
   );
 

@@ -207,14 +207,32 @@ describe('builder source guardrails', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(segment).not.toContain("mode: 'loading-transaction'");
-    expect(segment).not.toContain('setReadOnly(false);');
-    expect(segment).toContain('setReadOnly(!editable);');
-    expect(segment.indexOf('resetBeforeLoad()')).toBeGreaterThan(
-      segment.indexOf('materializeGraphInputValues('),
+    const deliveryIndex = segment.indexOf(
+      'const delivery = deliverForcedDocChange(baselineDoc);',
+    );
+    expect(deliveryIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      segment.indexOf('flowActionsRef.current.computeAutoLayoutGraph?.('),
+    ).toBeLessThan(deliveryIndex);
+    expect(segment).toContain(
+      '{ targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER }',
+    );
+    expect(
+      segment.indexOf('resetBeforeLoad({ preserveLastDocSig: true });'),
+    ).toBeGreaterThan(deliveryIndex);
+    expect(
+      segment.indexOf('replaceGraphImmediate(graphForBaseline, {'),
+    ).toBeGreaterThan(deliveryIndex);
+    expect(segment).toContain("viewportPolicy: 'preserve',");
+    expect(
+      segment.indexOf('flowActionsRef.current.updateViewport?.(nextView);'),
+    ).toBeGreaterThan(deliveryIndex);
+    expect(segment.indexOf('setReadOnly(false);')).toBeGreaterThan(
+      deliveryIndex,
     );
     expect(segment).toContain('const nextView = { ...DEFAULT_PTB_VIEW };');
     expect(segment.indexOf('setView(nextView);')).toBeGreaterThan(
-      segment.indexOf('resetBeforeLoad()'),
+      deliveryIndex,
     );
   });
 
@@ -246,12 +264,20 @@ describe('builder source guardrails', () => {
     const materializeIndex = loadSegment.indexOf(
       'materializeGraphInputValues(',
     );
+    const diagnosticsIndex = loadSegment.indexOf(
+      'validateLoadedTransactionIR(',
+    );
     expect(loadCacheIndex).toBeGreaterThanOrEqual(0);
     expect(signatureFetchIndex).toBeGreaterThan(loadCacheIndex);
     expect(signatureFetchIndex).toBeLessThan(materializeIndex);
+    expect(diagnosticsIndex).toBeGreaterThan(signatureFetchIndex);
+    expect(diagnosticsIndex).toBeLessThan(materializeIndex);
     expect(
       loadSegment.slice(loadCacheIndex, signatureFetchIndex),
     ).not.toContain('if (editable)');
+    expect(
+      loadSegment.slice(loadCacheIndex, signatureFetchIndex),
+    ).not.toContain('ir.diagnostics');
     expect(loadSegment).toContain(
       'const moveSignatures = moveSignatureEvidenceFromCache(loadCache, chain);',
     );
@@ -259,24 +285,21 @@ describe('builder source guardrails', () => {
 
   it('keeps auto-layout based on the latest RF snapshot rather than a stale render closure', () => {
     const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
-    const start = flow.indexOf('const onAutoLayout = useCallback');
+    const start = flow.indexOf('const computeAutoLayoutSnapshot = useCallback');
     const end = flow.indexOf('const fitViewportToContent = useCallback', start);
     const segment = flow.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    expect(segment).toContain(
-      'const currentSnapshot = () => rfSnapshotRef.current;',
-    );
-    expect(segment).toContain('currentSnapshot().rfNodes.length');
     expect(segment).toContain('snapshot.rfNodes');
-    expect(segment).toContain(
-      'commitControllerRef.current?.recordChange(nextSnapshot);',
-    );
+    expect(segment).toContain('rfSnapshotRef.current');
+    expect(segment).not.toContain('commitControllerRef.current?.recordChange');
     expect(segment).not.toContain('await autoLayoutFlow(rfNodes, rfEdges');
+    expect(segment).not.toContain('commit?: boolean');
+    expect(segment).not.toContain('commit: false');
   });
 
-  it('separates document viewport fitting from transaction graph layout', () => {
+  it('keeps load viewport state explicit instead of inferring it from post-load fit', () => {
     const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
     const provider = readFileSync(
       join(sourceRoot, 'ui', 'PtbProvider.tsx'),
@@ -286,7 +309,7 @@ describe('builder source guardrails', () => {
       'const fitViewportToContentAction = useCallback',
     );
     const fitEnd = flow.indexOf(
-      'const autoLayoutGeneratedTransactionGraph = useCallback',
+      'const applyAutoLayoutToCurrentGraph = useCallback',
       fitStart,
     );
     const fitSegment = flow.slice(fitStart, fitEnd);
@@ -304,6 +327,10 @@ describe('builder source guardrails', () => {
 
     expect(measuredStart).toBeGreaterThanOrEqual(0);
     expect(measuredEnd).toBeGreaterThan(measuredStart);
+    expect(measuredSegment).toContain('shouldFitMeasuredLayout');
+    expect(measuredSegment).toContain(
+      "rehydrateViewportPolicyRef.current === 'fit'",
+    );
     expect(measuredSegment).toContain('fitViewportToContentRef.current();');
     expect(measuredSegment).not.toContain('onAutoLayout');
     expect(measuredSegment).not.toContain('autoLayoutFlow');
@@ -315,13 +342,19 @@ describe('builder source guardrails', () => {
     expect(loadDocStart).toBeGreaterThanOrEqual(0);
     expect(loadDocEnd).toBeGreaterThan(loadDocStart);
     expect(loadDocSegment).toContain(
-      'flowActionsRef.current.fitViewportToContent?.();',
+      "replaceGraphImmediate(graphForEditing, { viewportPolicy: 'preserve' });",
     );
-    expect(loadDocSegment).not.toContain(
-      'flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();',
+    expect(loadDocSegment).toContain(
+      "replaceGraphImmediate(nextGraph, { viewportPolicy: 'preserve' });",
     );
-    expect(loadDocSegment).not.toContain(
+    expect(loadDocSegment).toContain(
       'flowActionsRef.current.updateViewport?.(nextView);',
+    );
+    expect(loadDocSegment).not.toContain(
+      'flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();',
+    );
+    expect(loadDocSegment).not.toContain(
+      'flowActionsRef.current.fitViewportToContent?.();',
     );
 
     const loadTxStart = provider.indexOf('const loadFromOnChainTx');
@@ -331,8 +364,28 @@ describe('builder source guardrails', () => {
     expect(loadTxStart).toBeGreaterThanOrEqual(0);
     expect(loadTxEnd).toBeGreaterThan(loadTxStart);
     expect(loadTxSegment).toContain(
-      'flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();',
+      'flowActionsRef.current.computeAutoLayoutGraph?.(',
     );
+    expect(loadTxSegment).toContain(
+      '{ targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER }',
+    );
+    expect(loadTxSegment).toContain(
+      'flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();',
+    );
+    expect(loadTxSegment).toContain(
+      'replaceGraphImmediate(graphForBaseline, {',
+    );
+    expect(loadTxSegment).toContain("viewportPolicy: 'preserve',");
+    expect(loadTxSegment).toContain(
+      'flowActionsRef.current.updateViewport?.(nextView);',
+    );
+    expect(loadTxSegment).toContain(
+      "replaceGraphImmediate(decoded, { viewportPolicy: 'preserve' });",
+    );
+    expect(loadTxSegment).not.toContain(
+      'flowActionsRef.current.autoLayoutGeneratedTransactionGraph',
+    );
+    expect(loadTxSegment).not.toContain('commit: false');
     expect(loadTxSegment).not.toContain(
       'flowActionsRef.current.fitViewportToContent?.();',
     );
@@ -344,9 +397,11 @@ describe('builder source guardrails', () => {
       'utf8',
     );
     const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
-    const exportStart = provider.indexOf('const exportDocResult = useCallback');
+    const exportStart = provider.indexOf(
+      'const captureDocResult = useCallback',
+    );
     const exportEnd = provider.indexOf(
-      'const exportDoc = useCallback',
+      'const captureCurrentDocResult = useCallback',
       exportStart,
     );
     const exportSegment = provider.slice(exportStart, exportEnd);
@@ -360,10 +415,11 @@ describe('builder source guardrails', () => {
       'const graphCapture = flowActionsRef.current.captureGraph?.();',
     );
     expect(exportSegment).toContain(
-      'const graphForExport = graphCapture?.graph ?? graph;',
+      'const graphCapture = flowActionsRef.current.captureGraph?.();',
     );
+    expect(exportSegment).toContain('const graphForExport =');
     expect(exportSegment).toContain(
-      'flowActionsRef.current.getViewportState?.() ?? view',
+      'flowActionsRef.current.getViewportState?.() ?? latestView',
     );
     expect(exportSegment).toContain('graph: graphForExport');
     expect(exportSegment).toContain('view: viewForExport');
@@ -371,9 +427,33 @@ describe('builder source guardrails', () => {
     expect(registerStart).toBeGreaterThanOrEqual(0);
     expect(registerEnd).toBeGreaterThan(registerStart);
     expect(registerSegment).toContain('fitViewportToContent');
-    expect(registerSegment).toContain('autoLayoutGeneratedTransactionGraph');
+    expect(registerSegment).toContain('computeAutoLayoutGraph');
+    expect(registerSegment).toContain('applyAutoLayoutToCurrentGraph');
+    expect(registerSegment).not.toContain(
+      'autoLayoutGeneratedTransactionGraph',
+    );
     expect(registerSegment).toContain('captureGraph');
     expect(registerSegment).toContain('getViewportState');
+  });
+
+  it('keeps node creation gated only by RF adapter projection', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const addNodeStart = text.indexOf('const addNode = useCallback');
+    const addNodeEnd = text.indexOf(
+      'const deleteNode = useCallback',
+      addNodeStart,
+    );
+    const addNodeSegment = text.slice(addNodeStart, addNodeEnd);
+
+    expect(addNodeStart).toBeGreaterThanOrEqual(0);
+    expect(addNodeEnd).toBeGreaterThan(addNodeStart);
+    expect(addNodeSegment).toContain('const converted = safeRfToPTB(candidate');
+    expect(addNodeSegment).toContain('if (!converted.ok) return prev;');
+    expect(addNodeSegment.indexOf('safeRfToPTB(candidate')).toBeLessThan(
+      addNodeSegment.indexOf('reconcileRFSnapshot(candidate)'),
+    );
+    expect(addNodeSegment).not.toContain('analyzePTBGraph');
+    expect(addNodeSegment).not.toContain('firstDocumentBlockingDiagnostic');
   });
 
   it('keeps failed replacement transaction loads from clearing the committed viewer transaction', () => {
@@ -416,7 +496,7 @@ describe('builder source guardrails', () => {
       'utf8',
     );
     const start = text.indexOf('const loadFromDoc');
-    const end = text.indexOf('// ---- export doc', start);
+    const end = text.indexOf('const applyEditorSessionSnapshot', start);
     const segment = text.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
@@ -437,17 +517,42 @@ describe('builder source guardrails', () => {
       'utf8',
     );
     const start = text.indexOf('const loadFromDoc');
-    const end = text.indexOf('// ---- export doc', start);
+    const end = text.indexOf('const applyEditorSessionSnapshot', start);
     const segment = text.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    expect(segment.match(/const delivery = deliverDocChange/g)).toHaveLength(2);
+    expect(
+      segment.match(/const delivery = deliverForcedDocChange/g),
+    ).toHaveLength(2);
     expect(segment).toContain('if (!delivery.ok)');
     expect(segment).toContain(
       'lifecycleRef.current.fail(load, delivery.error);',
     );
     expect(segment).toContain('return delivery;');
+  });
+
+  it('restores editor history snapshots with explicit viewport and document emission', () => {
+    const text = readFileSync(
+      join(sourceRoot, 'ui', 'PtbProvider.tsx'),
+      'utf8',
+    );
+    const start = text.indexOf('const applyEditorSessionSnapshot');
+    const end = text.indexOf('const loadFromDocRef', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain('flowActionsRef.current.getViewportState?.()');
+    expect(segment).toContain(
+      "replaceGraphImmediate(snapshot.graph, { viewportPolicy: 'preserve' });",
+    );
+    expect(segment).toContain(
+      'flowActionsRef.current.updateViewport?.(restoreView);',
+    );
+    expect(segment).toContain('void deliverForcedDocChange(restoredDoc);');
+    expect(segment).not.toContain('fitViewportToContent');
+    expect(segment).not.toContain('applyAutoLayoutToCurrentGraph');
   });
 
   it('keeps object-id edits from debouncing rawInput invalidation', () => {
@@ -457,6 +562,8 @@ describe('builder source guardrails', () => {
     );
 
     expect(text).not.toContain('debouncedPatchObjectId');
+    expect(text).not.toContain('debouncedPatchScalar');
+    expect(text).not.toContain('createDebouncedCallbackController');
     expect(text).toContain('objectMetadataInputChanged(prev, s, seq)');
     expect(text).toMatch(
       /patchVar\(\{\s*value:\s*s,\s*rawInput:\s*undefined,?\s*\}\);/s,
@@ -589,7 +696,7 @@ describe('builder source guardrails', () => {
     expect(commonCss).toContain('--ptb-node-option-border');
   });
 
-  it('cancels pending pure-value drafts before stronger VarNode semantic writes', () => {
+  it('applies scalar VarNode edits immediately while preserving semantic write boundaries', () => {
     const text = readFileSync(
       join(sourceRoot, 'ui', 'nodes', 'vars', 'VarNode.tsx'),
       'utf8',
@@ -598,14 +705,11 @@ describe('builder source guardrails', () => {
     const end = text.indexOf('const renderVectorPreview', start);
     const segment = text.slice(start, end);
 
-    expect(text).toContain('const cancelPendingPureValueDrafts = useCallback');
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    expect(segment).toContain('cancelPendingPureValueDrafts();');
     expect(segment).toContain('patchVar({ value: nextValue });');
-    expect(text).toMatch(
-      /onToggle=\{\(next\) => \{[\s\S]*cancelPendingPureValueDrafts\(\);[\s\S]*OPTION_NONE_VALUE/,
-    );
+    expect(text).not.toContain('cancelPendingPureValueDrafts');
+    expect(text).not.toContain('debouncedPatchScalar');
     expect(text).not.toContain('defer(() => patchVar({ value: next }))');
     expect(text).not.toContain('setVecItems((prev)');
     expect(text).not.toContain('debouncedPatchVector');
@@ -628,7 +732,6 @@ describe('builder source guardrails', () => {
     expect(varNode).toContain('renderVectorPreview()');
     expect(varNode).toContain('<VectorEditorModal');
     expect(varNode).not.toContain('renderVectorEditor');
-    expect(varNode).not.toContain('<MiniStepper');
     expect(varNode).not.toContain('allowUnset');
     expect(modal).toContain('parseVectorDraftText(draft, elemType)');
     expect(modal).toContain('onApply(parsed.value)');

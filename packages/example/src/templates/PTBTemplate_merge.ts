@@ -29,7 +29,6 @@ const mergeTemplateJson = {
         kind: 'Command',
         label: 'SplitCoins',
         command: 'splitCoins',
-        params: { ui: { amountsCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
@@ -48,11 +47,11 @@ const mergeTemplateJson = {
             label: 'in_amount_0',
           },
           {
-            id: 'out_coin_0',
+            id: 'out_result',
             direction: 'out',
             role: 'io',
             dataType: { kind: 'object' },
-            label: 'out_coin_0',
+            label: 'out_result',
           },
         ],
         position: { x: 788.8603351955308, y: -144.44692737430162 },
@@ -100,16 +99,15 @@ const mergeTemplateJson = {
         kind: 'Command',
         label: 'MergeCoins',
         command: 'mergeCoins',
-        params: { ui: { sourcesCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
           {
-            id: 'in_dest',
+            id: 'in_destination',
             direction: 'in',
             role: 'io',
             dataType: { kind: 'object' },
-            label: 'in_dest',
+            label: 'in_destination',
           },
           {
             id: 'in_source_0',
@@ -169,7 +167,7 @@ const mergeTemplateJson = {
         kind: 'io',
         source: 'cmd-splitCoins-1',
         target: 'cmd-mergeCoins-11',
-        sourceHandle: 'out_coin_0',
+        sourceHandle: 'out_result',
         targetHandle: 'in_source_0',
       },
       {
@@ -178,7 +176,7 @@ const mergeTemplateJson = {
         source: '@gas',
         target: 'cmd-mergeCoins-11',
         sourceHandle: 'out',
-        targetHandle: 'in_dest',
+        targetHandle: 'in_destination',
       },
     ],
   },

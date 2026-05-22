@@ -5,7 +5,6 @@ import {
   hasErrors,
   irObjectId,
   irResolvedObjectArg,
-  isStructuralTransactionIR,
   NULL_VALUE,
   parseObjectId,
   PTBModelError,
@@ -16,6 +15,7 @@ import type {
   IRArgRef,
   IRCommand,
   IRInput,
+  MovePackageSignatureEvidence,
   PTBType,
   TransactionIR,
 } from '@zktx.io/ptb-model';
@@ -27,13 +27,18 @@ import {
 export type { RuntimeEnvelope } from './runtimeEnvelope';
 
 type TxArg = ReturnType<Transaction['pure']>;
-type TxResult = ReturnType<Transaction['splitCoins']>;
+type TxResult = unknown;
+
+export type BuildTransactionFromIROptions = {
+  moveSignatures?: MovePackageSignatureEvidence;
+};
 
 export function buildTransactionFromIR(
   ir: TransactionIR,
   envelope: RuntimeEnvelope = {},
+  options: BuildTransactionFromIROptions = {},
 ): Transaction {
-  assertRuntimeRenderableIR(ir);
+  assertRuntimeRenderableIR(ir, options);
 
   const tx = new Transaction();
   const normalizedEnvelope = normalizeRuntimeEnvelope(envelope);
@@ -53,7 +58,10 @@ export function buildTransactionFromIR(
   return tx;
 }
 
-function assertRuntimeRenderableIR(ir: TransactionIR): void {
+function assertRuntimeRenderableIR(
+  ir: TransactionIR,
+  options: BuildTransactionFromIROptions,
+): void {
   if (hasErrors(ir.diagnostics)) {
     throw new PTBModelError(
       'TransactionIR cannot be built as a runtime Transaction.',
@@ -61,12 +69,12 @@ function assertRuntimeRenderableIR(ir: TransactionIR): void {
     );
   }
 
-  const diagnostics = isStructuralTransactionIR(ir)
-    ? []
-    : validateTransactionIR(ir, {
-        includeExistingDiagnostics: false,
-        includeUnsupportedDiagnostics: false,
-      });
+  const diagnostics = validateTransactionIR(ir, {
+    includeExistingDiagnostics: false,
+    includeUnsupportedDiagnostics: false,
+    moveSignatures: options.moveSignatures,
+    requireKnownResultArity: true,
+  });
   if (hasErrors(diagnostics)) {
     throw new PTBModelError(
       'TransactionIR cannot be built as a runtime Transaction.',
@@ -175,12 +183,12 @@ function buildCommand(
       }) as TxResult;
     case 'TransferObjects':
       tx.transferObjects(command.objects.map(arg), arg(command.address));
-      return [] as unknown as TxResult;
+      return undefined;
     case 'SplitCoins':
       return tx.splitCoins(arg(command.coin), command.amounts.map(arg));
     case 'MergeCoins':
       tx.mergeCoins(arg(command.destination), command.sources.map(arg));
-      return [] as unknown as TxResult;
+      return undefined;
     case 'Publish':
       return tx.publish({
         modules: command.modules,
@@ -235,27 +243,39 @@ function resolveArg(
       }
       return results[ref.commandIndex] as unknown as TxArg;
     case 'NestedResult':
-      if (!Array.isArray(results[ref.commandIndex])) {
+      if (results[ref.commandIndex] === undefined) {
         throwRuntimeError(
           'runtime.arg.nestedResult',
-          `Runtime argument references non-nested command result ${ref.commandIndex}.`,
+          `Runtime argument references missing command result ${ref.commandIndex}.`,
           '$.commands',
         );
       }
-      if (
-        (results[ref.commandIndex] as unknown as TxArg[])[ref.resultIndex] ===
-        undefined
-      ) {
+      const nested = nestedResultArg(
+        results[ref.commandIndex],
+        ref.resultIndex,
+      );
+      if (nested === undefined) {
         throwRuntimeError(
           'runtime.arg.nestedResult',
           `Runtime argument references missing nested result ${ref.commandIndex}.${ref.resultIndex}.`,
           '$.commands',
         );
       }
-      return (results[ref.commandIndex] as unknown as TxArg[])[
-        ref.resultIndex
-      ]!;
+      return nested;
   }
+}
+
+function nestedResultArg(
+  result: TxResult,
+  resultIndex: number,
+): TxArg | undefined {
+  if (
+    result === undefined ||
+    (typeof result !== 'object' && typeof result !== 'function')
+  ) {
+    return undefined;
+  }
+  return (result as Record<number, TxArg | undefined>)[resultIndex];
 }
 
 function normalizePureValue(type: PTBType, value: unknown): unknown {

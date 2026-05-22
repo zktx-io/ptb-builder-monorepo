@@ -17,7 +17,8 @@ import {
   indexedInputHandleIndex,
   inputHandle,
   isNestedResultHandle,
-  nestedResultHandle,
+  knownResultOutputHandles,
+  nestedResultHandleIndex,
   RESULT_HANDLE_ID,
   toPTBTypeFromConcreteTypeArgument,
 } from '@zktx.io/ptb-model';
@@ -82,8 +83,7 @@ const splitCoinsSpec: CommandSpec = {
       const id = indexedInputHandle('amount', i);
       ports.push(ioIn(id, { dataType: M('u64'), label: id }));
     }
-    for (let i = 0; i < count; i++) {
-      const id = count === 1 ? RESULT_HANDLE_ID : nestedResultHandle(i);
+    for (const id of knownResultOutputHandles(count)) {
       ports.push(ioOut(id, { dataType: O(), label: id }));
     }
     return ports;
@@ -216,9 +216,8 @@ export function buildMoveCallPorts(
       label: `arg${index}`,
     });
   });
-  outputs.forEach((t, index) => {
-    const id =
-      outputs.length === 1 ? RESULT_HANDLE_ID : nestedResultHandle(index);
+  knownResultOutputHandles(outputs.length).forEach((id, index) => {
+    const t = outputs[index]!;
     ports.push({
       id,
       role: 'io',
@@ -231,7 +230,7 @@ export function buildMoveCallPorts(
   return ports;
 }
 
-function isMoveCallValuePort(port: Port): boolean {
+function isMoveCallInputPort(port: Port): boolean {
   if (port.role === 'type') {
     return (
       port.direction === 'in' &&
@@ -241,9 +240,64 @@ function isMoveCallValuePort(port: Port): boolean {
   if (port.role !== 'io') return false;
   if (port.direction === 'in')
     return indexedInputHandleIndex(port.id, 'arg') !== undefined;
-  if (port.direction === 'out')
-    return port.id === RESULT_HANDLE_ID || isNestedResultHandle(port.id);
   return false;
+}
+
+function isMoveCallOutputPort(port: Port): boolean {
+  if (port.role !== 'io' || port.direction !== 'out') return false;
+  return port.id === RESULT_HANDLE_ID || isNestedResultHandle(port.id);
+}
+
+function buildMoveCallOutputPorts(
+  existingPorts: readonly Port[] | undefined,
+  runtime: CommandRuntimeParams | undefined,
+): Port[] {
+  const existingOutputs = (existingPorts ?? []).filter(isMoveCallOutputPort);
+  const resultCount =
+    typeof runtime?.resultCount === 'number' ? runtime.resultCount : undefined;
+  if (resultCount === undefined) {
+    return canonicalExistingMoveCallOutputPorts(existingOutputs);
+  }
+
+  return knownResultOutputHandles(resultCount).map((id) => {
+    const source = existingOutputs.find((port) => port.id === id);
+    return materializeMoveCallPort({
+      ...(source ?? { role: 'io' as const, direction: 'out' as const }),
+      id,
+      label: id,
+    });
+  });
+}
+
+function canonicalExistingMoveCallOutputPorts(
+  existingOutputs: readonly Port[],
+): Port[] {
+  if (existingOutputs.length === 0) return [];
+  if (existingOutputs.length === 1) {
+    const port = existingOutputs[0]!;
+    return port.id === RESULT_HANDLE_ID ? [materializeMoveCallPort(port)] : [];
+  }
+
+  const indexed = existingOutputs
+    .map((port) => ({ port, index: nestedResultHandleIndex(port.id) }))
+    .filter(
+      (entry): entry is { port: Port; index: number } =>
+        entry.index !== undefined,
+    )
+    .sort((left, right) => left.index - right.index);
+  if (indexed.length !== existingOutputs.length) return [];
+  if (indexed.some((entry, expected) => entry.index !== expected)) return [];
+  return indexed.map(({ port }) => materializeMoveCallPort(port));
+}
+
+function buildMoveCallExistingPorts(
+  existingPorts: readonly Port[],
+  runtime: CommandRuntimeParams | undefined,
+): Port[] {
+  return [
+    ...existingPorts.filter(isMoveCallInputPort).map(materializeMoveCallPort),
+    ...buildMoveCallOutputPorts(existingPorts, runtime),
+  ];
 }
 
 function moveCallPortLabel(port: Port): string | undefined {
@@ -329,8 +383,7 @@ export function buildCommandPorts(
 ): Port[] {
   const flow = PORTS.commandBase();
   if (kind === 'moveCall' && existingPorts?.length) {
-    const io = existingPorts.filter(isMoveCallValuePort);
-    return [...flow, ...io.map(materializeMoveCallPort)];
+    return [...flow, ...buildMoveCallExistingPorts(existingPorts, runtime)];
   }
   const io = REGISTRY[kind]?.buildIO(ui, runtime) ?? [];
   return [...flow, ...io];

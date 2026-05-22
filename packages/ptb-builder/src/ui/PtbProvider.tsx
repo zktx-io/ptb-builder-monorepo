@@ -35,7 +35,10 @@ import {
   type MovePackageSignatureEvidence,
   parseObjectId,
   rawTransactionToIR,
+  type TransactionDiagnostic,
+  type TransactionIR,
   transactionIRToGraph,
+  validateTransactionIR,
 } from '@zktx.io/ptb-model';
 
 import {
@@ -49,16 +52,18 @@ import {
   createDocumentEmissionScheduler,
   type DocumentEmissionScheduler,
 } from './documentEmission';
+import {
+  createEditorSessionHistory,
+  createEditorSessionSnapshot,
+  type EditorSessionSnapshot,
+} from './editorSessionHistory';
 import { executionResultToast } from './executionResult';
 import type {
   HostExecutionResult,
   HostSimulationResult,
 } from './executionResult';
 import { stableGraphSig } from './graphSignature';
-import {
-  formatModelDiagnostic,
-  formatModelErrorMessage,
-} from './modelDiagnostics';
+import { formatModelErrorMessage } from './modelDiagnostics';
 import { createProviderLifecycleController } from './providerLifecycle';
 import {
   clearProviderClientUnavailableNoticeState,
@@ -124,6 +129,7 @@ const VIEW_CHANGE_DEBOUNCE_MS = 250;
 const DOC_CHANGE_DEBOUNCE_MS = 150;
 const DOC_CHANGE_MAX_WAIT_MS = 1000;
 const OBJECT_METADATA_FETCH_CONCURRENCY = 8;
+const TRANSACTION_LAYOUT_TARGET_CENTER = Object.freeze({ x: 400, y: 325 });
 const EMPTY_OBJECTS = Object.freeze({}) as PTBObjectsEmbed;
 const EMPTY_MODULES = Object.freeze({}) as PTBModulesEmbed;
 const EMPTY_PACKAGE_INDEXES = Object.freeze({}) as Record<
@@ -218,6 +224,37 @@ function moveCallFunctionRefsFromIRCommands(
   return [...refs.values()];
 }
 
+function formatMoveCallFunctionRef(ref: MoveCallFunctionRef): string {
+  return `${ref.packageId}::${ref.moduleName}::${ref.functionName}`;
+}
+
+function missingMoveCallSignatureRefs(
+  cache: ReturnType<typeof createPTBMetadataCache>,
+  chain: Chain,
+  refs: readonly MoveCallFunctionRef[],
+): MoveCallFunctionRef[] {
+  return refs.filter(
+    (ref) =>
+      getCachedMoveFunction(
+        cache,
+        chain,
+        ref.packageId,
+        ref.moduleName,
+        ref.functionName,
+      ) === undefined,
+  );
+}
+
+function formatMissingMoveCallSignatureMessage(
+  refs: readonly MoveCallFunctionRef[],
+  cause?: string,
+): string {
+  const shown = refs.slice(0, 3).map(formatMoveCallFunctionRef).join(', ');
+  const suffix = refs.length > 3 ? ` and ${refs.length - 3} more` : '';
+  const reason = cause ? ` ${cause}` : '';
+  return `Failed to load transaction because Move function signature evidence is unavailable for ${shown}${suffix}.${reason}`;
+}
+
 async function fetchMoveFunctionSignatureEntry(
   client: PtbCoreClient,
   ref: MoveCallFunctionRef,
@@ -284,10 +321,15 @@ export type PtbContextValue = {
     opts?: { mode?: 'readonly' | 'editable' },
   ) => Promise<PTBActionResult>;
   loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
+  undo: () => PTBActionResult;
+  redo: () => PTBActionResult;
+  canUndo: boolean;
+  canRedo: boolean;
 
   // Persistence
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
   exportDocResult: (opts?: { sender?: string }) => PTBExportDocResult;
+  captureCurrentDocResult: () => PTBExportDocResult;
 
   // Monotonic ID generator
   createUniqueId: (prefix?: string) => string;
@@ -306,17 +348,27 @@ export type PtbContextValue = {
   registerFlowActions: (a: RegisteredFlowActions) => void;
 
   graphEpoch: number;
+  graphRehydrateViewportPolicy: GraphRehydrateViewportPolicy;
 
   codePipOpenTick: number;
 };
 
 type FlowViewportState = { x: number; y: number; zoom: number };
+type FlowPoint = { x: number; y: number };
+type GraphRehydrateViewportPolicy = 'fit' | 'preserve';
 type FlowGraphCaptureResult =
+  | { ok: true; graph: PTBGraph }
+  | { ok: false; error: string };
+type FlowAutoLayoutResult =
   | { ok: true; graph: PTBGraph }
   | { ok: false; error: string };
 type RegisteredFlowActions = {
   fitViewportToContent?: () => void;
-  autoLayoutGeneratedTransactionGraph?: () => void;
+  applyAutoLayoutToCurrentGraph?: () => Promise<FlowAutoLayoutResult>;
+  computeAutoLayoutGraph?: (
+    graph: PTBGraph,
+    opts?: { targetCenter?: FlowPoint },
+  ) => Promise<FlowAutoLayoutResult>;
   updateViewport?: (v?: FlowViewportState) => void;
   captureGraph?: () => FlowGraphCaptureResult;
   getViewportState?: () => FlowViewportState;
@@ -473,6 +525,9 @@ export function PtbProvider({
   >(undefined);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const [docSender, setDocSender] = useState<string | undefined>(undefined);
+  const docSenderRef = useRef(docSender);
+  docSenderRef.current = docSender;
 
   // Well-known presence
   const [wellKnown, setWellKnown] = useState<Record<WellKnownId, boolean>>(() =>
@@ -488,6 +543,8 @@ export function PtbProvider({
 
   // Epoch to separate "inject → RF" from "edit → save"
   const [graphEpoch, setGraphEpoch] = useState(0);
+  const [graphRehydrateViewportPolicy, setGraphRehydrateViewportPolicy] =
+    useState<GraphRehydrateViewportPolicy>('fit');
 
   // Chain caches
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
@@ -513,6 +570,14 @@ export function PtbProvider({
   const docSlicesRef = useRef({ graph, modules, objects });
   docSlicesRef.current = { graph, modules, objects };
   const lastDocSigRef = useRef<string | undefined>(undefined);
+  const editorHistoryRef = useRef(createEditorSessionHistory());
+  const editorHistoryRestoreInFlightRef = useRef(false);
+  const [editorHistoryAvailability, setEditorHistoryAvailability] = useState(
+    () => ({
+      canUndo: editorHistoryRef.current.canUndo(),
+      canRedo: editorHistoryRef.current.canRedo(),
+    }),
+  );
   const lifecycleRef = useRef(createProviderLifecycleController());
   const [providerUiState, setProviderUiState] = useState<ProviderUiState>(
     () => INITIAL_PROVIDER_UI_STATE,
@@ -523,9 +588,13 @@ export function PtbProvider({
   }, []);
 
   // Reset caches on chain change
-  const resetBeforeLoad = () => {
-    lastDocSigRef.current = undefined;
+  const resetBeforeLoad = (opts?: { preserveLastDocSig?: boolean }) => {
+    if (!opts?.preserveLastDocSig) {
+      lastDocSigRef.current = undefined;
+    }
+    editorHistoryRestoreInFlightRef.current = false;
     setActiveChain(undefined);
+    setDocSender(undefined);
     setObjects(EMPTY_OBJECTS);
     setModules(EMPTY_MODULES);
     setPackageIndexes(EMPTY_PACKAGE_INDEXES);
@@ -620,28 +689,86 @@ export function PtbProvider({
     stableGraphSig({ nodes: [], edges: [] }),
   );
 
-  const setGraph = useCallback((g: PTBGraph) => {
-    const norm = normalizeGraph(g);
-    const nextSig = stableGraphSig(norm);
-    if (nextSig === lastGraphSigRef.current) {
-      return;
-    }
-    lastGraphSigRef.current = nextSig;
-    docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
-    setGraphState(norm);
-    setWellKnown(computeWellKnownPresence(norm));
-    idNonceRef.current = Math.max(idNonceRef.current, seedNonceFromGraph(norm));
+  const refreshEditorHistoryAvailability = useCallback(() => {
+    setEditorHistoryAvailability({
+      canUndo: editorHistoryRef.current.canUndo(),
+      canRedo: editorHistoryRef.current.canRedo(),
+    });
   }, []);
 
-  const replaceGraphImmediate = useCallback((g: PTBGraph) => {
-    const norm = normalizeGraph(g);
-    lastGraphSigRef.current = stableGraphSig(norm);
-    docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
-    setGraphState(norm);
-    setWellKnown(computeWellKnownPresence(norm));
-    idNonceRef.current = seedNonceFromGraph(norm);
-    setGraphEpoch((e) => e + 1); // rehydrate RF once per load
-  }, []);
+  const editorSnapshotFromRefs = useCallback(
+    (graphOverride?: PTBGraph): EditorSessionSnapshot | undefined => {
+      const chain = activeChainRef.current;
+      if (!chain) return undefined;
+      const {
+        graph: graphSnap,
+        modules: modulesSnap,
+        objects: objectsSnap,
+      } = docSlicesRef.current;
+      return createEditorSessionSnapshot({
+        chain,
+        graph: graphOverride ?? graphSnap,
+        sender: docSenderRef.current,
+        modules: modulesSnap ?? EMPTY_MODULES,
+        objects: objectsSnap ?? EMPTY_OBJECTS,
+      });
+    },
+    [],
+  );
+
+  const resetEditorHistory = useCallback(
+    (snapshot?: EditorSessionSnapshot) => {
+      editorHistoryRef.current.reset(snapshot);
+      refreshEditorHistoryAvailability();
+    },
+    [refreshEditorHistoryAvailability],
+  );
+
+  const recordEditorHistory = useCallback(
+    (snapshot: EditorSessionSnapshot) => {
+      editorHistoryRef.current.record(snapshot);
+      refreshEditorHistoryAvailability();
+    },
+    [refreshEditorHistoryAvailability],
+  );
+
+  const setGraph = useCallback(
+    (g: PTBGraph) => {
+      const norm = normalizeGraph(g);
+      const nextSig = stableGraphSig(norm);
+      if (nextSig === lastGraphSigRef.current) {
+        return;
+      }
+      lastGraphSigRef.current = nextSig;
+      docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
+      setGraphState(norm);
+      setWellKnown(computeWellKnownPresence(norm));
+      idNonceRef.current = Math.max(
+        idNonceRef.current,
+        seedNonceFromGraph(norm),
+      );
+      const snapshot = editorSnapshotFromRefs(norm);
+      if (snapshot) recordEditorHistory(snapshot);
+    },
+    [editorSnapshotFromRefs, recordEditorHistory],
+  );
+
+  const replaceGraphImmediate = useCallback(
+    (
+      g: PTBGraph,
+      opts: { viewportPolicy?: GraphRehydrateViewportPolicy } = {},
+    ) => {
+      const norm = normalizeGraph(g);
+      lastGraphSigRef.current = stableGraphSig(norm);
+      docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
+      setGraphRehydrateViewportPolicy(opts.viewportPolicy ?? 'fit');
+      setGraphState(norm);
+      setWellKnown(computeWellKnownPresence(norm));
+      idNonceRef.current = seedNonceFromGraph(norm);
+      setGraphEpoch((e) => e + 1); // rehydrate RF once per load
+    },
+    [],
+  );
 
   // ---- PTBDoc: batch graph edits, debounce viewport-only changes ------------
 
@@ -666,6 +793,7 @@ export function PtbProvider({
       chain,
       graph: graphSnap,
       view: latestView,
+      sender: docSenderRef.current,
       modules: modulesSnap ?? {},
       objects: objectsSnap ?? {},
     });
@@ -693,6 +821,19 @@ export function PtbProvider({
       return ptbActionError(message);
     }
   }, []);
+
+  const deliverForcedDocChange = useCallback(
+    (doc: PTBDoc): PTBActionResult => {
+      const previousSig = lastDocSigRef.current;
+      lastDocSigRef.current = undefined;
+      const result = deliverDocChange(doc);
+      if (!result.ok) {
+        lastDocSigRef.current = previousSig;
+      }
+      return result;
+    },
+    [deliverDocChange],
+  );
 
   const emitDocChange = useCallback(() => {
     let doc: PTBDoc | undefined;
@@ -733,6 +874,82 @@ export function PtbProvider({
     docEmissionSchedulerRef.current?.schedule(reason);
   }, []);
 
+  const captureDocResult = useCallback(
+    (opts?: { sender?: string }): PTBExportDocResult => {
+      const chain = activeChainRef.current;
+      if (!chain)
+        return ptbExportDocError('Cannot export before a chain is selected.');
+      const latestView = viewRef.current;
+      if (!latestView) {
+        return ptbExportDocError(
+          'Cannot export before the viewport is initialized.',
+        );
+      }
+      const graphCapture = flowActionsRef.current.captureGraph?.();
+      if (graphCapture && !graphCapture.ok) {
+        return ptbExportDocError(graphCapture.error);
+      }
+      const graphForExport =
+        graphCapture?.graph ?? docSlicesRef.current.graph ?? graph;
+      const viewForExport =
+        flowActionsRef.current.getViewportState?.() ?? latestView;
+      const sender =
+        opts && Object.prototype.hasOwnProperty.call(opts, 'sender')
+          ? opts.sender
+          : docSenderRef.current;
+      try {
+        return {
+          ok: true,
+          doc: buildDoc({
+            chain,
+            graph: graphForExport,
+            view: viewForExport,
+            sender,
+            modules: docSlicesRef.current.modules ?? {},
+            objects: docSlicesRef.current.objects ?? {},
+          }),
+        };
+      } catch (error) {
+        return ptbExportDocError(
+          formatModelErrorMessage(error, 'Failed to capture PTB document.'),
+        );
+      }
+    },
+    [graph],
+  );
+
+  const captureCurrentDocResult = useCallback<
+    PtbContextValue['captureCurrentDocResult']
+  >(() => captureDocResult(), [captureDocResult]);
+
+  const captureEditorSnapshotResult = useCallback(():
+    | { ok: true; snapshot: EditorSessionSnapshot }
+    | { ok: false; error: string } => {
+    const chain = activeChainRef.current;
+    if (!chain) {
+      return {
+        ok: false,
+        error: 'Cannot capture editor history before a chain is selected.',
+      };
+    }
+    const graphCapture = flowActionsRef.current.captureGraph?.();
+    if (graphCapture && !graphCapture.ok) {
+      return { ok: false, error: graphCapture.error };
+    }
+    const graphForHistory =
+      graphCapture?.graph ?? docSlicesRef.current.graph ?? graph;
+    return {
+      ok: true,
+      snapshot: createEditorSessionSnapshot({
+        chain,
+        graph: graphForHistory,
+        sender: docSenderRef.current,
+        modules: docSlicesRef.current.modules ?? EMPTY_MODULES,
+        objects: docSlicesRef.current.objects ?? EMPTY_OBJECTS,
+      }),
+    };
+  }, [graph]);
+
   useEffect(() => {
     if (!activeChainRef.current) return;
     if (readOnly) return;
@@ -744,6 +961,22 @@ export function PtbProvider({
     if (readOnly) return;
     scheduleDocChange('view');
   }, [view, readOnly, scheduleDocChange]);
+
+  useEffect(() => {
+    if (readOnly) return;
+    const snapshot = editorSnapshotFromRefs();
+    if (!snapshot) return;
+    editorHistoryRef.current.replacePresent(snapshot);
+    refreshEditorHistoryAvailability();
+  }, [
+    activeChain,
+    docSender,
+    modules,
+    objects,
+    readOnly,
+    editorSnapshotFromRefs,
+    refreshEditorHistoryAvailability,
+  ]);
 
   useEffect(() => {
     const hadOnDocChange = hadOnDocChangeRef.current;
@@ -1177,13 +1410,9 @@ export function PtbProvider({
 
         const moveCallRefs = moveCallFunctionRefsFromIRCommands(ir.commands);
 
-        // 3) Surface model diagnostics and prepare load-scoped metadata.
-        ir.diagnostics.forEach((diagnostic) => {
-          toastImpl({
-            message: formatModelDiagnostic(diagnostic),
-            variant: 'warning',
-          });
-        });
+        // 3) Fetch Move signatures before surfacing diagnostics. Raw PTB
+        // conversion cannot know MoveCall result arity, so pre-evidence
+        // diagnostics can be stale by the time the editable graph is built.
         let loadCache = replaceCachedChainData(
           metadataCacheRef.current,
           chain,
@@ -1192,6 +1421,7 @@ export function PtbProvider({
             objects: objectsEmbed,
           },
         );
+        let moveSignatureFetchError: string | undefined;
         for (const ref of moveCallRefs) {
           if (!lifecycleRef.current.isCurrent(load)) {
             return ptbActionError('Transaction load was superseded.');
@@ -1204,61 +1434,130 @@ export function PtbProvider({
             const next = upsertCachedMoveFunction(loadCache, chain, entry);
             loadCache = next.cache;
           } catch (error) {
-            if (lifecycleRef.current.isCurrent(load)) {
-              toastImpl({
-                message: formatModelErrorMessage(
-                  error,
-                  `Failed to fetch Move function signature for ${ref.packageId}::${ref.moduleName}::${ref.functionName}.`,
-                ),
-                variant: 'warning',
-              });
-            }
+            // Normal transaction load cannot produce canonical MoveCall output
+            // ports without signature evidence. Missing signatures are reported
+            // as one load failure after all requested signatures run.
+            moveSignatureFetchError ??= formatModelErrorMessage(
+              error,
+              `Failed to fetch Move function signature ${formatMoveCallFunctionRef(ref)}.`,
+            );
           }
         }
         if (!lifecycleRef.current.isCurrent(load)) {
           return ptbActionError('Transaction load was superseded.');
         }
         const moveSignatures = moveSignatureEvidenceFromCache(loadCache, chain);
+        const missingSignatures = missingMoveCallSignatureRefs(
+          loadCache,
+          chain,
+          moveCallRefs,
+        );
+        if (missingSignatures.length > 0) {
+          const error = formatMissingMoveCallSignatureMessage(
+            missingSignatures,
+            moveSignatureFetchError,
+          );
+          lifecycleRef.current.fail(load, error);
+          setProviderUiState((prev) =>
+            providerTransactionLoadError(prev, error),
+          );
+          toastImpl({ message: error, variant: 'error' });
+          return ptbActionError(error);
+        }
+        const loadDiagnostics = validateLoadedTransactionIR(ir, moveSignatures);
+        if (loadDiagnostics.length > 0) {
+          toastImpl({
+            message: formatModelErrorMessage(
+              { diagnostics: loadDiagnostics },
+              'Transaction loaded with model diagnostics.',
+            ),
+            variant: 'warning',
+          });
+        }
         const decoded = materializeGraphInputValues(
-          transactionIRToGraph(ir),
+          transactionIRToGraph(ir, moveSignatures ? { moveSignatures } : {}),
           moveSignatures ? { moveSignatures } : {},
         ).graph;
 
-        // 4) Fix chain and prime metadata cache. Move package indexes hydrate
-        // after the graph is visible so package discovery never blocks viewing.
-        cancelPendingDocChange();
-        resetBeforeLoad();
-        metadataCacheRef.current = loadCache;
-        setMetadataRevision((revision) => revision + 1);
-        setActiveChain(chain);
-        setModules(loadCache.modulesByChain[chain] ?? EMPTY_MODULES);
-        setPackageIndexes(
-          metadataCacheRef.current.packageIndexesByChain[chain] ??
-            EMPTY_PACKAGE_INDEXES,
-        );
-        setObjects(objectsEmbed);
         const nextView = { ...DEFAULT_PTB_VIEW };
-        setView(nextView);
 
-        // 5) Replace snapshot and bump epoch.
-        replaceGraphImmediate(decoded);
-        setReadOnly(!editable);
-        setProviderUiState(
-          editable
-            ? providerReadyEditable()
-            : providerReadyReadonlyTransaction(transactionStatus),
-        );
-
-        setCodePipOpenTick((tick) => (editable ? tick + 1 : 0));
-        lifecycleRef.current.complete(
-          load,
-          editable ? 'ready-editable' : 'ready-readonly-transaction',
-        );
-
-        lifecycleRef.current.afterAnimationFrames(load, () => {
-          // Transactions do not carry editor layout; build an initial canvas layout.
-          flowActionsRef.current.autoLayoutGeneratedTransactionGraph?.();
-        });
+        if (editable) {
+          const layout = await flowActionsRef.current.computeAutoLayoutGraph?.(
+            decoded,
+            { targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER },
+          );
+          if (!lifecycleRef.current.isCurrent(load)) {
+            return ptbActionError('Transaction load was superseded.');
+          }
+          const graphForBaseline = layout && layout.ok ? layout.graph : decoded;
+          const baselineSnapshot = createEditorSessionSnapshot({
+            chain,
+            graph: graphForBaseline,
+            modules: loadCache.modulesByChain[chain] ?? EMPTY_MODULES,
+            objects: objectsEmbed,
+          });
+          const baselineDoc = buildDoc({
+            chain,
+            graph: graphForBaseline,
+            view: nextView,
+            modules: loadCache.modulesByChain[chain] ?? EMPTY_MODULES,
+            objects: objectsEmbed,
+          });
+          const delivery = deliverForcedDocChange(baselineDoc);
+          if (!delivery.ok) {
+            lifecycleRef.current.fail(load, delivery.error);
+            return delivery;
+          }
+          cancelPendingDocChange();
+          resetBeforeLoad({ preserveLastDocSig: true });
+          metadataCacheRef.current = loadCache;
+          setMetadataRevision((revision) => revision + 1);
+          setActiveChain(chain);
+          setDocSender(undefined);
+          setModules(loadCache.modulesByChain[chain] ?? EMPTY_MODULES);
+          setPackageIndexes(
+            metadataCacheRef.current.packageIndexesByChain[chain] ??
+              EMPTY_PACKAGE_INDEXES,
+          );
+          setObjects(objectsEmbed);
+          setView(nextView);
+          replaceGraphImmediate(graphForBaseline, {
+            viewportPolicy: 'preserve',
+          });
+          flowActionsRef.current.updateViewport?.(nextView);
+          resetEditorHistory(baselineSnapshot);
+          setReadOnly(false);
+          setProviderUiState(providerReadyEditable());
+          setCodePipOpenTick((tick) => tick + 1);
+          lifecycleRef.current.complete(load, 'ready-editable');
+        } else {
+          // Read-only inspection has no document baseline; layout is display-only.
+          cancelPendingDocChange();
+          resetBeforeLoad();
+          metadataCacheRef.current = loadCache;
+          setMetadataRevision((revision) => revision + 1);
+          setActiveChain(chain);
+          setDocSender(undefined);
+          setModules(loadCache.modulesByChain[chain] ?? EMPTY_MODULES);
+          setPackageIndexes(
+            metadataCacheRef.current.packageIndexesByChain[chain] ??
+              EMPTY_PACKAGE_INDEXES,
+          );
+          setObjects(objectsEmbed);
+          setView(nextView);
+          replaceGraphImmediate(decoded, { viewportPolicy: 'preserve' });
+          resetEditorHistory();
+          setReadOnly(true);
+          setProviderUiState(
+            providerReadyReadonlyTransaction(transactionStatus),
+          );
+          setCodePipOpenTick(0);
+          lifecycleRef.current.complete(load, 'ready-readonly-transaction');
+          lifecycleRef.current.afterAnimationFrames(load, () => {
+            // Transactions do not carry editor layout; build an initial canvas layout.
+            void flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();
+          });
+        }
 
         void (async () => {
           const packageIds = moveCallPackageIdsFromIRCommands(ir.commands);
@@ -1352,6 +1651,8 @@ export function PtbProvider({
       fetchMovePackageIndex,
       createCoreClient,
       cancelPendingDocChange,
+      deliverForcedDocChange,
+      resetEditorHistory,
     ],
   );
 
@@ -1379,18 +1680,14 @@ export function PtbProvider({
           return ptbActionError(error);
         }
 
-        resetBeforeLoad();
         const nextView = doc.view;
-        metadataCacheRef.current = replaceCachedChainData(
+        const nextCache = replaceCachedChainData(
           metadataCacheRef.current,
           doc.chain,
           { modules: doc.modules, objects: doc.objects },
         );
         const graphForEditing = materializeGraphInputValues(doc.graph, {
-          moveSignatures: moveSignatureEvidenceFromCache(
-            metadataCacheRef.current,
-            doc.chain,
-          ),
+          moveSignatures: moveSignatureEvidenceFromCache(nextCache, doc.chain),
         }).graph;
         const loadedDoc =
           graphForEditing === doc.graph
@@ -1403,30 +1700,39 @@ export function PtbProvider({
                 modules: doc.modules,
                 objects: doc.objects,
               });
+        const baselineSnapshot = createEditorSessionSnapshot({
+          chain: doc.chain,
+          graph: graphForEditing,
+          sender: loadedDoc.sender,
+          modules: doc.modules,
+          objects: doc.objects,
+        });
+        const delivery = deliverForcedDocChange(loadedDoc);
+        if (!delivery.ok) {
+          lifecycleRef.current.fail(load, delivery.error);
+          return delivery;
+        }
+        cancelPendingDocChange();
+        resetBeforeLoad({ preserveLastDocSig: true });
+        metadataCacheRef.current = nextCache;
         setMetadataRevision((revision) => revision + 1);
 
         setView(nextView);
         setActiveChain(doc.chain);
+        setDocSender(loadedDoc.sender);
         setModules(doc.modules);
         setPackageIndexes(
           metadataCacheRef.current.packageIndexesByChain[doc.chain] ??
             EMPTY_PACKAGE_INDEXES,
         );
         setObjects(doc.objects);
-        replaceGraphImmediate(graphForEditing);
+        replaceGraphImmediate(graphForEditing, { viewportPolicy: 'preserve' });
+        flowActionsRef.current.updateViewport?.(nextView);
+        resetEditorHistory(baselineSnapshot);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        const delivery = deliverDocChange(loadedDoc);
-        if (!delivery.ok) {
-          lifecycleRef.current.fail(load, delivery.error);
-          return delivery;
-        }
         lifecycleRef.current.complete(load, 'ready-editable');
-        lifecycleRef.current.afterAnimationFrames(load, () => {
-          // PTB files already own node positions; only fit the viewport.
-          flowActionsRef.current.fitViewportToContent?.();
-        });
         return PTB_ACTION_OK;
       } else {
         const chain = value;
@@ -1445,42 +1751,182 @@ export function PtbProvider({
           toastImpl({ message, variant: 'error' });
           return ptbActionError(message);
         }
-        resetBeforeLoad();
         const nextView = doc.view;
         const nextGraph = doc.graph;
-        metadataCacheRef.current = replaceCachedChainData(
+        const baselineSnapshot = createEditorSessionSnapshot({
+          chain,
+          graph: nextGraph,
+          modules: EMPTY_MODULES,
+          objects: EMPTY_OBJECTS,
+        });
+        const nextCache = replaceCachedChainData(
           metadataCacheRef.current,
           chain,
           { modules: EMPTY_MODULES, objects: EMPTY_OBJECTS },
         );
+        const delivery = deliverForcedDocChange(doc);
+        if (!delivery.ok) {
+          lifecycleRef.current.fail(load, delivery.error);
+          return delivery;
+        }
+        cancelPendingDocChange();
+        resetBeforeLoad({ preserveLastDocSig: true });
+        metadataCacheRef.current = nextCache;
         setMetadataRevision((revision) => revision + 1);
         setView(nextView);
         setActiveChain(chain);
+        setDocSender(undefined);
         setModules(EMPTY_MODULES);
         setPackageIndexes(
           metadataCacheRef.current.packageIndexesByChain[chain] ??
             EMPTY_PACKAGE_INDEXES,
         );
         setObjects(EMPTY_OBJECTS);
-        replaceGraphImmediate(nextGraph);
+        replaceGraphImmediate(nextGraph, { viewportPolicy: 'preserve' });
+        flowActionsRef.current.updateViewport?.(nextView);
+        resetEditorHistory(baselineSnapshot);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
         setCodePipOpenTick((t) => t + 1);
-        const delivery = deliverDocChange(doc);
-        if (!delivery.ok) {
-          lifecycleRef.current.fail(load, delivery.error);
-          return delivery;
-        }
         lifecycleRef.current.complete(load, 'ready-editable');
-        lifecycleRef.current.afterAnimationFrames(load, () => {
-          // Empty PTB documents already provide seed node positions; only fit the viewport.
-          flowActionsRef.current.fitViewportToContent?.();
-        });
         return PTB_ACTION_OK;
       }
     },
-    [deliverDocChange, replaceGraphImmediate, toastImpl],
+    [
+      cancelPendingDocChange,
+      deliverForcedDocChange,
+      replaceGraphImmediate,
+      resetEditorHistory,
+      toastImpl,
+    ],
   );
+
+  const applyEditorSessionSnapshot = useCallback(
+    (snapshot: EditorSessionSnapshot): PTBActionResult => {
+      const load = lifecycleRef.current.beginLoad('document');
+      try {
+        const restoreView =
+          flowActionsRef.current.getViewportState?.() ??
+          viewRef.current ??
+          DEFAULT_PTB_VIEW;
+        const nextCache = replaceCachedChainData(
+          metadataCacheRef.current,
+          snapshot.chain,
+          { modules: snapshot.modules, objects: snapshot.objects },
+        );
+        let restoredDoc: PTBDoc | undefined;
+        let restoredDocError: string | undefined;
+        try {
+          restoredDoc = buildDoc({
+            chain: snapshot.chain,
+            graph: snapshot.graph,
+            view: restoreView,
+            sender: snapshot.sender,
+            modules: snapshot.modules,
+            objects: snapshot.objects,
+          });
+        } catch (error) {
+          restoredDocError = formatModelErrorMessage(
+            error,
+            'PTB document change failed after restoring editor history.',
+          );
+        }
+
+        cancelPendingDocChange();
+        resetBeforeLoad();
+        metadataCacheRef.current = nextCache;
+        setMetadataRevision((revision) => revision + 1);
+        setView(restoreView);
+        setActiveChain(snapshot.chain);
+        setDocSender(snapshot.sender);
+        setModules(snapshot.modules);
+        setPackageIndexes(
+          metadataCacheRef.current.packageIndexesByChain[snapshot.chain] ??
+            EMPTY_PACKAGE_INDEXES,
+        );
+        setObjects(snapshot.objects);
+        editorHistoryRestoreInFlightRef.current = true;
+        replaceGraphImmediate(snapshot.graph, { viewportPolicy: 'preserve' });
+        flowActionsRef.current.updateViewport?.(restoreView);
+        setReadOnly(false);
+        setProviderUiState(providerReadyEditable());
+        if (restoredDoc) {
+          void deliverForcedDocChange(restoredDoc);
+        } else if (restoredDocError) {
+          setProviderUiState((prev) =>
+            providerDocumentEmitError(prev, restoredDocError),
+          );
+        }
+        lifecycleRef.current.complete(load, 'ready-editable');
+        lifecycleRef.current.afterAnimationFrames(load, () => {
+          editorHistoryRestoreInFlightRef.current = false;
+        });
+        return PTB_ACTION_OK;
+      } catch (error) {
+        editorHistoryRestoreInFlightRef.current = false;
+        const message = formatModelErrorMessage(
+          error,
+          'Failed to restore editor history.',
+        );
+        lifecycleRef.current.fail(load, message);
+        setProviderUiState((prev) => providerDocumentLoadError(prev, message));
+        toastImpl({ message, variant: 'error' });
+        return ptbActionError(message);
+      }
+    },
+    [
+      cancelPendingDocChange,
+      deliverForcedDocChange,
+      replaceGraphImmediate,
+      toastImpl,
+    ],
+  );
+
+  const undo = useCallback<PtbContextValue['undo']>(() => {
+    if (readOnlyRef.current) {
+      return ptbActionError('Undo is unavailable in read-only mode.');
+    }
+    const current = editorHistoryRestoreInFlightRef.current
+      ? undefined
+      : captureEditorSnapshotResult();
+    const transaction = editorHistoryRef.current.beginUndo(
+      current?.ok ? current.snapshot : undefined,
+    );
+    refreshEditorHistoryAvailability();
+    if (!transaction) return PTB_ACTION_OK;
+    const result = applyEditorSessionSnapshot(transaction.snapshot);
+    if (result.ok) transaction.commit();
+    else transaction.cancel();
+    refreshEditorHistoryAvailability();
+    return result;
+  }, [
+    applyEditorSessionSnapshot,
+    captureEditorSnapshotResult,
+    refreshEditorHistoryAvailability,
+  ]);
+
+  const redo = useCallback<PtbContextValue['redo']>(() => {
+    if (readOnlyRef.current) {
+      return ptbActionError('Redo is unavailable in read-only mode.');
+    }
+    const current = editorHistoryRestoreInFlightRef.current
+      ? undefined
+      : captureEditorSnapshotResult();
+    const transaction = editorHistoryRef.current.beginRedo(
+      current?.ok ? current.snapshot : undefined,
+    );
+    refreshEditorHistoryAvailability();
+    if (!transaction) return PTB_ACTION_OK;
+    const result = applyEditorSessionSnapshot(transaction.snapshot);
+    if (result.ok) transaction.commit();
+    else transaction.cancel();
+    refreshEditorHistoryAvailability();
+    return result;
+  }, [
+    applyEditorSessionSnapshot,
+    captureEditorSnapshotResult,
+    refreshEditorHistoryAvailability,
+  ]);
 
   const loadFromDocRef = useRef(loadFromDoc);
   useEffect(() => {
@@ -1509,67 +1955,19 @@ export function PtbProvider({
 
   const exportDocResult = useCallback<PtbContextValue['exportDocResult']>(
     (opts) => {
-      if (!activeChain) {
-        const error = 'Cannot export before a chain is selected.';
-        setProviderUiState((prev) => providerExportError(prev, error));
+      const result = captureDocResult(opts);
+      if (!result.ok) {
+        setProviderUiState((prev) => providerExportError(prev, result.error));
         toastImpl({
-          message: error,
-          variant: 'warning',
-        });
-        return ptbExportDocError(error);
-      }
-      if (!view) {
-        const error = 'Cannot export before the viewport is initialized.';
-        setProviderUiState((prev) => providerExportError(prev, error));
-        toastImpl({
-          message: error,
-          variant: 'warning',
-        });
-        return ptbExportDocError(error);
-      }
-      const sender = opts?.sender;
-      try {
-        const graphCapture = flowActionsRef.current.captureGraph?.();
-        if (graphCapture && !graphCapture.ok) {
-          const message = graphCapture.error;
-          setProviderUiState((prev) => providerExportError(prev, message));
-          toastImpl({
-            message,
-            variant: 'error',
-          });
-          return ptbExportDocError(message);
-        }
-
-        const graphForExport = graphCapture?.graph ?? graph;
-        const viewForExport =
-          flowActionsRef.current.getViewportState?.() ?? view;
-
-        setProviderUiState(clearProviderNoticeState);
-        return {
-          ok: true,
-          doc: buildDoc({
-            chain: activeChain,
-            graph: graphForExport,
-            view: viewForExport,
-            sender,
-            modules: modules ?? {},
-            objects: objects ?? {},
-          }),
-        };
-      } catch (error) {
-        const message = formatModelErrorMessage(
-          error,
-          'Failed to export PTB document.',
-        );
-        setProviderUiState((prev) => providerExportError(prev, message));
-        toastImpl({
-          message,
+          message: result.error,
           variant: 'error',
         });
-        return ptbExportDocError(message);
+        return result;
       }
+      setProviderUiState(clearProviderNoticeState);
+      return result;
     },
-    [activeChain, graph, modules, objects, toastImpl, view],
+    [captureDocResult, toastImpl],
   );
 
   const exportDoc = useCallback<PtbContextValue['exportDoc']>(
@@ -1633,8 +2031,13 @@ export function PtbProvider({
       loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
+      undo,
+      redo,
+      canUndo: editorHistoryAvailability.canUndo,
+      canRedo: editorHistoryAvailability.canRedo,
       exportDoc,
       exportDocResult,
+      captureCurrentDocResult,
 
       createUniqueId: genId,
 
@@ -1649,6 +2052,7 @@ export function PtbProvider({
       registerFlowActions,
 
       graphEpoch,
+      graphRehydrateViewportPolicy,
       codePipOpenTick,
     }),
     [
@@ -1673,8 +2077,13 @@ export function PtbProvider({
       loadTxStatus,
       loadFromOnChainTx,
       loadFromDoc,
+      undo,
+      redo,
+      editorHistoryAvailability.canUndo,
+      editorHistoryAvailability.canRedo,
       exportDoc,
       exportDocResult,
+      captureCurrentDocResult,
       genId,
       execOptsProp,
       executeTxProp,
@@ -1685,6 +2094,7 @@ export function PtbProvider({
       isWellKnownAvailable,
       registerFlowActions,
       graphEpoch,
+      graphRehydrateViewportPolicy,
       codePipOpenTick,
     ],
   );
@@ -1698,4 +2108,14 @@ export function usePtb() {
   const ctx = useContext(PtbContext);
   if (!ctx) throw new Error('usePtb must be used within PtbProvider');
   return ctx;
+}
+
+function validateLoadedTransactionIR(
+  ir: TransactionIR,
+  moveSignatures: MovePackageSignatureEvidence | undefined,
+): readonly TransactionDiagnostic[] {
+  return validateTransactionIR(ir, {
+    includeExistingDiagnostics: true,
+    moveSignatures,
+  });
 }

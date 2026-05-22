@@ -12,7 +12,6 @@ layer, transaction safety guarantee, simulator, or executor.
 - Wallet connection through `@mysten/dapp-kit-react`.
 - Current network selection.
 - Host-provided simulation and execution callbacks.
-- Undo/redo history for received `PTBDoc` updates.
 - Local editor and viewer routes.
 
 ## What PTB Builder Owns
@@ -20,6 +19,7 @@ layer, transaction safety guarantee, simulator, or executor.
 - Graph UI editing.
 - Strict `ptb_4` document load/export.
 - React Flow to model `PTBGraph` conversion.
+- Editor undo/redo session state.
 - TypeScript SDK code preview.
 - SDK Core metadata and transaction inspection helpers supplied by the builder
   package.

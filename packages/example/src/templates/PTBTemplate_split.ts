@@ -29,7 +29,6 @@ const splitTemplateJson = {
         kind: 'Command',
         label: 'SplitCoins',
         command: 'splitCoins',
-        params: { ui: { amountsCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
@@ -48,11 +47,11 @@ const splitTemplateJson = {
             label: 'in_amount_0',
           },
           {
-            id: 'out_coin_0',
+            id: 'out_result',
             direction: 'out',
             role: 'io',
             dataType: { kind: 'object' },
-            label: 'out_coin_0',
+            label: 'out_result',
           },
         ],
         position: { x: 391.8770949720671, y: 84 },
@@ -62,7 +61,6 @@ const splitTemplateJson = {
         kind: 'Command',
         label: 'TransferObjects',
         command: 'transferObjects',
-        params: { ui: { objectsCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
@@ -160,7 +158,7 @@ const splitTemplateJson = {
         kind: 'io',
         source: 'cmd-splitCoins-1',
         target: 'cmd-transferObjects-2',
-        sourceHandle: 'out_coin_0',
+        sourceHandle: 'out_result',
         targetHandle: 'in_object_0',
       },
       {

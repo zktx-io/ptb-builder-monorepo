@@ -24,10 +24,6 @@ import {
   vectorElem,
 } from '../../../ptb/graph/typecheck';
 import type { Port, PTBNode, VariableNode } from '../../../ptb/graph/types';
-import {
-  createDebouncedCallbackController,
-  type DebouncedCallbackController,
-} from '../../debouncedCallback';
 import { PTBHandleIO } from '../../handles/PTBHandleIO';
 import {
   activeObjectMetadataInfo,
@@ -42,7 +38,6 @@ import { usePtb } from '../../PtbProvider';
 import { iconOfVar } from '../icons';
 import { NODE_SIZES } from '../nodeLayout';
 
-const DEBOUNCE_MS = 250;
 const OPTION_NONE_VALUE = NULL_VALUE;
 
 export type VarData = {
@@ -51,61 +46,6 @@ export type VarData = {
   onPatchVar?: (nodeId: string, patch: Partial<VariableNode>) => void;
 };
 export type VarRFNode = Node<VarData, 'ptb-var'>;
-
-/** Debounced-callback helper (cleans up on unmount). */
-function useDebouncedCallback<T extends any[]>(
-  fn: (...args: T) => void,
-  delay = DEBOUNCE_MS,
-) {
-  const fnRef = useRef(fn);
-  const mountedRef = useRef(true);
-  const delayRef = useRef(delay);
-  useEffect(() => {
-    fnRef.current = fn;
-  }, [fn]);
-  const controllerRef = useRef<DebouncedCallbackController<T> | undefined>(
-    undefined,
-  );
-  const ensureController = useCallback(() => {
-    if (controllerRef.current) return controllerRef.current;
-    controllerRef.current = createDebouncedCallbackController<T>({
-      delayMs: delayRef.current,
-      invoke: (...args) => {
-        if (mountedRef.current) fnRef.current(...args);
-      },
-    });
-    return controllerRef.current;
-  }, []);
-  useEffect(() => {
-    delayRef.current = delay;
-    controllerRef.current?.setDelay(delay);
-  }, [delay]);
-  const cancel = useCallback(() => {
-    controllerRef.current?.cancel();
-  }, []);
-  const flush = useCallback(() => {
-    controllerRef.current?.flush();
-  }, []);
-  useEffect(() => {
-    mountedRef.current = true;
-    ensureController();
-    return () => {
-      mountedRef.current = false;
-      controllerRef.current?.dispose();
-      controllerRef.current = undefined;
-    };
-  }, [ensureController]);
-  const schedule = useCallback(
-    (...args: T) => {
-      ensureController().schedule(...args);
-    },
-    [ensureController],
-  );
-  return useMemo(
-    () => ({ schedule, cancel, flush }),
-    [schedule, cancel, flush],
-  );
-}
 
 /** Post a function to the microtask queue (after current render). */
 function defer(fn: () => void) {
@@ -250,14 +190,6 @@ export const VarNode = memo(function VarNode({
     if (typeof val === 'undefined') patchVar({ value: true });
   }, [canEdit, isHelper, isScalarBool, variableValue, patchVar]);
 
-  // Debounced patchers
-  const debouncedPatchScalar = useDebouncedCallback((val: string) => {
-    patchVar({ value: val });
-  });
-  const cancelPendingPureValueDrafts = useCallback(() => {
-    debouncedPatchScalar.cancel();
-  }, [debouncedPatchScalar]);
-
   const objectInfo = displayObjectMetadataInfo(objectDraft);
   const activeObjectInfo = activeObjectMetadataInfo(objectDraft);
   const objTypeLoading = objectDraft.status === 'loading';
@@ -271,7 +203,6 @@ export const VarNode = memo(function VarNode({
     if (!canEdit) return;
 
     const id = scalarBuf.trim();
-    cancelPendingPureValueDrafts();
     patchVar({ value: scalarBuf, rawInput: undefined });
 
     if (!id) {
@@ -318,14 +249,7 @@ export const VarNode = memo(function VarNode({
         variant: 'error',
       });
     }
-  }, [
-    canEdit,
-    cancelPendingPureValueDrafts,
-    lookupObjectMetadata,
-    patchVar,
-    scalarBuf,
-    toast,
-  ]);
+  }, [canEdit, lookupObjectMetadata, patchVar, scalarBuf, toast]);
 
   // Port
   const outPort: Port = useMemo(() => buildOutPort(v), [v]);
@@ -355,17 +279,10 @@ export const VarNode = memo(function VarNode({
   const applyVectorValue = useCallback(
     (nextValue: VectorEditorItem[]) => {
       if (!canEdit || !isVector) return;
-      cancelPendingPureValueDrafts();
       patchVar({ value: nextValue });
       requestInternals();
     },
-    [
-      canEdit,
-      cancelPendingPureValueDrafts,
-      isVector,
-      patchVar,
-      requestInternals,
-    ],
+    [canEdit, isVector, patchVar, requestInternals],
   );
 
   const renderVectorPreview = () => (
@@ -435,7 +352,6 @@ export const VarNode = memo(function VarNode({
                     some={optSome}
                     disabled={!canEdit}
                     onToggle={(next) => {
-                      cancelPendingPureValueDrafts();
                       setOptSome(next);
                       if (optionInnerIsBool) {
                         const nextValue = optionBoolValue ?? true;
@@ -466,7 +382,6 @@ export const VarNode = memo(function VarNode({
                     onChange={(val) => {
                       setScalarBuf(String(val));
                       if (canEdit && optSome) {
-                        cancelPendingPureValueDrafts();
                         patchVar({ value: val });
                       }
                     }}
@@ -481,7 +396,7 @@ export const VarNode = memo(function VarNode({
                       const s = e.target.value;
                       setScalarBuf(s);
                       if (!canEdit || !optSome) return;
-                      debouncedPatchScalar.schedule(s);
+                      patchVar({ value: s });
                     }}
                     disabled={optionInputDisabled}
                   />
@@ -495,7 +410,6 @@ export const VarNode = memo(function VarNode({
                   value={variableValue as boolean | undefined}
                   onChange={(val) => {
                     if (!canEdit) return;
-                    cancelPendingPureValueDrafts();
                     patchVar({ value: val });
                   }}
                   disabled={!canEdit}
@@ -516,7 +430,6 @@ export const VarNode = memo(function VarNode({
 
                         if (varType?.kind === 'object') {
                           const seq = ++reqSeqRef.current;
-                          cancelPendingPureValueDrafts();
                           setObjectDraft((prev) =>
                             objectMetadataInputChanged(prev, s, seq),
                           );
@@ -525,7 +438,7 @@ export const VarNode = memo(function VarNode({
                             rawInput: undefined,
                           });
                         } else {
-                          debouncedPatchScalar.schedule(s);
+                          patchVar({ value: s });
                         }
                       }}
                       disabled={!canEdit}

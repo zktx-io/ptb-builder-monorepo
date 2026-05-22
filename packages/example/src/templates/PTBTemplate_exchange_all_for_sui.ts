@@ -77,7 +77,6 @@ const exchange_all_for_sui = {
         kind: 'Command',
         label: 'SplitCoins',
         command: 'splitCoins',
-        params: { ui: { amountsCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
@@ -96,11 +95,11 @@ const exchange_all_for_sui = {
             label: 'in_amount_0',
           },
           {
-            id: 'out_coin_0',
+            id: 'out_result',
             direction: 'out',
             role: 'io',
             dataType: { kind: 'object' },
-            label: 'out_coin_0',
+            label: 'out_result',
           },
         ],
         position: { x: 333.44420289855077, y: -31.348913043478262 },
@@ -114,7 +113,7 @@ const exchange_all_for_sui = {
           runtime: {
             target:
               '0x82593828ed3fcb8c6a235eac9abd0adbe9c5f9bbffa9b1e7a45cdd884481ef9f::wal_exchange::exchange_all_for_sui',
-            typeArguments: [],
+            resultCount: 1,
           },
         },
         ports: [
@@ -142,12 +141,12 @@ const exchange_all_for_sui = {
             label: 'arg1',
           },
           {
-            id: 'out_ret_0',
+            id: 'out_result',
             role: 'io',
             direction: 'out',
             dataType: { kind: 'object' },
             typeStr: 'object',
-            label: 'ret0',
+            label: 'out_result',
           },
         ],
         position: { x: 653.4442028985508, y: -31.348913043478262 },
@@ -157,7 +156,6 @@ const exchange_all_for_sui = {
         kind: 'Command',
         label: 'TransferObjects',
         command: 'transferObjects',
-        params: { ui: { objectsCount: 1 } },
         ports: [
           { id: 'prev', direction: 'in', role: 'flow' },
           { id: 'next', direction: 'out', role: 'flow' },
@@ -235,7 +233,7 @@ const exchange_all_for_sui = {
         kind: 'io',
         source: 'cmd-0',
         target: 'cmd-1',
-        sourceHandle: 'out_coin_0',
+        sourceHandle: 'out_result',
         targetHandle: 'in_arg_1',
       },
       {
@@ -251,7 +249,7 @@ const exchange_all_for_sui = {
         kind: 'io',
         source: 'cmd-1',
         target: 'cmd-2',
-        sourceHandle: 'out_ret_0',
+        sourceHandle: 'out_result',
         targetHandle: 'in_object_0',
       },
       {

@@ -3,7 +3,6 @@
 // RF is the *source of truth* while the editor is open.
 // We rehydrate PTB → RF only when provider.graphEpoch changes.
 // RF mutations persist to PTB *after commit* in a single effect (no debounce).
-// Only text inputs inside node UI are debounced (not handled here).
 // -----------------------------------------------------------------------------
 
 import React, {
@@ -74,6 +73,7 @@ import {
   type Port,
   type PTBGraph,
   type PTBNode,
+  toModelPTBGraph,
   type TypeArgumentNode,
   type VariableNode,
 } from '../ptb/graph/types';
@@ -145,6 +145,14 @@ type RFSnapshot = {
   rfNodes: RFNode<RFNodeData>[];
   rfEdges: RFEdge<RFEdgeData>[];
 };
+type FlowPoint = { x: number; y: number };
+
+type AutoLayoutSnapshotResult =
+  | { ok: true; graph: PTBGraph; snapshot: RFSnapshot }
+  | { ok: false; error: string };
+type AutoLayoutActionResult =
+  | { ok: true; graph: PTBGraph }
+  | { ok: false; error: string };
 
 // ===== component =============================================================
 
@@ -163,6 +171,7 @@ export function PTBFlow() {
     createUniqueId,
     registerFlowActions,
     graphEpoch,
+    graphRehydrateViewportPolicy,
     codePipOpenTick,
     toast,
     providerUiState,
@@ -180,9 +189,6 @@ export function PTBFlow() {
   // UI toggles
   const [showMiniMap, setShowMiniMap] = useState(true);
 
-  // Flow state flags
-  const [layoutReady, setLayoutReady] = useState(false);
-
   // Persisted PTB snapshot ref (for RF→PTB diffs)
   const baseGraphRef = useRef(graph);
 
@@ -196,6 +202,7 @@ export function PTBFlow() {
   >(undefined);
   const persistSnapshotRef = useRef<(snapshot: RFSnapshot) => void>(() => {});
   const fitViewportToContentRef = useRef<() => void>(() => {});
+  const rehydrateViewportPolicyRef = useRef(graphRehydrateViewportPolicy);
   const measuredLayoutFrameRef = useRef<number | undefined>(undefined);
 
   // Patch callback refs (avoid TDZ during initial render)
@@ -235,7 +242,7 @@ export function PTBFlow() {
   const safeRfToPTB = useCallback(
     (
       snapshot: RFSnapshot,
-      opts?: { notify?: boolean; warn?: boolean },
+      opts?: { notify?: boolean; warn?: boolean; baseGraph?: PTBGraph },
     ):
       | { ok: true; graph: PTBGraph }
       | { ok: false; error: unknown; message: string } => {
@@ -245,7 +252,7 @@ export function PTBFlow() {
           graph: rfToPTB(
             snapshot.rfNodes,
             snapshot.rfEdges,
-            baseGraphRef.current,
+            opts?.baseGraph ?? baseGraphRef.current,
           ),
         };
       } catch (error) {
@@ -330,7 +337,9 @@ export function PTBFlow() {
       const semanticNodes = converted.ok
         ? applyInferredVariableTypesToRFNodes(
             snapshot.rfNodes,
-            inferGraphInputTypes(converted.graph, { moveSignatures }).graph,
+            inferGraphInputTypes(toModelPTBGraph(converted.graph), {
+              moveSignatures,
+            }).graph,
           )
         : snapshot.rfNodes;
       const nextNodes =
@@ -625,7 +634,9 @@ export function PTBFlow() {
       };
     }
     try {
-      const analysis = analyzePTBGraph(converted.graph, { moveSignatures });
+      const analysis = analyzePTBGraph(toModelPTBGraph(converted.graph), {
+        moveSignatures,
+      });
       return {
         validation: buildEditorValidationState(analysis.diagnostics),
         unavailable: undefined,
@@ -668,10 +679,12 @@ export function PTBFlow() {
         prev.rfEdges,
         moveSignatures,
       );
-      const nextNodes = refreshed ? withCallbacks(refreshed) : prev.rfNodes;
+      const nextNodes = refreshed
+        ? withCallbacks(refreshed.nodes)
+        : prev.rfNodes;
       const reconciled = reconcileRFSnapshot({
         rfNodes: nextNodes,
-        rfEdges: prev.rfEdges,
+        rfEdges: refreshed ? refreshed.edges : prev.rfEdges,
       });
       if (
         reconciled.rfNodes === prev.rfNodes &&
@@ -696,9 +709,14 @@ export function PTBFlow() {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = undefined;
     }
+    if (measuredLayoutFrameRef.current !== undefined) {
+      cancelAnimationFrame(measuredLayoutFrameRef.current);
+      measuredLayoutFrameRef.current = undefined;
+    }
     lastSuccessfulCodeRef.current = undefined;
     setCodePreviewStatus('current');
     rehydratingRef.current = true;
+    rehydrateViewportPolicyRef.current = graphRehydrateViewportPolicy;
     baseGraphRef.current = graph;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
@@ -709,15 +727,18 @@ export function PTBFlow() {
 
     setRF(reconciled);
 
-    // Disable fit until layout finishes (prevents initial flicker).
-    setLayoutReady(false);
-
     // Unmute next tick to let RF compute dimensions.
     requestAnimationFrame(() => {
       if (session !== flowSessionRef.current) return;
       rehydratingRef.current = false;
     });
-  }, [graphEpoch, graph, reconcileRFSnapshot, withCallbacks]);
+  }, [
+    graphEpoch,
+    graph,
+    graphRehydrateViewportPolicy,
+    reconcileRFSnapshot,
+    withCallbacks,
+  ]);
 
   // ----- Safety net: re-project edges whenever nodes change ------------------
 
@@ -844,10 +865,16 @@ export function PTBFlow() {
       const rfNode = ptbNodeToRF(node);
       setRF((prev) => {
         const nodes = withCallbacks([...prev.rfNodes, rfNode]);
-        return reconcileRFSnapshot({ rfNodes: nodes, rfEdges: prev.rfEdges });
+        const candidate = { rfNodes: nodes, rfEdges: prev.rfEdges };
+        const converted = safeRfToPTB(candidate, {
+          notify: true,
+          warn: false,
+        });
+        if (!converted.ok) return prev;
+        return reconcileRFSnapshot(candidate);
       });
     },
-    [reconcileRFSnapshot, withCallbacks],
+    [reconcileRFSnapshot, safeRfToPTB, withCallbacks],
   );
 
   const deleteNode = useCallback((id: string) => {
@@ -950,9 +977,11 @@ export function PTBFlow() {
 
       if ((readOnly || rehydrating) && hasMeasuredSizeChange) {
         if (measuredLayoutFrameRef.current !== undefined) return;
+        const shouldFitMeasuredLayout =
+          !rehydrating || rehydrateViewportPolicyRef.current === 'fit';
         measuredLayoutFrameRef.current = requestAnimationFrame(() => {
           measuredLayoutFrameRef.current = undefined;
-          fitViewportToContentRef.current();
+          if (shouldFitMeasuredLayout) fitViewportToContentRef.current();
         });
       }
     },
@@ -1132,9 +1161,11 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const executableGraph = parseExecutableGraph(graph, { moveSignatures });
+      const executableGraph = parseExecutableGraph(toModelPTBGraph(graph), {
+        moveSignatures,
+      });
       const ir = graphToTransactionIR(executableGraph);
-      const tx = buildTransactionFromIR(ir, execOpts);
+      const tx = buildTransactionFromIR(ir, execOpts, { moveSignatures });
       await dryRunTx?.(tx); // toast behavior is controlled in provider
     } catch (e: any) {
       toast?.({
@@ -1162,9 +1193,11 @@ export function PTBFlow() {
       const converted = safeRfToPTB({ rfNodes, rfEdges });
       if (!converted.ok) return;
       const graph = converted.graph;
-      const executableGraph = parseExecutableGraph(graph, { moveSignatures });
+      const executableGraph = parseExecutableGraph(toModelPTBGraph(graph), {
+        moveSignatures,
+      });
       const ir = graphToTransactionIR(executableGraph);
-      const tx = buildTransactionFromIR(ir, execOpts);
+      const tx = buildTransactionFromIR(ir, execOpts, { moveSignatures });
       await runTx?.(tx); // runTx will show toasts (dry-run + execute)
     } catch (e: any) {
       toast?.({
@@ -1188,7 +1221,6 @@ export function PTBFlow() {
   // ----- Auto Layout (positions-only merge) ----------------------------------
   const { fitView, screenToFlowPosition, setViewport, getViewport } =
     useReactFlow();
-  const retryFlag = useRef(false);
   const containerRef = useRef<HTMLDivElement | undefined>(undefined);
   const setContainerEl = useCallback((el: HTMLDivElement | null) => {
     containerRef.current = el ?? undefined;
@@ -1202,103 +1234,88 @@ export function PTBFlow() {
     return screenToFlowPosition({ x: w / 2, y: h / 2 });
   }, [screenToFlowPosition]);
 
-  const onAutoLayout = useCallback(async () => {
-    const session = flowSessionRef.current;
-    const isCurrentLayout = () =>
-      session === flowSessionRef.current && !rehydratingRef.current;
-    const currentSnapshot = () => rfSnapshotRef.current;
-
-    // Guard 1: rehydrate in progress → defer
-    if (rehydratingRef.current) {
-      if (!retryFlag.current) {
-        retryFlag.current = true;
-        requestAnimationFrame(() => {
-          retryFlag.current = false;
-          if (session !== flowSessionRef.current) return;
-          onAutoLayout();
-        });
-      }
-      return;
-    }
-
-    // Guard 2: nodes not ready yet → retry a few frames
-    if (currentSnapshot().rfNodes.length === 0) {
-      let tries = 0;
-      const retry = () => {
-        if (session !== flowSessionRef.current) return;
-        if (!rehydratingRef.current && currentSnapshot().rfNodes.length > 0) {
-          onAutoLayout();
-          return;
-        }
-        if (tries++ < 3) requestAnimationFrame(retry);
+  const graphToLayoutSnapshot = useCallback(
+    (sourceGraph: PTBGraph): RFSnapshot => {
+      const { nodes, edges } = ptbToRF(sourceGraph);
+      const rfNodes = withCallbacks(nodes);
+      return {
+        rfNodes,
+        rfEdges: projectEdgesForCurrentPorts(rfNodes, edges),
       };
-      requestAnimationFrame(retry);
-      return;
-    }
+    },
+    [withCallbacks],
+  );
 
-    const snapshot = currentSnapshot();
-    const positions: LayoutPositions = await autoLayoutFlow(
-      snapshot.rfNodes,
-      snapshot.rfEdges,
-      {
-        targetCenter: getViewportCenterFlow(),
+  const computeAutoLayoutSnapshot = useCallback(
+    async (
+      snapshot: RFSnapshot,
+      opts?: {
+        baseGraph?: PTBGraph;
+        isCurrent?: () => boolean;
+        targetCenter?: FlowPoint;
       },
-    );
-    if (!isCurrentLayout()) return;
+    ): Promise<AutoLayoutSnapshotResult> => {
+      const isCurrent = opts?.isCurrent ?? (() => true);
+      if (!isCurrent()) {
+        return {
+          ok: false as const,
+          error: 'Graph layout was superseded.',
+        };
+      }
+      if (snapshot.rfNodes.length === 0) {
+        return {
+          ok: false as const,
+          error: 'Graph layout requires at least one node.',
+        };
+      }
 
-    // Fallback: retry next frame if layout returned empty
-    if (!positions || Object.keys(positions).length === 0) {
-      requestAnimationFrame(async () => {
-        if (!isCurrentLayout()) return;
-        const retrySnapshot = currentSnapshot();
-        const pos2: LayoutPositions = await autoLayoutFlow(
-          retrySnapshot.rfNodes,
-          retrySnapshot.rfEdges,
+      let layoutSnapshot = snapshot;
+      let positions: LayoutPositions = await autoLayoutFlow(
+        layoutSnapshot.rfNodes,
+        layoutSnapshot.rfEdges,
+        {
+          targetCenter: opts?.targetCenter ?? getViewportCenterFlow(),
+        },
+      );
+      if (!isCurrent()) {
+        return {
+          ok: false as const,
+          error: 'Graph layout was superseded.',
+        };
+      }
+
+      if (!positions || Object.keys(positions).length === 0) {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
+        if (!isCurrent()) {
+          return {
+            ok: false as const,
+            error: 'Graph layout was superseded.',
+          };
+        }
+        positions = await autoLayoutFlow(
+          layoutSnapshot.rfNodes,
+          layoutSnapshot.rfEdges,
           {
-            targetCenter: getViewportCenterFlow(),
+            targetCenter: opts?.targetCenter ?? getViewportCenterFlow(),
           },
         );
-        if (!isCurrentLayout()) return;
-        if (!pos2 || Object.keys(pos2).length === 0) return; // give up silently
-        setRF((prev) => {
-          if (!isCurrentLayout()) return prev;
-          const nextNodes = prev.rfNodes.map((n) =>
-            pos2[n.id]
-              ? {
-                  ...n,
-                  position: pos2[n.id],
-                  positionAbsolute: undefined,
-                  dragging: false,
-                }
-              : n,
-          );
-          const nextEdges = projectEdgesForCurrentPorts(
-            nextNodes,
-            prev.rfEdges,
-          );
-          const nextSnapshot = { rfNodes: nextNodes, rfEdges: nextEdges };
-          if (!readOnly) {
-            commitControllerRef.current?.recordChange(nextSnapshot);
-          }
-          return nextSnapshot;
-        });
-        requestAnimationFrame(() => {
-          if (!isCurrentLayout()) return;
-          try {
-            fitView({ padding: 0.2, duration: 300 });
-          } catch {
-            /* no-op */
-          }
-          // Mark layout ready so ReactFlow can auto-fit after remounts.
-          setLayoutReady(true);
-        });
-      });
-      return;
-    }
+        if (!isCurrent()) {
+          return {
+            ok: false as const,
+            error: 'Graph layout was superseded.',
+          };
+        }
+        if (!positions || Object.keys(positions).length === 0) {
+          return {
+            ok: false as const,
+            error: 'Graph layout did not produce node positions.',
+          };
+        }
+      }
 
-    setRF((prev) => {
-      if (!isCurrentLayout()) return prev;
-      const nextNodes = prev.rfNodes.map((n) =>
+      const nextNodes = layoutSnapshot.rfNodes.map((n) =>
         positions[n.id]
           ? {
               ...n,
@@ -1308,24 +1325,73 @@ export function PTBFlow() {
             }
           : n,
       );
-      const nextEdges = projectEdgesForCurrentPorts(nextNodes, prev.rfEdges);
-      const nextSnapshot = { rfNodes: nextNodes, rfEdges: nextEdges };
-      if (!readOnly) {
-        commitControllerRef.current?.recordChange(nextSnapshot);
+      const nextEdges = projectEdgesForCurrentPorts(
+        nextNodes,
+        layoutSnapshot.rfEdges,
+      );
+      layoutSnapshot = { rfNodes: nextNodes, rfEdges: nextEdges };
+      const converted = safeRfToPTB(layoutSnapshot, {
+        baseGraph: opts?.baseGraph,
+        notify: false,
+      });
+      if (!converted.ok) {
+        return {
+          ok: false as const,
+          error: converted.message,
+        };
       }
-      return nextSnapshot;
-    });
+      return {
+        ok: true as const,
+        graph: converted.graph,
+        snapshot: layoutSnapshot,
+      };
+    },
+    [getViewportCenterFlow, safeRfToPTB],
+  );
 
-    requestAnimationFrame(() => {
-      if (!isCurrentLayout()) return;
-      try {
-        fitView({ padding: 0.2, duration: 300 });
-      } catch {
-        /* no-op */
+  const computeAutoLayoutGraph = useCallback(
+    async (
+      sourceGraph: PTBGraph,
+      opts?: { targetCenter?: FlowPoint },
+    ): Promise<AutoLayoutActionResult> => {
+      const layout = await computeAutoLayoutSnapshot(
+        graphToLayoutSnapshot(sourceGraph),
+        { baseGraph: sourceGraph, targetCenter: opts?.targetCenter },
+      );
+      if (!layout.ok) return layout;
+      return { ok: true as const, graph: layout.graph };
+    },
+    [computeAutoLayoutSnapshot, graphToLayoutSnapshot],
+  );
+
+  const onAutoLayout =
+    useCallback(async (): Promise<AutoLayoutActionResult> => {
+      const session = flowSessionRef.current;
+      const isCurrentLayout = () =>
+        session === flowSessionRef.current && !rehydratingRef.current;
+      if (rehydratingRef.current) {
+        return {
+          ok: false as const,
+          error: 'Graph layout is unavailable while the graph is rehydrating.',
+        };
       }
-      setLayoutReady(true);
-    });
-  }, [getViewportCenterFlow, fitView, readOnly]);
+
+      const layout = await computeAutoLayoutSnapshot(rfSnapshotRef.current, {
+        isCurrent: isCurrentLayout,
+      });
+      if (!layout.ok) return layout;
+
+      setRF((prev) => (isCurrentLayout() ? layout.snapshot : prev));
+      requestAnimationFrame(() => {
+        if (!isCurrentLayout()) return;
+        try {
+          fitView({ padding: 0.2, duration: 300 });
+        } catch {
+          /* no-op */
+        }
+      });
+      return { ok: true as const, graph: layout.graph };
+    }, [computeAutoLayoutSnapshot, fitView]);
 
   const fitViewportToContent = useCallback(() => {
     requestAnimationFrame(() => {
@@ -1334,7 +1400,6 @@ export function PTBFlow() {
       } catch {
         /* no-op */
       }
-      setLayoutReady(true);
     });
   }, [fitView]);
 
@@ -1346,9 +1411,10 @@ export function PTBFlow() {
     fitViewportToContentRef.current();
   }, []);
 
-  const autoLayoutGeneratedTransactionGraph = useCallback(() => {
-    void onAutoLayout();
-  }, [onAutoLayout]);
+  const applyAutoLayoutToCurrentGraph = useCallback(
+    () => onAutoLayout(),
+    [onAutoLayout],
+  );
 
   const updateViewport = useCallback(
     (v?: { x: number; y: number; zoom: number }) => {
@@ -1372,7 +1438,8 @@ export function PTBFlow() {
   useEffect(() => {
     registerFlowActions({
       fitViewportToContent: fitViewportToContentAction,
-      autoLayoutGeneratedTransactionGraph,
+      applyAutoLayoutToCurrentGraph,
+      computeAutoLayoutGraph,
       updateViewport,
       captureGraph,
       getViewportState,
@@ -1380,7 +1447,8 @@ export function PTBFlow() {
     return () => {
       registerFlowActions({
         fitViewportToContent: undefined,
-        autoLayoutGeneratedTransactionGraph: undefined,
+        applyAutoLayoutToCurrentGraph: undefined,
+        computeAutoLayoutGraph: undefined,
         updateViewport: undefined,
         captureGraph: undefined,
         getViewportState: undefined,
@@ -1389,7 +1457,8 @@ export function PTBFlow() {
   }, [
     registerFlowActions,
     fitViewportToContentAction,
-    autoLayoutGeneratedTransactionGraph,
+    applyAutoLayoutToCurrentGraph,
+    computeAutoLayoutGraph,
     updateViewport,
     captureGraph,
     getViewportState,
@@ -1438,7 +1507,7 @@ export function PTBFlow() {
         nodes={rfNodes}
         edges={rfEdges}
         /** Enable auto fit only after positions are laid out */
-        fitView={layoutReady}
+        fitView={false}
         /** block graph-position edits when read-only */
         nodesDraggable={!readOnly}
         /** block creating/updating edges when read-only */

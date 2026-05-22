@@ -24,7 +24,7 @@
 
 import { parsePTBObjectTypeTagCandidate } from '@zktx.io/ptb-model';
 
-import type { NumericWidth, Port, PTBType } from './types';
+import type { NumericWidth, PTBType } from './types';
 
 /* ---------------------------------------------------------------------
  * Type guards & small helpers

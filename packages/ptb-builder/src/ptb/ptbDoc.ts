@@ -16,7 +16,12 @@ import type { PTBDocV4, RawOpenSignature } from '@zktx.io/ptb-model';
 
 import { isSuiChain } from '../types';
 import type { Chain } from '../types';
-import type { PTBGraph, PTBType } from './graph/types';
+import {
+  type CanonicalPTBGraph,
+  type PTBGraph,
+  type PTBType,
+  toModelPTBGraph,
+} from './graph/types';
 import { seedDefaultGraph } from './seedGraph';
 
 export type PTBView = { x: number; y: number; zoom: number };
@@ -91,6 +96,7 @@ export type PTBDoc = PTBDocV4 & {
   view: PTBView;
   modules: PTBModulesEmbed;
   objects: PTBObjectsEmbed;
+  graph: CanonicalPTBGraph;
 };
 export type LoadedPTBDocState = {
   doc: PTBDoc;
@@ -111,6 +117,7 @@ const PTB_FUNCTION_ENTRY_KEYS = [
 ] as const;
 const PTB_FUNCTION_OPEN_SIGNATURES_KEYS = ['parameters', 'returns'] as const;
 const PTB_OBJECT_DATA_KEYS = ['objectId', 'typeTag'] as const;
+const PTB_DOC_CONTENT_SIGNATURE_PREFIX = 'ptb-doc-content-sig-v1:';
 
 /** Narrow check for PTBFunctionData entry. */
 function isPTBFunctionEntry(x: unknown): x is {
@@ -200,7 +207,7 @@ export function buildDoc(opts: {
     version: PTB_VERSION,
     chain,
     view,
-    graph,
+    graph: toModelPTBGraph(graph),
     modules,
     objects,
     ...(sender !== undefined ? { sender } : {}),
@@ -256,6 +263,17 @@ export function stablePTBDocSignature(doc: PTBDoc): string {
     chain: doc.chain,
     sender: doc.sender,
     view: canonicalPTBViewKey(doc.view),
+    graph: doc.graph,
+    modules: doc.modules,
+    objects: doc.objects,
+  })}`;
+}
+
+export function stablePTBDocContentSignature(doc: PTBDoc): string {
+  return `${PTB_DOC_CONTENT_SIGNATURE_PREFIX}${stableStringify({
+    version: doc.version,
+    chain: doc.chain,
+    sender: doc.sender,
     graph: doc.graph,
     modules: doc.modules,
     objects: doc.objects,

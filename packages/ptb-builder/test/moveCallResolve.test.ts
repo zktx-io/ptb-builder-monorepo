@@ -1,5 +1,6 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
-import { NULL_VALUE, type RawOpenSignature } from '@zktx.io/ptb-model';
+import type { RawOpenSignature } from '@zktx.io/ptb-model';
+import { NULL_VALUE, RESULT_HANDLE_ID } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -262,6 +263,7 @@ describe('MoveCall resolve state', () => {
     expect(resolved.typeArgumentCount).toBe(1);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
+      resultCount: 1,
     });
     expect(resolved.patch.ports.map((port) => port.id)).toContain('in_type_0');
     expect(resolved.patch.ports.map((port) => port.id)).toContain('in_arg_0');
@@ -277,6 +279,7 @@ describe('MoveCall resolve state', () => {
 
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
+      resultCount: 1,
     });
   });
 
@@ -291,6 +294,7 @@ describe('MoveCall resolve state', () => {
     expect(resolved.typeArgumentCount).toBe(1);
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::balance::value`,
+      resultCount: 1,
     });
   });
 
@@ -304,6 +308,7 @@ describe('MoveCall resolve state', () => {
 
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::coin::value`,
+      resultCount: 1,
     });
   });
 
@@ -333,6 +338,7 @@ describe('MoveCall resolve state', () => {
 
     expect(resolved.patch.runtime).toEqual({
       target: `${PACKAGE_ID}::generic::echo`,
+      resultCount: 1,
     });
     expect(resolved.patch.ports.map((port) => port.id)).toEqual([
       'in_type_0',
@@ -366,8 +372,8 @@ describe('MoveCall resolve state', () => {
       },
     );
 
-    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
-      ?.ports;
+    const ports = refreshed?.nodes.find((node) => node.id === 'call')?.data
+      .ptbNode?.ports;
 
     expect(ports?.map((port) => port.id)).toEqual([
       'prev',
@@ -386,7 +392,137 @@ describe('MoveCall resolve state', () => {
     });
   });
 
-  it('keeps edge-referenced MoveCall ports that are not in the refreshed signature', () => {
+  it('refreshes stale MoveCall resultCount when port signatures already match', () => {
+    const call = moveCallNode();
+    const ptbNode = call.data.ptbNode;
+    if (ptbNode.kind !== 'Command') throw new Error('Expected MoveCall node');
+    call.data.ptbNode = {
+      ...ptbNode,
+      params: {
+        ...ptbNode.params,
+        runtime: {
+          ...ptbNode.params?.runtime,
+          resultCount: 2,
+        },
+      },
+      ports: ptbNode.ports?.map((port) => {
+        if (port.id === 'in_arg_0') {
+          return {
+            ...port,
+            dataType: { kind: 'move_numeric' as const, width: 'u64' as const },
+          };
+        }
+        if (port.id === 'out_result') {
+          return {
+            ...port,
+            dataType: {
+              kind: 'vector' as const,
+              elem: { kind: 'move_numeric' as const, width: 'u64' as const },
+            },
+          };
+        }
+        return port;
+      }),
+    };
+
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode('u64'), call],
+      [typeEdge()],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const refreshedNode = refreshed?.nodes.find((node) => node.id === 'call')
+      ?.data.ptbNode;
+
+    expect(refreshedNode?.kind).toBe('Command');
+    if (refreshedNode?.kind !== 'Command') throw new Error('Expected command');
+    expect(refreshedNode.params?.runtime?.resultCount).toBe(1);
+  });
+
+  it('remaps single-result MoveCall output edges during signature refresh', () => {
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode('u64'), moveCallNode()],
+      [
+        typeEdge(),
+        {
+          id: 'stale-result-edge',
+          type: 'ptb-io',
+          source: 'call',
+          sourceHandle: 'out_0',
+          sourceHandleId: 'out_0',
+          target: 'consumer',
+          targetHandle: 'in_arg_0',
+          targetHandleId: 'in_arg_0',
+        } as any,
+      ],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const edge = refreshed?.edges.find(
+      (candidate) => candidate.id === 'stale-result-edge',
+    ) as (RFEdge<RFEdgeData> & { sourceHandleId?: string }) | undefined;
+
+    expect(edge?.sourceHandle).toBe(RESULT_HANDLE_ID);
+    expect(edge?.sourceHandleId).toBe(RESULT_HANDLE_ID);
+  });
+
+  it('drops legacy MoveCall output aliases during signature refresh', () => {
+    const refreshed = refreshMoveCallPortsFromSignatures(
+      [typeArgumentNode('u64'), moveCallNode()],
+      [
+        typeEdge(),
+        {
+          id: 'legacy-result-edge',
+          type: 'ptb-io',
+          source: 'call',
+          sourceHandle: 'out_ret_0',
+          sourceHandleId: 'out_ret_0',
+          target: 'consumer',
+          targetHandle: 'in_arg_0',
+          targetHandleId: 'in_arg_0',
+        } as any,
+      ],
+      {
+        [PACKAGE_ID]: {
+          generic: {
+            echo: {
+              typeParameterCount: 1,
+              parameters: genericOpenSignatures.parameters,
+              returns: genericOpenSignatures.returns,
+            },
+          },
+        },
+      },
+    );
+
+    const edge = refreshed?.edges.find(
+      (candidate) => candidate.id === 'legacy-result-edge',
+    ) as (RFEdge<RFEdgeData> & { sourceHandleId?: string }) | undefined;
+
+    expect(edge).toBeUndefined();
+  });
+
+  it('keeps edge-referenced MoveCall input ports that are not in the refreshed signature', () => {
     const refreshed = refreshMoveCallPortsFromSignatures(
       [typeArgumentNode('u64'), moveCallNode()],
       [
@@ -414,8 +550,8 @@ describe('MoveCall resolve state', () => {
       },
     );
 
-    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
-      ?.ports;
+    const ports = refreshed?.nodes.find((node) => node.id === 'call')?.data
+      .ptbNode?.ports;
 
     expect(ports?.map((port) => port.id)).toEqual([
       'prev',
@@ -453,8 +589,8 @@ describe('MoveCall resolve state', () => {
       },
     );
 
-    const ports = refreshed?.find((node) => node.id === 'call')?.data.ptbNode
-      ?.ports;
+    const ports = refreshed?.nodes.find((node) => node.id === 'call')?.data
+      .ptbNode?.ports;
 
     expect(ports?.map((port) => port.id)).toEqual([
       'prev',

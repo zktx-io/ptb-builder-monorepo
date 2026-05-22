@@ -2,7 +2,10 @@ import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import type { MovePackageSignatureEvidence } from '@zktx.io/ptb-model';
 import {
   indexedInputHandleIndex,
+  nestedResultHandle,
   parseMoveTypeTag,
+  resolveMoveCallSignatureEvidence,
+  RESULT_HANDLE_ID,
   toPTBTypeFromOpenSignature,
 } from '@zktx.io/ptb-model';
 
@@ -53,6 +56,20 @@ function collectTypeArgumentsByMoveCall(
   }
 
   return result;
+}
+
+function denseConnectedTypeArguments(
+  connected: ReadonlyMap<number, string> | undefined,
+): string[] {
+  if (!connected || connected.size === 0) return [];
+  const maxIndex = Math.max(...connected.keys());
+  const values: string[] = [];
+  for (let index = 0; index <= maxIndex; index += 1) {
+    const value = connected.get(index);
+    if (value === undefined) return [];
+    values.push(value);
+  }
+  return values;
 }
 
 function portsSignature(ports: readonly Port[] | undefined): string {
@@ -114,6 +131,7 @@ function portReferencedByEdge(
   if (!id) return undefined;
 
   const direction = endpoint === 'source' ? 'out' : 'in';
+  if (role === 'io' && direction === 'out') return undefined;
   const existing = currentPorts?.find(
     (port) =>
       port.id === id && port.role === role && port.direction === direction,
@@ -161,13 +179,44 @@ function mergeMoveCallSignaturePorts(
   return nextPorts;
 }
 
+function remapSingleResultMoveCallOutputEdges(
+  edges: readonly RFEdge<RFEdgeData>[],
+  singleResultMoveCallIds: ReadonlySet<string>,
+): RFEdge<RFEdgeData>[] {
+  let changed = false;
+  const nestedZeroHandle = nestedResultHandle(0);
+  const nextEdges = edges.flatMap((edge) => {
+    if (edge.type !== 'ptb-io') return [edge];
+    if (!singleResultMoveCallIds.has(edge.source)) return [edge];
+    const handles = extractHandles(edge);
+    const sourceBase = parseHandleTypeSuffix(
+      handles.source ?? undefined,
+    ).baseId;
+    if (sourceBase === RESULT_HANDLE_ID) return [edge];
+    if (sourceBase !== nestedZeroHandle) {
+      changed = true;
+      return [];
+    }
+    changed = true;
+    return [
+      {
+        ...edge,
+        sourceHandle: RESULT_HANDLE_ID,
+        sourceHandleId: RESULT_HANDLE_ID,
+      },
+    ];
+  });
+  return changed ? nextEdges : (edges as RFEdge<RFEdgeData>[]);
+}
+
 export function refreshMoveCallPortsFromSignatures(
   nodes: readonly RFNode<RFNodeData>[],
   edges: readonly RFEdge<RFEdgeData>[],
   moveSignatures: MovePackageSignatureEvidence | undefined,
-): RFNode<RFNodeData>[] | undefined {
+): { nodes: RFNode<RFNodeData>[]; edges: RFEdge<RFEdgeData>[] } | undefined {
   if (!moveSignatures) return undefined;
   const typeArgumentsByMoveCall = collectTypeArgumentsByMoveCall(nodes, edges);
+  const singleResultMoveCallIds = new Set<string>();
   let changed = false;
 
   const nextNodes = nodes.map((rfNode) => {
@@ -178,18 +227,24 @@ export function refreshMoveCallPortsFromSignatures(
 
     const target = splitMoveCallTarget(ptbNode.params?.runtime?.target);
     if (!target) return rfNode;
-    const signature =
-      moveSignatures[target.packageId]?.[target.moduleName]?.[
-        target.functionName
-      ];
-    if (!signature) return rfNode;
-
     const connected = typeArgumentsByMoveCall.get(ptbNode.id);
+    const signatureTypeArguments = denseConnectedTypeArguments(connected);
+    const evidence = resolveMoveCallSignatureEvidence({
+      packageId: target.packageId,
+      moduleName: target.moduleName,
+      functionName: target.functionName,
+      moveSignatures,
+      typeArguments: signatureTypeArguments,
+      explicitResultCount: ptbNode.params?.runtime?.resultCount,
+    });
+    if (!evidence) return rfNode;
+    const { signature } = evidence;
+    const nextResultCount = signature.returns.length;
+    if (nextResultCount === 1) {
+      singleResultMoveCallIds.add(ptbNode.id);
+    }
     const completeTypeArguments =
-      signature.typeParameterCount > 0 &&
-      Array.from({ length: signature.typeParameterCount }).every(
-        (_value, index) => connected?.has(index),
-      )
+      evidence.typeArgumentsComplete && signature.typeParameterCount > 0
         ? Array.from(
             { length: signature.typeParameterCount },
             (_value, index) => connected!.get(index)!,
@@ -202,10 +257,14 @@ export function refreshMoveCallPortsFromSignatures(
     const outputs = signature.returns.map((openSignature) =>
       toPTBTypeFromOpenSignature(openSignature, completeTypeArguments),
     );
+    const nextRuntime = {
+      ...ptbNode.params?.runtime,
+      resultCount: nextResultCount,
+    };
     const signaturePorts = buildCommandPorts(
       'moveCall',
       ptbNode.params?.ui,
-      ptbNode.params?.runtime,
+      nextRuntime,
       buildMoveCallPorts(inputs, outputs, signature.typeParameterCount),
     );
     const nextPorts = mergeMoveCallSignaturePorts(
@@ -214,13 +273,22 @@ export function refreshMoveCallPortsFromSignatures(
       ptbNode.id,
       edges,
     );
-    if (portsSignature(nextPorts) === portsSignature(ptbNode.ports)) {
+    const resultCountChanged =
+      ptbNode.params?.runtime?.resultCount !== nextResultCount;
+    if (
+      portsSignature(nextPorts) === portsSignature(ptbNode.ports) &&
+      !resultCountChanged
+    ) {
       return rfNode;
     }
 
     changed = true;
     const nextPTBNode: PTBNode = {
       ...ptbNode,
+      params: {
+        ...ptbNode.params,
+        runtime: nextRuntime,
+      },
       ports: nextPorts,
     };
     return {
@@ -232,5 +300,12 @@ export function refreshMoveCallPortsFromSignatures(
     };
   });
 
-  return changed ? nextNodes : undefined;
+  const nextEdges = remapSingleResultMoveCallOutputEdges(
+    edges,
+    singleResultMoveCallIds,
+  );
+
+  return changed || nextEdges !== edges
+    ? { nodes: nextNodes, edges: nextEdges }
+    : undefined;
 }

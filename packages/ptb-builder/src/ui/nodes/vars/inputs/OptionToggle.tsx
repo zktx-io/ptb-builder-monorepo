@@ -18,7 +18,7 @@ export type OptionToggleProps = {
 
 /**
  * Ultra-compact iOS-style toggle used for Option<T>.
- * - Height matches MiniStepper (h-4 = 16px).
+ * - Height is 16px for dense vector/option controls.
  * - Small thumb (h-3 w-3) for dense UIs.
  * - Accessible: role="switch", aria-checked.
  */
@@ -42,7 +42,7 @@ export const OptionToggle = memo(function OptionToggle({
         onToggle?.(!some);
       }}
       className={clsx(
-        // size: match MiniStepper height (16px)
+        // compact 16px control height
         'relative inline-flex h-4 w-7 items-center rounded-full p-0.5 transition-colors',
         // skin
         disabled

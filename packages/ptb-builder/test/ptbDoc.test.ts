@@ -1,13 +1,21 @@
 import { PTB_DOC_VERSION_V4 } from '@zktx.io/ptb-model';
 import { describe, expect, it } from 'vitest';
 
+import {
+  makeAddressVector,
+  makeBoolVector,
+  makeCommandNode,
+  makeMoveNumericVector,
+} from '../src/ptb/factories';
 import type { PTBGraph } from '../src/ptb/graph/types';
+import { ptbToRF, rfToPTB } from '../src/ptb/ptbAdapter';
 import {
   buildDoc,
   createEmptyPTBDoc,
   parseDoc,
   prepareLoadedDoc,
   PTB_VERSION,
+  stablePTBDocContentSignature,
   stablePTBDocSignature,
   stableStringify,
 } from '../src/ptb/ptbDoc';
@@ -70,6 +78,63 @@ describe('PTB document boundary', () => {
     expect(stablePTBDocSignature(parseDoc(doc))).toBe(
       stablePTBDocSignature(doc),
     );
+  });
+
+  it('builds documents with vector variable nodes after RF projection', () => {
+    const vectorGraph: PTBGraph = {
+      nodes: [
+        makeAddressVector({
+          id: 'address-vector',
+          value: [
+            '0x0000000000000000000000000000000000000000000000000000000000000001',
+          ],
+        }),
+        makeBoolVector({ id: 'bool-vector', value: [true, false] }),
+        makeMoveNumericVector('u64', { id: 'u64-vector', value: ['1', '2'] }),
+      ],
+      edges: [],
+    };
+    const roundTripped = rfToPTB(
+      ptbToRF(vectorGraph).nodes,
+      ptbToRF(vectorGraph).edges,
+      vectorGraph,
+    );
+
+    expect(() =>
+      buildDoc({
+        chain: 'sui:testnet',
+        graph: vectorGraph,
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {},
+        objects: {},
+      }),
+    ).not.toThrow();
+    expect(() =>
+      buildDoc({
+        chain: 'sui:testnet',
+        graph: roundTripped,
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {},
+        objects: {},
+      }),
+    ).not.toThrow();
+  });
+
+  it('builds documents with the default MakeMoveVec command node', () => {
+    const makeMoveVecGraph: PTBGraph = {
+      nodes: [makeCommandNode('makeMoveVec', { id: 'make-move-vec' })],
+      edges: [],
+    };
+
+    expect(() =>
+      buildDoc({
+        chain: 'sui:testnet',
+        graph: makeMoveVecGraph,
+        view: { x: 0, y: 0, zoom: 1 },
+        modules: {},
+        objects: {},
+      }),
+    ).not.toThrow();
   });
 
   it('normalizes missing document embeds to required empty maps', () => {
@@ -389,6 +454,50 @@ describe('PTB document boundary', () => {
     expect(first.view).not.toEqual(second.view);
     expect(stablePTBDocSignature(first)).toMatch(/^ptb-doc-sig-v2:/);
     expect(stablePTBDocSignature(first)).toBe(stablePTBDocSignature(second));
+  });
+
+  it('keeps content signatures independent from viewport state', () => {
+    const first = buildDoc({
+      chain: 'sui:mainnet',
+      graph,
+      view: { x: 0, y: 0, zoom: 1 },
+      modules: {},
+      objects: {},
+    });
+    const second = buildDoc({
+      chain: 'sui:mainnet',
+      graph,
+      view: { x: 500, y: -300, zoom: 1.5 },
+      modules: {},
+      objects: {},
+    });
+    const changedGraph = buildDoc({
+      chain: 'sui:mainnet',
+      graph: {
+        nodes: [
+          {
+            id: '@start',
+            kind: 'Start',
+            label: 'Start',
+            ports: [{ id: 'out', role: 'flow', direction: 'out' }],
+          },
+        ],
+        edges: [],
+      },
+      view: { x: 500, y: -300, zoom: 1.5 },
+      modules: {},
+      objects: {},
+    });
+
+    expect(stablePTBDocContentSignature(first)).toMatch(
+      /^ptb-doc-content-sig-v1:/,
+    );
+    expect(stablePTBDocContentSignature(first)).toBe(
+      stablePTBDocContentSignature(second),
+    );
+    expect(stablePTBDocContentSignature(first)).not.toBe(
+      stablePTBDocContentSignature(changedGraph),
+    );
   });
 
   it('rejects invalid embedded metadata instead of silently dropping it', () => {

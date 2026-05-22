@@ -343,6 +343,8 @@ For every task:
 6. Do not duplicate existing logic, registries, protocol metadata, conversion rules, validation rules, renderer rules, or SDK-shape normalization without a clear reason.
 7. Make the quality-first complete change that satisfies the goal after the affected boundary is understood. Do not make symptom-only patches that leave the same invariant broken on adjacent paths.
    Evaluate planning and implementation units by dependency and logical cohesion, not by diff size, file count, or phase count. Group strongly dependent work into one coherent change when the pieces must be completed together to preserve the same product boundary, shared invariant, failure handling, docs, tests, public exports, or user-facing behavior. When two implementations satisfy the same behavior and quality bar, prefer the shorter and simpler one.
+   For state-boundary work, a partial implementation that changes only one symptom is a defect when the agreed behavior requires multiple dependent pieces to move together. For example, adding a restore API, suppressing viewport fitting, changing undo history, or updating docs in isolation is not complete when the product boundary depends on those pieces working as one coherent load/restore/edit transition.
+   For state-boundary work, identify the primary owner state before designing auxiliary consumers such as history, undo/redo, autosave, preview, or cache refresh. Auxiliary consumers must use explicit owner transitions instead of inferring state from callbacks, debounced emissions, or one-shot suppression flags.
 
 When a source-of-truth boundary is changed, moved, or newly introduced, define
 its contract before editing dependent code. The contract must name the inputs,
@@ -358,9 +360,12 @@ state transitions, not only representative success cases. Include negative
 cases for missing context propagation, stale fast paths, post-parse mutation of
 validation evidence, incomplete canonical interface sets, and mismatch between
 documented public options and implementation behavior.
-8. After the change, re-check every affected area.
-9. Run relevant checks, tests, builds, pack dry-runs, or manual verification when available.
-10. Fix errors or regressions caused by the change before calling the work complete.
+
+After a change:
+
+- Re-check every affected area.
+- Run relevant checks, tests, builds, pack dry-runs, or manual verification when available.
+- Fix errors or regressions caused by the change before calling the work complete.
 
 If a check cannot be run, state that fact and the remaining risk.
 

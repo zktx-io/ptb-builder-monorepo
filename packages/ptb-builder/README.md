@@ -270,8 +270,18 @@ import { PTBBuilder } from '@zktx.io/ptb-builder';
 ```tsx
 import { usePTB } from '@zktx.io/ptb-builder';
 
-const { exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme } =
-  usePTB();
+const {
+  captureCurrentDocResult,
+  exportDoc,
+  exportDocResult,
+  loadFromDoc,
+  loadFromOnChainTx,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+  setTheme,
+} = usePTB();
 
 // Export the active PTB document with structured error information
 const exportResult = exportDocResult({ sender: connectedAddress });
@@ -288,6 +298,18 @@ if (doc) {
   if (!loadResult.ok) {
     console.warn(loadResult.error);
   }
+}
+
+// Undo/redo is owned by the builder editor session state. It includes the live
+// graph, chain, sender, modules, and objects, even when the current graph cannot
+// be exported as a valid PTBDoc yet.
+if (canUndo) undo();
+if (canRedo) redo();
+
+// Capture is side-effect-free; exportDocResult still reports UI export errors.
+const current = captureCurrentDocResult();
+if (current.ok) {
+  console.log(current.doc);
 }
 
 // Load graph from on-chain transaction digest. Pure raw inputs that can be
@@ -321,8 +343,11 @@ setTheme('tokyo-night');
 ### Autosave, undo/redo & `onDocChange`
 
 - PTB Builder batches graph/content `onDocChange` emissions briefly and debounces viewport-only changes by 250 ms so autosave targets are not overwhelmed while the user edits or pans the canvas.
-- Loading a document via `loadFromDoc`/`loadFromOnChainTx` resets the internal history cache, replays the snapshot once, and suppresses duplicate events until the user edits again.
-- The sample `usePtbUndo` hook keeps a deterministic signature per `PTBDoc`, so undo/redo operations call `loadFromDoc` without collapsing the redo stack. The signature is a deduplication helper for builder document behavior, not a persistent cross-version document id.
+- `loadFromDoc(doc)` imports a document as a new editable baseline and applies the document's saved viewport. `loadFromDoc(chain)` creates a fresh editable document for that chain and applies the default viewport. These transitions do not infer the saved baseline from a post-load viewport fit.
+- `undo()` and `redo()` use builder-owned editor session history, not `onDocChange`. The history source of truth is the editor state (`graph`, `chain`, `sender`, `modules`, and `objects`) and excludes viewport-only changes. When the restored state can be serialized as a `PTBDoc`, the builder immediately attempts an `onDocChange` emission for autosave; invalid-but-editable graphs still restore and remain undoable while autosave/export reports document diagnostics.
+- `loadFromOnChainTx(..., { mode: 'editable' })` computes the generated transaction layout from a fixed transaction-load target, not from the previously visible viewport, before applying provider state. It then emits that laid-out graph with the default editable viewport as the editable baseline. The default read-only `loadFromOnChainTx` path does not emit `onDocChange`, because read-only transaction inspection is not an editable document autosave event.
+- `captureCurrentDocResult()` captures the live React Flow graph and viewport without setting UI error state or showing a toast. Use it for explicit document export or custom host flows, not as the source of builder undo/redo.
+- The `address` prop is the runtime envelope sender and Assets-modal owner address. It does not become `PTBDoc.sender`; imported document senders are preserved, and export helpers use an explicit `sender` option when the host wants a saved document sender.
 - When integrating your own autosave pipeline, expect `onDocChange` to fire often during graph edits but only after the debounce window for viewport-only motions.
 
 ---

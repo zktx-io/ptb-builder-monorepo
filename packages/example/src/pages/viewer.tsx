@@ -7,7 +7,6 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useLocation } from 'react-router-dom';
 
 import { TransactionPrompt } from '../components/TransactionPrompt';
-import { usePtbUndo } from '../components/usePtbUndo';
 import { DAPP_NETWORKS } from '../dapp-kit';
 import { saveNetwork, SuiChain, SuiNetwork } from '../network';
 
@@ -44,12 +43,11 @@ const normalizeDigest = (input?: string) => {
 
 export const Viewer = () => {
   const lastLoaded = useRef<string | undefined>(undefined);
-  const { loadFromOnChainTx, loadFromDoc } = usePTB();
+  const { loadFromOnChainTx, undo, redo } = usePTB();
 
   const location = useLocation();
   const dAppKit = useDAppKit();
   const network = useCurrentNetwork() as SuiNetwork;
-  const { reset, undo, redo } = usePtbUndo();
 
   const parsedQuery = useMemo(() => {
     const parsed = queryString.parse(location.search);
@@ -91,7 +89,6 @@ export const Viewer = () => {
       );
       if (cancelled) return;
       if (result.ok) {
-        reset();
         lastLoaded.current = loadKey;
       } else {
         setShowPrompt(true);
@@ -100,7 +97,7 @@ export const Viewer = () => {
     return () => {
       cancelled = true;
     };
-  }, [dAppKit, loadFromOnChainTx, parsedQuery, network, reset]);
+  }, [dAppKit, loadFromOnChainTx, parsedQuery, network]);
 
   const lastSearch = useRef(location.search);
   useEffect(() => {
@@ -114,24 +111,18 @@ export const Viewer = () => {
   useHotkeys(
     'meta+z,ctrl+z',
     () => {
-      const doc = undo();
-      if (doc) {
-        loadFromDoc(doc);
-      }
+      undo();
     },
-    { enableOnFormTags: true, preventDefault: false },
+    { enableOnFormTags: true, preventDefault: true },
     [undo],
   );
 
   useHotkeys(
     'meta+shift+z,ctrl+shift+z,ctrl+y',
     () => {
-      const doc = redo();
-      if (doc) {
-        loadFromDoc(doc);
-      }
+      redo();
     },
-    { enableOnFormTags: true, preventDefault: false },
+    { enableOnFormTags: true, preventDefault: true },
     [redo],
   );
 
@@ -158,7 +149,6 @@ export const Viewer = () => {
       setShowPrompt(true);
       return;
     }
-    reset();
     lastLoaded.current = loadKey;
     setShowPrompt(false);
   };

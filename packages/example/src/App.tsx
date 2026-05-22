@@ -4,14 +4,14 @@ import {
   useDAppKit,
 } from '@mysten/dapp-kit-react';
 import { Transaction } from '@mysten/sui/transactions';
-import { Chain, PTBBuilder, ToastVariant } from '@zktx.io/ptb-builder';
+import { PTBBuilder } from '@zktx.io/ptb-builder';
+import type { Chain, ToastVariant } from '@zktx.io/ptb-builder';
 import { enqueueSnackbar } from 'notistack';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import '@zktx.io/ptb-builder/index.css';
 import '@zktx.io/ptb-builder/styles/themes-all.css';
 
-import { PtbUndoProvider, usePtbUndo } from './components/usePtbUndo';
 import { SuiChain, SuiNetwork } from './network';
 import { Editor } from './pages/editor';
 import { Home } from './pages/home';
@@ -44,7 +44,6 @@ function AppShell() {
   const account = useCurrentAccount();
   const network = useCurrentNetwork() as SuiNetwork;
   const dAppKit = useDAppKit();
-  const { set: onDocChange } = usePtbUndo();
 
   const handleToast = ({
     message,
@@ -135,7 +134,6 @@ function AppShell() {
       createClient={createClient}
       address={account?.address}
       showExportButton
-      onDocChange={onDocChange}
     >
       <RouterProvider router={router} />
     </PTBBuilder>
@@ -143,11 +141,7 @@ function AppShell() {
 }
 
 function App() {
-  return (
-    <PtbUndoProvider>
-      <AppShell />
-    </PtbUndoProvider>
-  );
+  return <AppShell />;
 }
 
 export default App;

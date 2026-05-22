@@ -42,6 +42,7 @@ export function buildResolvedMoveCallState(params: {
     patch: {
       runtime: {
         target,
+        resultCount: outputs.length,
       },
       ports: buildMoveCallPorts(inputs, outputs, typeArgumentCount),
     },

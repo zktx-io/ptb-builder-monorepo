@@ -23,7 +23,8 @@
 //
 // Public Hook (usePTB)
 // - Exposes only the document/theme methods needed by host apps:
-//   { exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme }
+//   { captureCurrentDocResult, exportDoc, exportDocResult, loadFromDoc,
+//     loadFromOnChainTx, undo, redo, canUndo, canRedo, setTheme }
 //
 // Internals
 // - Wraps <PtbProvider> + <PTBFlow> with <ReactFlowProvider>.
@@ -77,6 +78,7 @@ export type PTBBuilderProps = {
 };
 
 export type PublicPTBApi = {
+  captureCurrentDocResult: () => PTBExportDocResult;
   exportDoc: (opts?: { sender?: string }) => PTBDoc | undefined;
   exportDocResult: (opts?: { sender?: string }) => PTBExportDocResult;
   loadFromDoc: (data: PTBDoc | Chain) => PTBActionResult;
@@ -85,6 +87,10 @@ export type PublicPTBApi = {
     digest: string,
     opts?: { mode?: 'readonly' | 'editable' },
   ) => Promise<PTBActionResult>;
+  undo: () => PTBActionResult;
+  redo: () => PTBActionResult;
+  canUndo: boolean;
+  canRedo: boolean;
   setTheme: (t: Theme) => void;
 };
 
@@ -103,22 +109,43 @@ export function usePTB(): PublicPTBApi {
 
 function PublicBridge({ children }: { children?: React.ReactNode }) {
   const {
+    captureCurrentDocResult,
     exportDoc,
     exportDocResult,
     loadFromDoc,
     loadFromOnChainTx,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     setTheme,
   } = usePtb();
 
   const api = useMemo<PublicPTBApi>(
     () => ({
+      captureCurrentDocResult,
       exportDoc,
       exportDocResult,
       loadFromDoc,
       loadFromOnChainTx,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
       setTheme,
     }),
-    [exportDoc, exportDocResult, loadFromDoc, loadFromOnChainTx, setTheme],
+    [
+      captureCurrentDocResult,
+      exportDoc,
+      exportDocResult,
+      loadFromDoc,
+      loadFromOnChainTx,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
+      setTheme,
+    ],
   );
 
   return (

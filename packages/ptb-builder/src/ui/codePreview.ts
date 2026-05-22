@@ -9,10 +9,10 @@ import {
 import type {
   GraphToTransactionIROptions,
   MermaidDirection,
-  PTBGraph,
   TransactionDiagnostic,
 } from '@zktx.io/ptb-model';
 
+import { type PTBGraph, toModelPTBGraph } from '../ptb/graph/types';
 import { normalizeRuntimeEnvelope } from '../ptb/runtimeEnvelope';
 import type {
   NormalizedRuntimeEnvelope,
@@ -51,9 +51,10 @@ export function renderCodePreview(
   }
 
   const metadata = previewMetadata(opts.chain, envelope, envelopeError);
+  const modelGraph = toModelPTBGraph(graph);
 
   try {
-    const ir = graphToTransactionIR(graph, {
+    const ir = graphToTransactionIR(modelGraph, {
       moveSignatures: opts.moveSignatures,
     });
     if (hasErrors(ir.diagnostics)) {
@@ -101,7 +102,7 @@ export function renderMermaidCopyText(
     moveSignatures?: GraphToTransactionIROptions['moveSignatures'];
   },
 ): string {
-  const ir = graphToTransactionIR(graph, {
+  const ir = graphToTransactionIR(toModelPTBGraph(graph), {
     moveSignatures: opts.moveSignatures,
   });
   if (hasErrors(ir.diagnostics)) {

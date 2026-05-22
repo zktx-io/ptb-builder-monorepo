@@ -163,4 +163,75 @@ describe('normalizeGraph', () => {
       }),
     ).toBe(graph);
   });
+
+  it('keeps normalization idempotent for command and variable graphs', () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'start-local',
+          kind: 'Start',
+          ports: [{ id: 'next', role: 'flow', direction: 'out' }],
+        },
+        {
+          id: 'gas',
+          kind: 'Variable',
+          label: 'Gas',
+          varType: { kind: 'object', typeTag: '0x2::sui::SUI' },
+          semantic: { kind: 'GasCoin' },
+          ports: [{ id: 'out', role: 'io', direction: 'out' }],
+          position: { x: 10, y: 20 },
+        },
+        {
+          id: 'split',
+          kind: 'Command',
+          command: 'splitCoins',
+          params: { runtime: { resultCount: 1 } },
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+            { id: 'in_coin', role: 'io', direction: 'in' },
+            { id: 'in_amount_0', role: 'io', direction: 'in' },
+            { id: 'out_result', role: 'io', direction: 'out' },
+          ],
+          position: { x: 200, y: 20 },
+        },
+        {
+          id: 'end-local',
+          kind: 'End',
+          ports: [{ id: 'prev', role: 'flow', direction: 'in' }],
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-split',
+          kind: 'flow',
+          source: 'start-local',
+          sourceHandle: 'next',
+          target: 'split',
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-split-end',
+          kind: 'flow',
+          source: 'split',
+          sourceHandle: 'out',
+          target: 'end-local',
+          targetHandle: 'prev',
+        },
+        {
+          id: 'gas-split',
+          kind: 'data',
+          source: 'gas',
+          sourceHandle: 'out',
+          target: 'split',
+          targetHandle: 'in_coin',
+        },
+      ],
+    };
+
+    const first = normalizeGraph(graph);
+    const second = normalizeGraph(first);
+
+    expect(second).toEqual(first);
+  });
 });

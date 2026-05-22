@@ -13,8 +13,7 @@
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import {
   indexedInputHandleIndex,
-  nestedResultHandle,
-  nestedResultHandleIndex,
+  knownResultOutputHandles,
   RESULT_HANDLE_ID,
 } from '@zktx.io/ptb-model';
 
@@ -85,8 +84,34 @@ function keyedPort(port: Port): string {
   return `${port.role}:${port.direction}:${port.id}`;
 }
 
-// Preserve command output handles only when the model-aligned projection count
-// matches the registry materialization. Otherwise the registry projection wins.
+function commandOutputCountForAdapter(node: CommandNode): number | undefined {
+  switch (node.command) {
+    case 'publish':
+    case 'makeMoveVec':
+    case 'upgrade':
+      return 1;
+    case 'moveCall':
+      return typeof node.params?.runtime?.resultCount === 'number'
+        ? node.params.runtime.resultCount
+        : undefined;
+    case 'splitCoins':
+      return typeof node.params?.ui?.amountsCount === 'number'
+        ? node.params.ui.amountsCount
+        : undefined;
+    case 'mergeCoins':
+    case 'transferObjects':
+    case 'unsupported':
+      return 0;
+    default: {
+      const _exhaustive: never = node.command;
+      return _exhaustive;
+    }
+  }
+}
+
+// Preserve command output handles only when the model-aligned projection
+// exactly matches the registry materialization. Otherwise the registry
+// projection wins.
 function mergeOutputPorts(
   existing: readonly Port[],
   materialized: readonly Port[],
@@ -100,21 +125,13 @@ function mergeOutputPorts(
   if (existingOutputs.length === 0)
     return materializedOutputs.map((port) => ({ ...port }));
   if (existingOutputs.length !== materializedOutputs.length) {
-    const singleResultAlias = nestedResultHandle(0);
-    if (
-      materializedOutputs.length === 1 &&
-      materializedOutputs[0]?.id === RESULT_HANDLE_ID &&
-      existingOutputs.length === 2 &&
-      existingOutputs.some((port) => port.id === RESULT_HANDLE_ID) &&
-      existingOutputs.some((port) => port.id === singleResultAlias)
-    ) {
-      const typed = materializedOutputs[0];
-      return existingOutputs.map((port) => ({
-        ...port,
-        ...(typed.dataType ? { dataType: typed.dataType } : {}),
-        ...(typed.typeStr ? { typeStr: typed.typeStr } : {}),
-      }));
-    }
+    return materializedOutputs.map((port) => ({ ...port }));
+  }
+  if (
+    existingOutputs.some(
+      (port, index) => port.id !== materializedOutputs[index]?.id,
+    )
+  ) {
     return materializedOutputs.map((port) => ({ ...port }));
   }
 
@@ -177,9 +194,7 @@ function materializedUIFromPorts(
       const count =
         maxIndexedPortCount(ports, (handle) =>
           indexedInputHandleIndex(handle, 'amount'),
-        ) ??
-        maxIndexedPortCount(ports, nestedResultHandleIndex) ??
-        sanitized?.amountsCount;
+        ) ?? sanitized?.amountsCount;
       return count === undefined
         ? sanitized
         : { ...sanitized, amountsCount: count };
@@ -305,6 +320,15 @@ function edgeReferencedPortForRF(
   const projected = projectEdgeHandleForRF(edge, endpoint);
   const id = parseHandleTypeSuffix(projected).baseId;
   if (!id) return undefined;
+  if (endpoint === 'source' && edge.kind === 'io') {
+    const resultCount = commandOutputCountForAdapter(node);
+    if (
+      resultCount === undefined ||
+      !knownResultOutputHandles(resultCount).includes(id)
+    ) {
+      return undefined;
+    }
+  }
 
   const port: Port = {
     id,
