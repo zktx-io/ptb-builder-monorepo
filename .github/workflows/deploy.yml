@@ -109,9 +109,8 @@ jobs:
   deploy-frontend:
      # Frontend deployment step (only when `-front` IS in the tag)
     if: contains(github.event.release.tag_name, '-front') == true
-    uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@v0.5.6
+    uses: zktx-io/walrus-sites-provenance/.github/workflows/deploy_with_slsa3.yml@d9080e4d4aa78ab7d5a84303f01a966a3356bb2e # v0.6.1
     with:
       working-directory: './packages/example'
     secrets:
       GIT_SIGNER_PIN: ${{ secrets.GIT_SIGNER_PIN }}
-      ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
