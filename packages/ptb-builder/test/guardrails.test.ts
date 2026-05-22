@@ -143,6 +143,65 @@ describe('builder source guardrails', () => {
     );
   });
 
+  it('keeps all graph edge kinds muted until hover or selection', () => {
+    const commonCss = readFileSync(
+      join(sourceRoot, 'ui', 'styles', 'common.css'),
+      'utf8',
+    );
+    const flowStart = commonCss.indexOf('.ptb-flow-edge {');
+    const flowEnd = commonCss.indexOf('.ptb-flow-active', flowStart);
+    const flowSegment = commonCss.slice(flowStart, flowEnd);
+    const ioStart = commonCss.indexOf('.ptb-io-edge {');
+    const ioEnd = commonCss.indexOf('/* Category', ioStart);
+    const ioSegment = commonCss.slice(ioStart, ioEnd);
+    const typeStart = commonCss.indexOf('.ptb-type-edge {');
+    const typeEnd = commonCss.indexOf(
+      '.react-flow__edge:hover .react-flow__edge-path.ptb-flow-edge',
+      typeStart,
+    );
+    const typeSegment = commonCss.slice(typeStart, typeEnd);
+    const activeStart = typeEnd;
+    const activeEnd = commonCss.indexOf(
+      '.react-flow__edge:hover .react-flow__edge-path.ptb-type-edge',
+      activeStart,
+    );
+    const activeSegment = commonCss.slice(activeStart, activeEnd);
+    const edgeStateSegment = commonCss.slice(
+      activeStart,
+      commonCss.indexOf('/* Keep pointer', activeStart),
+    );
+    const themeCss = readdirSync(join(sourceRoot, 'ui', 'styles'))
+      .filter((file) => file.startsWith('theme.') && file.endsWith('.css'))
+      .map((file) =>
+        readFileSync(join(sourceRoot, 'ui', 'styles', file), 'utf8'),
+      )
+      .join('\n');
+
+    expect(commonCss).toContain('--ptb-edge-idle-opacity');
+    expect(commonCss).toContain('--ptb-edge-active-opacity');
+    expect(flowSegment).toContain(
+      'stroke-opacity: var(--ptb-edge-idle-opacity)',
+    );
+    expect(ioSegment).toContain('stroke-opacity: var(--ptb-edge-idle-opacity)');
+    expect(typeSegment).toContain(
+      'stroke-opacity: var(--ptb-edge-idle-opacity)',
+    );
+    expect(activeSegment).toContain(
+      '.react-flow__edge:hover .react-flow__edge-path.ptb-flow-edge',
+    );
+    expect(activeSegment).toContain(
+      '.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge',
+    );
+    expect(edgeStateSegment).toContain(
+      '.react-flow__edge:hover .react-flow__edge-path.ptb-type-edge',
+    );
+    expect(edgeStateSegment).toContain(
+      'stroke-opacity: var(--ptb-edge-active-opacity)',
+    );
+    expect(themeCss).not.toContain('.ptb-flow-edge.is-selected');
+    expect(themeCss).toContain('.react-flow__edge-path.is-selected');
+  });
+
   it('keeps editor validation summary dismissible and warning-colored', () => {
     const text = readFileSync(join(sourceRoot, 'ui', 'StatusBar.tsx'), 'utf8');
     const start = text.indexOf('{validationSummary &&');
@@ -211,22 +270,18 @@ describe('builder source guardrails', () => {
       'const delivery = deliverForcedDocChange(baselineDoc);',
     );
     expect(deliveryIndex).toBeGreaterThanOrEqual(0);
-    expect(
-      segment.indexOf('flowActionsRef.current.computeAutoLayoutGraph?.('),
-    ).toBeLessThan(deliveryIndex);
-    expect(segment).toContain(
-      '{ targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER }',
-    );
+    expect(segment.indexOf('autoLayoutPTBGraph(')).toBeLessThan(deliveryIndex);
+    expect(segment).toContain('targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER');
     expect(
       segment.indexOf('resetBeforeLoad({ preserveLastDocSig: true });'),
     ).toBeGreaterThan(deliveryIndex);
     expect(
       segment.indexOf('replaceGraphImmediate(graphForBaseline, {'),
     ).toBeGreaterThan(deliveryIndex);
-    expect(segment).toContain("viewportPolicy: 'preserve',");
-    expect(
-      segment.indexOf('flowActionsRef.current.updateViewport?.(nextView);'),
-    ).toBeGreaterThan(deliveryIndex);
+    expect(segment).toContain(
+      "viewportPolicy: { kind: 'set', viewport: nextView },",
+    );
+    expect(segment).not.toContain('flowActionsRef.current.updateViewport');
     expect(segment.indexOf('setReadOnly(false);')).toBeGreaterThan(
       deliveryIndex,
     );
@@ -286,13 +341,19 @@ describe('builder source guardrails', () => {
   it('keeps auto-layout based on the latest RF snapshot rather than a stale render closure', () => {
     const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
     const start = flow.indexOf('const computeAutoLayoutSnapshot = useCallback');
-    const end = flow.indexOf('const fitViewportToContent = useCallback', start);
+    const end = flow.indexOf('const onAutoLayout', start);
     const segment = flow.slice(start, end);
+    const actionEnd = flow.indexOf(
+      'const applyAutoLayoutToCurrentGraph = useCallback',
+      end,
+    );
+    const actionSegment = flow.slice(end, actionEnd);
 
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
+    expect(actionEnd).toBeGreaterThan(end);
     expect(segment).toContain('snapshot.rfNodes');
-    expect(segment).toContain('rfSnapshotRef.current');
+    expect(actionSegment).toContain('rfSnapshotRef.current');
     expect(segment).not.toContain('commitControllerRef.current?.recordChange');
     expect(segment).not.toContain('await autoLayoutFlow(rfNodes, rfEdges');
     expect(segment).not.toContain('commit?: boolean');
@@ -305,35 +366,17 @@ describe('builder source guardrails', () => {
       join(sourceRoot, 'ui', 'PtbProvider.tsx'),
       'utf8',
     );
-    const fitStart = flow.indexOf(
-      'const fitViewportToContentAction = useCallback',
-    );
-    const fitEnd = flow.indexOf(
-      'const applyAutoLayoutToCurrentGraph = useCallback',
-      fitStart,
-    );
-    const fitSegment = flow.slice(fitStart, fitEnd);
-    const measuredStart = flow.indexOf(
-      'if ((readOnly || rehydrating) && hasMeasuredSizeChange)',
-    );
-    const measuredEnd = flow.indexOf('},\n    [readOnly]', measuredStart);
-    const measuredSegment = flow.slice(measuredStart, measuredEnd);
-
-    expect(fitStart).toBeGreaterThanOrEqual(0);
-    expect(fitEnd).toBeGreaterThan(fitStart);
-    expect(fitSegment).toContain('fitViewportToContentRef.current();');
-    expect(fitSegment).not.toContain('onAutoLayout');
-    expect(fitSegment).not.toContain('autoLayoutFlow');
-
-    expect(measuredStart).toBeGreaterThanOrEqual(0);
-    expect(measuredEnd).toBeGreaterThan(measuredStart);
-    expect(measuredSegment).toContain('shouldFitMeasuredLayout');
-    expect(measuredSegment).toContain(
-      "rehydrateViewportPolicyRef.current === 'fit'",
-    );
-    expect(measuredSegment).toContain('fitViewportToContentRef.current();');
-    expect(measuredSegment).not.toContain('onAutoLayout');
-    expect(measuredSegment).not.toContain('autoLayoutFlow');
+    expect(flow).toContain('useNodesInitialized');
+    expect(flow).toContain('setPendingRehydrate({');
+    expect(flow).toContain('completeGraphRehydrate(request.epoch);');
+    expect(flow).toContain("request.policy.kind === 'fit'");
+    expect(flow).toContain("request.policy.kind === 'set'");
+    expect(flow).toContain('await setViewport(request.policy.viewport);');
+    expect(flow).not.toContain('fitViewportToContent');
+    expect(flow).not.toContain('measuredLayoutFrameRef');
+    expect(flow).not.toContain('rehydrateViewportPolicyRef');
+    expect(flow).not.toContain('requestAnimationFrame');
+    expect(provider).not.toContain('afterAnimationFrames');
 
     const loadDocStart = provider.indexOf('const loadFromDoc');
     const loadDocEnd = provider.indexOf('// ---- export doc', loadDocStart);
@@ -342,20 +385,19 @@ describe('builder source guardrails', () => {
     expect(loadDocStart).toBeGreaterThanOrEqual(0);
     expect(loadDocEnd).toBeGreaterThan(loadDocStart);
     expect(loadDocSegment).toContain(
-      "replaceGraphImmediate(graphForEditing, { viewportPolicy: 'preserve' });",
+      "viewportPolicy: { kind: 'set', viewport: nextView },",
     );
     expect(loadDocSegment).toContain(
-      "replaceGraphImmediate(nextGraph, { viewportPolicy: 'preserve' });",
+      'replaceGraphImmediate(graphForEditing, {',
     );
-    expect(loadDocSegment).toContain(
-      'flowActionsRef.current.updateViewport?.(nextView);',
+    expect(loadDocSegment).toContain('replaceGraphImmediate(nextGraph, {');
+    expect(loadDocSegment).not.toContain(
+      'flowActionsRef.current.updateViewport',
     );
     expect(loadDocSegment).not.toContain(
       'flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();',
     );
-    expect(loadDocSegment).not.toContain(
-      'flowActionsRef.current.fitViewportToContent?.();',
-    );
+    expect(loadDocSegment).not.toContain('fitViewportToContent');
 
     const loadTxStart = provider.indexOf('const loadFromOnChainTx');
     const loadTxEnd = provider.indexOf('// ---- document loader', loadTxStart);
@@ -363,32 +405,32 @@ describe('builder source guardrails', () => {
 
     expect(loadTxStart).toBeGreaterThanOrEqual(0);
     expect(loadTxEnd).toBeGreaterThan(loadTxStart);
+    expect(loadTxSegment).toContain('autoLayoutPTBGraph(');
     expect(loadTxSegment).toContain(
-      'flowActionsRef.current.computeAutoLayoutGraph?.(',
-    );
-    expect(loadTxSegment).toContain(
-      '{ targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER }',
-    );
-    expect(loadTxSegment).toContain(
-      'flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();',
+      'targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER',
     );
     expect(loadTxSegment).toContain(
       'replaceGraphImmediate(graphForBaseline, {',
     );
-    expect(loadTxSegment).toContain("viewportPolicy: 'preserve',");
+    expect(loadTxSegment).toContain('const graphForReadonly =');
     expect(loadTxSegment).toContain(
-      'flowActionsRef.current.updateViewport?.(nextView);',
+      'replaceGraphImmediate(graphForReadonly, {',
     );
     expect(loadTxSegment).toContain(
-      "replaceGraphImmediate(decoded, { viewportPolicy: 'preserve' });",
+      "viewportPolicy: { kind: 'set', viewport: nextView },",
+    );
+    expect(loadTxSegment).toContain("viewportPolicy: { kind: 'fit' },");
+    expect(loadTxSegment).not.toContain(
+      'flowActionsRef.current.updateViewport',
     );
     expect(loadTxSegment).not.toContain(
       'flowActionsRef.current.autoLayoutGeneratedTransactionGraph',
     );
     expect(loadTxSegment).not.toContain('commit: false');
     expect(loadTxSegment).not.toContain(
-      'flowActionsRef.current.fitViewportToContent?.();',
+      'flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();',
     );
+    expect(loadTxSegment).not.toContain('fitViewportToContent');
   });
 
   it('exports the live React Flow graph and viewport instead of stale provider state', () => {
@@ -408,6 +450,9 @@ describe('builder source guardrails', () => {
     const registerStart = flow.indexOf('registerFlowActions({');
     const registerEnd = flow.indexOf('});\n    return () =>', registerStart);
     const registerSegment = flow.slice(registerStart, registerEnd);
+    const reactFlowStart = flow.indexOf('<ReactFlow');
+    const reactFlowEnd = flow.indexOf('>', reactFlowStart);
+    const reactFlowOpenTag = flow.slice(reactFlowStart, reactFlowEnd);
 
     expect(exportStart).toBeGreaterThanOrEqual(0);
     expect(exportEnd).toBeGreaterThan(exportStart);
@@ -426,14 +471,52 @@ describe('builder source guardrails', () => {
 
     expect(registerStart).toBeGreaterThanOrEqual(0);
     expect(registerEnd).toBeGreaterThan(registerStart);
-    expect(registerSegment).toContain('fitViewportToContent');
-    expect(registerSegment).toContain('computeAutoLayoutGraph');
     expect(registerSegment).toContain('applyAutoLayoutToCurrentGraph');
+    expect(registerSegment).not.toContain('computeAutoLayoutGraph');
     expect(registerSegment).not.toContain(
       'autoLayoutGeneratedTransactionGraph',
     );
     expect(registerSegment).toContain('captureGraph');
     expect(registerSegment).toContain('getViewportState');
+    expect(registerSegment).not.toContain('updateViewport');
+    expect(reactFlowOpenTag).toContain('minZoom={0.1}');
+  });
+
+  it('keeps code panel display toggles as the owner of code, map, and grid visibility', () => {
+    const flow = readFileSync(join(sourceRoot, 'ui', 'PtbFlow.tsx'), 'utf8');
+    const codePip = readFileSync(join(sourceRoot, 'ui', 'CodePip.tsx'), 'utf8');
+    const toggleStart = flow.indexOf('// UI toggles');
+    const toggleEnd = flow.indexOf(
+      '// Persisted PTB snapshot ref',
+      toggleStart,
+    );
+    const toggleSegment = flow.slice(toggleStart, toggleEnd);
+    const backgroundStart = flow.indexOf('{showGrid && (');
+    const backgroundEnd = flow.indexOf('{showMiniMap && (', backgroundStart);
+    const backgroundSegment = flow.slice(backgroundStart, backgroundEnd);
+    const codePipRenderStart = flow.indexOf('<CodePip');
+    const codePipRenderEnd = flow.indexOf('/>', codePipRenderStart);
+    const codePipRenderSegment = flow.slice(
+      codePipRenderStart,
+      codePipRenderEnd,
+    );
+    const headerStart = codePip.indexOf('<span>Code</span>');
+    const headerEnd = codePip.indexOf('{showThemeSelector &&', headerStart);
+    const headerSegment = codePip.slice(headerStart, headerEnd);
+
+    expect(toggleSegment).toContain('const [showMiniMap, setShowMiniMap]');
+    expect(toggleSegment).toContain('const [showGrid, setShowGrid]');
+    expect(backgroundSegment).toContain('<Background');
+    expect(backgroundSegment).toContain('id="grid"');
+    expect(backgroundSegment).toContain('id="accents"');
+    expect(codePipRenderSegment).toContain('showMiniMap={showMiniMap}');
+    expect(codePipRenderSegment).toContain('onToggleMiniMap={setShowMiniMap}');
+    expect(codePipRenderSegment).toContain('showGrid={showGrid}');
+    expect(codePipRenderSegment).toContain('onToggleGrid={setShowGrid}');
+    expect(headerSegment).toContain('<span>Code</span>');
+    expect(headerSegment).toContain('<span>Map</span>');
+    expect(headerSegment).toContain('<span>Grid</span>');
+    expect(headerSegment).toContain('aria-label="Toggle background grid"');
   });
 
   it('keeps node creation gated only by RF adapter projection', () => {
@@ -544,15 +627,25 @@ describe('builder source guardrails', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(segment).toContain('flowActionsRef.current.getViewportState?.()');
+    const deliveryIndex = segment.indexOf(
+      'const delivery = deliverForcedDocChange(restoredDoc);',
+    );
+    const cancelIndex = segment.indexOf('cancelPendingDocChange();');
+    expect(deliveryIndex).toBeGreaterThanOrEqual(0);
+    expect(cancelIndex).toBeGreaterThan(deliveryIndex);
     expect(segment).toContain(
-      "replaceGraphImmediate(snapshot.graph, { viewportPolicy: 'preserve' });",
+      'const rehydrateEpoch = replaceGraphImmediate(snapshot.graph, {',
     );
     expect(segment).toContain(
-      'flowActionsRef.current.updateViewport?.(restoreView);',
+      "viewportPolicy: { kind: 'set', viewport: restoreView },",
     );
-    expect(segment).toContain('void deliverForcedDocChange(restoredDoc);');
+    expect(segment).toContain(
+      'editorHistoryRestoreEpochRef.current = rehydrateEpoch;',
+    );
+    expect(segment).not.toContain('flowActionsRef.current.updateViewport');
     expect(segment).not.toContain('fitViewportToContent');
     expect(segment).not.toContain('applyAutoLayoutToCurrentGraph');
+    expect(segment).not.toContain('afterAnimationFrames');
   });
 
   it('keeps object-id edits from debouncing rawInput invalidation', () => {
@@ -905,6 +998,26 @@ describe('builder source guardrails', () => {
     expect(segment).toContain('nopan');
     expect(segment).toContain("overflow: 'auto'");
     expect(segment).not.toContain("overflow: 'hidden'");
+  });
+
+  it('keeps copy feedback short inline while routing detailed copy status through toast', () => {
+    const text = readFileSync(join(sourceRoot, 'ui', 'CodePip.tsx'), 'utf8');
+    const start = text.indexOf('const handleCopy = async');
+    const end = text.indexOf('const handleSave = async', start);
+    const segment = text.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(segment).toContain("show('Copied');");
+    expect(segment).toContain("show('Copy failed');");
+    expect(segment).toContain("show('Mermaid copy failed');");
+    expect(segment).toContain("message: 'Code copied'");
+    expect(segment).toContain("message: 'Mermaid copied'");
+    expect(segment).toContain('`Copy failed: ${e.message}`');
+    expect(segment).toContain('`Mermaid copy failed: ${e.message}`');
+    expect(segment).not.toContain('show(e?.message');
+    expect(segment).not.toContain('show(`Copy failed:');
+    expect(segment).not.toContain('show(`Mermaid copy failed:');
   });
 
   it('keeps AssetsModal pagination side effects out of React state updaters', () => {

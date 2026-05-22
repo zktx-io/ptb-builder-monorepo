@@ -24,6 +24,7 @@ import {
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
+  useNodesInitialized,
   useReactFlow,
 } from '@xyflow/react';
 import type {
@@ -172,6 +173,7 @@ export function PTBFlow() {
     registerFlowActions,
     graphEpoch,
     graphRehydrateViewportPolicy,
+    completeGraphRehydrate,
     codePipOpenTick,
     toast,
     providerUiState,
@@ -188,6 +190,7 @@ export function PTBFlow() {
 
   // UI toggles
   const [showMiniMap, setShowMiniMap] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
 
   // Persisted PTB snapshot ref (for RF→PTB diffs)
   const baseGraphRef = useRef(graph);
@@ -196,14 +199,26 @@ export function PTBFlow() {
   const rehydratingRef = useRef(false);
   const lastEpochRef = useRef<number>(-1);
   const flowSessionRef = useRef(0);
-  const previewFrameRef = useRef<number | undefined>(undefined);
+  const [graphDragging, setGraphDragging] = useState(false);
   const commitControllerRef = useRef<
     ReturnType<typeof createReactFlowCommitController<RFSnapshot>> | undefined
   >(undefined);
   const persistSnapshotRef = useRef<(snapshot: RFSnapshot) => void>(() => {});
-  const fitViewportToContentRef = useRef<() => void>(() => {});
-  const rehydrateViewportPolicyRef = useRef(graphRehydrateViewportPolicy);
-  const measuredLayoutFrameRef = useRef<number | undefined>(undefined);
+  const applyingRehydrateEpochRef = useRef<number | undefined>(undefined);
+  const [pendingRehydrate, setPendingRehydrate] = useState<
+    | {
+        epoch: number;
+        session: number;
+        policy: typeof graphRehydrateViewportPolicy;
+      }
+    | undefined
+  >(undefined);
+  const [pendingManualFitSession, setPendingManualFitSession] = useState<
+    number | undefined
+  >(undefined);
+  const nodesInitialized = useNodesInitialized();
+  const { fitView, screenToFlowPosition, setViewport, getViewport } =
+    useReactFlow();
 
   // Patch callback refs (avoid TDZ during initial render)
   const patchUIRef = useRef<
@@ -705,18 +720,9 @@ export function PTBFlow() {
     flowSessionRef.current += 1;
     const session = flowSessionRef.current;
     commitControllerRef.current?.cancel();
-    if (previewFrameRef.current !== undefined) {
-      cancelAnimationFrame(previewFrameRef.current);
-      previewFrameRef.current = undefined;
-    }
-    if (measuredLayoutFrameRef.current !== undefined) {
-      cancelAnimationFrame(measuredLayoutFrameRef.current);
-      measuredLayoutFrameRef.current = undefined;
-    }
     lastSuccessfulCodeRef.current = undefined;
     setCodePreviewStatus('current');
     rehydratingRef.current = true;
-    rehydrateViewportPolicyRef.current = graphRehydrateViewportPolicy;
     baseGraphRef.current = graph;
     const { nodes, edges } = ptbToRF(graph);
     const injected = withCallbacks(nodes);
@@ -726,11 +732,10 @@ export function PTBFlow() {
     });
 
     setRF(reconciled);
-
-    // Unmute next tick to let RF compute dimensions.
-    requestAnimationFrame(() => {
-      if (session !== flowSessionRef.current) return;
-      rehydratingRef.current = false;
+    setPendingRehydrate({
+      epoch: graphEpoch,
+      session,
+      policy: graphRehydrateViewportPolicy,
     });
   }, [
     graphEpoch,
@@ -738,6 +743,61 @@ export function PTBFlow() {
     graphRehydrateViewportPolicy,
     reconcileRFSnapshot,
     withCallbacks,
+  ]);
+
+  useEffect(() => {
+    const request = pendingRehydrate;
+    if (!request) return;
+    if (request.session !== flowSessionRef.current) {
+      setPendingRehydrate((current) =>
+        current?.epoch === request.epoch ? undefined : current,
+      );
+      return;
+    }
+    if (rfNodes.length > 0 && !nodesInitialized) return;
+    if (applyingRehydrateEpochRef.current === request.epoch) return;
+
+    let cancelled = false;
+    applyingRehydrateEpochRef.current = request.epoch;
+
+    const finish = () => {
+      if (cancelled) return;
+      if (request.session !== flowSessionRef.current) return;
+      rehydratingRef.current = false;
+      applyingRehydrateEpochRef.current = undefined;
+      setPendingRehydrate((current) =>
+        current?.epoch === request.epoch ? undefined : current,
+      );
+      completeGraphRehydrate(request.epoch);
+    };
+
+    void (async () => {
+      try {
+        if (request.policy.kind === 'fit') {
+          await fitView({ padding: 0.2 });
+        } else if (request.policy.kind === 'set') {
+          await setViewport(request.policy.viewport);
+        }
+      } catch {
+        /* keep rehydrate completion non-blocking */
+      } finally {
+        finish();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (applyingRehydrateEpochRef.current === request.epoch) {
+        applyingRehydrateEpochRef.current = undefined;
+      }
+    };
+  }, [
+    pendingRehydrate,
+    nodesInitialized,
+    rfNodes.length,
+    fitView,
+    setViewport,
+    completeGraphRehydrate,
   ]);
 
   // ----- Safety net: re-project edges whenever nodes change ------------------
@@ -771,6 +831,7 @@ export function PTBFlow() {
     commitControllerRef.current = createReactFlowCommitController<RFSnapshot>({
       commit: (snapshot) => persistSnapshotRef.current(snapshot),
       schedule: deferSetState,
+      onDraggingChange: setGraphDragging,
     });
   }
 
@@ -803,10 +864,6 @@ export function PTBFlow() {
 
   useEffect(
     () => () => {
-      if (measuredLayoutFrameRef.current !== undefined) {
-        cancelAnimationFrame(measuredLayoutFrameRef.current);
-        measuredLayoutFrameRef.current = undefined;
-      }
       commitControllerRef.current?.cancel();
     },
     [],
@@ -914,8 +971,6 @@ export function PTBFlow() {
           ? changes.filter(isReadOnlyNodeChange)
           : changes;
       if (effective.length === 0) return;
-      const hasMeasuredSizeChange = effective.some(isMeasuredSizeChange);
-
       // During dragging, defer updates until drag ends. Read-only mode keeps
       // the PTBGraph immutable, so only selection and measurements pass through.
       if (!readOnly && !rehydrating) {
@@ -974,16 +1029,6 @@ export function PTBFlow() {
 
         return { rfNodes: nextNodes, rfEdges: nextEdges };
       });
-
-      if ((readOnly || rehydrating) && hasMeasuredSizeChange) {
-        if (measuredLayoutFrameRef.current !== undefined) return;
-        const shouldFitMeasuredLayout =
-          !rehydrating || rehydrateViewportPolicyRef.current === 'fit';
-        measuredLayoutFrameRef.current = requestAnimationFrame(() => {
-          measuredLayoutFrameRef.current = undefined;
-          if (shouldFitMeasuredLayout) fitViewportToContentRef.current();
-        });
-      }
     },
     [readOnly],
   );
@@ -1087,13 +1132,6 @@ export function PTBFlow() {
 
   useEffect(() => {
     const session = flowSessionRef.current;
-    const cancelScheduled = () => {
-      if (previewFrameRef.current !== undefined) {
-        cancelAnimationFrame(previewFrameRef.current);
-        previewFrameRef.current = undefined;
-      }
-    };
-
     const runPreview = () => {
       if (session !== flowSessionRef.current) return;
       if (!chain) {
@@ -1126,29 +1164,18 @@ export function PTBFlow() {
       setCode(result.code.trim().length > 0 ? result.code : EMPTY_CODE(chain));
     };
 
-    cancelScheduled();
-
-    if (commitControllerRef.current?.isDragging()) {
-      const tick = () => {
-        if (session !== flowSessionRef.current) return;
-        if (commitControllerRef.current?.isDragging()) {
-          previewFrameRef.current = requestAnimationFrame(tick);
-          return;
-        }
-        previewFrameRef.current = undefined;
-        runPreview();
-      };
-      previewFrameRef.current = requestAnimationFrame(tick);
-      return () => {
-        cancelScheduled();
-      };
-    }
+    if (graphDragging) return;
 
     runPreview();
-    return () => {
-      cancelScheduled();
-    };
-  }, [rfNodes, rfEdges, chain, execOpts, moveSignatures, safeRfToPTB]);
+  }, [
+    rfNodes,
+    rfEdges,
+    chain,
+    execOpts,
+    moveSignatures,
+    safeRfToPTB,
+    graphDragging,
+  ]);
 
   // ----- Execute --------------------------------------------------------------
 
@@ -1219,8 +1246,6 @@ export function PTBFlow() {
   ]);
 
   // ----- Auto Layout (positions-only merge) ----------------------------------
-  const { fitView, screenToFlowPosition, setViewport, getViewport } =
-    useReactFlow();
   const containerRef = useRef<HTMLDivElement | undefined>(undefined);
   const setContainerEl = useCallback((el: HTMLDivElement | null) => {
     containerRef.current = el ?? undefined;
@@ -1233,18 +1258,6 @@ export function PTBFlow() {
     const h = el.clientHeight || 0;
     return screenToFlowPosition({ x: w / 2, y: h / 2 });
   }, [screenToFlowPosition]);
-
-  const graphToLayoutSnapshot = useCallback(
-    (sourceGraph: PTBGraph): RFSnapshot => {
-      const { nodes, edges } = ptbToRF(sourceGraph);
-      const rfNodes = withCallbacks(nodes);
-      return {
-        rfNodes,
-        rfEdges: projectEdgesForCurrentPorts(rfNodes, edges),
-      };
-    },
-    [withCallbacks],
-  );
 
   const computeAutoLayoutSnapshot = useCallback(
     async (
@@ -1285,34 +1298,10 @@ export function PTBFlow() {
       }
 
       if (!positions || Object.keys(positions).length === 0) {
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => resolve());
-        });
-        if (!isCurrent()) {
-          return {
-            ok: false as const,
-            error: 'Graph layout was superseded.',
-          };
-        }
-        positions = await autoLayoutFlow(
-          layoutSnapshot.rfNodes,
-          layoutSnapshot.rfEdges,
-          {
-            targetCenter: opts?.targetCenter ?? getViewportCenterFlow(),
-          },
-        );
-        if (!isCurrent()) {
-          return {
-            ok: false as const,
-            error: 'Graph layout was superseded.',
-          };
-        }
-        if (!positions || Object.keys(positions).length === 0) {
-          return {
-            ok: false as const,
-            error: 'Graph layout did not produce node positions.',
-          };
-        }
+        return {
+          ok: false as const,
+          error: 'Graph layout did not produce node positions.',
+        };
       }
 
       const nextNodes = layoutSnapshot.rfNodes.map((n) =>
@@ -1349,21 +1338,6 @@ export function PTBFlow() {
     [getViewportCenterFlow, safeRfToPTB],
   );
 
-  const computeAutoLayoutGraph = useCallback(
-    async (
-      sourceGraph: PTBGraph,
-      opts?: { targetCenter?: FlowPoint },
-    ): Promise<AutoLayoutActionResult> => {
-      const layout = await computeAutoLayoutSnapshot(
-        graphToLayoutSnapshot(sourceGraph),
-        { baseGraph: sourceGraph, targetCenter: opts?.targetCenter },
-      );
-      if (!layout.ok) return layout;
-      return { ok: true as const, graph: layout.graph };
-    },
-    [computeAutoLayoutSnapshot, graphToLayoutSnapshot],
-  );
-
   const onAutoLayout =
     useCallback(async (): Promise<AutoLayoutActionResult> => {
       const session = flowSessionRef.current;
@@ -1382,49 +1356,39 @@ export function PTBFlow() {
       if (!layout.ok) return layout;
 
       setRF((prev) => (isCurrentLayout() ? layout.snapshot : prev));
-      requestAnimationFrame(() => {
-        if (!isCurrentLayout()) return;
-        try {
-          fitView({ padding: 0.2, duration: 300 });
-        } catch {
-          /* no-op */
-        }
-      });
+      setPendingManualFitSession(session);
       return { ok: true as const, graph: layout.graph };
-    }, [computeAutoLayoutSnapshot, fitView]);
-
-  const fitViewportToContent = useCallback(() => {
-    requestAnimationFrame(() => {
-      try {
-        fitView({ padding: 0.2, duration: 300 });
-      } catch {
-        /* no-op */
-      }
-    });
-  }, [fitView]);
+    }, [computeAutoLayoutSnapshot]);
 
   useEffect(() => {
-    fitViewportToContentRef.current = fitViewportToContent;
-  }, [fitViewportToContent]);
+    if (pendingManualFitSession === undefined) return;
+    if (
+      pendingManualFitSession !== flowSessionRef.current ||
+      rehydratingRef.current
+    ) {
+      setPendingManualFitSession(undefined);
+      return;
+    }
+    if (rfNodes.length > 0 && !nodesInitialized) return;
 
-  const fitViewportToContentAction = useCallback(() => {
-    fitViewportToContentRef.current();
-  }, []);
+    let cancelled = false;
+    void fitView({ padding: 0.2, duration: 300 })
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) return;
+        setPendingManualFitSession((current) =>
+          current === pendingManualFitSession ? undefined : current,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingManualFitSession, nodesInitialized, rfNodes.length, fitView]);
 
   const applyAutoLayoutToCurrentGraph = useCallback(
     () => onAutoLayout(),
     [onAutoLayout],
-  );
-
-  const updateViewport = useCallback(
-    (v?: { x: number; y: number; zoom: number }) => {
-      if (v) {
-        setViewport(v);
-      } else {
-        setViewExternal(getViewport());
-      }
-    },
-    [getViewport, setViewExternal, setViewport],
   );
 
   const captureGraph = useCallback(() => {
@@ -1437,29 +1401,20 @@ export function PTBFlow() {
 
   useEffect(() => {
     registerFlowActions({
-      fitViewportToContent: fitViewportToContentAction,
       applyAutoLayoutToCurrentGraph,
-      computeAutoLayoutGraph,
-      updateViewport,
       captureGraph,
       getViewportState,
     });
     return () => {
       registerFlowActions({
-        fitViewportToContent: undefined,
         applyAutoLayoutToCurrentGraph: undefined,
-        computeAutoLayoutGraph: undefined,
-        updateViewport: undefined,
         captureGraph: undefined,
         getViewportState: undefined,
       });
     };
   }, [
     registerFlowActions,
-    fitViewportToContentAction,
     applyAutoLayoutToCurrentGraph,
-    computeAutoLayoutGraph,
-    updateViewport,
     captureGraph,
     getViewportState,
   ]);
@@ -1508,6 +1463,7 @@ export function PTBFlow() {
         edges={rfEdges}
         /** Enable auto fit only after positions are laid out */
         fitView={false}
+        minZoom={0.1}
         /** block graph-position edits when read-only */
         nodesDraggable={!readOnly}
         /** block creating/updating edges when read-only */
@@ -1535,23 +1491,27 @@ export function PTBFlow() {
         ) : undefined}
 
         {/* Background grid layers */}
-        <Background
-          id="grid"
-          key={`grid-${theme}`}
-          gap={20}
-          color={'var(--ptb-grid-fine)'}
-          lineWidth={1}
-          variant={BackgroundVariant.Lines}
-        />
-        <Background
-          id="accents"
-          key={`accents-${theme}`}
-          gap={100}
-          color={'var(--ptb-grid-accent)'}
-          lineWidth={1.5}
-          variant={BackgroundVariant.Lines}
-          style={{ backgroundColor: 'transparent' }}
-        />
+        {showGrid && (
+          <>
+            <Background
+              id="grid"
+              key={`grid-${theme}`}
+              gap={20}
+              color={'var(--ptb-grid-fine)'}
+              lineWidth={1}
+              variant={BackgroundVariant.Lines}
+            />
+            <Background
+              id="accents"
+              key={`accents-${theme}`}
+              gap={100}
+              color={'var(--ptb-grid-accent)'}
+              lineWidth={1.5}
+              variant={BackgroundVariant.Lines}
+              style={{ backgroundColor: 'transparent' }}
+            />
+          </>
+        )}
 
         {showMiniMap && (
           <MiniMap
@@ -1583,6 +1543,8 @@ export function PTBFlow() {
               onCopyMermaid={onCopyMermaid}
               showMiniMap={showMiniMap}
               onToggleMiniMap={setShowMiniMap}
+              showGrid={showGrid}
+              onToggleGrid={setShowGrid}
             />
           </div>
         </Panel>

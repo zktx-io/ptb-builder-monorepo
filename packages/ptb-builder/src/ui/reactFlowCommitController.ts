@@ -15,6 +15,7 @@ export function createReactFlowCommitController<TSnapshot>(options: {
   dragRecoveryMs?: number;
   setTimer?: typeof setTimeout;
   clearTimer?: typeof clearTimeout;
+  onDraggingChange?: (dragging: boolean) => void;
 }): ReactFlowCommitController<TSnapshot> {
   const schedule = options.schedule ?? defaultScheduler;
   const setTimer = options.setTimer ?? setTimeout;
@@ -24,6 +25,14 @@ export function createReactFlowCommitController<TSnapshot>(options: {
   let pendingSnapshot: TSnapshot | undefined;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let generation = 0;
+  let dragging = false;
+
+  const emitDraggingChange = () => {
+    const next = draggingNodeIds.size > 0;
+    if (next === dragging) return;
+    dragging = next;
+    options.onDraggingChange?.(next);
+  };
 
   const clearRecovery = () => {
     if (!recoveryTimer) return;
@@ -49,6 +58,7 @@ export function createReactFlowCommitController<TSnapshot>(options: {
     recoveryTimer = setTimer(() => {
       recoveryTimer = undefined;
       draggingNodeIds.clear();
+      emitDraggingChange();
       flushPending();
     }, dragRecoveryMs);
   };
@@ -65,6 +75,7 @@ export function createReactFlowCommitController<TSnapshot>(options: {
     startDrag(nodeId) {
       generation += 1;
       draggingNodeIds.add(nodeId);
+      emitDraggingChange();
       armRecovery();
     },
     endDrag(nodeId, snapshot) {
@@ -74,24 +85,29 @@ export function createReactFlowCommitController<TSnapshot>(options: {
       if (!nodeId) draggingNodeIds.clear();
       if (snapshot !== undefined && wasDragging) pendingSnapshot = snapshot;
       if (draggingNodeIds.size > 0) {
+        emitDraggingChange();
         armRecovery();
         return;
       }
+      emitDraggingChange();
       flushPending();
     },
     removeNode(nodeId, snapshot) {
       draggingNodeIds.delete(nodeId);
       if (snapshot !== undefined) pendingSnapshot = snapshot;
       if (draggingNodeIds.size > 0) {
+        emitDraggingChange();
         armRecovery();
         return;
       }
+      emitDraggingChange();
       flushPending();
     },
     cancel() {
       generation += 1;
       clearRecovery();
       draggingNodeIds.clear();
+      emitDraggingChange();
       pendingSnapshot = undefined;
     },
     isDragging() {

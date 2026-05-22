@@ -179,7 +179,7 @@
   box-shadow: var(--ptb-elev-1);
 }
 
-:root[data-ptb-theme='tokyo-night'] .ptb-flow-edge.is-selected {
+:root[data-ptb-theme='tokyo-night'] .react-flow__edge-path.is-selected {
   filter: drop-shadow(0 0 1px rgba(169, 177, 214, 0.4))
     drop-shadow(0 0 3px rgba(0, 0, 0, 0.48));
 }

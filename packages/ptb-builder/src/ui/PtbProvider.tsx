@@ -79,6 +79,7 @@ import {
   type ProviderUiState,
   type TxStatus,
 } from './providerUiState';
+import { autoLayoutPTBGraph } from './utils/ptbGraphAutoLayout';
 import type { PTBGraph } from '../ptb/graph/types';
 import {
   type CachedMoveFunction,
@@ -349,27 +350,23 @@ export type PtbContextValue = {
 
   graphEpoch: number;
   graphRehydrateViewportPolicy: GraphRehydrateViewportPolicy;
+  completeGraphRehydrate: (epoch: number) => void;
 
   codePipOpenTick: number;
 };
 
 type FlowViewportState = { x: number; y: number; zoom: number };
-type FlowPoint = { x: number; y: number };
-type GraphRehydrateViewportPolicy = 'fit' | 'preserve';
+type GraphRehydrateViewportPolicy =
+  | { kind: 'fit' }
+  | { kind: 'preserve' }
+  | { kind: 'set'; viewport: FlowViewportState };
 type FlowGraphCaptureResult =
   | { ok: true; graph: PTBGraph }
   | { ok: false; error: string };
-type FlowAutoLayoutResult =
-  | { ok: true; graph: PTBGraph }
-  | { ok: false; error: string };
 type RegisteredFlowActions = {
-  fitViewportToContent?: () => void;
-  applyAutoLayoutToCurrentGraph?: () => Promise<FlowAutoLayoutResult>;
-  computeAutoLayoutGraph?: (
-    graph: PTBGraph,
-    opts?: { targetCenter?: FlowPoint },
-  ) => Promise<FlowAutoLayoutResult>;
-  updateViewport?: (v?: FlowViewportState) => void;
+  applyAutoLayoutToCurrentGraph?: () => Promise<
+    { ok: true; graph: PTBGraph } | { ok: false; error: string }
+  >;
   captureGraph?: () => FlowGraphCaptureResult;
   getViewportState?: () => FlowViewportState;
 };
@@ -543,8 +540,9 @@ export function PtbProvider({
 
   // Epoch to separate "inject → RF" from "edit → save"
   const [graphEpoch, setGraphEpoch] = useState(0);
+  const graphEpochRef = useRef(0);
   const [graphRehydrateViewportPolicy, setGraphRehydrateViewportPolicy] =
-    useState<GraphRehydrateViewportPolicy>('fit');
+    useState<GraphRehydrateViewportPolicy>({ kind: 'fit' });
 
   // Chain caches
   const [objects, setObjects] = useState<PTBObjectsEmbed>(() => EMPTY_OBJECTS);
@@ -572,6 +570,7 @@ export function PtbProvider({
   const lastDocSigRef = useRef<string | undefined>(undefined);
   const editorHistoryRef = useRef(createEditorSessionHistory());
   const editorHistoryRestoreInFlightRef = useRef(false);
+  const editorHistoryRestoreEpochRef = useRef<number | undefined>(undefined);
   const [editorHistoryAvailability, setEditorHistoryAvailability] = useState(
     () => ({
       canUndo: editorHistoryRef.current.canUndo(),
@@ -593,6 +592,7 @@ export function PtbProvider({
       lastDocSigRef.current = undefined;
     }
     editorHistoryRestoreInFlightRef.current = false;
+    editorHistoryRestoreEpochRef.current = undefined;
     setActiveChain(undefined);
     setDocSender(undefined);
     setObjects(EMPTY_OBJECTS);
@@ -757,18 +757,27 @@ export function PtbProvider({
     (
       g: PTBGraph,
       opts: { viewportPolicy?: GraphRehydrateViewportPolicy } = {},
-    ) => {
+    ): number => {
       const norm = normalizeGraph(g);
       lastGraphSigRef.current = stableGraphSig(norm);
       docSlicesRef.current = { ...docSlicesRef.current, graph: norm };
-      setGraphRehydrateViewportPolicy(opts.viewportPolicy ?? 'fit');
+      const nextEpoch = graphEpochRef.current + 1;
+      graphEpochRef.current = nextEpoch;
+      setGraphRehydrateViewportPolicy(opts.viewportPolicy ?? { kind: 'fit' });
       setGraphState(norm);
       setWellKnown(computeWellKnownPresence(norm));
       idNonceRef.current = seedNonceFromGraph(norm);
-      setGraphEpoch((e) => e + 1); // rehydrate RF once per load
+      setGraphEpoch(nextEpoch); // rehydrate RF once per load
+      return nextEpoch;
     },
     [],
   );
+
+  const completeGraphRehydrate = useCallback((epoch: number) => {
+    if (editorHistoryRestoreEpochRef.current !== epoch) return;
+    editorHistoryRestoreEpochRef.current = undefined;
+    editorHistoryRestoreInFlightRef.current = false;
+  }, []);
 
   // ---- PTBDoc: batch graph edits, debounce viewport-only changes ------------
 
@@ -1482,14 +1491,13 @@ export function PtbProvider({
         const nextView = { ...DEFAULT_PTB_VIEW };
 
         if (editable) {
-          const layout = await flowActionsRef.current.computeAutoLayoutGraph?.(
-            decoded,
-            { targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER },
-          );
+          const layout = await autoLayoutPTBGraph(decoded, {
+            targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER,
+          });
           if (!lifecycleRef.current.isCurrent(load)) {
             return ptbActionError('Transaction load was superseded.');
           }
-          const graphForBaseline = layout && layout.ok ? layout.graph : decoded;
+          const graphForBaseline = layout.ok ? layout.graph : decoded;
           const baselineSnapshot = createEditorSessionSnapshot({
             chain,
             graph: graphForBaseline,
@@ -1522,16 +1530,30 @@ export function PtbProvider({
           setObjects(objectsEmbed);
           setView(nextView);
           replaceGraphImmediate(graphForBaseline, {
-            viewportPolicy: 'preserve',
+            viewportPolicy: { kind: 'set', viewport: nextView },
           });
-          flowActionsRef.current.updateViewport?.(nextView);
           resetEditorHistory(baselineSnapshot);
           setReadOnly(false);
           setProviderUiState(providerReadyEditable());
           setCodePipOpenTick((tick) => tick + 1);
           lifecycleRef.current.complete(load, 'ready-editable');
         } else {
-          // Read-only inspection has no document baseline; layout is display-only.
+          // Read-only inspection has no document baseline; compute display
+          // layout before rehydrating so it cannot race RF measurement timing.
+          const layout = await autoLayoutPTBGraph(decoded, {
+            targetCenter: TRANSACTION_LAYOUT_TARGET_CENTER,
+          });
+          if (!lifecycleRef.current.isCurrent(load)) {
+            return ptbActionError('Transaction load was superseded.');
+          }
+          if (!layout.ok) {
+            toastImpl({
+              message: `Transaction loaded, but auto layout failed: ${layout.error}`,
+              variant: 'warning',
+            });
+          }
+          const graphForReadonly = layout.ok ? layout.graph : decoded;
+
           cancelPendingDocChange();
           resetBeforeLoad();
           metadataCacheRef.current = loadCache;
@@ -1545,7 +1567,9 @@ export function PtbProvider({
           );
           setObjects(objectsEmbed);
           setView(nextView);
-          replaceGraphImmediate(decoded, { viewportPolicy: 'preserve' });
+          replaceGraphImmediate(graphForReadonly, {
+            viewportPolicy: { kind: 'fit' },
+          });
           resetEditorHistory();
           setReadOnly(true);
           setProviderUiState(
@@ -1553,10 +1577,6 @@ export function PtbProvider({
           );
           setCodePipOpenTick(0);
           lifecycleRef.current.complete(load, 'ready-readonly-transaction');
-          lifecycleRef.current.afterAnimationFrames(load, () => {
-            // Transactions do not carry editor layout; build an initial canvas layout.
-            void flowActionsRef.current.applyAutoLayoutToCurrentGraph?.();
-          });
         }
 
         void (async () => {
@@ -1726,8 +1746,9 @@ export function PtbProvider({
             EMPTY_PACKAGE_INDEXES,
         );
         setObjects(doc.objects);
-        replaceGraphImmediate(graphForEditing, { viewportPolicy: 'preserve' });
-        flowActionsRef.current.updateViewport?.(nextView);
+        replaceGraphImmediate(graphForEditing, {
+          viewportPolicy: { kind: 'set', viewport: nextView },
+        });
         resetEditorHistory(baselineSnapshot);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
@@ -1782,8 +1803,9 @@ export function PtbProvider({
             EMPTY_PACKAGE_INDEXES,
         );
         setObjects(EMPTY_OBJECTS);
-        replaceGraphImmediate(nextGraph, { viewportPolicy: 'preserve' });
-        flowActionsRef.current.updateViewport?.(nextView);
+        replaceGraphImmediate(nextGraph, {
+          viewportPolicy: { kind: 'set', viewport: nextView },
+        });
         resetEditorHistory(baselineSnapshot);
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
@@ -1814,8 +1836,7 @@ export function PtbProvider({
           snapshot.chain,
           { modules: snapshot.modules, objects: snapshot.objects },
         );
-        let restoredDoc: PTBDoc | undefined;
-        let restoredDocError: string | undefined;
+        let restoredDoc: PTBDoc;
         try {
           restoredDoc = buildDoc({
             chain: snapshot.chain,
@@ -1826,14 +1847,24 @@ export function PtbProvider({
             objects: snapshot.objects,
           });
         } catch (error) {
-          restoredDocError = formatModelErrorMessage(
+          const restoredDocError = formatModelErrorMessage(
             error,
             'PTB document change failed after restoring editor history.',
           );
+          lifecycleRef.current.fail(load, restoredDocError);
+          setProviderUiState((prev) =>
+            providerDocumentEmitError(prev, restoredDocError),
+          );
+          return ptbActionError(restoredDocError);
+        }
+        const delivery = deliverForcedDocChange(restoredDoc);
+        if (!delivery.ok) {
+          lifecycleRef.current.fail(load, delivery.error);
+          return delivery;
         }
 
         cancelPendingDocChange();
-        resetBeforeLoad();
+        resetBeforeLoad({ preserveLastDocSig: true });
         metadataCacheRef.current = nextCache;
         setMetadataRevision((revision) => revision + 1);
         setView(restoreView);
@@ -1846,24 +1877,17 @@ export function PtbProvider({
         );
         setObjects(snapshot.objects);
         editorHistoryRestoreInFlightRef.current = true;
-        replaceGraphImmediate(snapshot.graph, { viewportPolicy: 'preserve' });
-        flowActionsRef.current.updateViewport?.(restoreView);
+        const rehydrateEpoch = replaceGraphImmediate(snapshot.graph, {
+          viewportPolicy: { kind: 'set', viewport: restoreView },
+        });
+        editorHistoryRestoreEpochRef.current = rehydrateEpoch;
         setReadOnly(false);
         setProviderUiState(providerReadyEditable());
-        if (restoredDoc) {
-          void deliverForcedDocChange(restoredDoc);
-        } else if (restoredDocError) {
-          setProviderUiState((prev) =>
-            providerDocumentEmitError(prev, restoredDocError),
-          );
-        }
         lifecycleRef.current.complete(load, 'ready-editable');
-        lifecycleRef.current.afterAnimationFrames(load, () => {
-          editorHistoryRestoreInFlightRef.current = false;
-        });
         return PTB_ACTION_OK;
       } catch (error) {
         editorHistoryRestoreInFlightRef.current = false;
+        editorHistoryRestoreEpochRef.current = undefined;
         const message = formatModelErrorMessage(
           error,
           'Failed to restore editor history.',
@@ -2053,6 +2077,7 @@ export function PtbProvider({
 
       graphEpoch,
       graphRehydrateViewportPolicy,
+      completeGraphRehydrate,
       codePipOpenTick,
     }),
     [
@@ -2095,6 +2120,7 @@ export function PtbProvider({
       registerFlowActions,
       graphEpoch,
       graphRehydrateViewportPolicy,
+      completeGraphRehydrate,
       codePipOpenTick,
     ],
   );

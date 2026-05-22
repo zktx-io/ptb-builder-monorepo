@@ -157,4 +157,36 @@ describe('React Flow commit controller', () => {
     expect(controller.isDragging()).toBe(false);
     expect(commit).toHaveBeenCalledWith('pending');
   });
+
+  it('reports explicit drag state transitions including recovery and cancel', () => {
+    vi.useFakeTimers();
+    const commit = vi.fn();
+    const onDraggingChange = vi.fn();
+    const controller = createReactFlowCommitController<string>({
+      commit,
+      schedule: (callback) => callback(),
+      dragRecoveryMs: 500,
+      onDraggingChange,
+    });
+
+    controller.startDrag('node-1');
+    controller.startDrag('node-1');
+    expect(onDraggingChange).toHaveBeenCalledTimes(1);
+    expect(onDraggingChange).toHaveBeenLastCalledWith(true);
+
+    controller.recordChange('pending');
+    vi.advanceTimersByTime(500);
+    expect(onDraggingChange).toHaveBeenCalledTimes(2);
+    expect(onDraggingChange).toHaveBeenLastCalledWith(false);
+
+    controller.startDrag('node-2');
+    controller.cancel();
+    expect(onDraggingChange).toHaveBeenCalledTimes(4);
+    expect(onDraggingChange.mock.calls).toEqual([
+      [true],
+      [false],
+      [true],
+      [false],
+    ]);
+  });
 });

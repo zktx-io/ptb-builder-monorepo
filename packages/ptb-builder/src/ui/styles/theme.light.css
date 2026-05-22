@@ -197,6 +197,6 @@
   box-shadow: var(--ptb-elev-1);
 }
 
-:root[data-ptb-theme='light'] .ptb-flow-edge.is-selected {
+:root[data-ptb-theme='light'] .react-flow__edge-path.is-selected {
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.25));
 }

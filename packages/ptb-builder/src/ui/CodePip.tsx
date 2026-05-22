@@ -57,6 +57,10 @@ type CodePipProps = {
   /** Toggle MiniMap from header */
   showMiniMap: boolean;
   onToggleMiniMap: (checked: boolean) => void;
+
+  /** Toggle background grid from header */
+  showGrid: boolean;
+  onToggleGrid: (checked: boolean) => void;
 };
 
 /** Inline transient hint label */
@@ -104,6 +108,8 @@ export function CodePip({
 
   showMiniMap,
   onToggleMiniMap,
+  showGrid,
+  onToggleGrid,
 }: CodePipProps) {
   const preRef = useRef<HTMLPreElement | undefined>(undefined);
   const setPreEl = useCallback((el: HTMLPreElement | null) => {
@@ -128,6 +134,7 @@ export function CodePip({
     exportDocResult,
     showExportButton,
     showThemeSelector,
+    toast,
   } = usePtb();
   const [prismReady, setPrismReady] = useState(false);
   const assetOwner = useMemo(
@@ -194,8 +201,13 @@ export function CodePip({
       }
 
       show('Copied');
+      toast?.({ message: 'Code copied', variant: 'success' });
     } catch (e: any) {
-      show(e?.message ? `Copy failed: ${e.message}` : 'Copy failed');
+      show('Copy failed');
+      toast?.({
+        message: e?.message ? `Copy failed: ${e.message}` : 'Copy failed',
+        variant: 'error',
+      });
     }
   };
 
@@ -204,12 +216,15 @@ export function CodePip({
     try {
       await onCopyMermaid();
       show('Copied');
+      toast?.({ message: 'Mermaid copied', variant: 'success' });
     } catch (e: any) {
-      show(
-        e?.message
+      show('Mermaid copy failed');
+      toast?.({
+        message: e?.message
           ? `Mermaid copy failed: ${e.message}`
           : 'Mermaid copy failed',
-      );
+        variant: 'error',
+      });
     }
   };
 
@@ -328,6 +343,19 @@ export function CodePip({
                 checked={!!showMiniMap}
                 onChange={(e) => onToggleMiniMap?.(e.target.checked)}
                 aria-label="Toggle mini map"
+              />
+            </label>
+
+            <label
+              title="Toggle background grid"
+              className="flex items-center gap-1 cursor-pointer select-none opacity-90"
+            >
+              <span>Grid</span>
+              <input
+                type="checkbox"
+                checked={!!showGrid}
+                onChange={(e) => onToggleGrid?.(e.target.checked)}
+                aria-label="Toggle background grid"
               />
             </label>
 

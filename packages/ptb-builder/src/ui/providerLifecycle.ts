@@ -13,12 +13,6 @@ export type ProviderLoadToken = {
   kind: ProviderLoadKind;
 };
 
-type FrameHandle = unknown;
-type FrameScheduler = {
-  request: (callback: () => void) => FrameHandle;
-  cancel: (handle: FrameHandle) => void;
-};
-
 export type ProviderLifecycleController = {
   beginLoad: (kind: ProviderLoadKind) => ProviderLoadToken;
   cancel: () => void;
@@ -32,33 +26,16 @@ export type ProviderLifecycleController = {
     >,
   ) => boolean;
   fail: (token: ProviderLoadToken, message: string) => boolean;
-  afterAnimationFrames: (
-    token: ProviderLoadToken,
-    callback: () => void,
-    frames?: number,
-  ) => void;
 };
 
-export function createProviderLifecycleController(options?: {
-  frameScheduler?: FrameScheduler;
-}): ProviderLifecycleController {
-  const frameScheduler = options?.frameScheduler ?? defaultFrameScheduler();
-  const frameHandles = new Set<FrameHandle>();
+export function createProviderLifecycleController(): ProviderLifecycleController {
   let nextId = 0;
   let status: ProviderLifecycleStatus = { kind: 'uninitialized' };
-
-  const clearFrames = () => {
-    for (const handle of frameHandles) {
-      frameScheduler.cancel(handle);
-    }
-    frameHandles.clear();
-  };
 
   const isCurrent = (token: ProviderLoadToken) => token.id === nextId;
 
   const beginLoad = (kind: ProviderLoadKind): ProviderLoadToken => {
     nextId += 1;
-    clearFrames();
     const token: ProviderLoadToken = { id: nextId, kind };
     status =
       kind === 'document'
@@ -67,28 +44,10 @@ export function createProviderLifecycleController(options?: {
     return token;
   };
 
-  const scheduleFrame = (
-    token: ProviderLoadToken,
-    remainingFrames: number,
-    callback: () => void,
-  ) => {
-    const handle = frameScheduler.request(() => {
-      frameHandles.delete(handle);
-      if (!isCurrent(token)) return;
-      if (remainingFrames <= 1) {
-        callback();
-        return;
-      }
-      scheduleFrame(token, remainingFrames - 1, callback);
-    });
-    frameHandles.add(handle);
-  };
-
   return {
     beginLoad,
     cancel() {
       nextId += 1;
-      clearFrames();
       status = { kind: 'uninitialized' };
     },
     current() {
@@ -104,28 +63,6 @@ export function createProviderLifecycleController(options?: {
       if (!isCurrent(token)) return false;
       status = { kind: 'error', loadId: token.id, message };
       return true;
-    },
-    afterAnimationFrames(token, callback, frames = 2) {
-      if (!isCurrent(token)) return;
-      scheduleFrame(token, Math.max(1, frames), callback);
-    },
-  };
-}
-
-function defaultFrameScheduler(): FrameScheduler {
-  return {
-    request(callback) {
-      if (typeof requestAnimationFrame === 'function') {
-        return requestAnimationFrame(() => callback());
-      }
-      return setTimeout(callback, 0);
-    },
-    cancel(handle) {
-      if (typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(handle as number);
-        return;
-      }
-      clearTimeout(handle as ReturnType<typeof setTimeout>);
     },
   };
 }

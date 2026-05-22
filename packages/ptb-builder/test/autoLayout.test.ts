@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { PTBGraph } from '../src/ptb/graph/types';
 import { autoLayoutFlow } from '../src/ui/utils/autoLayout';
+import { autoLayoutPTBGraph } from '../src/ui/utils/ptbGraphAutoLayout';
 
 const baseNode = (
   id: string,
@@ -148,5 +150,66 @@ describe('autoLayoutFlow', () => {
     expect(positions['type-0']!.y).toBeLessThan(positions['type-1']!.y);
     expect(positions['type-1']!.y).toBeLessThan(positions['var-0']!.y);
     expect(positions['var-0']!.y).toBeLessThan(positions['var-1']!.y);
+  });
+
+  it('lays out a PTBGraph before React Flow rehydrate', async () => {
+    const graph: PTBGraph = {
+      nodes: [
+        {
+          id: 'start',
+          kind: 'Start',
+          ports: [{ id: 'out', role: 'flow', direction: 'out' }],
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'cmd-0',
+          kind: 'Command',
+          command: 'transferObjects',
+          ports: [
+            { id: 'in', role: 'flow', direction: 'in' },
+            { id: 'out', role: 'flow', direction: 'out' },
+          ],
+          position: { x: 0, y: 120 },
+        },
+        {
+          id: 'end',
+          kind: 'End',
+          ports: [{ id: 'in', role: 'flow', direction: 'in' }],
+          position: { x: 0, y: 240 },
+        },
+      ],
+      edges: [
+        {
+          id: 'flow-start-cmd-0',
+          kind: 'flow',
+          source: 'start',
+          sourceHandle: 'out',
+          target: 'cmd-0',
+          targetHandle: 'in',
+        },
+        {
+          id: 'flow-cmd-0-end',
+          kind: 'flow',
+          source: 'cmd-0',
+          sourceHandle: 'out',
+          target: 'end',
+          targetHandle: 'in',
+        },
+      ],
+    };
+
+    const result = await autoLayoutPTBGraph(graph, {
+      targetCenter: { x: 400, y: 325 },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byId = new Map(result.graph.nodes.map((node) => [node.id, node]));
+    expect(byId.get('start')!.position!.x).toBeLessThan(
+      byId.get('cmd-0')!.position!.x,
+    );
+    expect(byId.get('cmd-0')!.position!.x).toBeLessThan(
+      byId.get('end')!.position!.x,
+    );
   });
 });

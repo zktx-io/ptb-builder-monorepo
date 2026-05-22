@@ -7,6 +7,8 @@
   /* Flow */
   --ptb-flow-width: 2.75;
   --ptb-flow-dash: 5 5;
+  --ptb-edge-idle-opacity: 0.42;
+  --ptb-edge-active-opacity: 1;
 
   /* IO edge widths (colors live in theme files) */
   --ptb-io-address-width: 2.5;
@@ -126,7 +128,11 @@
   fill: none;
   vector-effect: non-scaling-stroke;
   transform: translateZ(0);
-  stroke-opacity: 1;
+  stroke-opacity: var(--ptb-edge-idle-opacity);
+  transition:
+    stroke 120ms ease,
+    stroke-opacity 120ms ease,
+    filter 120ms ease;
   will-change: stroke-dashoffset;
 }
 .ptb-flow-active .ptb-flow-edge {
@@ -139,7 +145,11 @@
   animation: none !important;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-opacity: 1;
+  stroke-opacity: var(--ptb-edge-idle-opacity);
+  transition:
+    stroke 120ms ease,
+    stroke-opacity 120ms ease,
+    filter 120ms ease;
 
   /* Safe defaults */
   --xy-edge-stroke: var(--ptb-io-unknown-stroke);
@@ -204,6 +214,20 @@
   stroke-linecap: round;
   fill: none;
   vector-effect: non-scaling-stroke;
+  stroke-opacity: var(--ptb-edge-idle-opacity);
+  transition:
+    stroke 120ms ease,
+    stroke-opacity 120ms ease,
+    filter 120ms ease;
+}
+
+.react-flow__edge:hover .react-flow__edge-path.ptb-flow-edge,
+.react-flow__edge .react-flow__edge-path.ptb-flow-edge.is-selected,
+.react-flow__edge:hover .react-flow__edge-path.ptb-io-edge,
+.react-flow__edge .react-flow__edge-path.ptb-io-edge.is-selected,
+.react-flow__edge:hover .react-flow__edge-path.ptb-type-edge,
+.react-flow__edge .react-flow__edge-path.ptb-type-edge.is-selected {
+  stroke-opacity: var(--ptb-edge-active-opacity);
 }
 
 .react-flow__edge:hover .react-flow__edge-path.ptb-type-edge,
@@ -331,16 +355,8 @@
   background: var(--ptb-node-option-bg);
 }
 .ptb-node--typearg .ptb-node-shell {
-  border-color: color-mix(
-    in srgb,
-    var(--ptb-node-command-border) 72%,
-    #7c3aed
-  );
-  background: color-mix(
-    in srgb,
-    var(--ptb-node-command-bg) 84%,
-    #7c3aed 16%
-  );
+  border-color: color-mix(in srgb, var(--ptb-node-command-border) 72%, #7c3aed);
+  background: color-mix(in srgb, var(--ptb-node-command-bg) 84%, #7c3aed 16%);
 }
 .ptb-typearg-icon {
   display: inline-flex;
